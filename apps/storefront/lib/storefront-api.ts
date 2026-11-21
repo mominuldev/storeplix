@@ -1,11 +1,20 @@
 import 'server-only';
 import { cache } from 'react';
 import { z } from 'zod';
-import type { StorefrontConfig } from '@storeplix/types';
+import type { SocialLinks, StoreContact, StorefrontConfig } from '@storeplix/types';
 import { serverEnv } from './env';
 import { buildConfigRequest } from './config-request';
 
-/** Render-only store data validated at the boundary. `theme` is validated later by the theme engine. */
+const isObject = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+/** Missing or malformed object -> `{}` so every nullable field defaults to null (rolling deploys). */
+const nullableObject = <S extends z.ZodRawShape>(shape: S) => z.preprocess((v) => (isObject(v) ? v : {}), z.object(shape));
+const nullableString = (max: number) => z.string().trim().min(1).max(max).nullable().catch(null);
+
+/**
+ * Render-only store data validated at the boundary. `theme` is validated later by the theme engine.
+ * Contact/social values are only length-checked here; links are built and validated at render
+ * (lib/contact.ts) so an unsafe value simply isn't rendered.
+ */
 const StorefrontConfigSchema = z.object({
   store: z.object({
     id: z.string().min(1).max(64),
@@ -16,6 +25,22 @@ const StorefrontConfigSchema = z.object({
     currency: z.string().regex(/^[A-Za-z]{3}$/).catch('BDT'),
     logo_url: z.string().max(2048).nullable().catch(null),
     favicon_url: z.string().max(2048).nullable().catch(null),
+    icons: nullableObject({
+      apple_touch: nullableString(2048),
+      icon_192: nullableString(2048),
+      icon_512: nullableString(2048),
+    }),
+  }),
+  contact: nullableObject({
+    phone: nullableString(32),
+    email: nullableString(254),
+    whatsapp: nullableString(32),
+    support_hours: nullableString(80),
+  }),
+  social: nullableObject({
+    facebook: nullableString(255),
+    instagram: nullableString(255),
+    youtube: nullableString(255),
   }),
   preview: z.boolean().catch(false),
   theme: z.unknown().optional(),
@@ -27,8 +52,16 @@ const StorefrontConfigSchema = z.object({
     .catch({ title: '', description: null }),
 });
 
-/** Store config whose `theme` is still untrusted input for the theme engine. */
-export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme'> & { theme?: unknown };
+/**
+ * Store config whose `theme` is still untrusted input for the theme engine. Optional-on-the-wire
+ * fields (icons, contact, social) are always present here, with nulls.
+ */
+export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'contact' | 'social'> & {
+  store: StorefrontConfig['store'] & { icons: NonNullable<StorefrontConfig['store']['icons']> };
+  contact: StoreContact;
+  social: SocialLinks;
+  theme?: unknown;
+};
 
 export type StorefrontConfigResult =
   | { status: 'found'; config: RawStorefrontConfig }

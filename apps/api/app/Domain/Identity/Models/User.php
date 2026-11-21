@@ -2,6 +2,7 @@
 
 namespace App\Domain\Identity\Models;
 
+use App\Domain\Identity\Mail\ResetPasswordMail;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use Database\Factories\UserFactory;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\HasApiTokens;
 
 /**
@@ -18,14 +21,16 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string $id
  * @property string $name
  * @property string $email
- * @property string|null $phone
+ * @property string|null $phone 8801XXXXXXXXX
+ * @property Carbon|null $phone_verified_at
+ * @property Carbon|null $password_changed_at
  */
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasUlids, Notifiable;
 
-    protected $fillable = ['name', 'email', 'phone', 'password'];
+    protected $fillable = ['name', 'email', 'phone', 'password', 'email_verified_at', 'phone_verified_at', 'password_changed_at'];
 
     protected $hidden = ['password', 'remember_token'];
 
@@ -33,6 +38,8 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'password_changed_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
@@ -41,7 +48,7 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Tenant::class, 'tenant_users')
             ->using(TenantUser::class)
-            ->withPivot(['id', 'role'])
+            ->withPivot(['id', 'role', 'joined_at'])
             ->withTimestamps();
     }
 
@@ -52,6 +59,12 @@ class User extends Authenticatable
             ->where('tenant_id', $tenantId)
             ->where('user_id', $this->getKey())
             ->value('role');
+    }
+
+    /** Password broker hook: queue our mailable instead of the default notification. */
+    public function sendPasswordResetNotification($token): void
+    {
+        Mail::to($this->email)->queue(new ResetPasswordMail($this->email, $token));
     }
 
     protected static function newFactory(): UserFactory

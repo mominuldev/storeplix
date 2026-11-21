@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Input } from '@storeplix/ui';
+import { Button, Input, SegmentedControl } from '@storeplix/ui';
 import { CheckCircle2, ChevronLeft } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -8,13 +8,14 @@ import { applyApiErrors } from '../auth/formErrors';
 import { forgotPasswordSchema, type ForgotPasswordValues } from '../auth/schemas';
 import { api } from '../lib/api';
 import { AuthShell, FormAlert, FormTitle } from '../onboarding/AuthShell';
+import { SmsResetForm } from '../otp/SmsResetForm';
 
 const BANGLA = 'পাসওয়ার্ড ভুলে গেছেন? এক মিনিটেই নতুন করে নিন।';
 
-// Figma Merchant Onboarding · L3 Forgot password 57:1198. Phase 1.1 API: POST /auth/forgot-password
-// (always 202). The SMS-code + new-password step in Figma needs OTP (later phase), so this screen
-// requests reset instructions by email and confirms without revealing whether the account exists.
+// Figma Merchant Onboarding · L3 Forgot password 57:1198. Two ways: SMS code → new password (Addendum A,
+// the Figma flow) or an email reset link (POST /auth/forgot-password, always 202, no enumeration).
 export function ForgotPasswordPage() {
+  const [method, setMethod] = useState<'sms' | 'email'>('sms');
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const {
@@ -51,7 +52,18 @@ export function ForgotPasswordPage() {
         <Link to="/login" className="flex items-center gap-1.5 self-start text-body font-medium text-brand-600 hover:text-brand-700">
           <ChevronLeft aria-hidden className="size-4" /> Back to sign in
         </Link>
-        {sentTo ? (
+        <SegmentedControl
+          aria-label="Reset method"
+          value={method}
+          onChange={setMethod}
+          options={[
+            { value: 'sms', label: 'SMS code' },
+            { value: 'email', label: 'Email link' },
+          ]}
+        />
+        {method === 'sms' ? (
+          <SmsResetForm />
+        ) : sentTo ? (
           <div role="status" className="flex flex-col gap-4">
             <CheckCircle2 aria-hidden className="size-10 text-success" />
             <FormTitle

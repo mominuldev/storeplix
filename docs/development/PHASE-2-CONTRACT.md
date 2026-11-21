@@ -498,3 +498,43 @@ a rolling deploy.
 | **QA** | `docker-compose.yml` (mailpit, `REVALIDATE_SECRET`, `STOREFRONT_REVALIDATE_URL`, queue worker), `.github/**`, `tests/e2e/**` (reset password via the Mailpit API, invite → accept, settings → storefront shows the logo), `docs/reviews/**` |
 | **Orchestrator** | `packages/types/src/index.ts` (§3), root `package.json` |
 | **ARCH** | This file, `docs/api/openapi.yaml`, other `docs/**` |
+
+---
+## Addendum A — Phone OTP via REVE SMS (task 2.4, unblocked by PO 2026-11-21)
+
+Provider: **REVE SMS** (smpp.revesms.com). Q16 answered.
+
+### Gateway
+- Interface `SmsGateway::send(string $msisdn, string $text): SmsResult{message_id, accepted, raw}` and `status(string $messageId)`.
+- Drivers via `SMS_DRIVER`: `revesms` (prod), `log` (local dev: writes to log, sends nothing), `fake` (tests).
+- `revesms`: `POST {REVESMS_BASE_URL}/sendtext` JSON `{apikey, secretkey, callerID, toUser, messageContent}`; status `POST {base}/getstatus` `{apikey, secretkey, messageid}`. Base default `https://smpp.revesms.com:7790`. Timeout 10 s, 2 retries on connection errors only (never retry an accepted send). Response parsed defensively: success when `Status == "0"` (string or int); keep `Message_ID`; anything else → `SmsSendFailed` with provider text logged (never the secret). Secrets never in URLs/query strings or logs.
+- Env: `SMS_DRIVER`, `REVESMS_BASE_URL`, `REVESMS_API_KEY`, `REVESMS_SECRET_KEY`, `REVESMS_CALLER_ID`.
+- `sms_messages` table (tenant_id nullable): to (masked in API output), purpose, provider_message_id, status, error, timestamps. Never store OTP plaintext in it (store template name only).
+
+### Phone format
+Accept `01XXXXXXXXX`, `8801XXXXXXXXX`, `+8801XXXXXXXXX` (BD mobile, operator prefixes 013–019). Store/send as `8801XXXXXXXXX`. `users.phone` unique, `users.phone_verified_at`.
+
+### OTP rules
+6 digits, `random_int`, stored hashed (`otp_codes`: phone, purpose, code_hash, attempts, expires_at, consumed_at). TTL 5 min, max 5 verify attempts then invalid, resend cooldown 60 s, max 5 sends / phone / hour, 20 / IP / hour. New send invalidates earlier unconsumed code for same phone+purpose. Constant-time compare. Text: `Your Store Plix code is {code}. Valid for 5 minutes. Do not share it.`
+
+### Endpoints
+- `POST /api/v1/auth/otp/send` `{phone, purpose: "verify_phone"|"login"|"reset_password"}` → 202 `{data:{expires_in:300, resend_in:60, dev_otp?:string}}`. `verify_phone` requires Bearer and the phone must equal the user's phone (or update it if unverified). For `login`/`reset_password` the response is identical whether or not the phone exists (no enumeration; only send when it exists). 429 `otp_rate_limited` with `retry_after`.
+- `POST /api/v1/auth/phone/verify` (Bearer) `{code}` → `{data:User}` with `phone_verified_at`.
+- `POST /api/v1/auth/login/otp` `{phone, code}` → `{data:AuthToken}` (same shape as password login). Wrong code → 422 `invalid_otp`.
+- `POST /api/v1/auth/reset-password/otp` `{phone, code, password, password_confirmation}` → 200 `{data:{message}}`; revokes all tokens.
+- Register: `phone` becomes **required** (BD mobile); after register the dashboard goes to Verify phone (02). Unverified phone does not block the dashboard in Phase 2, but a banner nags.
+
+### Dev mode dummy OTP
+`dev_otp` is included **only when** `app()->environment('local')` **and** `SMS_DRIVER=log`. Test proves it is absent when env is `production` or driver is `revesms`. Dashboards render it on the OTP form as a visible yellow "Dev mode — your code is 123456" hint (and an "Autofill" link) when present; nothing otherwise. The hint also requires `import.meta.env.DEV` on the client.
+
+### UI (Figma)
+Verify phone 02 `46:8705` / M2 `53:831`; SMS sign-in L2 `57:1050` (enable the tab); Forgot password L3 `57:1198` gains the SMS flow (phone → code → new password), keeping the email link flow as the alternative.
+
+### Types (orchestrator applies)
+`User.phone_verified_at: string|null`; `OtpPurpose`; `SendOtpInput`, `SendOtpResponse{expires_in, resend_in, dev_otp?}`, `VerifyPhoneInput{code}`, `OtpLoginInput{phone, code}`, `OtpResetPasswordInput`.
+
+## PO confirmations (2026-11-21)
+1. Plans & trial (Free / Starter / Growth, 14-day Starter trial → Free): **confirmed**.
+2. Roles Owner / Manager / Staff in Phase 2; Order staff / Packer / permission matrix / SMS invites in Phase 8: **confirmed**.
+3. `business_categories` = multi-select of 6 fixed codes: **confirmed**.
+4. Rate-limit responses (429, incl. `otp_rate_limited`): `{error:{code, message, retry_after:<int seconds>}}` at the root of `error`, plus the `Retry-After` header.

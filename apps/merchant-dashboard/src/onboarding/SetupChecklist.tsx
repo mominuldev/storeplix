@@ -1,0 +1,66 @@
+import { ChecklistItem, ProgressBar, type ChecklistState } from '@storeplix/ui';
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router';
+import { useAuth } from '../auth/AuthProvider';
+import { api } from '../lib/api';
+import { can } from '../lib/permissions';
+import { settingsKey } from '../settings/schema';
+import { useTenantStore } from '../stores/useTenantStore';
+
+interface Item {
+  key: string;
+  title: string;
+  hint: string;
+  state: ChecklistState;
+  to?: string;
+}
+
+/**
+ * Task 2.9 setup checklist (Checklist item 45:8102). Resumable: every state is derived from server data
+ * (store, settings, staff), so it picks up where the merchant left off on any device. Later-phase steps are locked.
+ */
+export function SetupChecklist() {
+  const navigate = useNavigate();
+  const { activeTenant } = useAuth();
+  const store = useTenantStore().data;
+  const manage = can.manageStaff(activeTenant?.role);
+  const settings = useQuery({ queryKey: settingsKey(store?.id), queryFn: () => api.stores.getSettings(store!.id), enabled: !!store, retry: false });
+  const staff = useQuery({ queryKey: ['staff', activeTenant?.id], queryFn: () => api.staff.list(), enabled: manage, retry: false });
+
+  if (!store || settings.isPending) return null;
+
+  const brandingDone = !!settings.data?.branding.logo && !!settings.data?.contact.phone;
+  const teamDone = (staff.data?.data.length ?? 0) > 1;
+  const items: Item[] = [
+    { key: 'name', title: 'Name your shop', hint: 'Name, link & category', state: 'done' },
+    { key: 'brand', title: 'Add logo & contact', hint: 'Logo plus a phone customers can call', state: brandingDone ? 'done' : 'todo', to: '/settings/store' },
+    ...(manage ? [{ key: 'team', title: 'Invite your team', hint: 'Managers and staff get their own sign-in', state: (teamDone ? 'done' : 'todo') as ChecklistState, to: '/staff' }] : []),
+    { key: 'theme', title: 'Pick a theme', hint: 'Look & brand colour', state: 'locked' },
+    { key: 'products', title: 'Add products', hint: 'Your first items', state: 'locked' },
+    { key: 'delivery', title: 'Delivery', hint: 'Zones & courier', state: 'locked' },
+    { key: 'paid', title: 'Get paid', hint: 'COD & gateways', state: 'locked' },
+    { key: 'live', title: 'Go live', hint: 'Publish your shop', state: 'locked' },
+  ];
+  const done = items.filter((i) => i.state === 'done').length;
+
+  return (
+    <section aria-label="Setup checklist" className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-6 shadow-elevation-1">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-body-lg font-medium text-text-primary">Finish setting up {store.name}</h2>
+          <span className="text-caption font-medium text-text-secondary">
+            {done} of {items.length} done
+          </span>
+        </div>
+        <ProgressBar value={done / items.length} label="Setup progress" />
+      </div>
+      <ul className="grid gap-2 md:grid-cols-2">
+        {items.map((i) => (
+          <li key={i.key}>
+            <ChecklistItem title={i.title} hint={i.hint} state={i.state} onSelect={i.to ? () => navigate(i.to!) : undefined} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

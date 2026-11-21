@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import type { ThemeStore } from '../types';
 import type { ModernCommerceSettings } from './schema';
-import { Icon, type IconName } from './components/icon';
+import { ContactList, SocialLinksRow } from './components/contact';
+import type { ThemeContact } from '../types';
 import { StoreLogo } from './components/store-logo';
 
-interface FooterProps {
+interface FooterProps extends ThemeContact {
   store: ThemeStore;
   settings: ModernCommerceSettings;
   description: string | null;
@@ -20,12 +21,6 @@ const HELP_LINKS = [
 const STORE_LINKS = [
   { label: 'Our story', href: '/pages/about' },
   { label: 'Journal', href: '/blog' },
-];
-
-const SOCIAL: Array<{ key: 'facebook' | 'instagram' | 'youtube'; label: string; icon: IconName }> = [
-  { key: 'facebook', label: 'Facebook', icon: 'facebook' },
-  { key: 'instagram', label: 'Instagram', icon: 'instagram' },
-  { key: 'youtube', label: 'YouTube', icon: 'youtube' },
 ];
 
 function Column({ title, links }: { title: string; links: Array<{ label: string; href: string }> }) {
@@ -46,9 +41,8 @@ function Column({ title, links }: { title: string; links: Array<{ label: string;
 }
 
 /** Figma "Site Footer/Desktop" (1:10700) / "Site Footer/Mobile" (1:10765). */
-export function Footer({ store, settings, description }: FooterProps) {
+export function Footer({ store, settings, description, contact, social }: FooterProps) {
   const tagline = settings.footerTagline ?? description;
-  const socials = SOCIAL.filter((s) => settings.social[s.key]);
   const year = new Date().getFullYear();
 
   return (
@@ -58,23 +52,8 @@ export function Footer({ store, settings, description }: FooterProps) {
           <div className="flex flex-col items-start gap-5 lg:w-[360px] lg:shrink-0">
             <StoreLogo store={store} onDark />
             {tagline ? <p className="type-body-m opacity-80">{tagline}</p> : null}
-            {socials.length > 0 ? (
-              <ul className="flex items-center gap-3">
-                {socials.map((s) => (
-                  <li key={s.key}>
-                    <a
-                      href={settings.social[s.key]}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
-                      aria-label={s.label}
-                      className="flex size-11 items-center justify-center rounded-full border border-paper hover:bg-paper/10"
-                    >
-                      <Icon name={s.icon} />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <ContactList contact={contact} />
+            <SocialLinksRow social={social} />
           </div>
 
           <div className="grid grid-cols-2 gap-8 lg:flex lg:flex-1 lg:gap-12">

@@ -14,6 +14,23 @@ return [
     'platform_domain' => strtolower((string) env('PLATFORM_DOMAIN', 'storeplix.test')),
 
     /*
+    | Merchant dashboard base URL (links in reset-password / invitation emails).
+    */
+    'merchant_app_url' => env('MERCHANT_APP_URL', 'http://localhost:5173'),
+
+    /*
+    | Media storage (Phase 2 §1.5). MEDIA_URL overrides the disk's public base URL (e.g. CDN).
+    */
+    'media_disk' => env('MEDIA_DISK', 'public'),
+    'media_url' => env('MEDIA_URL'),
+
+    /*
+    | Storefront on-demand revalidation (QA M-1). Empty values make the job a no-op.
+    */
+    'revalidate_url' => env('STOREFRONT_REVALIDATE_URL'),
+    'revalidate_secret' => env('REVALIDATE_SECRET'),
+
+    /*
     | Shared secret the storefront app must send as X-Storefront-Key.
     | An empty value means every storefront request is rejected (fail closed).
     */
@@ -34,6 +51,13 @@ return [
         'docs', 'blog', 'billing', 'account', 'accounts', 'auth', 'login', 'signup', 'register',
         'storeplix', 'super-admin', 'superadmin', 'staging', 'dev', 'test', 'demo-admin',
     ],
+
+    /*
+    | Business category codes (BUSINESS_CATEGORIES in @storeplix/types).
+    */
+    'business_categories' => ['fashion', 'beauty', 'kids', 'food_grocery', 'electronics', 'home'],
+
+    'bd_divisions' => ['Barishal', 'Chattogram', 'Dhaka', 'Khulna', 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet'],
 
     /*
     | Default theme configuration applied to every new store (ThemeConfig in @storeplix/types).

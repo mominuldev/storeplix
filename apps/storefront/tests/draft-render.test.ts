@@ -20,7 +20,12 @@ function makeStore(status: 'active' | 'draft', mode: StoreMode): CurrentStore {
     theme,
     themeConfig,
     config: {
-      store: { id: '01J', name: 'Demo Store', slug: 'demo', status, currency: 'BDT', logo_url: null, favicon_url: null },
+      store: {
+        id: '01J', name: 'Demo Store', slug: 'demo', status, currency: 'BDT', logo_url: null, favicon_url: null,
+        icons: { apple_touch: null, icon_192: null, icon_512: null },
+      },
+      contact: { phone: null, email: null, whatsapp: null, support_hours: null },
+      social: { facebook: null, instagram: null, youtube: null },
       preview: mode === 'preview',
       theme: undefined,
       seo: { title: 'Demo Store', description: 'Desc' },
@@ -80,6 +85,20 @@ describe('preview', () => {
   it('labels previews of an already-active store as preview mode', async () => {
     current = makeStore('active', 'preview');
     expect(await render()).toContain('Preview mode');
+  });
+});
+
+describe('icons metadata', () => {
+  it('uses the store favicon/apple/manifest icons, else the platform favicon', async () => {
+    current = makeStore('active', 'live');
+    expect((await generateMetadata()).icons).toEqual({ icon: [{ url: '/platform/storeplix-favicon.svg', type: 'image/svg+xml' }] });
+    expect((await generateMetadata()).manifest).toBeUndefined();
+
+    current.config.store.favicon_url = 'https://cdn.storeplix.com/f.png';
+    current.config.store.icons = { apple_touch: 'https://cdn.storeplix.com/a.png', icon_192: 'https://cdn.storeplix.com/i.png', icon_512: null };
+    const meta = await generateMetadata();
+    expect(meta.icons).toMatchObject({ icon: [{ url: 'https://cdn.storeplix.com/f.png', sizes: '32x32' }], apple: [{ sizes: '180x180' }] });
+    expect(meta.manifest).toBe('/manifest.webmanifest');
   });
 });
 

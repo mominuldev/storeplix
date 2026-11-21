@@ -48,3 +48,43 @@ describe('onboarding components', () => {
     expect(screen.getByText('Name your shop').closest('[aria-current]')).toHaveAttribute('aria-current', 'step');
   });
 });
+
+import { fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { ChecklistItem, OtpInput, Toggle } from '../index';
+
+function OtpHarness({ onDone }: { onDone: (v: string) => void }) {
+  const [v, setV] = useState('');
+  return (
+    <OtpInput
+      value={v}
+      onChange={(next) => {
+        setV(next);
+        onDone(next);
+      }}
+    />
+  );
+}
+
+describe('phase 2 components', () => {
+  it('OtpInput accepts a pasted code across boxes and uses the numeric keypad', () => {
+    let last = '';
+    render(<OtpHarness onDone={(v) => (last = v)} />);
+    const first = screen.getByLabelText('Verification code digit 1');
+    expect(first).toHaveAttribute('inputmode', 'numeric');
+    expect(first).toHaveAttribute('autocomplete', 'one-time-code');
+    fireEvent.paste(first, { clipboardData: { getData: () => '12-34 56' } });
+    expect(last).toBe('123456');
+    expect(screen.getByLabelText('Verification code digit 6')).toHaveValue('6');
+  });
+
+  it('Toggle is a switch', () => {
+    render(<Toggle checked label="Use for returns" />);
+    expect(screen.getByRole('switch', { name: 'Use for returns' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('ChecklistItem shows locked items as coming soon', () => {
+    render(<ChecklistItem title="Pick a theme" state="locked" />);
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+  });
+});

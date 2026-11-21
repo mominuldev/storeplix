@@ -42,6 +42,7 @@ curl -X POST http://demo.localhost:3000/api/revalidate \
 | `REVALIDATE_SECRET` | Bearer secret for `POST /api/revalidate` (endpoint returns 503 when unset) |
 | `STOREFRONT_CONFIG_REVALIDATE` | Config cache TTL in seconds (default 60) |
 | `TRUSTED_PROXY` | `true` only behind our own proxy that overwrites `X-Forwarded-Host` |
+| `STOREFRONT_MEDIA_ORIGINS` | Exact media origins (e.g. `http://localhost:8000,https://cdn.storeplix.com`) for `next/image` remotePatterns — read at **build** time; also the only origins where http logo/icon URLs are accepted |
 | `STOREFRONT_LOCAL_PORT` | Port used in canonical URLs for `*.localhost` / `*.test` hosts (default 3000) |
 
 ## How it works

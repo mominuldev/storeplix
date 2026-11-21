@@ -1,0 +1,12 @@
+<?php
+
+namespace App\Domain\Billing;
+
+/** LimitKey in @storeplix/types. */
+enum Limit: string
+{
+    case OrdersPerMonth = 'orders_per_month';
+    case StaffSeats = 'staff_seats';
+    case Products = 'products';
+    case CourierConnections = 'courier_connections';
+}

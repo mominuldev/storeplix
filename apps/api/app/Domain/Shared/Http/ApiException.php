@@ -18,7 +18,8 @@ class ApiException extends HttpException
         public readonly string $errorCode,
         string $message,
         public readonly ?array $details = null,
+        public readonly ?int $retryAfter = null,
     ) {
-        parent::__construct($status, $message);
+        parent::__construct($status, $message, null, $retryAfter !== null ? ['Retry-After' => (string) $retryAfter] : []);
     }
 }

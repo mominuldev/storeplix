@@ -23,7 +23,7 @@ class StoreProvisioner
     ) {}
 
     /**
-     * @param  array{name: string, slug: string, country?: string, currency?: string, business_category?: string|null, status?: string}  $data
+     * @param  array{name: string, slug: string, country?: string, currency?: string, business_categories?: list<string>, name_bn?: string|null, timezone?: string, status?: string}  $data
      * @param  list<string>  $extraPlatformHosts  additional active platform hostnames (e.g. dev aliases)
      */
     /**
@@ -63,7 +63,9 @@ class StoreProvisioner
                 'status' => $data['status'] ?? Store::STATUS_DRAFT,
                 'country' => strtoupper($data['country'] ?? 'BD'),
                 'currency' => strtoupper($data['currency'] ?? 'BDT'),
-                'business_category' => $data['business_category'] ?? null,
+                'business_categories' => array_values($data['business_categories'] ?? []),
+                'name_bn' => $data['name_bn'] ?? null,
+                'timezone' => $data['timezone'] ?? 'Asia/Dhaka',
             ]);
 
             $hosts = array_values(array_unique([

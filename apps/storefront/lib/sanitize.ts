@@ -1,3 +1,5 @@
+import { isAllowedMediaOrigin } from './media';
+
 /**
  * Sanitizers for merchant-supplied theme values. Merchant data is rendered as data only:
  * never as raw HTML, CSS text or script. Anything not matching a strict allowlist is dropped.
@@ -79,10 +81,27 @@ export function sanitizeHref(value: unknown): string | null {
   }
 }
 
-/** Safe image source: https URL or a path under our own public theme assets. */
+/**
+ * Safe image source: https URL, a path under our own public theme assets, or an http URL on a
+ * configured media origin (STOREFRONT_MEDIA_ORIGINS, e.g. the local API's /storage).
+ */
 export function sanitizeImageUrl(value: unknown): string | null {
+  if (typeof value === 'string' && value.startsWith('http://')) {
+    return isAllowedMediaOrigin(value) && sanitizeHrefAllowHttp(value) ? new URL(value).toString() : null;
+  }
   const href = sanitizeHref(value);
   if (!href) return null;
   if (href.startsWith('/')) return href.startsWith('/themes/') && !href.includes('..') ? href : null;
   return href;
+}
+
+function sanitizeHrefAllowHttp(v: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (v.length > 2048 || /[\u0000-\u001f\u007f\\\s]/.test(v)) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' && !u.username && !u.password;
+  } catch {
+    return false;
+  }
 }

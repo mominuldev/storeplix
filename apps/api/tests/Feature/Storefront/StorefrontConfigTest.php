@@ -38,7 +38,9 @@ class StorefrontConfigTest extends TestCase
         $response = $this->config('demo.storeplix.test')->assertOk();
 
         $response->assertExactJsonStructure(['data' => [
-            'store' => ['id', 'name', 'slug', 'status', 'currency', 'logo_url', 'favicon_url'],
+            'store' => ['id', 'name', 'slug', 'status', 'currency', 'logo_url', 'favicon_url', 'icons' => ['apple_touch', 'icon_192', 'icon_512']],
+            'contact' => ['phone', 'email', 'whatsapp', 'support_hours'],
+            'social' => ['facebook', 'instagram', 'youtube'],
             'preview',
             'theme' => ['theme', 'version', 'settings' => ['primaryColor', 'secondaryColor', 'fontFamily'], 'sections' => ['*' => ['type', 'enabled']]],
             'seo' => ['title', 'description'],

@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, LifeBuoy } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { mainNav, type NavEntry } from './nav';
+import { PlanCard } from '../plan/PlanCard';
 import { TenantSwitcher } from './TenantSwitcher';
 
 // Figma Merchant Admin – Desktop · Sidebar 10:601 — 256 wide (72 collapsed), surface-card,
@@ -29,6 +30,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       <NavLink to="/help" className="rounded-md outline-none focus-visible:shadow-focus" title={collapsed ? 'Help & support' : undefined}>
         {({ isActive }) => <NavItem icon={<LifeBuoy />} label="Help & support" active={isActive} collapsed={collapsed} />}
       </NavLink>
+      <PlanCard collapsed={collapsed} />
     </aside>
   );
 }

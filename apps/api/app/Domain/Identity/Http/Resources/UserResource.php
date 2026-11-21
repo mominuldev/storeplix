@@ -7,8 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * User in @storeplix/types, plus the additive field
- * `tenants: [{ id, name, role }]` (memberships the client can send as X-Tenant-Id).
+ * User in @storeplix/types (+ `tenants: TenantMembership[]` when loaded).
  *
  * @mixin User
  */
@@ -21,6 +20,8 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
+            'phone_verified_at' => $this->phone_verified_at?->toIso8601ZuluString(),
+            'password_changed_at' => $this->password_changed_at?->toIso8601ZuluString(),
             'created_at' => $this->created_at?->toIso8601ZuluString(),
             'tenants' => $this->whenLoaded('tenants', fn () => $this->tenants
                 ->sortBy('pivot.created_at')

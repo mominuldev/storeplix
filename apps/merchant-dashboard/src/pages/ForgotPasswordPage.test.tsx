@@ -9,6 +9,7 @@ describe('ForgotPasswordPage (L3)', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     renderApp(<ForgotPasswordPage />, { route: '/forgot-password' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Email link' }));
     await userEvent.type(screen.getByLabelText('Email'), 'nope');
     await userEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
     expect(await screen.findByText('Enter a valid email address')).toBeInTheDocument();
@@ -18,6 +19,7 @@ describe('ForgotPasswordPage (L3)', () => {
   it('posts the email and confirms without revealing whether the account exists', async () => {
     const api = mockApi({ 'POST /auth/forgot-password': new Response(null, { status: 202 }) });
     renderApp(<ForgotPasswordPage />, { route: '/forgot-password' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Email link' }));
     await userEvent.type(screen.getByLabelText('Email'), 'rahim@shop.com');
     await userEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
     expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();

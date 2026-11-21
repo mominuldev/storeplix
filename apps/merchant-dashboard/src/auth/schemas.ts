@@ -1,4 +1,6 @@
+import { BUSINESS_CATEGORIES, type BusinessCategory } from '@storeplix/types';
 import { z } from 'zod';
+import { normalizeBdPhone } from '../lib/phone';
 
 export const loginSchema = z.object({
   email: z.email('Enter a valid email address'),
@@ -9,29 +11,61 @@ export type LoginValues = z.infer<typeof loginSchema>;
 export const forgotPasswordSchema = z.object({ email: z.email('Enter a valid email address') });
 export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
 
-// Bangladesh mobile: 01XXXXXXXXX (11 digits); "+88" prefix is shown in the field.
+/** BD mobile → normalized `8801XXXXXXXXX` (Addendum A). */
 export const bdMobile = z
   .string()
   .trim()
-  .transform((v) => v.replace(/[\s-]/g, '').replace(/^\+?88/, ''))
-  .pipe(z.string().regex(/^01[3-9]\d{8}$/, 'Enter an 11-digit mobile number, e.g. 01712345678'));
+  .min(1, 'Enter your mobile number')
+  .refine((v) => normalizeBdPhone(v) !== null, 'Enter a Bangladeshi mobile number, e.g. 01712-345678')
+  .transform((v) => normalizeBdPhone(v)!);
+
+/** Contract §1.1 password rule: 8–128 chars with letters and numbers. */
+export const newPassword = z
+  .string()
+  .min(8, 'Use at least 8 characters')
+  .max(128, 'Use at most 128 characters')
+  .regex(/[A-Za-z]/, 'Include at least one letter')
+  .regex(/\d/, 'Include at least one number');
+
+const confirmed = <T extends { password: string; password_confirmation: string }>(v: T) => v.password === v.password_confirmation;
+const mismatch = { path: ['password_confirmation'], message: 'Passwords do not match' };
 
 export const registerSchema = z
   .object({
     name: z.string().trim().min(2, 'Enter your full name'),
     email: z.email('Enter a valid email address'),
     phone: bdMobile,
-    password: z.string().min(8, 'Use at least 8 characters'),
+    password: newPassword,
     password_confirmation: z.string(),
   })
-  .refine((v) => v.password === v.password_confirmation, {
-    path: ['password_confirmation'],
-    message: 'Passwords do not match',
-  });
+  .refine(confirmed, mismatch);
 export type RegisterValues = z.infer<typeof registerSchema>;
 export type RegisterFormInput = z.input<typeof registerSchema>;
 
-export const businessCategories = ['Fashion', 'Beauty', 'Kids', 'Food & grocery', 'Electronics', 'Home'] as const;
+export const resetPasswordSchema = z.object({ password: newPassword, password_confirmation: z.string() }).refine(confirmed, mismatch);
+export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
+
+export const otpCode = z.string().regex(/^\d{6}$/, 'Enter the 6-digit code');
+
+export const changePasswordSchema = z
+  .object({ current_password: z.string().min(1, 'Enter your current password'), password: newPassword, password_confirmation: z.string() })
+  .refine(confirmed, mismatch);
+export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
+
+export const acceptInviteSchema = z
+  .object({ name: z.string().trim().min(2, 'Enter your full name'), phone: bdMobile, password: newPassword, password_confirmation: z.string() })
+  .refine(confirmed, mismatch);
+export type AcceptInviteValues = z.infer<typeof acceptInviteSchema>;
+export type AcceptInviteInput = z.input<typeof acceptInviteSchema>;
+
+export const inviteSchema = z.object({
+  name: z.string().trim().max(120),
+  email: z.email('Enter a valid email address'),
+  role: z.enum(['admin', 'staff']),
+});
+export type InviteValues = z.infer<typeof inviteSchema>;
+
+export const businessCategoryCodes = BUSINESS_CATEGORIES.map((c) => c.code) as [BusinessCategory, ...BusinessCategory[]];
 
 export function slugify(value: string): string {
   return value
@@ -50,6 +84,6 @@ export const nameShopSchema = z.object({
     .min(3, 'Use at least 3 characters')
     .max(40, 'Use at most 40 characters')
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and dashes'),
-  categories: z.array(z.enum(businessCategories)),
+  categories: z.array(z.enum(businessCategoryCodes)).max(6),
 });
 export type NameShopValues = z.infer<typeof nameShopSchema>;

@@ -45,15 +45,9 @@ export const modernCommerceSettingsSchema = settingsObject({
   fontFamily: fontField('Instrument Sans'),
   headingFontFamily: fontField('Fraunces'),
   announcement: textField('Cash on delivery nationwide', 120),
-  hotline: optionalTextField(60),
   navigation: navLinks(DEFAULT_NAV, 8),
   promoLink: z.object({ label: z.string().trim().min(1).max(40), href: hrefField('/') }).optional().catch(undefined),
   footerTagline: optionalTextField(240),
-  social: settingsObject({
-    facebook: optionalHrefField(),
-    instagram: optionalHrefField(),
-    youtube: optionalHrefField(),
-  }),
   paymentMethods: z.array(z.string().trim().min(1).max(30)).max(8).catch(DEFAULT_PAYMENT_METHODS),
 });
 export type ModernCommerceSettings = z.infer<typeof modernCommerceSettingsSchema>;

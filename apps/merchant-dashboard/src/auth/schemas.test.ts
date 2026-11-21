@@ -24,6 +24,9 @@ describe('auth schemas', () => {
 
   it('validates phone format when provided', () => {
     expect(registerSchema.safeParse({ ...valid, phone: 'abc' }).success).toBe(false);
-    expect(registerSchema.safeParse({ ...valid, phone: '+8801712-345678' }).data?.phone).toBe('01712345678');
+    expect(registerSchema.safeParse({ ...valid, phone: '+8801712-345678' }).data?.phone).toBe('8801712345678');
+    expect(registerSchema.safeParse({ ...valid, phone: '8801712345678' }).data?.phone).toBe('8801712345678');
+    expect(registerSchema.safeParse({ ...valid, phone: '01212345678' }).success).toBe(false);
+    expect(registerSchema.safeParse({ ...valid, phone: '' }).success).toBe(false);
   });
 });

@@ -7,13 +7,16 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details?: ApiErrorDetails;
+  /** Seconds until retry is allowed (429 `otp_rate_limited`, `rate_limited`). */
+  readonly retryAfter?: number;
 
-  constructor(status: number, code: string, message: string, details?: ApiErrorDetails) {
+  constructor(status: number, code: string, message: string, details?: ApiErrorDetails, retryAfter?: number) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.retryAfter = retryAfter;
   }
 
   get isUnauthorized(): boolean {

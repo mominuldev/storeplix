@@ -1,13 +1,14 @@
-import type { ThemeStore } from '../types';
+import type { ThemeContact, ThemeStore } from '../types';
 import type { ModernCommerceSettings } from './schema';
 import { StoreLogo } from './components/store-logo';
 import { Icon } from './components/icon';
+import { ContactList, SocialLinksRow } from './components/contact';
 
 /**
  * Coming soon page for draft stores. No Figma frame exists; composed from modern-commerce tokens
  * (canvas, framed card with the hero's hard offset shadow, eyebrow pill, Display/M + italic accent).
  */
-export function ComingSoon({ store }: { store: ThemeStore; settings: ModernCommerceSettings }) {
+export function ComingSoon({ store, contact, social }: { store: ThemeStore; settings: ModernCommerceSettings } & ThemeContact) {
   return (
     <main className="theme-root flex min-h-dvh flex-col items-center justify-center gap-10 px-4 py-16">
       <StoreLogo store={store} />
@@ -26,6 +27,8 @@ export function ComingSoon({ store }: { store: ThemeStore; settings: ModernComme
         <p className="type-body-m text-ink-secondary">
           {store.name} is getting its shelves ready. Please check back soon.
         </p>
+        <ContactList contact={contact} className="items-center text-ink" />
+        <SocialLinksRow social={social} tone="light" />
       </section>
       <p className="type-body-s text-ink-muted">Powered by Store Plix</p>
     </main>

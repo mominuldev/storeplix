@@ -37,9 +37,4 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
   });
 
-  it('keeps SMS sign-in disabled until it ships', () => {
-    renderApp(<LoginPage />, { route: '/login' });
-    expect(screen.getByRole('tab', { name: /SMS code/ })).toBeDisabled();
-    expect(screen.getByRole('tab', { name: 'Password' })).toHaveAttribute('aria-selected', 'true');
-  });
 });

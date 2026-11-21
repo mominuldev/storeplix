@@ -3,7 +3,7 @@ import { Button, Input, ProgressBar } from '@storeplix/ui';
 import { Check, Eye, EyeOff, Star } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
 import { registerSchema, type RegisterFormInput, type RegisterValues } from '../auth/schemas';
@@ -15,10 +15,11 @@ const BANGLA = '৫ মিনিটে আপনার অনলাইন দো
 const perks = ['Free plan', 'No card needed'];
 
 // Figma Merchant Onboarding · 01 Sign up 46:8583 (desktop) / M1 53:758 (mobile).
-// Figma collects mobile + name and verifies by SMS (02, later phase). The Phase 1 register contract
-// needs email + password, so those fields are added below the Figma fields; no OTP is faked.
+// Mobile (required, Addendum A) + name as in Figma; the register contract also needs email + password.
+// After sign-up the user lands on Verify phone (02 46:8705).
 export function RegisterPage() {
   const { register: registerAccount } = useAuth();
+  const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const {
@@ -34,7 +35,8 @@ export function RegisterPage() {
   const onSubmit = handleSubmit(async ({ phone, ...values }) => {
     setFormError(null);
     try {
-      await registerAccount({ ...values, phone: `+88${phone}` });
+      await registerAccount({ ...values, phone });
+      navigate('/verify-phone', { replace: true });
     } catch (error) {
       setFormError(applyApiErrors(error, setError, ['name', 'email', 'phone', 'password', 'password_confirmation']));
     }
@@ -70,7 +72,7 @@ export function RegisterPage() {
         <FormTitle
           className="hidden lg:flex"
           title="Create your free shop"
-          subtitle="Start with your mobile number — you’ll use your email and password to sign in."
+          subtitle="Start with your mobile number — we’ll text you a code to verify it’s you."
         />
         <div className="flex flex-col gap-1.5 lg:hidden">
           <h2 className="text-heading-24 text-text-primary">Create your free shop</h2>
@@ -95,7 +97,7 @@ export function RegisterPage() {
                 +88
               </>
             }
-            hint="We’ll use it for order updates. We never share your number."
+            hint="We’ll send a 6-digit code by SMS. We never share your number."
             error={errors.phone?.message}
             {...register('phone')}
           />

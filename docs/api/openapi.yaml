@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.2.0-phase2
+  version: 1.2.1-phase2
   description: |
     Phase 1, 1.1 (D1–D4) and Phase 2 endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md and
     docs/development/PHASE-2-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -120,14 +120,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokenResponse'
-        '401':
-          description: Invalid credentials (code `invalid_credentials`)
+        '422':
+          description: Bad credentials → `validation_failed` with `details.email`; or other validation errors
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
   /auth/forgot-password:
@@ -216,6 +214,135 @@ paths:
           description: Current token revoked
         '401':
           $ref: '#/components/responses/Unauthenticated'
+  /auth/otp/send:
+    post:
+      tags:
+      - auth
+      summary: Send OTP
+      operationId: sendOtp
+      description: |
+        Sends a 6-digit code by SMS (TTL 5 min, resend cooldown 60 s; per-phone and per-IP hourly caps → 429 `otp_rate_limited`).
+        `verify_phone` requires Bearer; the phone must be the user's, or replaces it while still unverified (422 otherwise).
+        `login` / `reset_password`: identical 202 whether or not the phone is registered (a code is only sent when it is).
+      security:
+      - {}
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendOtpInput'
+      responses:
+        '202':
+          description: Code sent (or silently not, see above)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SendOtpResponse'
+        '401':
+          description: '`unauthenticated` (purpose verify_phone without Bearer)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/phone/verify:
+    post:
+      tags:
+      - auth
+      summary: Verify phone
+      operationId: verifyPhone
+      description: Confirms the user's phone with a `verify_phone` code; sets `phone_verified_at`.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPhoneInput'
+      responses:
+        '200':
+          description: Verified user
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/InvalidOtp'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/login/otp:
+    post:
+      tags:
+      - auth
+      summary: Login with OTP
+      operationId: loginWithOtp
+      description: SMS sign-in with a `login` code. Same response shape as password login; marks the phone verified.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpLoginInput'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '422':
+          $ref: '#/components/responses/InvalidOtp'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/reset-password/otp:
+    post:
+      tags:
+      - auth
+      summary: Reset password with OTP
+      operationId: resetPasswordWithOtp
+      description: Resets the password with a `reset_password` code; revokes all tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpResetPasswordInput'
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MessageResponse'
+        '422':
+          $ref: '#/components/responses/InvalidOtp'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/me:
     get:
       tags:
@@ -1296,15 +1423,23 @@ components:
           schema:
             $ref: '#/components/schemas/ApiError'
     RateLimited:
-      description: Too many requests (code `rate_limited`); see Retry-After header
+      description: Too many requests. Body `{error:{code, message, retry_after}}` (code `rate_limited`, or `otp_rate_limited`
+        for OTP send limits) plus a `Retry-After` header with the same number of seconds. Auth routes use per-route limiters;
+        the exact limits are listed in apps/api/README.md (not duplicated here).
       headers:
         Retry-After:
           schema:
             type: integer
+          description: Seconds to wait (same as error.retry_after).
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: otp_rate_limited
+              message: Too many code requests. Please wait before trying again.
+              retry_after: 42
     TenantRequired:
       description: X-Tenant-Id missing (code `tenant_required`)
       content:
@@ -1336,6 +1471,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/AuthTokenResponse'
+    InvalidOtp:
+      description: Wrong, expired, consumed or over-attempted code, or unknown phone (code `invalid_otp`, no further detail)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
   schemas:
     Ulid:
       type: string
@@ -1363,6 +1504,9 @@ components:
                 type: array
                 items:
                   type: string
+            retry_after:
+              type: integer
+              description: Seconds until retry is allowed. Present on every 429 (mirrors the Retry-After header).
     PaginationMeta:
       type: object
       required:
@@ -1405,6 +1549,7 @@ components:
       - phone
       - created_at
       - password_changed_at
+      - phone_verified_at
       properties:
         id:
           $ref: '#/components/schemas/Ulid'
@@ -1430,6 +1575,11 @@ components:
           items:
             $ref: '#/components/schemas/TenantMembership'
           description: Present on /auth/me and token responses.
+        phone_verified_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
     AuthToken:
       type: object
       required:
@@ -2668,3 +2818,82 @@ components:
         created_at:
           type: string
           format: date-time
+    OtpPurpose:
+      type: string
+      enum:
+      - verify_phone
+      - login
+      - reset_password
+    SendOtpInput:
+      type: object
+      required:
+      - phone
+      - purpose
+      properties:
+        phone:
+          type: string
+          description: 'BD mobile: 01XXXXXXXXX, 8801XXXXXXXXX or +8801XXXXXXXXX (operator prefix 013–019); normalized to 8801XXXXXXXXX.'
+          example: 01712345678
+        purpose:
+          $ref: '#/components/schemas/OtpPurpose'
+    SendOtpResponse:
+      type: object
+      required:
+      - expires_in
+      - resend_in
+      properties:
+        expires_in:
+          type: integer
+          example: 300
+        resend_in:
+          type: integer
+          example: 60
+        dev_otp:
+          type: string
+          description: 'LOCAL DEV ONLY: present only when APP_ENV=local AND SMS_DRIVER=log. Never present in staging/production
+            or with the revesms driver. Clients must ignore it unless running a dev build.'
+    VerifyPhoneInput:
+      type: object
+      required:
+      - code
+      properties:
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
+    OtpLoginInput:
+      type: object
+      required:
+      - phone
+      - code
+      properties:
+        phone:
+          type: string
+          description: 'BD mobile: 01XXXXXXXXX, 8801XXXXXXXXX or +8801XXXXXXXXX (operator prefix 013–019); normalized to 8801XXXXXXXXX.'
+          example: 01712345678
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
+    OtpResetPasswordInput:
+      type: object
+      required:
+      - phone
+      - code
+      - password
+      - password_confirmation
+      properties:
+        phone:
+          type: string
+          description: 'BD mobile: 01XXXXXXXXX, 8801XXXXXXXXX or +8801XXXXXXXXX (operator prefix 013–019); normalized to 8801XXXXXXXXX.'
+          example: 01712345678
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        password_confirmation:
+          type: string

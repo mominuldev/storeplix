@@ -1,4 +1,5 @@
-import { LogOut } from 'lucide-react';
+import { LogOut, UserRound } from 'lucide-react';
+import { Link } from 'react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -41,6 +42,9 @@ export function UserMenu() {
             <p className="truncate text-body font-semibold text-text-primary">{user?.name}</p>
             <p className="truncate text-caption text-text-muted">{user?.email}</p>
           </div>
+          <Link to="/account" onClick={() => setOpen(false)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-body text-text-primary hover:bg-surface-subtle">
+            <UserRound className="size-4" aria-hidden /> Your account
+          </Link>
           <button
             type="button"
             onClick={() => void logout()}

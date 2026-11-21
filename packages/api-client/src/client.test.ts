@@ -48,7 +48,7 @@ describe('api-client', () => {
     const { client } = setup(
       jsonResponse(422, { error: { code: 'validation_failed', message: 'Invalid', details: { email: ['Taken'] } } }),
     );
-    const error = await client.auth.register({ name: 'a', email: 'a@b.co', password: 'p', password_confirmation: 'p' }).catch((e) => e);
+    const error = await client.auth.register({ name: 'a', email: 'a@b.co', password: 'p', password_confirmation: 'p', phone: '01712345678' }).catch((e) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 422, code: 'validation_failed', message: 'Invalid' });
     expect(error.isValidation).toBe(true);

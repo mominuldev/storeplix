@@ -1,7 +1,9 @@
 import { Badge, Card, CardBody, CardHeader, Spinner, StatTile, storeStatusTone } from '@storeplix/ui';
+import { BUSINESS_CATEGORIES } from '@storeplix/types';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider';
 import { PageHeader } from '../layout/PageHeader';
+import { SetupChecklist } from '../onboarding/SetupChecklist';
 import { api } from '../lib/api';
 import { PreviewStoreButton } from '../stores/PreviewStoreButton';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
@@ -26,6 +28,8 @@ export function DashboardPage() {
         subtitle={store ? `${store.name} · here is what is happening today.` : 'Welcome to Store Plix.'}
         actions={store && <PreviewStoreButton store={store} />}
       />
+
+      <SetupChecklist />
 
       <section aria-label="Overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
@@ -67,7 +71,7 @@ export function DashboardPage() {
                 ['Name', store.name],
                 ['Link', storeDomain(store)],
                 ['Currency', store.currency],
-                ['Category', store.business_category ?? '—'],
+                ['Category', store.business_categories.map((c) => BUSINESS_CATEGORIES.find((b) => b.code === c)?.label ?? c).join(', ') || '—'],
               ].map(([k, v]) => (
                 <div key={k} className="flex flex-col gap-1">
                   <dt className="text-caption text-text-muted">{k}</dt>

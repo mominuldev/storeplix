@@ -26,7 +26,8 @@ class StoreApiTest extends TestCase
         $response = $this->withHeaders($this->tenantHeaders($user, $tenant))->postJson('/api/v1/stores', [
             'name' => 'Rahim Fashion',
             'slug' => 'Rahim-Fashion',
-            'business_category' => 'fashion',
+            'business_categories' => ['fashion', 'kids'],
+            'name_bn' => 'রহিম ফ্যাশন',
             'country' => 'bd',
             'currency' => 'bdt',
         ]);
@@ -34,13 +35,15 @@ class StoreApiTest extends TestCase
         $response->assertCreated()
             ->assertExactJsonStructure(['data' => [
                 'id', 'tenant_id', 'name', 'slug', 'status', 'country', 'currency',
-                'business_category', 'primary_domain', 'created_at',
+                'business_categories', 'name_bn', 'timezone', 'primary_domain', 'created_at',
             ]])
             ->assertJsonPath('data.tenant_id', $tenant->id)
             ->assertJsonPath('data.slug', 'rahim-fashion')
             ->assertJsonPath('data.status', 'draft')
             ->assertJsonPath('data.country', 'BD')
             ->assertJsonPath('data.currency', 'BDT')
+            ->assertJsonPath('data.business_categories', ['fashion', 'kids'])
+            ->assertJsonPath('data.timezone', 'Asia/Dhaka')
             ->assertJsonPath('data.primary_domain', 'rahim-fashion.storeplix.test');
 
         $storeId = $response->json('data.id');

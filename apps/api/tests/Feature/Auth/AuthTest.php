@@ -13,22 +13,22 @@ class AuthTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const USER_KEYS = ['id', 'name', 'email', 'phone', 'created_at', 'tenants'];
+    private const USER_KEYS = ['id', 'name', 'email', 'phone', 'phone_verified_at', 'password_changed_at', 'created_at', 'tenants'];
 
     public function test_register_creates_user_tenant_and_owner_membership(): void
     {
         $response = $this->postJson('/api/v1/auth/register', [
             'name' => 'Rahim Uddin',
             'email' => 'Rahim@Example.com',
-            'password' => 'secret-pass',
-            'password_confirmation' => 'secret-pass',
-            'phone' => '+8801711111111',
+            'password' => 'secret-pass1',
+            'password_confirmation' => 'secret-pass1',
+            'phone' => '01711-111111',
         ]);
 
         $response->assertCreated()
             ->assertJsonStructure(['data' => ['token', 'expires_at', 'user' => self::USER_KEYS]])
             ->assertJsonPath('data.user.email', 'rahim@example.com')
-            ->assertJsonPath('data.user.phone', '+8801711111111')
+            ->assertJsonPath('data.user.phone', '8801711111111')
             ->assertJsonPath('data.user.tenants.0.role', 'owner')
             ->assertJsonMissingPath('data.user.password');
 
@@ -101,7 +101,10 @@ class AuthTest extends TestCase
 
         $this->postJson('/api/v1/auth/login', ['email' => 'x@example.com', 'password' => 'nope'])
             ->assertStatus(429)
-            ->assertJsonPath('error.code', 'too_many_requests');
+            ->assertJsonPath('error.code', 'rate_limited')
+            ->assertHeader('Retry-After')
+            ->assertJsonPath('error.retry_after', fn ($v) => is_int($v) && $v > 0 && $v <= 60)
+            ->assertJsonMissingPath('error.details');
     }
 
     public function test_login_returns_expires_at_and_token_expires_after_sanctum_expiration(): void

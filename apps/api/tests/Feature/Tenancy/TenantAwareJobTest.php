@@ -38,7 +38,9 @@ class TenantAwareJobTest extends TestCase
         });
 
         $payloadTenants = DB::table('jobs')->orderBy('id')->pluck('payload')
-            ->map(fn ($p) => json_decode($p, true)['tenant_id'] ?? null)->all();
+            ->map(fn ($p) => json_decode($p, true))
+            ->filter(fn ($p) => $p['displayName'] === RecordTenantJob::class)
+            ->map(fn ($p) => $p['tenant_id'] ?? null)->values()->all();
         $this->assertSame([$tenantA->id, $tenantB->id], $payloadTenants);
 
         $this->assertFalse($this->tenancy()->has());

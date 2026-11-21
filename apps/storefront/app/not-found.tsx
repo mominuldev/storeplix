@@ -11,13 +11,24 @@ export default async function NotFound() {
 
   if (store?.mode === 'coming_soon') {
     const { ComingSoon } = store.theme;
-    return <ComingSoon store={store.config.store} settings={store.themeConfig.settings} />;
+    return <ComingSoon
+        store={store.config.store}
+        settings={store.themeConfig.settings}
+        contact={store.config.contact}
+        social={store.config.social}
+      />;
   }
 
   if (store) {
     const { Layout } = store.theme;
     return (
-      <Layout store={store.config.store} settings={store.themeConfig.settings} description={store.config.seo.description}>
+      <Layout
+        store={store.config.store}
+        settings={store.themeConfig.settings}
+        description={store.config.seo.description}
+        contact={store.config.contact}
+        social={store.config.social}
+      >
         <section className="flex flex-col items-center gap-4 px-4 py-24 text-center">
           <p className="type-eyebrow text-accent-ink">404</p>
           <h1 className="type-display-m text-ink">Page not found</h1>

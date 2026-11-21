@@ -3,6 +3,7 @@
 namespace App\Domain\Tenancy\Models;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Tenancy\Events\TenantCreated;
 use Database\Factories\TenantFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,6 +29,9 @@ class Tenant extends Model
     protected $fillable = ['name', 'status'];
 
     protected $attributes = ['status' => self::STATUS_ACTIVE];
+
+    /** TenantCreated is dispatched synchronously (same transaction): starts the trial. */
+    protected $dispatchesEvents = ['created' => TenantCreated::class];
 
     public function users(): BelongsToMany
     {

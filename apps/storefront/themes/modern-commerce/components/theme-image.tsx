@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { isAllowedMediaOrigin } from '@/lib/media';
 
 interface ThemeImageProps {
   src: string;
@@ -9,9 +10,9 @@ interface ThemeImageProps {
 }
 
 /**
- * Fills its (relative) parent. Local theme assets are optimized by next/image; merchant/CDN
- * https URLs (already sanitized by the theme schema) are rendered unoptimized until the
- * media CDN host list is configured in next.config remotePatterns.
+ * Fills its (relative) parent. Local theme assets and URLs on configured media origins
+ * (STOREFRONT_MEDIA_ORIGINS -> next.config remotePatterns) are optimized by next/image; any other
+ * https URL (already sanitized) is rendered unoptimized.
  */
 export function ThemeImage({ src, alt, sizes, className = '', priority }: ThemeImageProps) {
   return (
@@ -21,7 +22,7 @@ export function ThemeImage({ src, alt, sizes, className = '', priority }: ThemeI
       fill
       sizes={sizes}
       priority={priority}
-      unoptimized={!src.startsWith('/')}
+      unoptimized={!src.startsWith('/') && !isAllowedMediaOrigin(src)}
       className={`object-cover ${className}`}
     />
   );

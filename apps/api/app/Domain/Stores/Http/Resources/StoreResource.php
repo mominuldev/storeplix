@@ -23,7 +23,9 @@ class StoreResource extends JsonResource
             'status' => $this->status,
             'country' => $this->country,
             'currency' => $this->currency,
-            'business_category' => $this->business_category,
+            'business_categories' => array_values($this->business_categories ?? []),
+            'name_bn' => $this->name_bn,
+            'timezone' => $this->timezone,
             'primary_domain' => $this->primaryDomain?->hostname,
             'created_at' => $this->created_at?->toIso8601ZuluString(),
         ];

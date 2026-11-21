@@ -83,7 +83,6 @@ describe('resolveThemeConfig', () => {
         fontFamily: 'Comic Sans"; } * { display:none',
         announcement: 12345,
         navigation: [{ label: 'Ok', href: '/ok' }, { label: 'XSS', href: 'javascript:alert(1)' }, 'junk'],
-        social: { facebook: 'javascript:alert(1)', instagram: 'https://instagram.com/demo' },
       },
     });
     const s = c.settings as ModernCommerceSettings;
@@ -95,8 +94,6 @@ describe('resolveThemeConfig', () => {
       { label: 'Ok', href: '/ok' },
       { label: 'XSS', href: '/' },
     ]);
-    expect(s.social.facebook).toBeUndefined();
-    expect(s.social.instagram).toBe('https://instagram.com/demo');
   });
 
   it('drops unknown and malformed sections, keeps valid ones', () => {

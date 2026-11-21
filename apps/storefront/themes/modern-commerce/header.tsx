@@ -3,10 +3,13 @@ import type { ThemeStore } from '../types';
 import type { ModernCommerceSettings } from './schema';
 import { Icon } from './components/icon';
 import { StoreLogo } from './components/store-logo';
+import type { StoreContact } from '@storeplix/types';
+import { telHref } from '@/lib/contact';
 
 interface HeaderProps {
   store: ThemeStore;
   settings: ModernCommerceSettings;
+  contact: StoreContact;
   /** From the cart API once it exists; hidden when 0. */
   cartCount?: number;
 }
@@ -50,18 +53,23 @@ function CartButton({ count }: { count: number }) {
 }
 
 /** Figma "Site Header/Desktop" (1:10645) and "Site Header/Mobile" (1:10751). */
-export function Header({ store, settings, cartCount = 0 }: HeaderProps) {
+export function Header({ store, settings, contact, cartCount = 0 }: HeaderProps) {
+  const tel = telHref(contact.phone);
   return (
     <header>
       {/* Announcement bar */}
       <div className="type-label-s bg-inverse text-paper">
         <div className="flex items-center justify-center gap-1.5 px-4 py-2 lg:justify-between lg:px-20 lg:py-2.5">
           <p className="hidden items-center gap-2 lg:flex">
-            {settings.hotline ? (
-              <>
+            {tel ? (
+              <a href={tel} className="flex items-center gap-2 hover:underline">
                 <Icon name="phone" />
-                {settings.hotline}
-              </>
+                {/* Figma: "Hotline 09XXX-XXXXXX · 9am–10pm" */}
+                Hotline {contact.phone}
+                {contact.support_hours ? ` · ${contact.support_hours}` : ''}
+              </a>
+            ) : contact.support_hours ? (
+              <span>{contact.support_hours}</span>
             ) : null}
           </p>
           <p className="flex items-center gap-1.5 lg:gap-2">

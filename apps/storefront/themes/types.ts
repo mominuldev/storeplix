@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { z } from 'zod';
+import type { SocialLinks, StoreContact } from '@storeplix/types';
 import type { RawStorefrontConfig } from '@/lib/storefront-api';
 
 /** Store data every theme component may read. Render-only; never includes secrets. */
@@ -37,7 +38,13 @@ export interface SectionProps<TSettings = Record<string, unknown>> {
   host: string;
 }
 
-export interface LayoutProps<TSettings extends BaseThemeSettings = BaseThemeSettings> {
+/** Public contact + social for the store (all nullable; links are validated at render). */
+export interface ThemeContact {
+  contact: StoreContact;
+  social: SocialLinks;
+}
+
+export interface LayoutProps<TSettings extends BaseThemeSettings = BaseThemeSettings> extends ThemeContact {
   store: ThemeStore;
   settings: TSettings;
   /** Store SEO description, usable as footer copy. */
@@ -58,7 +65,7 @@ export interface ThemeDefinition<TSettings extends BaseThemeSettings = BaseTheme
   defaultSections: Array<{ type: string; enabled: boolean }>;
   Layout: ComponentType<LayoutProps<TSettings>>;
   /** Full-page "Coming soon" shown on every path of a draft store (contract D2). */
-  ComingSoon: ComponentType<{ store: ThemeStore; settings: TSettings }>;
+  ComingSoon: ComponentType<{ store: ThemeStore; settings: TSettings } & ThemeContact>;
   // Section props are validated by the matching schema before render.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sections: Record<string, ComponentType<SectionProps<any>>>;

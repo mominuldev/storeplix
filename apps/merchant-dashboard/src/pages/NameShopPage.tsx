@@ -8,7 +8,8 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
-import { businessCategories, nameShopSchema, slugify, type NameShopValues } from '../auth/schemas';
+import { BUSINESS_CATEGORIES } from '@storeplix/types';
+import { nameShopSchema, slugify, type NameShopValues } from '../auth/schemas';
 import { api } from '../lib/api';
 import { FormAlert } from '../onboarding/AuthShell';
 import { PhonePreview } from '../onboarding/PhonePreview';
@@ -16,8 +17,8 @@ import { StepRail } from '../onboarding/StepRail';
 import { fetchTenantStore, storeKey } from '../stores/useTenantStore';
 
 // Figma Merchant Onboarding · 03 Name your shop 48:7869 (desktop: rail · form · live preview) / M3 53:885.
-// Sends POST /stores. Phase 1 contract has no Bangla name or sales-channel fields, so those Figma
-// inputs are not shown. Country/currency default to Bangladesh/BDT. 409 store_limit_reached → dashboard.
+// Sends POST /stores. Bangla name is edited in Settings; sales channels have no API field, so that
+// Figma card is not shown. Country/currency default to Bangladesh/BDT. 409 store_limit_reached → dashboard.
 export function NameShopPage() {
   const { tenantId, logout } = useAuth();
   const navigate = useNavigate();
@@ -51,7 +52,7 @@ export function NameShopPage() {
         slug: shopSlug,
         country: 'BD',
         currency: 'BDT',
-        business_category: categories.length ? categories.join(', ') : null,
+        business_categories: categories,
       });
       queryClient.setQueryData(storeKey(tenantId), store);
       navigate('/', { replace: true });
@@ -134,15 +135,15 @@ export function NameShopPage() {
               name="categories"
               render={({ field }) => (
                 <div className="flex flex-wrap gap-2" role="group" aria-label="What do you sell?">
-                  {businessCategories.map((c) => {
-                    const selected = field.value.includes(c);
+                  {BUSINESS_CATEGORIES.map(({ code, label }) => {
+                    const selected = field.value.includes(code);
                     return (
                       <Chip
-                        key={c}
+                        key={code}
                         selected={selected}
-                        onClick={() => field.onChange(selected ? field.value.filter((v) => v !== c) : [...field.value, c])}
+                        onClick={() => field.onChange(selected ? field.value.filter((v) => v !== code) : [...field.value, code])}
                       >
-                        {c}
+                        {label}
                       </Chip>
                     );
                   })}

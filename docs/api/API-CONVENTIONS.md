@@ -105,7 +105,10 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `storefront` (whole store) | tenant | 3 000/min |
 | `checkout` | tenant + IP, tenant + phone | 10/min, 5/10 min |
 | `webhooks` | provider | 600/min |
-Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`; 429 includes `Retry-After`. Limits scale with plan (Phase 7).
+Auth routes (login, register, password reset, OTP send/verify) use per-route limiters; their exact values are
+maintained in `apps/api/README.md` (the table above is indicative). Responses include `X-RateLimit-Limit`,
+`X-RateLimit-Remaining`; every 429 has body `{error:{code, message, retry_after}}` (`rate_limited` or `otp_rate_limited`)
+and a `Retry-After` header with the same seconds. Limits scale with plan (Phase 7).
 
 ## 9. Idempotency
 Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,

@@ -4,12 +4,13 @@ import { requireCurrentStore } from '@/lib/store';
 import { originForHost } from '@/lib/seo';
 import { sanitizeImageUrl } from '@/lib/sanitize';
 import { PreviewBanner } from '@/components/preview-banner';
+import { manifestIcons, storeIconsMetadata } from '@/lib/store-icons';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { host, config, mode } = await requireCurrentStore();
   const origin = originForHost(host);
-  const favicon = sanitizeImageUrl(config.store.favicon_url);
-  const icons = favicon ? { icon: favicon } : undefined;
+  const icons = storeIconsMetadata(config.store);
+  const manifest = manifestIcons(config.store).length > 0 ? '/manifest.webmanifest' : undefined;
 
   // Draft (Coming soon) and preview renders must never be indexed.
   if (mode !== 'live') {
@@ -18,6 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: mode === 'coming_soon' ? `${config.store.name} · Coming soon` : `Preview · ${config.store.name}`,
       robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
       icons,
+      manifest,
     };
   }
 
@@ -39,6 +41,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: { card: 'summary_large_image', title, description },
     icons,
+    manifest,
   };
 }
 
@@ -48,14 +51,20 @@ export default async function StoreLayout({ children }: { children: ReactNode })
   // Every path of a draft store (without a valid preview) renders Coming soon, status 200.
   if (mode === 'coming_soon') {
     const { ComingSoon } = theme;
-    return <ComingSoon store={config.store} settings={themeConfig.settings} />;
+    return <ComingSoon store={config.store} settings={themeConfig.settings} contact={config.contact} social={config.social} />;
   }
 
   const { Layout } = theme;
   return (
     <>
       {mode === 'preview' ? <PreviewBanner isPublic={config.store.status === 'active'} /> : null}
-      <Layout store={config.store} settings={themeConfig.settings} description={config.seo.description}>
+      <Layout
+        store={config.store}
+        settings={themeConfig.settings}
+        description={config.seo.description}
+        contact={config.contact}
+        social={config.social}
+      >
         {children}
       </Layout>
     </>

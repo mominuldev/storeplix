@@ -24,7 +24,7 @@ class ApiExceptionRenderer
         409 => 'conflict',
         419 => 'token_mismatch',
         422 => 'unprocessable',
-        429 => 'too_many_requests',
+        429 => 'rate_limited',
         503 => 'service_unavailable',
     ];
 
@@ -37,7 +37,7 @@ class ApiExceptionRenderer
         return match (true) {
             $e instanceof ValidationException => $this->error(422, 'validation_failed', 'The given data was invalid.', $e->errors()),
             $e instanceof AuthenticationException => $this->error(401, 'unauthenticated', 'Unauthenticated.'),
-            $e instanceof ApiException => $this->error($e->getStatusCode(), $e->errorCode, $e->getMessage(), $e->details, $e->getHeaders()),
+            $e instanceof ApiException => $this->error($e->getStatusCode(), $e->errorCode, $e->getMessage(), $e->details, $e->getHeaders(), $e->retryAfter),
             $e instanceof HttpExceptionInterface => $this->fromHttp($e),
             $e instanceof MissingTenantContextException => $this->error(500, 'tenant_context_missing', config('app.debug') ? $e->getMessage() : 'Server error.'),
             default => $this->error(500, 'server_error', config('app.debug') ? $e->getMessage() : 'Server error.'),
@@ -61,17 +61,34 @@ class ApiExceptionRenderer
         return $this->error($status, self::CODES[$status] ?? 'http_error', $message, null, $e->getHeaders());
     }
 
+    /** Every 429 carries error.retry_after (int seconds) and a Retry-After header. */
+    private static function withRetryAfter(array $body, int $status, array &$headers): array
+    {
+        if ($status !== 429) {
+            return $body;
+        }
+
+        $retry = $body['retry_after'] ?? $headers['Retry-After'] ?? $headers['retry-after'] ?? 60;
+        $retry = max(1, (int) (is_array($retry) ? reset($retry) : $retry));
+        $body['retry_after'] = $retry;
+        $headers['Retry-After'] = (string) $retry;
+
+        return $body;
+    }
+
     /**
      * @param  array<string, array<int, string>>|null  $details
      * @param  array<string, string>  $headers
      */
-    private function error(int $status, string $code, string $message, ?array $details = null, array $headers = []): JsonResponse
+    private function error(int $status, string $code, string $message, ?array $details = null, array $headers = [], ?int $retryAfter = null): JsonResponse
     {
         $body = ['code' => $code, 'message' => $message];
 
         if ($details !== null) {
             $body['details'] = $details;
         }
+
+        $body = self::withRetryAfter($body + ($retryAfter !== null ? ['retry_after' => $retryAfter] : []), $status, $headers);
 
         return new JsonResponse(['error' => $body], $status, $headers);
     }

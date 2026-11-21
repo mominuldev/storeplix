@@ -16,7 +16,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $status
  * @property string $country
  * @property string $currency
- * @property string|null $business_category
+ * @property list<string> $business_categories
+ * @property string|null $name_bn
+ * @property string $timezone
  * @property-read StoreDomain|null $primaryDomain
  * @property-read StoreSetting|null $settings
  */
@@ -32,9 +34,14 @@ class Store extends Model
 
     public const STATUSES = [self::STATUS_DRAFT, self::STATUS_ACTIVE, self::STATUS_SUSPENDED];
 
-    protected $fillable = ['name', 'slug', 'status', 'country', 'currency', 'business_category'];
+    protected $fillable = ['name', 'name_bn', 'slug', 'status', 'country', 'currency', 'business_categories', 'timezone'];
 
-    protected $attributes = ['status' => self::STATUS_DRAFT];
+    protected function casts(): array
+    {
+        return ['business_categories' => 'array'];
+    }
+
+    protected $attributes = ['status' => self::STATUS_DRAFT, 'business_categories' => '[]', 'timezone' => 'Asia/Dhaka'];
 
     public function domains(): HasMany
     {

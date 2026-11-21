@@ -1,5 +1,5 @@
-export { createApiClient, normalizeHost } from './client';
-export type { ApiClient, ApiClientOptions, RequestOptions, Paginated } from './client';
+export { auditLogQuery, createApiClient, normalizeHost } from './client';
+export type { ApiClient, ApiClientOptions, Paginated, RequestOptions, UploadMediaInput, UploadOptions } from './client';
 export { ApiError, isApiError } from './errors';
 export type { ApiErrorDetails } from './errors';
 export { createAuthSession, SESSION_EXPIRED_MESSAGE } from './session';

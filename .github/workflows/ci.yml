@@ -16,6 +16,9 @@ permissions:
 env:
   # Sentinel used to prove the storefront secret never reaches client bundles.
   STOREFRONT_API_KEY: ci-sentinel-storefront-key-3f9a1c7e
+  REVALIDATE_SECRET: ci-sentinel-revalidate-9d2b
+  REVESMS_API_KEY: ci-sentinel-reve-api-7a1
+  REVESMS_SECRET_KEY: ci-sentinel-reve-secret-5c2
   PLATFORM_DOMAIN: storeplix.test
 
 jobs:
@@ -104,6 +107,9 @@ jobs:
             echo "::error::No tests in group 'tenancy' — tenant isolation is not being verified"
             exit 1
           fi
+
+      - name: security
+        run: php artisan test --group=security
 
   api-postgres:
     name: api (migrations + tenancy on postgres)
@@ -207,8 +213,9 @@ jobs:
             [ -d "$d" ] && dirs="$dirs $d"
           done
           if [ -z "$dirs" ]; then echo "::warning::no client bundles found"; exit 0; fi
-          if grep -rl -e "$STOREFRONT_API_KEY" -e "STOREFRONT_API_KEY" $dirs; then
-            echo "::error::STOREFRONT_API_KEY (or its name) found in a client bundle"
+          if grep -rl -e "$STOREFRONT_API_KEY" -e "STOREFRONT_API_KEY" -e "$REVALIDATE_SECRET" -e "REVALIDATE_SECRET" \
+               -e "$REVESMS_API_KEY" -e "$REVESMS_SECRET_KEY" -e "REVESMS_" $dirs; then
+            echo "::error::a server secret (or its name) was found in a client bundle"
             exit 1
           fi
           echo "no storefront secret in client bundles"

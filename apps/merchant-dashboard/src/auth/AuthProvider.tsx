@@ -16,6 +16,10 @@ interface AuthContextValue {
   setTenant: (id: string) => void;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  /** Start a session from a token issued elsewhere (OTP login, invitation accept, password change). */
+  signInWithToken: (auth: AuthToken, opts?: { keepTenant?: boolean }) => void;
+  /** Re-fetch /auth/me (after profile, phone or membership changes). */
+  refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,10 +36,10 @@ function rememberDefaultTenant(): boolean {
   }
 }
 
-function startSession(auth: AuthToken) {
+function startSession(auth: AuthToken, keepTenant = false) {
   // Fresh sign-in: unless the user asked to reopen the same shop, post-login routing asks again
   // when they belong to several shops (contract D1).
-  if (!rememberDefaultTenant()) session.setTenantId(null);
+  if (!keepTenant && !rememberDefaultTenant()) session.setTenantId(null);
   session.setAuth(auth);
 }
 
@@ -91,6 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (input: LoginInput) => startSession(await api.auth.login(input)), []);
   const register = useCallback(async (input: RegisterInput) => startSession(await api.auth.register(input)), []);
 
+  const signInWithToken = useCallback((auth: AuthToken, opts?: { keepTenant?: boolean }) => startSession(auth, opts?.keepTenant), []);
+  const refetchMe = me.refetch;
+  const refreshUser = useCallback(async () => {
+    await refetchMe();
+  }, [refetchMe]);
+
   const logout = useCallback(async () => {
     try {
       await api.auth.logout();
@@ -113,9 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTenant,
       login,
       register,
+      signInWithToken,
+      refreshUser,
       logout,
     }),
-    [status, me.data, tenants, tenantId, setTenant, login, register, logout],
+    [status, me.data, tenants, tenantId, setTenant, login, register, signInWithToken, refreshUser, logout],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
