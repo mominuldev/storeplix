@@ -55,7 +55,8 @@ export function NameShopPage() {
         business_categories: categories,
       });
       queryClient.setQueryData(storeKey(tenantId), store);
-      navigate('/', { replace: true });
+      // Contract §6: onboarding continues with step 04 "Pick a theme".
+      navigate('/onboarding/theme', { replace: true });
     } catch (error) {
       if (isApiError(error) && error.status === 409 && error.code === 'store_limit_reached') {
         // One store per tenant (D1): it already exists — open it.

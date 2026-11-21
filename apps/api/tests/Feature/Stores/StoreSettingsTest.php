@@ -3,9 +3,9 @@
 namespace Tests\Feature\Stores;
 
 use App\Domain\Stores\Models\Store;
-use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\TenantUser;
+use App\Domain\Themes\Models\StoreTheme;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -31,10 +31,11 @@ class StoreSettingsTest extends TestCase
                 'social' => ['facebook', 'instagram', 'youtube'],
                 'address' => ['street', 'division', 'district', 'area', 'postcode', 'use_for_returns'],
                 'region' => ['country', 'currency', 'timezone'],
+                'seo' => ['title', 'description', 'share_image', 'hide_from_search'],
                 'updated_at',
             ]])
             ->assertJsonPath('data.identity.primary_domain', 'shop.storeplix.test')
-            ->assertJsonPath('data.branding.primary_color', '#5b53ff')
+            ->assertJsonPath('data.branding.primary_color', '#0846c2')
             ->assertJsonPath('data.address.use_for_returns', true)
             ->assertJsonPath('data.region.timezone', 'Asia/Dhaka');
     }
@@ -57,7 +58,7 @@ class StoreSettingsTest extends TestCase
             ->assertJsonPath('data.identity.name', 'Rahim Fashion')
             ->assertJsonPath('data.identity.business_categories', ['fashion', 'beauty'])
             ->assertJsonPath('data.branding.primary_color', '#aabbcc')
-            ->assertJsonPath('data.branding.secondary_color', '#0d0d18')
+            ->assertJsonPath('data.branding.secondary_color', '#ff7a00')
             ->assertJsonPath('data.contact.phone', '+8801712345678')
             ->assertJsonPath('data.contact.whatsapp', '+14155550123')
             ->assertJsonPath('data.contact.email', 'shop@example.com')
@@ -73,8 +74,10 @@ class StoreSettingsTest extends TestCase
             ->assertJsonPath('data.social.facebook', 'https://www.facebook.com/rahim')
             ->assertJsonPath('data.address.postcode', '1212');
 
-        $settings = StoreSetting::withoutTenancy()->sole();
-        $this->assertSame('#aabbcc', $settings->theme['settings']['primaryColor']);
+        // P3-8: the colour shortcut writes the active theme's draft AND published config.
+        $theme = StoreTheme::withoutTenancy()->where('is_active', true)->sole();
+        $this->assertSame('#aabbcc', $theme->draft_config['settings']['primaryColor']);
+        $this->assertSame('#aabbcc', $theme->published_config['settings']['primaryColor']);
 
         $log = AuditLog::query()->where('action', 'store.settings_updated')->oldest('id')->first();
         $this->assertContains('contact.phone', $log->meta['changes']);

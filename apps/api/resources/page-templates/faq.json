@@ -1,0 +1,142 @@
+{
+  "code": "faq",
+  "name": "FAQ",
+  "description": "Answers to the questions buyers ask most.",
+  "category": "help_policies",
+  "default_title": "FAQ",
+  "default_slug": "faq",
+  "highlights": [
+    "Cash on delivery and bKash",
+    "Delivery inside and outside Dhaka",
+    "Returns",
+    "Checking the parcel"
+  ],
+  "body": [
+    {
+      "id": "3efr4edt2s",
+      "type": "heading",
+      "text": "Frequently asked questions",
+      "level": 2
+    },
+    {
+      "id": "ywb3wkh5dn",
+      "type": "heading",
+      "text": "How can I pay?",
+      "level": 3
+    },
+    {
+      "id": "sipzz5fk2z",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "You can pay cash on delivery or with bKash. Cash on delivery is available all over Bangladesh."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "9ri19r0wyo",
+      "type": "heading",
+      "text": "How long does delivery take?",
+      "level": 3
+    },
+    {
+      "id": "jfljooa5lq",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Inside Dhaka: 1–2 days. Outside Dhaka: 2–4 days."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "saj08xui6d",
+      "type": "heading",
+      "text": "Can I check the parcel before paying?",
+      "level": 3
+    },
+    {
+      "id": "39zzzzg4zd",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Yes. You can open the parcel in front of the delivery person and check the items before you pay."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "men2khvdga",
+      "type": "heading",
+      "text": "Can I return an item?",
+      "level": 3
+    },
+    {
+      "id": "j8gxbenyjq",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Yes, within 7 days if it is unused and in its original packaging. See our Delivery & return policy."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "wx4hh5344t",
+      "type": "heading",
+      "text": "Still have a question?",
+      "level": 3
+    },
+    {
+      "id": "fjgvq4k7bn",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Call us at {store_phone}. We reply {support_hours}."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

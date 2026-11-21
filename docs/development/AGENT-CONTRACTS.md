@@ -57,3 +57,7 @@ Mobile: M1 `53:758` · M2 `53:831` · M3 `53:885` · M4 `54:810` · M5 `54:941`.
 Sign in: L1 Password `57:911` · L2 SMS code `57:1050` · L3 Forgot password `57:1198` · L4 Choose a shop `58:957` · L5 Mobile `58:1132`.
 Components: Onboarding/Logo `45:8009` · Step `45:8034` · Chip `45:8043` · Option card `45:8065` · Connect card `45:8086` · Checklist item `45:8102`.
 Phase 1.1 builds: 01/M1 sign up, L1/L5 sign in, L3 forgot password (UI + API stub returning 202 always), L4 choose a shop, 03/M3 name your shop (→ POST /stores). Phone OTP / SMS sign-in (02, L2) and steps 04–08 are later phases — do not fake them; omit or show disabled.
+
+## Browser testing — Playwright only
+All agents: verify UI in a browser with Playwright (`tests/e2e`, see TESTING.md §2b). Never use the Claude in Chrome
+extension or the user's Google Chrome.

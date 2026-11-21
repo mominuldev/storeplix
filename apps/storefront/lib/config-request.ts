@@ -7,29 +7,51 @@ export interface ConfigRequestEnv {
   revalidateSeconds: number;
 }
 
+export type StorefrontRequestInit = RequestInit & { next?: { tags?: string[]; revalidate?: number } };
+
+/** Revalidate window for `/storefront/pages*` (contract §5.2); tag revalidation is immediate. */
+export const PAGES_REVALIDATE_SECONDS = 300;
+
 /**
- * Build the fetch for GET /storefront/config. Two strictly separate cache modes:
+ * Build a fetch for a `/api/v1/storefront/*` endpoint. Two strictly separate cache modes:
  *  - public  (no preview token): shared Next data cache, tag `store:{host}`. The request carries
  *    no per-visitor input, so the cached body is exactly what every public visitor must see.
  *  - preview (token present): `cache: 'no-store'`, no tags, never read from or written to the
  *    shared cache - so a preview/draft payload can't be served publicly and a cached public
  *    payload can't mask a preview.
  */
-export function buildConfigRequest(
+export function buildStorefrontRequest(
+  path: string,
   host: string,
   previewToken: string | null,
-  env: ConfigRequestEnv,
-): { url: string; init: RequestInit & { next?: { tags?: string[]; revalidate?: number } } } {
+  env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>,
+  revalidateSeconds: number,
+): { url: string; init: StorefrontRequestInit } {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'X-Storefront-Host': host,
     'X-Storefront-Key': env.apiKey,
   };
-  const url = `${env.apiUrl}/api/v1/storefront/config`;
+  const url = `${env.apiUrl}/api/v1/storefront${path}`;
 
   if (previewToken) {
     headers[PREVIEW_HEADER] = previewToken;
     return { url, init: { headers, cache: 'no-store' } };
   }
-  return { url, init: { headers, next: { tags: [storeTag(host)], revalidate: env.revalidateSeconds } } };
+  return { url, init: { headers, next: { tags: [storeTag(host)], revalidate: revalidateSeconds } } };
+}
+
+/** GET /storefront/config. */
+export function buildConfigRequest(host: string, previewToken: string | null, env: ConfigRequestEnv) {
+  return buildStorefrontRequest('/config', host, previewToken, env, env.revalidateSeconds);
+}
+
+/** GET /storefront/pages/{slug} (slug must already match the page slug regex). */
+export function buildPageRequest(host: string, slug: string, previewToken: string | null, env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>) {
+  return buildStorefrontRequest(`/pages/${encodeURIComponent(slug)}`, host, previewToken, env, PAGES_REVALIDATE_SECONDS);
+}
+
+/** GET /storefront/pages (sitemap). Published pages only, so it is always fetched publicly. */
+export function buildPageIndexRequest(host: string, env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>) {
+  return buildStorefrontRequest('/pages', host, null, env, PAGES_REVALIDATE_SECONDS);
 }

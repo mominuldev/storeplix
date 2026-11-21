@@ -2,7 +2,10 @@
 
 namespace App\Domain\Stores\Models;
 
+use App\Domain\Navigation\Models\StoreNavigation;
+use App\Domain\Pages\Models\StorePage;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
+use App\Domain\Themes\Models\StoreTheme;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -21,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $timezone
  * @property-read StoreDomain|null $primaryDomain
  * @property-read StoreSetting|null $settings
+ * @property-read StoreTheme|null $activeTheme
  */
 class Store extends Model
 {
@@ -56,5 +60,25 @@ class Store extends Model
     public function settings(): HasOne
     {
         return $this->hasOne(StoreSetting::class);
+    }
+
+    public function themes(): HasMany
+    {
+        return $this->hasMany(StoreTheme::class);
+    }
+
+    public function activeTheme(): HasOne
+    {
+        return $this->hasOne(StoreTheme::class)->where('is_active', true);
+    }
+
+    public function pages(): HasMany
+    {
+        return $this->hasMany(StorePage::class);
+    }
+
+    public function navigation(): HasMany
+    {
+        return $this->hasMany(StoreNavigation::class);
     }
 }

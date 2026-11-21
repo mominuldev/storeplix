@@ -53,6 +53,11 @@ class PreviewTokenService
     {
         $host = $store->primaryDomain?->hostname;
 
+        // P3-19: locally prefer a *.localhost domain (browsers accept Secure/SameSite=None cookies there).
+        if (app()->environment('local')) {
+            $host = $store->domains()->where('hostname', 'like', '%.localhost')->orderBy('hostname')->value('hostname') ?? $host;
+        }
+
         if ($host === null) {
             return null;
         }

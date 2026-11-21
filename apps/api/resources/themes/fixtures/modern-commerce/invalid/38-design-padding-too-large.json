@@ -1,0 +1,71 @@
+{
+  "expect": "sections.0.settings.design.paddingBottom",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "fl4sh001",
+        "type": "flash-sale",
+        "enabled": true,
+        "settings": {
+          "eyebrow": "Flash sale",
+          "title": "Today's flash deals",
+          "subtitle": "Fresh deals every day at 10am — while stock lasts.",
+          "endsAt": null,
+          "linkLabel": "See all deals",
+          "linkHref": "/collections/flash-sale",
+          "limit": 4,
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 168,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    ]
+  }
+}

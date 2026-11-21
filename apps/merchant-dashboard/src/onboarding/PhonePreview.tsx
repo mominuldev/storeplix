@@ -10,15 +10,17 @@ const products = [
   { name: 'Kids Kurti', price: '950', img: images.kidsKurti },
 ];
 
-export function PhonePreview({ name, domain }: { name: string; domain: string }) {
+/** `color` (validated #rrggbb) tints the mock: it overrides the brand tokens for this subtree only. */
+export function PhonePreview({ name, domain, color, logoUrl, caption = 'Updates as you type' }: { name: string; domain: string; color?: string; logoUrl?: string | null; caption?: string }) {
   const initial = name.trim().charAt(0).toUpperCase() || 'S';
+  const tint = color && /^#[0-9a-f]{6}$/i.test(color) ? ({ '--color-brand-600': color, '--color-brand-700': color } as React.CSSProperties) : undefined;
   return (
-    <aside aria-label="Live preview" className="hidden w-[420px] shrink-0 flex-col items-center gap-5 bg-brand-50 px-10 py-8 xl:flex">
+    <aside aria-label="Live preview" style={tint} className="hidden w-[420px] shrink-0 flex-col items-center gap-5 bg-brand-50 px-10 py-8 xl:flex">
       <div className="flex w-full items-center justify-between">
         <span className="flex items-center gap-2 text-caption font-medium text-brand-700">
           <span className="size-2 rounded-full bg-success" /> Live preview
         </span>
-        <span className="text-caption text-text-muted">Updates as you type</span>
+        <span className="text-caption text-text-muted">{caption}</span>
       </div>
       <div className="rounded-[44px] bg-text-primary p-2.5">
         <div className="flex h-[580px] w-[280px] flex-col gap-3 overflow-hidden rounded-[34px] bg-surface-canvas pb-4">
@@ -27,7 +29,11 @@ export function PhonePreview({ name, domain }: { name: string; domain: string })
             <span>5G 100%</span>
           </div>
           <div className="flex items-center gap-2 px-4">
-            <span className="flex size-[30px] items-center justify-center rounded-full bg-brand-600 text-body font-semibold text-text-inverse">{initial}</span>
+            {logoUrl ? (
+              <img src={logoUrl} alt="" className="size-[30px] rounded-full object-cover" />
+            ) : (
+              <span className="flex size-[30px] items-center justify-center rounded-full bg-brand-600 text-body font-semibold text-text-inverse">{initial}</span>
+            )}
             <span className="min-w-0 flex-1 truncate text-body font-semibold text-text-primary">{name || 'Your shop'}</span>
             <Search aria-hidden className="size-[18px]" />
             <ShoppingCart aria-hidden className="size-[18px]" />

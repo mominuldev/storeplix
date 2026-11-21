@@ -28,6 +28,7 @@ jobs:
     outputs:
       api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
+      themes: ${{ steps.filter.outputs.themes }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -46,6 +47,62 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - '.github/workflows/ci.yml'
+            # Phase 3: theme schema source of truth + its Laravel copy (PHASE-3-CONTRACT §4.1, P3-5).
+            themes:
+              - 'packages/themes/**'
+              - 'apps/api/resources/themes/**'
+              - 'apps/api/app/Domain/Themes/**'
+              - 'apps/storefront/themes/**'
+              - '.github/workflows/ci.yml'
+
+  # Runs when either side of the theme schema changes, so a packages/themes-only change can't skip the
+  # PHP parity/sync checks (the `api` job is filtered on apps/api/** only).
+  themes:
+    name: 'themes (schema parity - AJV, PHP opis, sync)'
+    needs: changes
+    if: needs.changes.outputs.themes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Byte-identical copy check that can never be skipped (ThemeSchemaSyncTest skips when
+      # packages/themes is absent; here it is always present).
+      - name: resources/themes mirrors packages/themes
+        run: |
+          for e in registry.json fonts.json modern-commerce fixtures; do
+            diff -r "packages/themes/$e" "apps/api/resources/themes/$e"
+          done
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: packages/themes (AJV fixture parity)
+        run: pnpm --filter @storeplix/themes test
+      - name: storefront Zod parity (valid fixtures resolve, invalid never throw)
+        run: pnpm --filter @storeplix/storefront exec vitest run tests/theme.test.ts
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, bcmath, zip
+          coverage: none
+          tools: composer:v2
+      - name: Composer install
+        working-directory: apps/api
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: PHP ThemeSchemaSyncTest + fixture parity + upgrader
+        working-directory: apps/api
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          CACHE_STORE: array
+          QUEUE_CONNECTION: sync
+          SESSION_DRIVER: array
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan test tests/Feature/Themes tests/Unit/SafeHrefTest.php
 
   api:
     name: api (lint + tests, sqlite)
@@ -223,11 +280,11 @@ jobs:
   # Single required status for branch protection.
   ci-ok:
     if: always()
-    needs: [changes, api, api-postgres, web]
+    needs: [changes, api, api-postgres, web, themes]
     runs-on: ubuntu-latest
     steps:
       - name: Verify job results
         run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.web.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
             case "$r" in success|skipped) ;; *) echo "job result: $r"; exit 1 ;; esac
           done

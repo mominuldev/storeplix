@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $id
  * @property string $tenant_id
  * @property string $store_id
- * @property array<string, mixed> $theme
  * @property string|null $logo_media_id
  * @property string|null $favicon_media_id
  * @property string|null $contact_phone E.164
@@ -26,26 +25,29 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read Media|null $favicon
  * @property string|null $seo_title
  * @property string|null $seo_description
+ * @property string|null $og_image_media_id
+ * @property bool $noindex
+ * @property-read Media|null $ogImage
  */
 class StoreSetting extends Model
 {
     use BelongsToTenant, HasUlids;
 
     protected $fillable = [
-        'store_id', 'theme', 'seo_title', 'seo_description',
+        'store_id', 'seo_title', 'seo_description', 'og_image_media_id', 'noindex',
         'logo_media_id', 'favicon_media_id', 'contact_phone', 'contact_email', 'whatsapp', 'support_hours',
         'social_links', 'business_address', 'use_address_for_returns',
     ];
 
-    protected $attributes = ['social_links' => '{}', 'use_address_for_returns' => true];
+    protected $attributes = ['social_links' => '{}', 'use_address_for_returns' => true, 'noindex' => false];
 
     protected function casts(): array
     {
         return [
-            'theme' => 'array',
             'social_links' => 'array',
             'business_address' => 'array',
             'use_address_for_returns' => 'boolean',
+            'noindex' => 'boolean',
         ];
     }
 
@@ -57,6 +59,11 @@ class StoreSetting extends Model
     public function favicon(): BelongsTo
     {
         return $this->belongsTo(Media::class, 'favicon_media_id');
+    }
+
+    public function ogImage(): BelongsTo
+    {
+        return $this->belongsTo(Media::class, 'og_image_media_id');
     }
 
     public function store(): BelongsTo

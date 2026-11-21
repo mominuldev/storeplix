@@ -12,7 +12,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Creates a store with its platform subdomain "{slug}.{PLATFORM_DOMAIN}" and default theme.
+ * Creates a store with its platform subdomain "{slug}.{PLATFORM_DOMAIN}" and default content (theme, pages, menus).
  * Always runs inside the owning tenant's context.
  */
 class StoreProvisioner
@@ -20,6 +20,7 @@ class StoreProvisioner
     public function __construct(
         private readonly TenantContext $context,
         private readonly AuditLogger $audit,
+        private readonly StoreContentProvisioner $content,
     ) {}
 
     /**
@@ -84,10 +85,10 @@ class StoreProvisioner
                 ]);
             }
 
-            StoreSetting::query()->create([
-                'store_id' => $store->id,
-                'theme' => config('storeplix.default_theme'),
-            ]);
+            StoreSetting::query()->create(['store_id' => $store->id]);
+
+            // Phase 3 (P3-13): active theme, default pages and menus.
+            $this->content->ensure($store);
 
             $this->audit->log('store.created', $store, ['slug' => $slug]);
 

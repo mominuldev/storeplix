@@ -56,6 +56,9 @@ class UpdateStoreSettingsRequest extends FormRequest
             $trim('address', $key);
         }
 
+        $trim('seo', 'title', fn ($v) => $v === '' ? null : $v);
+        $trim('seo', 'description', fn ($v) => $v === '' ? null : $v);
+
         $this->replace($in);
     }
 
@@ -107,6 +110,13 @@ class UpdateStoreSettingsRequest extends FormRequest
                 ? ['sometimes', 'nullable', 'string', 'regex:/^\d{4}$/']
                 : ['sometimes', 'nullable', 'string', 'max:12'],
             'address.use_for_returns' => ['sometimes', 'boolean'],
+
+            // Phase 3 §3.4: store-level SEO.
+            'seo' => ['sometimes', 'array:title,description,share_image_media_id,hide_from_search'],
+            'seo.title' => ['sometimes', 'nullable', 'string', 'max:70', 'regex:/^[^\x00-\x1F\x7F]*$/'],
+            'seo.description' => ['sometimes', 'nullable', 'string', 'max:160', 'regex:/^[^\x00-\x1F\x7F]*$/'],
+            'seo.share_image_media_id' => ['sometimes', 'nullable', 'string', 'ulid', $media('page_image')],
+            'seo.hide_from_search' => ['sometimes', 'boolean'],
 
             'region' => ['sometimes', 'array:country,currency,timezone'],
             'region.country' => ['sometimes', 'string', 'size:2', 'regex:/^[A-Z]{2}$/'],

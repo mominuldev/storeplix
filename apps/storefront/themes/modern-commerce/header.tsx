@@ -1,20 +1,23 @@
 import Link from 'next/link';
+import type { StoreContact, StorefrontNavItem, StorefrontNavMenu } from '@storeplix/types';
 import type { ThemeStore } from '../types';
 import type { ModernCommerceSettings } from './schema';
 import { Icon } from './components/icon';
+import { MobileMenu } from './components/mobile-menu';
+import { NavLink } from './components/nav-link';
 import { StoreLogo } from './components/store-logo';
-import type { StoreContact } from '@storeplix/types';
-import { telHref } from '@/lib/contact';
+import { telHref, whatsappHref } from '@/lib/contact';
 
 interface HeaderProps {
   store: ThemeStore;
   settings: ModernCommerceSettings;
   contact: StoreContact;
+  menu: StorefrontNavMenu;
   /** From the cart API once it exists; hidden when 0. */
   cartCount?: number;
 }
 
-function SearchField({ placeholder, className = '' }: { placeholder: string; className?: string }) {
+function SearchField({ placeholder, id, className = '' }: { placeholder: string; id: string; className?: string }) {
   return (
     <form
       role="search"
@@ -22,17 +25,17 @@ function SearchField({ placeholder, className = '' }: { placeholder: string; cla
       className={`flex h-12 items-center gap-3 rounded-full border border-line-subtle bg-sunken py-1 pr-1 pl-5 ${className}`}
     >
       <Icon name="search" className="text-ink-muted" />
-      <label htmlFor="site-search" className="sr-only">
+      <label htmlFor={id} className="sr-only">
         Search
       </label>
       <input
-        id="site-search"
+        id={id}
         name="q"
         type="search"
         placeholder={placeholder}
         className="type-body-m min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-muted"
       />
-      <button type="submit" className="type-label-s rounded-full bg-brand px-4 py-2 text-on-brand hover:brightness-110">
+      <button type="submit" className="type-label-s rounded-control bg-brand px-4 py-2 text-on-brand hover:brightness-110">
         Search
       </button>
     </form>
@@ -52,50 +55,87 @@ function CartButton({ count }: { count: number }) {
   );
 }
 
-/** Figma "Site Header/Desktop" (1:10645) and "Site Header/Mobile" (1:10751). */
-export function Header({ store, settings, contact, cartCount = 0 }: HeaderProps) {
-  const tel = telHref(contact.phone);
+/** Desktop nav item: children open as a simple dropdown on hover/focus (no JS; mega menu is out of scope). */
+function DesktopNavItem({ item }: { item: StorefrontNavItem }) {
+  if (item.children.length === 0) {
+    return (
+      <li>
+        <NavLink href={item.href} className="type-label-m whitespace-nowrap text-ink hover:text-brand">
+          {item.label}
+        </NavLink>
+      </li>
+    );
+  }
   return (
-    <header>
-      {/* Announcement bar */}
-      <div className="type-label-s bg-inverse text-paper">
-        <div className="flex items-center justify-center gap-1.5 px-4 py-2 lg:justify-between lg:px-20 lg:py-2.5">
-          <p className="hidden items-center gap-2 lg:flex">
-            {tel ? (
-              <a href={tel} className="flex items-center gap-2 hover:underline">
-                <Icon name="phone" />
-                {/* Figma: "Hotline 09XXX-XXXXXX · 9am–10pm" */}
-                Hotline {contact.phone}
-                {contact.support_hours ? ` · ${contact.support_hours}` : ''}
-              </a>
-            ) : contact.support_hours ? (
-              <span>{contact.support_hours}</span>
-            ) : null}
-          </p>
-          <p className="flex items-center gap-1.5 lg:gap-2">
-            <Icon name="sparkle" className="max-lg:size-3.5 text-accent" />
-            {settings.announcement}
-          </p>
-          <div className="hidden items-center gap-3 lg:flex">
-            <Link href="/track-order" className="hover:underline">
-              Track order
-            </Link>
+    <li className="group relative">
+      <NavLink href={item.href} className="type-label-m flex items-center gap-1 whitespace-nowrap text-ink hover:text-brand">
+        {item.label}
+        <Icon name="caret-down" className="text-ink-muted" />
+      </NavLink>
+      <ul className="invisible absolute top-full left-0 z-30 mt-2 flex min-w-[220px] flex-col rounded-sf-lg border border-line-subtle bg-surface p-2 opacity-0 shadow-e3 transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
+        {item.children.map((c) => (
+          <li key={c.id}>
+            <NavLink href={c.href} className="type-body-m block rounded-sf-md px-3 py-2 text-[#33405c] hover:bg-sunken hover:text-[#0e1a33]">
+              {c.label}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/** Figma "Site Header/Desktop" (1:10645), tablet (1:10799) and mobile (1:10751); drawer 1:14585. */
+export function Header({ store, settings, contact, menu, cartCount = 0 }: HeaderProps) {
+  const tel = telHref(contact.phone);
+  const wa = whatsappHref(contact.whatsapp);
+  const { announcement, header } = settings;
+
+  return (
+    <header className={header.sticky ? 'sticky top-0 z-40' : undefined}>
+      {announcement.enabled && announcement.text ? (
+        <div className="type-label-s bg-inverse text-paper">
+          <div className="flex items-center justify-center gap-1.5 px-4 py-2 lg:justify-between lg:px-20 lg:py-2.5">
+            <p className="hidden items-center gap-2 lg:flex">
+              {tel ? (
+                <a href={tel} className="flex items-center gap-2 hover:underline">
+                  <Icon name="phone" />
+                  Hotline {contact.phone}
+                  {contact.support_hours ? ` · ${contact.support_hours}` : ''}
+                </a>
+              ) : contact.support_hours ? (
+                <span>{contact.support_hours}</span>
+              ) : null}
+            </p>
+            <p className="flex items-center gap-1.5 text-center lg:gap-2">
+              <Icon name="sparkle" className="text-accent max-lg:size-3.5" />
+              {announcement.href ? (
+                <NavLink href={announcement.href} className="hover:underline">
+                  {announcement.text}
+                </NavLink>
+              ) : (
+                announcement.text
+              )}
+            </p>
+            <div className="hidden items-center gap-3 lg:flex">
+              <Link href="/track-order" className="hover:underline">
+                Track order
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="border-b border-line-subtle bg-canvas">
-        {/* Top row */}
         <div className="flex flex-col gap-3 px-4 pt-3 pb-4 lg:flex-row lg:items-center lg:gap-10 lg:px-20 lg:py-5">
           <div className="flex items-center justify-between gap-2 lg:contents">
             <div className="flex items-center gap-1 lg:contents">
-              <Link
-                href="/collections"
-                aria-label="Menu"
-                className="flex size-11 items-center justify-center rounded-full bg-sunken text-ink lg:hidden"
-              >
-                <Icon name="menu" />
-              </Link>
+              <MobileMenu
+                storeName={store.name}
+                items={menu.items}
+                trackOrderHref="/track-order"
+                whatsappHref={wa}
+              />
               <Link href="/" className="shrink-0" aria-label={`${store.name} home`}>
                 <span className="lg:hidden">
                   <StoreLogo store={store} size="sm" />
@@ -110,7 +150,11 @@ export function Header({ store, settings, contact, cartCount = 0 }: HeaderProps)
             </div>
           </div>
 
-          <SearchField placeholder="Search the store…" className="w-full lg:min-w-0 lg:flex-1" />
+          {header.showSearch ? (
+            <SearchField id="site-search" placeholder="Search the store…" className="w-full lg:min-w-0 lg:flex-1" />
+          ) : (
+            <span className="hidden lg:block lg:flex-1" />
+          )}
 
           <div className="hidden shrink-0 items-center gap-2 lg:flex">
             <Link href="/account" className="flex items-center gap-2 pr-3">
@@ -122,44 +166,28 @@ export function Header({ store, settings, contact, cartCount = 0 }: HeaderProps)
                 <span className="text-[15px] leading-[1.3] font-semibold text-ink">Account</span>
               </span>
             </Link>
-            <Link
-              href="/wishlist"
-              aria-label="Wishlist"
-              className="flex size-11 items-center justify-center rounded-full bg-sunken text-ink"
-            >
+            <Link href="/wishlist" aria-label="Wishlist" className="flex size-11 items-center justify-center rounded-full bg-sunken text-ink">
               <Icon name="heart" />
             </Link>
             <CartButton count={cartCount} />
           </div>
         </div>
 
-        {/* Category nav (desktop) */}
-        <nav aria-label="Categories" className="hidden items-center justify-between gap-8 px-20 pb-4 lg:flex">
-          <ul className="flex items-center gap-8">
-            <li>
-              <Link
-                href="/collections"
-                className="type-label-m flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-brand"
-              >
-                <Icon name="list" />
-                All categories
-              </Link>
-            </li>
-            {settings.navigation.map((link) => (
-              <li key={`${link.href}-${link.label}`}>
-                <Link href={link.href} className="type-label-m whitespace-nowrap text-ink hover:text-brand">
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {settings.promoLink ? (
-            <Link href={settings.promoLink.href} className="type-label-m flex items-center gap-1.5 text-sale">
-              <Icon name="tag" />
-              {settings.promoLink.label}
-            </Link>
-          ) : null}
-        </nav>
+        {menu.items.length > 0 || header.promoLink ? (
+          <nav aria-label={menu.title} className="hidden items-center justify-between gap-8 px-20 pb-4 lg:flex">
+            <ul className="flex items-center gap-8">
+              {menu.items.map((item) => (
+                <DesktopNavItem key={item.id} item={item} />
+              ))}
+            </ul>
+            {header.promoLink ? (
+              <NavLink href={header.promoLink.href} className="type-label-m flex items-center gap-1.5 text-sale">
+                <Icon name="tag" />
+                {header.promoLink.label}
+              </NavLink>
+            ) : null}
+          </nav>
+        ) : null}
       </div>
     </header>
   );

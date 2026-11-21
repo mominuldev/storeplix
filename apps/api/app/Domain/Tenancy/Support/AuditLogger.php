@@ -5,6 +5,8 @@ namespace App\Domain\Tenancy\Support;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Identity\Models\User;
 use App\Domain\Media\Models\Media;
+use App\Domain\Navigation\Models\StoreNavigation;
+use App\Domain\Pages\Models\StorePage;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
@@ -12,6 +14,7 @@ use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
+use App\Domain\Themes\Models\StoreTheme;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -33,6 +36,9 @@ class AuditLogger
         Subscription::class => 'subscription',
         User::class => 'user',
         Tenant::class => 'tenant',
+        StoreTheme::class => 'store_theme',
+        StorePage::class => 'store_page',
+        StoreNavigation::class => 'store_navigation',
     ];
 
     public function __construct(

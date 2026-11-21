@@ -1,0 +1,120 @@
+{
+  "code": "terms",
+  "name": "Terms of service",
+  "description": "The rules for buying from your shop.",
+  "category": "help_policies",
+  "default_title": "Terms of service",
+  "default_slug": "terms",
+  "highlights": [
+    "Orders and prices",
+    "Payment",
+    "Delivery and returns"
+  ],
+  "body": [
+    {
+      "id": "qzj865ufrd",
+      "type": "heading",
+      "text": "Terms of service",
+      "level": 2
+    },
+    {
+      "id": "l1erbfqfoe",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "By placing an order with {store_name} you agree to these terms."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "qh3av90ric",
+      "type": "heading",
+      "text": "Orders and prices",
+      "level": 3
+    },
+    {
+      "id": "7phkqdlmtt",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Prices are in Bangladeshi Taka (BDT). We may cancel an order if a product is out of stock, and we will tell you if that happens."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "7ns26lrwbq",
+      "type": "heading",
+      "text": "Payment",
+      "level": 3
+    },
+    {
+      "id": "cab69m64p2",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "We accept cash on delivery and bKash."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "g158z6tnov",
+      "type": "heading",
+      "text": "Delivery and returns",
+      "level": 3
+    },
+    {
+      "id": "mizwdiaeq1",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "See our Delivery & return policy."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "kdfy6spsc3",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Please review this template and change it to match how your shop works before publishing."
+      ],
+      "tone": "warning"
+    }
+  ]
+}

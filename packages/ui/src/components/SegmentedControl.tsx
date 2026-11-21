@@ -16,11 +16,19 @@ export interface SegmentedControlProps<T extends string> {
   options: SegmentedOption<T>[];
   'aria-label': string;
   className?: string;
+  /** `sm` = Online store V3 compact track (Figma 2045:48344): p 3, radius 10, 13px labels. */
+  size?: 'md' | 'sm';
+  disabled?: boolean;
 }
 
-export function SegmentedControl<T extends string>({ value, onChange, options, className, ...aria }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({ value, onChange, options, className, size = 'md', disabled, ...aria }: SegmentedControlProps<T>) {
+  const sm = size === 'sm';
   return (
-    <div role="tablist" aria-label={aria['aria-label']} className={cn('flex gap-1 rounded-lg bg-surface-subtle p-1', className)}>
+    <div
+      role="tablist"
+      aria-label={aria['aria-label']}
+      className={cn('flex rounded-lg bg-surface-subtle', sm ? 'gap-0.5 rounded-control p-[3px]' : 'gap-1 p-1', className)}
+    >
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -29,10 +37,11 @@ export function SegmentedControl<T extends string>({ value, onChange, options, c
             type="button"
             role="tab"
             aria-selected={active}
-            disabled={o.disabled}
+            disabled={disabled || o.disabled}
             onClick={() => onChange(o.value)}
             className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-[9px] text-body outline-none focus-visible:shadow-focus disabled:cursor-not-allowed',
+              'flex flex-1 items-center justify-center gap-1.5 outline-none focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-60',
+              sm ? 'rounded-md px-3 py-[5px] text-[13px] leading-[18px] whitespace-nowrap' : 'rounded-[9px] py-[9px] text-body',
               active ? 'bg-surface-card font-semibold text-text-primary shadow-elevation-1' : 'font-medium text-text-secondary',
             )}
           >

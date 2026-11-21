@@ -52,7 +52,19 @@ export const mainNav: NavEntry[] = [
   { label: 'Customers', to: '/customers', icon: Users },
   { label: 'Marketing', to: '/marketing', icon: Megaphone },
   { label: 'Reports', to: '/reports', icon: BarChart3 },
-  { label: 'Online store', to: '/online-store', icon: Store },
+  {
+    label: 'Online store',
+    to: '/online-store',
+    icon: Store,
+    // Phase 3 §6: SEO is live; Media, Domains and Shop settings stay placeholders.
+    children: [
+      { label: 'Overview', to: '/online-store' },
+      { label: 'Media', to: '/online-store/media' },
+      { label: 'Domains', to: '/online-store/domains' },
+      { label: 'SEO', to: '/online-store/seo' },
+      { label: 'Shop settings', to: '/online-store/shop-settings' },
+    ],
+  },
   { label: 'Integrations', to: '/integrations', icon: Plug },
   { label: 'Staff', to: '/staff', icon: UserCheck },
   { label: 'Settings', to: '/settings', icon: Settings },

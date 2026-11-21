@@ -69,13 +69,13 @@ describe('footer / coming soon rendering', () => {
   const settings = resolveThemeConfig(modernCommerce, undefined).settings as ModernCommerceSettings;
   const store = {
     id: '1', name: 'Demo Store', slug: 'demo', status: 'active' as const, currency: 'BDT',
-    logo_url: null, favicon_url: null, icons: { apple_touch: null, icon_192: null, icon_512: null },
+    logo_url: null, favicon_url: null, icons: { apple_touch: null, icon_192: null, icon_512: null }, primary_host: 'demo.localhost',
   };
 
   it('renders contact + safe social links and drops unsafe ones', () => {
     const html = renderToStaticMarkup(
       createElement(Footer, {
-        store, settings, description: null,
+        store, settings, description: null, menus: [],
         contact: { phone: '+8801712345678', email: 'hi@demo.com', whatsapp: '+8801712345678', support_hours: '10am–8pm' },
         social: { facebook: 'javascript:alert(1)', instagram: 'https://instagram.com/demo', youtube: 'data:text/html,x' },
       }),
@@ -91,7 +91,7 @@ describe('footer / coming soon rendering', () => {
   });
 
   it('renders nothing for missing contact/social, and the store name when there is no logo', () => {
-    const html = renderToStaticMarkup(createElement(Footer, { store, settings, description: null, contact: NO_CONTACT, social: NO_SOCIAL }));
+    const html = renderToStaticMarkup(createElement(Footer, { store, settings, description: null, menus: [], contact: NO_CONTACT, social: NO_SOCIAL }));
     expect(html).not.toContain('tel:');
     expect(html).not.toContain('mailto:');
     expect(html).not.toContain('aria-label="Instagram"');

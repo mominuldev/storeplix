@@ -1,0 +1,120 @@
+{
+  "code": "privacy",
+  "name": "Privacy policy",
+  "description": "How you collect and use buyer information.",
+  "category": "help_policies",
+  "default_title": "Privacy policy",
+  "default_slug": "privacy",
+  "highlights": [
+    "What we collect",
+    "How we use it",
+    "Your choices"
+  ],
+  "body": [
+    {
+      "id": "4g9dpmrcg6",
+      "type": "heading",
+      "text": "Privacy policy",
+      "level": 2
+    },
+    {
+      "id": "29be2u66mr",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "This page explains what information {store_name} collects when you shop with us and how we use it."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "26846p7q9m",
+      "type": "heading",
+      "text": "What we collect",
+      "level": 3
+    },
+    {
+      "id": "2i0hz2uep1",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Your name, phone number, delivery address and order details."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "enthjxjqi3",
+      "type": "heading",
+      "text": "How we use it",
+      "level": 3
+    },
+    {
+      "id": "ogz5kok16z",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Only to process and deliver your orders and to contact you about them. We do not sell your information."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "v0mwufxbv9",
+      "type": "heading",
+      "text": "Contact",
+      "level": 3
+    },
+    {
+      "id": "32byv7s6eh",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "For any privacy question, email {store_email}."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ogfqrclri1",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Please review this template and change it to match how your shop works before publishing."
+      ],
+      "tone": "warning"
+    }
+  ]
+}

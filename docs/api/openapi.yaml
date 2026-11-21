@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.2.1-phase2
+  version: 1.3.0
   description: |
-    Phase 1, 1.1 (D1–D4) and Phase 2 endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md and
-    docs/development/PHASE-2-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    Phase 1, 1.1 (D1–D4), Phase 2 and Phase 3 (storefront engine) endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md,
+    docs/development/PHASE-2-CONTRACT.md and docs/development/PHASE-3-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -22,6 +22,9 @@ tags:
 - name: billing
 - name: audit
 - name: storefront
+- name: themes
+- name: pages
+- name: navigation
 paths:
   /health:
     get:
@@ -1036,6 +1039,54 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /media:
+    get:
+      tags:
+      - media
+      summary: List media
+      operationId: listMedia
+      description: Any role. Newest first, excludes `failed`. Used by the editor media picker.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: filter[purpose]
+        schema:
+          type: string
+        description: Comma list of MediaPurpose values.
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 24
+      responses:
+        '200':
+          description: Media page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Media'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - media
@@ -1280,6 +1331,9 @@ paths:
           - media
           - subscription
           - user
+          - store_theme
+          - store_page
+          - store_navigation
       - in: query
         name: filter[subject_id]
         schema:
@@ -1323,6 +1377,488 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/TenantForbiddenOrRole'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /themes:
+    get:
+      tags:
+      - themes
+      summary: List theme catalog
+      operationId: listThemes
+      description: Any role. Registry metadata for every library theme; only `status=available` themes can be applied (PHASE-3-CONTRACT §3.1).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ThemeCatalogEntry'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /stores/{store}/themes:
+    get:
+      tags:
+      - themes
+      summary: List installed store themes
+      operationId: listStoreThemes
+      description: Any role. Active theme first.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Installed themes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoreThemeSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/themes/{code}:
+    get:
+      tags:
+      - themes
+      summary: Get store theme (draft + published)
+      operationId: getStoreTheme
+      description: Any role. 404 when the theme is not installed for this store.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ThemeCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/StoreThemeOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/themes/{code}/draft:
+    put:
+      tags:
+      - themes
+      summary: Save theme draft
+      operationId: saveThemeDraft
+      description: |
+        Owner/admin. Replaces the whole draft. Validated against the theme's JSON Schema plus semantic checks
+        (unique ids, maxInstances, tenant media, safe hrefs). Errors use dot paths (`config.sections.1.settings.limit`).
+        Does not revalidate the storefront. Throttle 120/min.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ThemeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveThemeDraftInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/StoreThemeOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '413':
+          description: Config larger than 64 KB (code `payload_too_large`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed` (details keyed by dot path) or `theme_mismatch` (config.theme ≠ {code} or wrong major version)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                error:
+                  code: validation_failed
+                  message: The given data was invalid.
+                  details:
+                    config.sections.1.settings.limit:
+                    - Must be at most 8.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/themes/{code}/publish:
+    post:
+      tags:
+      - themes
+      summary: Publish theme draft
+      operationId: publishTheme
+      description: Owner/admin. Copies draft to published and revalidates the storefront. Idempotent for an unchanged draft.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ThemeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishThemeInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/StoreThemeOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict` (draft changed since the client saw it) or `theme_not_active`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/themes/{code}/discard:
+    post:
+      tags:
+      - themes
+      summary: Discard theme draft
+      operationId: discardThemeDraft
+      description: Owner/admin. Resets the draft to the published config (draft_revision + 1). No revalidation.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ThemeCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/StoreThemeOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Nothing published yet (code `nothing_published`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/themes/{code}/apply:
+    post:
+      tags:
+      - themes
+      summary: Apply (activate) a theme
+      operationId: applyTheme
+      description: |
+        Owner/admin. Installs the theme if needed (registry defaults carrying over colours, fonts and corner style of the
+        current active theme), publishes it, makes it active and sets `applied_at`. Revalidates.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ThemeCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/StoreThemeOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Theme is coming soon or premium (code `theme_unavailable`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /page-templates:
+    get:
+      tags:
+      - pages
+      summary: List page templates
+      operationId: listPageTemplates
+      description: Any role. Static list (PHASE-3-CONTRACT §4.6).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PageTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /stores/{store}/pages:
+    get:
+      tags:
+      - pages
+      summary: List pages
+      operationId: listPages
+      description: Any role. Sorted by updated_at desc; not paginated (max 50 pages per store).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of `draft`, `published`, `hidden`.
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 80
+        description: Title or slug contains.
+      responses:
+        '200':
+          description: Pages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorePageSummary'
+                  meta:
+                    $ref: '#/components/schemas/PageListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - pages
+      summary: Create page
+      operationId: createPage
+      description: Owner/admin. With `template` and no `body`, content comes from the template with shop details filled in. `add_to_menu` appends a page link to that menu.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePageInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/StorePageOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 50 pages already (code `page_limit_reached`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/pages/{page}:
+    get:
+      tags:
+      - pages
+      summary: Get page
+      operationId: getPage
+      description: Any role.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/PagePath'
+      responses:
+        '200':
+          $ref: '#/components/responses/StorePageOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - pages
+      summary: Update page
+      operationId: updatePage
+      description: Owner/admin. Partial; `revision` required. Saves live; revalidates when the page is or was published.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/PagePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePageInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/StorePageOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - pages
+      summary: Delete page
+      operationId: deletePage
+      description: Owner/admin. Menu links to it resolve as `page_missing` (hidden publicly).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/PagePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/navigation:
+    get:
+      tags:
+      - navigation
+      summary: List menus
+      operationId: listNavigation
+      description: Any role. Always returns `main`, `footer`, `help` (created lazily with defaults).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Menus
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NavigationMenu'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/navigation/{handle}:
+    put:
+      tags:
+      - navigation
+      summary: Save menu
+      operationId: saveNavigation
+      description: Owner/admin. Replaces the whole menu. Depth ≤ 2, ≤ 60 items, ≤ 20 top-level, ≤ 20 children per item. Revalidates.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: path
+        name: handle
+        required: true
+        schema:
+          $ref: '#/components/schemas/NavigationHandle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveNavigationInput'
+      responses:
+        '200':
+          description: Saved menu
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NavigationMenu'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /storefront/config:
@@ -1383,6 +1919,90 @@ paths:
                 error:
                   code: store_not_found
                   message: Store not found.
+  /storefront/pages:
+    get:
+      tags:
+      - storefront
+      summary: List published pages (sitemap)
+      operationId: listStorefrontPages
+      description: Server-to-server. Published pages only, regardless of preview. Max 50.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      responses:
+        '200':
+          description: Page index
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorefrontPageIndexEntry'
+        '401':
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Unknown host (code `store_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/pages/{slug}:
+    get:
+      tags:
+      - storefront
+      summary: Get a page by slug
+      operationId: getStorefrontPage
+      description: |
+        Server-to-server. Public: published pages only. With a valid X-Storefront-Preview token: any status
+        (response `Cache-Control: private, no-store`).
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - in: header
+        name: X-Storefront-Preview
+        required: false
+        schema:
+          type: string
+      - in: path
+        name: slug
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 80
+      responses:
+        '200':
+          description: Page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontPage'
+        '401':
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Unknown host (`store_not_found`) or page not found / not public (`page_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 components:
   parameters:
     TenantId:
@@ -1392,6 +2012,37 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: Tenant ULID; validated against the user's tenant_users membership.
+    StorePath:
+      in: path
+      name: store
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+    PagePath:
+      in: path
+      name: page
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: store_pages.id of this store, else 404 `not_found`.
+    ThemeCode:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z0-9-]{1,64}$
+        example: modern-commerce
+    StorefrontHost:
+      in: header
+      name: X-Storefront-Host
+      required: true
+      schema:
+        type: string
+        maxLength: 253
+        example: demo.localhost
+      description: Normalized host (lowercase, no port, no trailing dot, punycode).
   securitySchemes:
     bearerAuth:
       type: http
@@ -1403,6 +2054,32 @@ components:
       name: X-Storefront-Key
       description: Shared secret STOREFRONT_API_KEY (server-to-server only).
   responses:
+    RevisionConflict:
+      description: The resource changed since the client read it (code `revision_conflict`). Refetch and retry.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    StoreThemeOk:
+      description: Store theme
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/StoreTheme'
+    StorePageOk:
+      description: Page
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/StorePage'
     ValidationFailed:
       description: Validation failed (code `validation_failed`)
       content:
@@ -1688,12 +2365,31 @@ components:
         timezone:
           type: string
           example: Asia/Dhaka
+    ThemeBlock:
+      type: object
+      required: [id, type, settings]
+      properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9]{8,16}$
+        type:
+          type: string
+          example: stat
+        settings:
+          type: object
+          additionalProperties: true
     ThemeSection:
       type: object
+      description: Section of a theme config. Settings and blocks are validated by the theme's JSON Schema (packages/themes/<code>/schema.v<major>.json).
       required:
+      - id
       - type
       - enabled
       properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9]{8,16}$
+          description: Client-generated, unique within the config.
         type:
           type: string
           example: hero
@@ -1702,9 +2398,16 @@ components:
         settings:
           type: object
           additionalProperties: true
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeBlock'
     ThemeConfig:
       type: object
-      description: Theme config document; top-level `settings` keys are camelCase and passed through untransformed.
+      description: |
+        Theme config document. The WHOLE document (global, section and block settings) is camelCase and passed through
+        untransformed. Authoritative per-theme schema: packages/themes/<code>/schema.v<major>.json (PHASE-3-CONTRACT §4).
+        ≤ 64 KB, ≤ 30 sections.
       required:
       - theme
       - version
@@ -1713,32 +2416,94 @@ components:
       properties:
         theme:
           type: string
-          example: classic
+          example: modern-commerce
         version:
           type: string
-          example: 1.0.0
+          example: 1.1.0
         settings:
-          type: object
-          required:
-          - primaryColor
-          - secondaryColor
-          - fontFamily
-          additionalProperties: true
-          properties:
-            primaryColor:
-              type: string
-              pattern: ^#[0-9a-fA-F]{6}$
-            secondaryColor:
-              type: string
-              pattern: ^#[0-9a-fA-F]{6}$
-            fontFamily:
-              type: string
-              example: Inter
+          $ref: '#/components/schemas/ThemeGlobalSettings'
         sections:
           type: array
           maxItems: 30
           items:
             $ref: '#/components/schemas/ThemeSection'
+    ThemeGlobalSettings:
+      type: object
+      additionalProperties: true
+      required: [primaryColor, secondaryColor, textColor, backgroundColor, fontFamily, headingFontFamily, cornerStyle,
+        buttonStyle, stylePreset, logoOnDarkMediaId, announcement, header, footer]
+      properties:
+        primaryColor:
+          type: string
+          pattern: ^#[0-9a-f]{6}$
+        secondaryColor:
+          type: string
+          pattern: ^#[0-9a-f]{6}$
+        textColor:
+          type: string
+          pattern: ^#[0-9a-f]{6}$
+        backgroundColor:
+          type: string
+          pattern: ^#[0-9a-f]{6}$
+        fontFamily:
+          type: string
+          enum: [Instrument Sans, Inter, Hind Siliguri, Fraunces, Noto Serif Bengali, Baloo Da 2]
+        headingFontFamily:
+          type: string
+          enum: [Instrument Sans, Inter, Hind Siliguri, Fraunces, Noto Serif Bengali, Baloo Da 2]
+        cornerStyle:
+          type: string
+          enum: [square, rounded, pill]
+        buttonStyle:
+          type: string
+          enum: [solid, outline]
+        stylePreset:
+          type: [string, 'null']
+        logoOnDarkMediaId:
+          type: [string, 'null']
+        announcement:
+          type: object
+          required: [enabled, text, href]
+          properties:
+            enabled:
+              type: boolean
+            text:
+              type: string
+              maxLength: 120
+            href:
+              type: [string, 'null']
+        header:
+          type: object
+          required: [sticky, showSearch, promoLink]
+          properties:
+            sticky:
+              type: boolean
+            showSearch:
+              type: boolean
+            promoLink:
+              type: [object, 'null']
+              properties:
+                label:
+                  type: string
+                  maxLength: 30
+                href:
+                  type: string
+        footer:
+          type: object
+          required: [tagline, showPaymentMethods, paymentMethods]
+          properties:
+            tagline:
+              type: [string, 'null']
+              maxLength: 240
+            showPaymentMethods:
+              type: boolean
+            paymentMethods:
+              type: array
+              maxItems: 8
+              uniqueItems: true
+              items:
+                type: string
+                enum: [cod, bkash, nagad, rocket, upay, visa, mastercard, amex]
     StorefrontConfig:
       type: object
       required:
@@ -1760,6 +2525,7 @@ components:
           - logo_url
           - favicon_url
           - icons
+          - primary_host
           properties:
             id:
               $ref: '#/components/schemas/Ulid'
@@ -1767,6 +2533,9 @@ components:
               type: string
             slug:
               type: string
+            primary_host:
+              type: string
+              description: Canonical host (store_domains.is_primary); used for canonical URLs, sitemap and robots.
             status:
               type: string
               enum:
@@ -1813,11 +2582,14 @@ components:
           description: true only when a valid X-Storefront-Preview token for this store was sent.
         theme:
           $ref: '#/components/schemas/ThemeConfig'
+          description: Active theme's published config; the draft config when `preview` is true.
         seo:
           type: object
           required:
           - title
           - description
+          - og_image_url
+          - noindex
           properties:
             title:
               type: string
@@ -1825,6 +2597,31 @@ components:
               type:
               - string
               - 'null'
+            og_image_url:
+              type:
+              - string
+              - 'null'
+              format: uri
+              description: Store share image (1200×630 recommended); falls back to null.
+            noindex:
+              type: boolean
+              description: Merchant chose "Hide the whole shop from Google".
+        navigation:
+          type: object
+          description: Resolved menus. Public responses drop links to unpublished/missing pages; preview keeps unpublished ones. Optional for rolling deploys.
+          required: [main, footer, help]
+          properties:
+            main:
+              $ref: '#/components/schemas/StorefrontNavMenu'
+            footer:
+              $ref: '#/components/schemas/StorefrontNavMenu'
+            help:
+              $ref: '#/components/schemas/StorefrontNavMenu'
+        media:
+          type: object
+          description: Exactly the media ids referenced by `theme`, keyed by id. Optional for rolling deploys.
+          additionalProperties:
+            $ref: '#/components/schemas/StorefrontMedia'
         contact:
           $ref: '#/components/schemas/StoreContact'
         social:
@@ -2319,10 +3116,13 @@ components:
       - social
       - address
       - region
+      - seo
       - updated_at
       properties:
         store_id:
           $ref: '#/components/schemas/Ulid'
+        seo:
+          $ref: '#/components/schemas/StoreSeo'
         identity:
           type: object
           required:
@@ -2396,6 +3196,22 @@ components:
       type: object
       required: []
       properties:
+        seo:
+          type: object
+          required: []
+          description: Phase 3 store-level SEO (PHASE-3-CONTRACT §3.4).
+          properties:
+            title:
+              type: [string, 'null']
+              maxLength: 70
+            description:
+              type: [string, 'null']
+              maxLength: 160
+            share_image_media_id:
+              type: [string, 'null']
+              description: Media of this tenant, purpose page_image.
+            hide_from_search:
+              type: boolean
         identity:
           type: object
           required: []
@@ -2897,3 +3713,569 @@ components:
           maxLength: 128
         password_confirmation:
           type: string
+    UserRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+    ThemeCatalogEntry:
+      type: object
+      required: [code, name, description, version, status, tier, price_amount, currency, tags, is_new]
+      properties:
+        code:
+          type: string
+          example: modern-commerce
+        name:
+          type: string
+          example: Gallery
+        description:
+          type: string
+        version:
+          type: string
+          example: 1.1.0
+        status:
+          type: string
+          enum: [available, coming_soon]
+        tier:
+          type: string
+          enum: [free, premium]
+        price_amount:
+          type: [integer, 'null']
+          description: BDT minor units, premium only (display; not purchasable in Phase 3).
+        currency:
+          type: [string, 'null']
+        tags:
+          type: array
+          items:
+            type: string
+        is_new:
+          type: boolean
+    StoreThemeSummary:
+      type: object
+      required: [id, code, name, version, is_active, draft_revision, published_revision, has_unpublished_changes,
+        draft_updated_at, draft_updated_by, published_at, published_by, applied_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        code:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        is_active:
+          type: boolean
+        draft_revision:
+          type: integer
+        published_revision:
+          type: [integer, 'null']
+        has_unpublished_changes:
+          type: boolean
+        draft_updated_at:
+          type: string
+          format: date-time
+        draft_updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        published_at:
+          type: [string, 'null']
+          format: date-time
+        published_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        applied_at:
+          type: [string, 'null']
+          format: date-time
+    StoreTheme:
+      allOf:
+      - $ref: '#/components/schemas/StoreThemeSummary'
+      - type: object
+        required: [draft_config, published_config, media]
+        properties:
+          draft_config:
+            $ref: '#/components/schemas/ThemeConfig'
+          published_config:
+            oneOf:
+            - $ref: '#/components/schemas/ThemeConfig'
+            - type: 'null'
+          media:
+            type: object
+            description: Media referenced by draft or published config, keyed by id.
+            additionalProperties:
+              $ref: '#/components/schemas/MediaRef'
+    SaveThemeDraftInput:
+      type: object
+      required: [config, base_revision]
+      properties:
+        config:
+          $ref: '#/components/schemas/ThemeConfig'
+        base_revision:
+          type: integer
+          minimum: 1
+    PublishThemeInput:
+      type: object
+      required: [draft_revision]
+      properties:
+        draft_revision:
+          type: integer
+          minimum: 1
+    RichTextDoc:
+      type: object
+      description: |
+        Strict subset of ProseMirror/Tiptap JSON (PHASE-3-CONTRACT §4.4): blocks paragraph, heading (level 2|3),
+        bulletList, orderedList, listItem (paragraphs only), blockquote; inline text + hardBreak; marks bold, italic,
+        underline, strike, link{href}. Unknown nodes/marks/attrs → 422. Link hrefs: relative, https, http, mailto, tel.
+        Never HTML.
+      required: [type, content]
+      properties:
+        type:
+          const: doc
+        content:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [type]
+            properties:
+              type:
+                type: string
+                enum: [paragraph, heading, bulletList, orderedList, blockquote]
+            additionalProperties: true
+    PageBlock:
+      type: object
+      description: Discriminated by `type` (PHASE-3-CONTRACT §4.5). Unknown keys → 422.
+      required: [id, type]
+      properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9]{8,16}$
+        type:
+          type: string
+          enum: [heading, rich_text, image, button, callout, table]
+        text:
+          type: string
+          maxLength: 120
+        level:
+          type: integer
+          enum: [2, 3]
+        doc:
+          $ref: '#/components/schemas/RichTextDoc'
+        media_id:
+          type: [string, 'null']
+        alt:
+          type: [string, 'null']
+          maxLength: 160
+        caption:
+          type: [string, 'null']
+          maxLength: 200
+        label:
+          type: string
+          maxLength: 40
+        href:
+          type: string
+          maxLength: 2048
+        style:
+          type: string
+          enum: [primary, secondary]
+        title:
+          type: [string, 'null']
+          maxLength: 80
+        items:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            maxLength: 200
+        tone:
+          type: string
+          enum: [info, success, warning]
+        headers:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items:
+            type: string
+            maxLength: 60
+        rows:
+          type: array
+          maxItems: 50
+          items:
+            type: array
+            items:
+              type: string
+              maxLength: 200
+    PageStatus:
+      type: string
+      enum: [draft, published, hidden]
+    PageTemplateCode:
+      type: string
+      enum: [blank, about, contact, faq, size_guide, how_to_order, wholesale, privacy, terms, returns]
+    PageTemplate:
+      type: object
+      required: [code, name, description, category, default_title, default_slug, highlights]
+      properties:
+        code:
+          $ref: '#/components/schemas/PageTemplateCode'
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [blank, help_policies, about, selling]
+        default_title:
+          type: string
+        default_slug:
+          type: [string, 'null']
+        highlights:
+          type: array
+          items:
+            type: string
+    StorePageSummary:
+      type: object
+      required: [id, title, slug, url_path, status, template, in_menus, revision, published_at, updated_at, updated_by]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        title:
+          type: string
+          maxLength: 120
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 80
+        url_path:
+          type: string
+          example: /pages/about
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        template:
+          $ref: '#/components/schemas/PageTemplateCode'
+        in_menus:
+          type: array
+          items:
+            $ref: '#/components/schemas/NavigationHandle'
+        revision:
+          type: integer
+        published_at:
+          type: [string, 'null']
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+    StorePage:
+      allOf:
+      - $ref: '#/components/schemas/StorePageSummary'
+      - type: object
+        required: [body, seo, media]
+        properties:
+          body:
+            type: array
+            maxItems: 40
+            items:
+              $ref: '#/components/schemas/PageBlock'
+          seo:
+            type: object
+            required: [title, description, share_image]
+            properties:
+              title:
+                type: [string, 'null']
+                maxLength: 70
+              description:
+                type: [string, 'null']
+                maxLength: 160
+              share_image:
+                oneOf:
+                - $ref: '#/components/schemas/MediaRef'
+                - type: 'null'
+          media:
+            type: object
+            additionalProperties:
+              $ref: '#/components/schemas/MediaRef'
+    PageListMeta:
+      type: object
+      required: [counts, limit]
+      properties:
+        counts:
+          type: object
+          required: [all, draft, published, hidden]
+          properties:
+            all:
+              type: integer
+            draft:
+              type: integer
+            published:
+              type: integer
+            hidden:
+              type: integer
+        limit:
+          type: integer
+          example: 50
+    PageSeoInput:
+      type: object
+      properties:
+        title:
+          type: [string, 'null']
+          maxLength: 70
+        description:
+          type: [string, 'null']
+          maxLength: 160
+        share_image_media_id:
+          type: [string, 'null']
+    CreatePageInput:
+      type: object
+      description: '`title` required unless `template` is given.'
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 80
+        template:
+          $ref: '#/components/schemas/PageTemplateCode'
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        body:
+          type: array
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/PageBlock'
+        seo:
+          $ref: '#/components/schemas/PageSeoInput'
+        add_to_menu:
+          oneOf:
+          - $ref: '#/components/schemas/NavigationHandle'
+          - type: 'null'
+    UpdatePageInput:
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          type: integer
+        title:
+          type: string
+          maxLength: 120
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 80
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        body:
+          type: array
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/PageBlock'
+        seo:
+          $ref: '#/components/schemas/PageSeoInput'
+    NavigationHandle:
+      type: string
+      enum: [main, footer, help]
+    NavLink:
+      type: object
+      description: |
+        Discriminated by `type`: home | page{page_id} | url{url: http/https only} | collection{handle} |
+        builtin{target: track_order|cart|search}.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [home, page, url, collection, builtin]
+        page_id:
+          $ref: '#/components/schemas/Ulid'
+        url:
+          type: string
+          maxLength: 2048
+        handle:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 80
+        target:
+          type: string
+          enum: [track_order, cart, search]
+    NavItem:
+      type: object
+      required: [id, label, link]
+      properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9]{8,16}$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 40
+        link:
+          $ref: '#/components/schemas/NavLink'
+        children:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/NavItem'
+          description: Only one level of children is allowed.
+    NavItemResolved:
+      allOf:
+      - $ref: '#/components/schemas/NavItem'
+      - type: object
+        required: [href, link_status]
+        properties:
+          href:
+            type: [string, 'null']
+          link_status:
+            type: string
+            enum: [ok, page_unpublished, page_missing]
+          page_title:
+            type: [string, 'null']
+    NavigationMenu:
+      type: object
+      required: [id, handle, title, items, revision, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        handle:
+          $ref: '#/components/schemas/NavigationHandle'
+        title:
+          type: string
+          maxLength: 40
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NavItemResolved'
+        revision:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+    SaveNavigationInput:
+      type: object
+      required: [items, revision]
+      properties:
+        title:
+          type: string
+          maxLength: 40
+        items:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/NavItem'
+        revision:
+          type: integer
+    StoreSeo:
+      type: object
+      required: [title, description, share_image, hide_from_search]
+      properties:
+        title:
+          type: [string, 'null']
+          maxLength: 70
+        description:
+          type: [string, 'null']
+          maxLength: 160
+        share_image:
+          oneOf:
+          - $ref: '#/components/schemas/MediaRef'
+          - type: 'null'
+        hide_from_search:
+          type: boolean
+    StorefrontMedia:
+      type: object
+      required: [id, url, width, height, alt, srcset]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        url:
+          type: string
+          format: uri
+        width:
+          type: integer
+        height:
+          type: integer
+        alt:
+          type: [string, 'null']
+        srcset:
+          type: array
+          items:
+            type: object
+            required: [url, width]
+            properties:
+              url:
+                type: string
+                format: uri
+              width:
+                type: integer
+    StorefrontNavItem:
+      type: object
+      required: [id, label, href, children]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        href:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontNavItem'
+    StorefrontNavMenu:
+      type: object
+      required: [title, items]
+      properties:
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontNavItem'
+    StorefrontPage:
+      type: object
+      required: [id, slug, title, status, body, media, seo, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        slug:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        body:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageBlock'
+        media:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/StorefrontMedia'
+        seo:
+          type: object
+          required: [title, description, og_image_url]
+          properties:
+            title:
+              type: [string, 'null']
+            description:
+              type: [string, 'null']
+            og_image_url:
+              type: [string, 'null']
+              format: uri
+        updated_at:
+          type: string
+          format: date-time
+    StorefrontPageIndexEntry:
+      type: object
+      required: [slug, updated_at]
+      properties:
+        slug:
+          type: string
+        updated_at:
+          type: string
+          format: date-time

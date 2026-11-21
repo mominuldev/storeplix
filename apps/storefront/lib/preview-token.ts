@@ -13,3 +13,7 @@ const TOKEN_RE = /^[A-Za-z0-9._~+/=:|-]{1,1024}$/;
 export function sanitizePreviewToken(value: unknown): string | null {
   return typeof value === 'string' && TOKEN_RE.test(value) ? value : null;
 }
+
+/** Set alongside sp_preview when the preview runs inside the dashboard editor iframe (`?embed=1`). */
+export const EMBED_PARAM = 'embed';
+export const EMBED_COOKIE = 'sp_embed';

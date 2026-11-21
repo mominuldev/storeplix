@@ -1,0 +1,51 @@
+{
+  "code": "how_to_order",
+  "name": "How to order",
+  "description": "Step-by-step ordering help for first-time buyers.",
+  "category": "selling",
+  "default_title": "How to order",
+  "default_slug": "how-to-order",
+  "highlights": [
+    "Ordering steps",
+    "Payment options",
+    "Order tracking"
+  ],
+  "body": [
+    {
+      "id": "hym4l1vfz3",
+      "type": "heading",
+      "text": "How to order",
+      "level": 2
+    },
+    {
+      "id": "zfkkibj3j4",
+      "type": "callout",
+      "title": "Four easy steps",
+      "items": [
+        "Choose a product and size",
+        "Tap Add to cart, then Checkout",
+        "Enter your name, phone number and address",
+        "Pay cash on delivery or with bKash"
+      ],
+      "tone": "success"
+    },
+    {
+      "id": "wj99ibag7i",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Need help ordering? Call us at {store_phone}."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

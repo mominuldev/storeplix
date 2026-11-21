@@ -25,6 +25,8 @@ export const findCurrentStore = cache(async (): Promise<CurrentStore | null> => 
   const result = await getStorefrontConfig(host, await getPreviewToken());
   if (result.status === 'not_found') return null;
   const { theme, config: themeConfig } = resolveStoreTheme(result.config.theme);
+  // Bad stored config never breaks the page: defaults were used for the invalid parts. Log it.
+  if (themeConfig.usedFallback) console.warn(`[theme] invalid theme config for ${host}; rendered with defaults where needed`);
   return { host, mode: storeMode(result.config), config: result.config, theme, themeConfig };
 });
 

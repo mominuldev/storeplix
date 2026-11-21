@@ -26,8 +26,12 @@ jobs:
       - name: Install Playwright
         working-directory: tests/e2e
         run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
-      - name: Run smoke
+      - name: Run smoke + flows
         working-directory: tests/e2e
+        env:
+          # compose sends mail to Mailpit; throwaway users are deleted via `docker compose exec api`.
+          MAILPIT_URL: http://localhost:8025
+          E2E_ARTISAN: docker
         run: npx playwright test
       - if: failure()
         run: docker compose logs --no-color > compose.log

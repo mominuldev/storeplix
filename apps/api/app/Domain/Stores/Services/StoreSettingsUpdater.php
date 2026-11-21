@@ -6,11 +6,12 @@ use App\Domain\Shared\Support\Phone;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Themes\StoreThemeService;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Applies a partial UpdateStoreSettingsInput. Returns the list of changed keys ("section.key").
- * Colours live in store_settings.theme.settings.primaryColor/secondaryColor (single source).
+ * Colours live in the active theme (store_themes, draft + published, P3-8); SEO in store_settings (Phase 3 §3.4).
  */
 class StoreSettingsUpdater
 {
@@ -29,9 +30,16 @@ class StoreSettingsUpdater
         'contact.whatsapp' => ['settings', 'whatsapp'],
         'contact.support_hours' => ['settings', 'support_hours'],
         'address.use_for_returns' => ['settings', 'use_address_for_returns'],
+        'seo.title' => ['settings', 'seo_title'],
+        'seo.description' => ['settings', 'seo_description'],
+        'seo.share_image_media_id' => ['settings', 'og_image_media_id'],
+        'seo.hide_from_search' => ['settings', 'noindex'],
     ];
 
-    public function __construct(private readonly AuditLogger $audit) {}
+    public function __construct(
+        private readonly AuditLogger $audit,
+        private readonly StoreThemeService $themes,
+    ) {}
 
     /**
      * @param  array<string, array<string, mixed>>  $input  validated, partial
@@ -50,6 +58,9 @@ class StoreSettingsUpdater
             $value = $input[$section][$field];
             if (in_array($key, ['contact.phone', 'contact.whatsapp'], true) && $value !== null) {
                 $value = Phone::e164($value);
+            }
+            if ($key === 'seo.hide_from_search') {
+                $value = (bool) $value;
             }
             if ($key === 'identity.business_categories') {
                 $value = array_values(array_unique($value));
@@ -84,26 +95,27 @@ class StoreSettingsUpdater
             $settings->business_address = $address;
         }
 
-        $theme = $settings->theme ?? config('storeplix.default_theme');
+        // P3-8: Phase 2 colour shortcut writes the active theme's draft AND published colours.
+        $colors = [];
         foreach (['primary_color' => 'primaryColor', 'secondary_color' => 'secondaryColor'] as $field => $themeKey) {
             if (isset($input['branding'][$field])) {
-                $color = strtolower($input['branding'][$field]);
-                if (($theme['settings'][$themeKey] ?? null) !== $color) {
-                    $theme['settings'][$themeKey] = $color;
-                    $changed[] = "branding.{$field}";
-                }
+                $colors[$themeKey] = strtolower($input['branding'][$field]);
             }
         }
-        $settings->theme = $theme;
+
+        DB::transaction(function () use ($store, $settings, $colors, &$changed) {
+            foreach ($this->themes->setBrandColors($store, $colors) as $key) {
+                $changed[] = $key === 'primaryColor' ? 'branding.primary_color' : 'branding.secondary_color';
+            }
+            if ($changed !== []) {
+                $store->save();
+                $settings->save();
+            }
+        });
 
         if ($changed === []) {
             return [];
         }
-
-        DB::transaction(function () use ($store, $settings) {
-            $store->save();
-            $settings->save();
-        });
 
         // Redacted: changed key names only, never contact values.
         $this->audit->log('store.settings_updated', $settings, ['changes' => $changed]);

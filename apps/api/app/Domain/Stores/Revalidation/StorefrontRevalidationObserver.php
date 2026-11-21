@@ -2,14 +2,18 @@
 
 namespace App\Domain\Stores\Revalidation;
 
+use App\Domain\Navigation\Models\StoreNavigation;
+use App\Domain\Pages\Models\StorePage;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Models\StoreSetting;
+use App\Domain\Themes\Models\StoreTheme;
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * Dispatches RevalidateStorefront (after commit, queued → never blocks the request) when
- * anything the storefront renders changes.
+ * anything the storefront renders changes. Phase 3 (P3-18): theme publish/apply (published_config or is_active
+ * changed — never draft-only saves), page changes when the page is or was published, navigation saves.
  */
 class StorefrontRevalidationObserver
 {
@@ -23,6 +27,17 @@ class StorefrontRevalidationObserver
             }
         } elseif ($model instanceof StoreSetting) {
             $this->dispatch($model->tenant_id, $model->store_id);
+        } elseif ($model instanceof StoreTheme) {
+            if ($model->wasChanged(['published_config', 'is_active', 'applied_at']) || ($model->wasRecentlyCreated && $model->is_active)) {
+                $this->dispatch($model->tenant_id, $model->store_id);
+            }
+        } elseif ($model instanceof StorePage) {
+            $wasPublished = $model->getOriginal('status') === StorePage::PUBLISHED && ! $model->wasRecentlyCreated;
+            if (($model->isPublished() || $wasPublished) && ($model->wasRecentlyCreated || $model->wasChanged())) {
+                $this->dispatch($model->tenant_id, $model->store_id);
+            }
+        } elseif ($model instanceof StoreNavigation) {
+            $this->dispatch($model->tenant_id, $model->store_id);
         } elseif ($model instanceof StoreDomain) {
             $old = $model->wasChanged('hostname') ? [(string) $model->getOriginal('hostname')] : [];
             $this->dispatch($model->tenant_id, $model->store_id, $old);
@@ -33,6 +48,8 @@ class StorefrontRevalidationObserver
     {
         if ($model instanceof StoreDomain) {
             $this->dispatch($model->tenant_id, $model->store_id, [$model->hostname]);
+        } elseif ($model instanceof StorePage && $model->isPublished()) {
+            $this->dispatch($model->tenant_id, $model->store_id);
         }
     }
 

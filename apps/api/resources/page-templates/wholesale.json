@@ -1,0 +1,68 @@
+{
+  "code": "wholesale",
+  "name": "Wholesale enquiry",
+  "description": "Invite bulk and reseller orders.",
+  "category": "selling",
+  "default_title": "Wholesale",
+  "default_slug": "wholesale",
+  "highlights": [
+    "Who can order wholesale",
+    "Minimum order",
+    "How to contact"
+  ],
+  "body": [
+    {
+      "id": "1mnbqns6pu",
+      "type": "heading",
+      "text": "Wholesale and bulk orders",
+      "level": 2
+    },
+    {
+      "id": "q80idw3706",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "We supply shops, resellers and companies all over Bangladesh."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "i8j76b2laj",
+      "type": "callout",
+      "title": "What to send us",
+      "items": [
+        "Products and quantities you need",
+        "Your delivery area",
+        "Your phone number"
+      ],
+      "tone": "info"
+    },
+    {
+      "id": "lj4h9du779",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Email {store_email} or call {store_phone} and our team will send you prices."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

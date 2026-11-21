@@ -1,4 +1,5 @@
 import { isAllowedMediaOrigin } from './media';
+import { mailtoHref } from './contact';
 
 /**
  * Sanitizers for merchant-supplied theme values. Merchant data is rendered as data only:
@@ -75,7 +76,7 @@ export function sanitizeHref(value: unknown): string | null {
   if (v.startsWith('/')) return v.startsWith('//') ? null : v;
   try {
     const url = new URL(v);
-    return url.protocol === 'https:' ? url.toString() : null;
+    return url.protocol === 'https:' && url.hostname && !url.username && !url.password ? url.toString() : null;
   } catch {
     return null;
   }
@@ -104,4 +105,53 @@ function sanitizeHrefAllowHttp(v: string): boolean {
   } catch {
     return false;
   }
+}
+
+const HEX6_RE = /^#[0-9a-f]{6}$/i;
+
+/** Theme colours are 6-digit hex only (schema `^#[0-9a-f]{6}$`, normalised to lowercase). */
+export function sanitizeHex(value: unknown): string | null {
+  return typeof value === 'string' && HEX6_RE.test(value.trim()) ? value.trim().toLowerCase() : null;
+}
+
+const ULID_RE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
+
+/** Media ids are ULIDs (tenant ownership is checked by the API on save). */
+export function sanitizeMediaId(value: unknown): string | null {
+  return typeof value === 'string' && ULID_RE.test(value) ? value.toLowerCase() : null;
+}
+
+/**
+ * Navigation link from the API (already resolved server-side): a same-site path or an http(s)
+ * URL without credentials. Nav `url` items may be http (contract §3.3).
+ */
+export function sanitizeNavHref(value: unknown): string | null {
+  const safe = sanitizeHref(value);
+  if (safe) return safe;
+  if (typeof value !== 'string' || !value.startsWith('http://')) return null;
+  // eslint-disable-next-line no-control-regex
+  if (value.length > 2048 || /[\u0000-\u001f\u007f\\\s]/.test(value)) return null;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' && u.hostname && !u.username && !u.password ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True for links that leave the store (rendered with rel="noopener noreferrer"). */
+export function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
+/**
+ * Rich-text link (PHASE-3-CONTRACT §4.4): relative `/…`, http(s), strict `mailto:` (no query) or
+ * `tel:+digits`. Everything else (javascript:, data:, obfuscated variants) → null and the text
+ * renders without a link.
+ */
+export function sanitizeRichTextHref(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  if (value.startsWith('mailto:')) return mailtoHref(value.slice(7)) === value ? value : null;
+  if (value.startsWith('tel:')) return /^tel:\+?[0-9]{7,15}$/.test(value) ? value : null;
+  return sanitizeNavHref(value);
 }

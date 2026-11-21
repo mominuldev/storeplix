@@ -25,17 +25,21 @@ export function SetupChecklist() {
   const store = useTenantStore().data;
   const manage = can.manageStaff(activeTenant?.role);
   const settings = useQuery({ queryKey: settingsKey(store?.id), queryFn: () => api.stores.getSettings(store!.id), enabled: !!store, retry: false });
+  const themes = useQuery({ queryKey: ['store-themes', store?.id], queryFn: () => api.storeThemes.list(store!.id), enabled: !!store, retry: false });
   const staff = useQuery({ queryKey: ['staff', activeTenant?.id], queryFn: () => api.staff.list(), enabled: manage, retry: false });
 
   if (!store || settings.isPending) return null;
 
   const brandingDone = !!settings.data?.branding.logo && !!settings.data?.contact.phone;
   const teamDone = (staff.data?.data.length ?? 0) > 1;
+  // Phase 3 §6: done once a theme was explicitly applied or the active theme was published after the initial copy.
+  const activeTheme = themes.data?.find((t) => t.is_active);
+  const themeDone = !!activeTheme && (!!activeTheme.applied_at || (activeTheme.published_revision ?? 0) > 1);
   const items: Item[] = [
     { key: 'name', title: 'Name your shop', hint: 'Name, link & category', state: 'done' },
     { key: 'brand', title: 'Add logo & contact', hint: 'Logo plus a phone customers can call', state: brandingDone ? 'done' : 'todo', to: '/settings/store' },
     ...(manage ? [{ key: 'team', title: 'Invite your team', hint: 'Managers and staff get their own sign-in', state: (teamDone ? 'done' : 'todo') as ChecklistState, to: '/staff' }] : []),
-    { key: 'theme', title: 'Pick a theme', hint: 'Look & brand colour', state: 'locked' },
+    { key: 'theme', title: 'Pick a theme', hint: 'Look & brand colour', state: themeDone ? 'done' : 'todo', to: '/online-store/themes' },
     { key: 'products', title: 'Add products', hint: 'Your first items', state: 'locked' },
     { key: 'delivery', title: 'Delivery', hint: 'Zones & courier', state: 'locked' },
     { key: 'paid', title: 'Get paid', hint: 'COD & gateways', state: 'locked' },

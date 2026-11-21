@@ -1,9 +1,13 @@
 import { findCurrentStore } from '@/lib/store';
+import { getStorefrontPageIndex } from '@/lib/storefront-api';
+import { isIndexable } from '@/lib/seo';
 import { sitemapResponse } from '@/lib/seo-files';
 
 export const dynamic = 'force-dynamic';
 
-/** Per-host sitemap; empty for draft stores. Product/category URLs come with those APIs. */
+/** Per-host sitemap: home + published pages; empty for draft/preview/hidden stores. */
 export async function GET() {
-  return sitemapResponse(await findCurrentStore());
+  const store = await findCurrentStore();
+  const pages = store && isIndexable(store.mode, store.config.seo) ? await getStorefrontPageIndex(store.host) : [];
+  return sitemapResponse(store, pages);
 }

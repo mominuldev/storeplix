@@ -10,12 +10,14 @@ use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Artisan;
 
 /**
  * Dev seed (AGENT-CONTRACTS + Phase 2): demo@storeplix.test / password, phone 8801700000000 (verified).
  * Tenant "Demo" (14-day Starter trial via TenantCreated),
  * store "demo" with domains demo.{PLATFORM_DOMAIN} (primary) and demo.localhost, public contact
  * and social links. Logo/favicon URLs derive from media, so none are seeded. Idempotent.
+ * Phase 3: stores:ensure-content gives existing stores their default theme, pages and menus.
  */
 class DemoSeeder extends Seeder
 {
@@ -67,5 +69,7 @@ class DemoSeeder extends Seeder
                 'area' => 'Gulshan', 'postcode' => '1212',
             ],
         ])->save());
+
+        Artisan::call('stores:ensure-content', ['--store' => 'demo']);
     }
 }

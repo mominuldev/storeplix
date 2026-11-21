@@ -59,21 +59,6 @@ return [
 
     'bd_divisions' => ['Barishal', 'Chattogram', 'Dhaka', 'Khulna', 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet'],
 
-    /*
-    | Default theme configuration applied to every new store (ThemeConfig in @storeplix/types).
-    */
-    'default_theme' => [
-        'theme' => 'modern-commerce',
-        'version' => '1.0.0',
-        'settings' => [
-            'primaryColor' => '#5b53ff',
-            'secondaryColor' => '#0d0d18',
-            'fontFamily' => 'Inter',
-        ],
-        'sections' => [
-            ['type' => 'hero', 'enabled' => true],
-            ['type' => 'featured-products', 'enabled' => true],
-        ],
-    ],
+    // Phase 3: theme defaults come from resources/themes/{code}/defaults.json (ThemeRegistry).
 
 ];

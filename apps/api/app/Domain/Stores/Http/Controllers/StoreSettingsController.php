@@ -29,9 +29,6 @@ class StoreSettingsController
 
     private function settings(Store $store): StoreSetting
     {
-        return StoreSetting::query()->firstOrCreate(
-            ['store_id' => $store->id],
-            ['theme' => config('storeplix.default_theme')],
-        );
+        return StoreSetting::query()->firstOrCreate(['store_id' => $store->id]);
     }
 }

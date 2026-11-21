@@ -1,0 +1,106 @@
+{
+  "code": "returns",
+  "name": "Delivery & return policy",
+  "description": "Delivery times, charges and how returns work.",
+  "category": "help_policies",
+  "default_title": "Delivery & return policy",
+  "default_slug": "delivery-return",
+  "highlights": [
+    "Delivery times",
+    "Checking the parcel",
+    "Returns and refunds"
+  ],
+  "body": [
+    {
+      "id": "lkr2aqxv9u",
+      "type": "heading",
+      "text": "Delivery",
+      "level": 2
+    },
+    {
+      "id": "pctnwlavyf",
+      "type": "table",
+      "headers": [
+        "Area",
+        "Time"
+      ],
+      "rows": [
+        [
+          "Inside Dhaka",
+          "1–2 days"
+        ],
+        [
+          "Outside Dhaka",
+          "2–4 days"
+        ]
+      ]
+    },
+    {
+      "id": "4r6mp6afqf",
+      "type": "heading",
+      "text": "Checking your parcel",
+      "level": 2
+    },
+    {
+      "id": "jzczbttof7",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "You can open the parcel in front of the delivery person and check it before paying."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "jyu5jsjc61",
+      "type": "heading",
+      "text": "Returns",
+      "level": 2
+    },
+    {
+      "id": "6i76bofbci",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Return unused items within 7 days in their original packaging",
+        "Refunds are sent by bKash or cash within 5 working days"
+      ],
+      "tone": "info"
+    },
+    {
+      "id": "xgy29db8p5",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "To start a return, call {store_phone}."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "qa3e68f7e4",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Please review this template and change it to match how your shop works before publishing."
+      ],
+      "tone": "warning"
+    }
+  ]
+}

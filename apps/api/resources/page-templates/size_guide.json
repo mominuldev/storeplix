@@ -1,0 +1,85 @@
+{
+  "code": "size_guide",
+  "name": "Size guide",
+  "description": "Help buyers pick the right size the first time.",
+  "category": "help_policies",
+  "default_title": "Size guide",
+  "default_slug": "size-guide",
+  "highlights": [
+    "Size chart",
+    "How to measure"
+  ],
+  "body": [
+    {
+      "id": "7xj8b7tfq7",
+      "type": "heading",
+      "text": "Size guide",
+      "level": 2
+    },
+    {
+      "id": "xkwo886vom",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Measurements are in inches. If you are between sizes, choose the bigger one."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "pzom75wbbr",
+      "type": "table",
+      "headers": [
+        "Size",
+        "Chest",
+        "Length"
+      ],
+      "rows": [
+        [
+          "S",
+          "36",
+          "26"
+        ],
+        [
+          "M",
+          "38",
+          "27"
+        ],
+        [
+          "L",
+          "40",
+          "28"
+        ],
+        [
+          "XL",
+          "42",
+          "29"
+        ]
+      ]
+    },
+    {
+      "id": "4qmw2wxfog",
+      "type": "heading",
+      "text": "How to measure",
+      "level": 3
+    },
+    {
+      "id": "o4mvn4a4wf",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Chest: measure around the fullest part",
+        "Length: from the shoulder to the hem"
+      ],
+      "tone": "info"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "code": "contact",
+  "name": "Contact",
+  "description": "Phone, email and opening hours in one place.",
+  "category": "about",
+  "default_title": "Contact",
+  "default_slug": "contact",
+  "highlights": [
+    "Phone and WhatsApp",
+    "Email",
+    "Support hours"
+  ],
+  "body": [
+    {
+      "id": "33xtplpft7",
+      "type": "heading",
+      "text": "Get in touch",
+      "level": 2
+    },
+    {
+      "id": "5v2seh60kv",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "We are happy to help with orders, sizes and delivery."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Call us at {store_phone}."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Email us at {store_email}."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "We are available {support_hours}."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "j50ce9uvw5",
+      "type": "callout",
+      "title": "Before you contact us",
+      "items": [
+        "Keep your order number ready",
+        "For a damaged parcel, take a photo before opening it fully"
+      ],
+      "tone": "info"
+    }
+  ]
+}

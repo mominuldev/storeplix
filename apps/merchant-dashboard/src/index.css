@@ -1,3 +1,14 @@
 @import 'tailwindcss';
 @import '@storeplix/config/tokens.css';
 @source '../../../packages/ui/src';
+
+/* Tiptap content inside the editor (RichTextDoc subset only). */
+@layer components {
+  .sp-richtext h2 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 8px 0 4px; }
+  .sp-richtext h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 6px 0 2px; }
+  .sp-richtext p { margin: 4px 0; }
+  .sp-richtext ul { list-style: disc; padding-left: 20px; }
+  .sp-richtext ol { list-style: decimal; padding-left: 20px; }
+  .sp-richtext blockquote { border-left: 3px solid var(--color-border-strong); padding-left: 10px; color: var(--color-text-secondary); }
+  .sp-richtext a { color: var(--color-brand-600); text-decoration: underline; }
+}

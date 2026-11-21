@@ -1,0 +1,1626 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.storeplix.com/themes/modern-commerce/schema.v1.json",
+  "title": "Store Plix theme config: modern-commerce (Gallery), major version 1",
+  "description": "Source of truth for ThemeConfig of theme modern-commerce 1.x (PHASE-3-CONTRACT §4). camelCase throughout. Byte-identical copy in apps/api/resources/themes/. Semantic rules not expressible here (unique ids, maxInstances, tenant media, SafeHref, 64 KB, rich text 10 KB) are enforced by the API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "theme",
+    "version",
+    "settings",
+    "sections"
+  ],
+  "properties": {
+    "theme": {
+      "const": "modern-commerce"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "settings": {
+      "$ref": "#/$defs/globalSettings"
+    },
+    "sections": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{8,16}$"
+    },
+    "hex": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$"
+    },
+    "href": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(/(?!/)[^\\s\\\\\\x00-\\x1f\\x7f]*|https://[^\\s\\\\\\x00-\\x1f\\x7f]+)$"
+    },
+    "hrefOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048,
+      "pattern": "^(/(?!/)[^\\s\\\\\\x00-\\x1f\\x7f]*|https://[^\\s\\\\\\x00-\\x1f\\x7f]+)$"
+    },
+    "mediaId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+    },
+    "font": {
+      "enum": [
+        "Instrument Sans",
+        "Inter",
+        "Hind Siliguri",
+        "Fraunces",
+        "Noto Serif Bengali",
+        "Baloo Da 2"
+      ]
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "customBackground",
+        "textTone",
+        "paddingTop",
+        "paddingBottom",
+        "visibility"
+      ],
+      "properties": {
+        "background": {
+          "enum": [
+            "default",
+            "muted",
+            "brand",
+            "accent",
+            "inverse",
+            "custom"
+          ]
+        },
+        "customBackground": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9a-f]{6}$"
+        },
+        "textTone": {
+          "enum": [
+            "auto",
+            "dark",
+            "light"
+          ]
+        },
+        "paddingTop": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 160,
+          "multipleOf": 8
+        },
+        "paddingBottom": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 160,
+          "multipleOf": 8
+        },
+        "visibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "desktop",
+            "tablet",
+            "phone"
+          ],
+          "properties": {
+            "desktop": {
+              "type": "boolean"
+            },
+            "tablet": {
+              "type": "boolean"
+            },
+            "phone": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "background": {
+            "const": "custom"
+          }
+        },
+        "required": [
+          "background"
+        ]
+      },
+      "then": {
+        "properties": {
+          "customBackground": {
+            "type": "string"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "customBackground": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "globalSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primaryColor",
+        "secondaryColor",
+        "textColor",
+        "backgroundColor",
+        "fontFamily",
+        "headingFontFamily",
+        "cornerStyle",
+        "buttonStyle",
+        "stylePreset",
+        "logoOnDarkMediaId",
+        "announcement",
+        "header",
+        "footer"
+      ],
+      "properties": {
+        "primaryColor": {
+          "$ref": "#/$defs/hex"
+        },
+        "secondaryColor": {
+          "$ref": "#/$defs/hex"
+        },
+        "textColor": {
+          "$ref": "#/$defs/hex"
+        },
+        "backgroundColor": {
+          "$ref": "#/$defs/hex"
+        },
+        "fontFamily": {
+          "$ref": "#/$defs/font"
+        },
+        "headingFontFamily": {
+          "$ref": "#/$defs/font"
+        },
+        "cornerStyle": {
+          "enum": [
+            "square",
+            "rounded",
+            "pill"
+          ]
+        },
+        "buttonStyle": {
+          "enum": [
+            "solid",
+            "outline"
+          ]
+        },
+        "stylePreset": {
+          "enum": [
+            null,
+            "mugdho-violet",
+            "jamdani-green",
+            "eid-gold",
+            "rose-blush",
+            "midnight",
+            "fresh-market",
+            "ocean",
+            "terracotta"
+          ]
+        },
+        "logoOnDarkMediaId": {
+          "$ref": "#/$defs/mediaId"
+        },
+        "announcement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "text",
+            "href"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 120,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "href": {
+              "$ref": "#/$defs/hrefOrNull"
+            }
+          }
+        },
+        "header": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sticky",
+            "showSearch",
+            "promoLink"
+          ],
+          "properties": {
+            "sticky": {
+              "type": "boolean"
+            },
+            "showSearch": {
+              "type": "boolean"
+            },
+            "promoLink": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "href"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30,
+                  "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                },
+                "href": {
+                  "$ref": "#/$defs/href"
+                }
+              }
+            }
+          }
+        },
+        "footer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tagline",
+            "showPaymentMethods",
+            "paymentMethods"
+          ],
+          "properties": {
+            "tagline": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 240,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "showPaymentMethods": {
+              "type": "boolean"
+            },
+            "paymentMethods": {
+              "type": "array",
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "cod",
+                  "bkash",
+                  "nagad",
+                  "rocket",
+                  "upay",
+                  "visa",
+                  "mastercard",
+                  "amex"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "heroSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heading"
+      ],
+      "properties": {
+        "eyebrow": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "heading": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "headingAccent": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subheading": {
+          "type": "string",
+          "maxLength": 140,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "primaryCtaLabel": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "primaryCtaHref": {
+          "$ref": "#/$defs/href"
+        },
+        "secondaryCtaLabel": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "secondaryCtaHref": {
+          "$ref": "#/$defs/href"
+        },
+        "imageMediaId": {
+          "$ref": "#/$defs/mediaId"
+        },
+        "imageAlt": {
+          "type": "string",
+          "maxLength": 160,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "detailImageMediaId": {
+          "$ref": "#/$defs/mediaId"
+        },
+        "tagLabel": {
+          "type": "string",
+          "maxLength": 24,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "showFeaturedProduct": {
+          "type": "boolean"
+        },
+        "layout": {
+          "enum": [
+            "image_right",
+            "image_left",
+            "full_image"
+          ]
+        },
+        "height": {
+          "enum": [
+            "fit",
+            "half",
+            "full"
+          ]
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "statBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "stat"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "label"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 12,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            }
+          }
+        }
+      }
+    },
+    "chipLinksSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "chipBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "chip"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "href"
+          ],
+          "properties": {
+            "badge": {
+              "type": "string",
+              "maxLength": 6,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 24,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "sublabel": {
+              "type": "string",
+              "maxLength": 24,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "href": {
+              "$ref": "#/$defs/href"
+            }
+          }
+        }
+      }
+    },
+    "flashSaleSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "eyebrow": {
+          "type": "string",
+          "maxLength": 24,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 140,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "endsAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,6})?)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "linkLabel": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "linkHref": {
+          "$ref": "#/$defs/href"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "categoryGridSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 140,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "categoryBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "category"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "href"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "imageMediaId": {
+              "$ref": "#/$defs/mediaId"
+            },
+            "href": {
+              "$ref": "#/$defs/href"
+            }
+          }
+        }
+      }
+    },
+    "featuredProductsSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "eyebrow": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "linkLabel": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "linkHref": {
+          "$ref": "#/$defs/href"
+        },
+        "source": {
+          "enum": [
+            "latest",
+            "bestsellers"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "imageWithTextSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heading"
+      ],
+      "properties": {
+        "eyebrow": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "heading": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 400,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "ctaLabel": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "ctaHref": {
+          "$ref": "#/$defs/href"
+        },
+        "imageMediaId": {
+          "$ref": "#/$defs/mediaId"
+        },
+        "imageAlt": {
+          "type": "string",
+          "maxLength": 160,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "layout": {
+          "enum": [
+            "image_left",
+            "image_right"
+          ]
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "featureTilesSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 140,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "tileBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "tile"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "href"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 140,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "imageMediaId": {
+              "$ref": "#/$defs/mediaId"
+            },
+            "href": {
+              "$ref": "#/$defs/href"
+            },
+            "linkLabel": {
+              "type": "string",
+              "maxLength": 30,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            }
+          }
+        }
+      }
+    },
+    "trustBadgesSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "badgeBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "badge"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "icon",
+            "title"
+          ],
+          "properties": {
+            "icon": {
+              "enum": [
+                "truck",
+                "cash",
+                "return",
+                "shield",
+                "chat",
+                "gift",
+                "star",
+                "leaf"
+              ]
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            }
+          }
+        }
+      }
+    },
+    "reviewsClubSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 140,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "club": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "heading": {
+              "type": "string",
+              "maxLength": 60,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "ctaLabel": {
+              "type": "string",
+              "maxLength": 30,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "ctaHref": {
+              "$ref": "#/$defs/href"
+            }
+          }
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "reviewBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "review"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "quote",
+            "author"
+          ],
+          "properties": {
+            "quote": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 280,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "location": {
+              "type": "string",
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "rating": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            }
+          }
+        }
+      }
+    },
+    "richTextSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doc"
+      ],
+      "properties": {
+        "heading": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "doc": {
+          "$ref": "#/$defs/richTextDoc"
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center"
+          ]
+        },
+        "width": {
+          "enum": [
+            "narrow",
+            "wide"
+          ]
+        },
+        "design": {
+          "$ref": "#/$defs/design"
+        }
+      }
+    },
+    "richTextDoc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "properties": {
+        "type": {
+          "const": "doc"
+        },
+        "content": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/rtBlock"
+          }
+        }
+      }
+    },
+    "rtBlock": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "paragraph",
+            "heading",
+            "bulletList",
+            "orderedList",
+            "blockquote"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "paragraph"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rtParagraph"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "heading"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rtHeading"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "bulletList",
+                  "orderedList"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rtList"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "blockquote"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rtBlockquote"
+          }
+        }
+      ]
+    },
+    "rtParagraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "paragraph"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rtInline"
+          }
+        }
+      }
+    },
+    "rtHeading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "attrs"
+      ],
+      "properties": {
+        "type": {
+          "const": "heading"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "enum": [
+                2,
+                3
+              ]
+            }
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rtInline"
+          }
+        }
+      }
+    },
+    "rtList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "bulletList",
+            "orderedList"
+          ]
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "content"
+            ],
+            "properties": {
+              "type": {
+                "const": "listItem"
+              },
+              "content": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5,
+                "items": {
+                  "$ref": "#/$defs/rtParagraph"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rtBlockquote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "properties": {
+        "type": {
+          "const": "blockquote"
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/rtParagraph"
+          }
+        }
+      }
+    },
+    "rtInline": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text",
+            "hardBreak"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "text"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rtText"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "hardBreak"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "hardBreak"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rtText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "marks": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/rtMark"
+          }
+        }
+      }
+    },
+    "rtMark": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "bold",
+            "italic",
+            "underline",
+            "strike",
+            "link"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "link"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "attrs"
+        ],
+        "properties": {
+          "type": {
+            "const": "link"
+          },
+          "attrs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "href"
+            ],
+            "properties": {
+              "href": {
+                "type": "string",
+                "maxLength": 2048,
+                "pattern": "^(/(?!/)[^\\s\\\\\\x00-\\x1f\\x7f]*|https?://[^\\s\\\\\\x00-\\x1f\\x7f]+|mailto:[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+|tel:\\+?[0-9]{7,15})$"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "bold",
+              "italic",
+              "underline",
+              "strike"
+            ]
+          }
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "enabled",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "enum": [
+            "hero",
+            "chip-links",
+            "flash-sale",
+            "category-grid",
+            "featured-products",
+            "image-with-text",
+            "feature-tiles",
+            "trust-badges",
+            "reviews-club",
+            "rich-text"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "settings": {
+          "type": "object"
+        },
+        "blocks": {
+          "type": "array"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "hero"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/heroSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "$ref": "#/$defs/statBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "chip-links"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/chipLinksSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "$ref": "#/$defs/chipBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "flash-sale"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/flashSaleSettings"
+              },
+              "blocks": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "category-grid"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/categoryGridSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "$ref": "#/$defs/categoryBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "featured-products"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/featuredProductsSettings"
+              },
+              "blocks": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "image-with-text"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/imageWithTextSettings"
+              },
+              "blocks": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "feature-tiles"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/featureTilesSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "$ref": "#/$defs/tileBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trust-badges"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/trustBadgesSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "$ref": "#/$defs/badgeBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "reviews-club"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/reviewsClubSettings"
+              },
+              "blocks": {
+                "type": "array",
+                "maxItems": 6,
+                "items": {
+                  "$ref": "#/$defs/reviewBlock"
+                }
+              }
+            },
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "rich-text"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/richTextSettings"
+              },
+              "blocks": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

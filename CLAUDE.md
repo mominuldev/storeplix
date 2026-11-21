@@ -92,6 +92,18 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
 - Frontend: Vitest + Testing Library for components/hooks; Playwright E2E for critical flows (QA owns).
 - PR must pass: lint, typecheck, unit/feature tests, build. Coverage must not drop on touched modules.
 
+## Browser testing: Playwright only (product owner rule)
+- Whenever a change needs checking in a real browser (visual check, click-through, screenshots, console errors), use
+  **Playwright**: the `tests/e2e` project (`pnpm exec playwright test`) or a one-off Playwright script.
+- Do **not** use the Claude in Chrome extension or the user's own Google Chrome for testing.
+- Install once: `cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium`.
+- Ad-hoc check example (screenshot + console errors):
+  ```bash
+  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3000 /tmp/home.png
+  ```
+  For flows (login, editor, preview), write a spec under `tests/e2e/specs/` and run it with `pnpm exec playwright test <spec>`.
+- Save screenshots and traces outside the repo (or under the git-ignored `tests/e2e/test-results/`).
+
 ## Git workflow
 - Branch per feature off `main`: `feat/<area>-<short>`, `fix/...`, `chore/...`, `docs/...`.
 - Conventional Commits (`feat(api): add product variants`). Small PRs (< ~500 changed lines when possible).

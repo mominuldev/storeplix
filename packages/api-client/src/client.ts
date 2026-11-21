@@ -5,6 +5,7 @@ import type {
   AuditLogFilters,
   AuthToken,
   ChangePasswordInput,
+  CreatePageInput,
   CreateStoreInput,
   FeatureAccess,
   ForgotPasswordInput,
@@ -13,7 +14,22 @@ import type {
   InviteStaffInput,
   LoginInput,
   Media,
+  MediaListFilters,
   MediaPurpose,
+  NavigationHandle,
+  NavigationMenu,
+  PageListMeta,
+  PageStatus,
+  PageTemplate,
+  PublishThemeInput,
+  SaveNavigationInput,
+  SaveThemeDraftInput,
+  StorePage,
+  StorePageSummary,
+  StoreTheme,
+  StoreThemeSummary,
+  ThemeCatalogEntry,
+  UpdatePageInput,
   MessageResponse,
   OtpLoginInput,
   OtpResetPasswordInput,
@@ -124,6 +140,15 @@ function retryAfterOf(body: unknown): number | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
   const n = typeof value === 'string' ? Number(value) : value;
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+}
+
+/** Maps MediaListFilters to query params (`filter[purpose]` is a comma list). */
+export function mediaListQuery(f: MediaListFilters = {}): Record<string, string | number | undefined> {
+  return {
+    'filter[purpose]': f.purpose?.length ? f.purpose.join(',') : undefined,
+    page: f.page,
+    per_page: f.per_page,
+  };
 }
 
 /** Maps AuditLogFilters to `filter[...]` query params. */
@@ -336,6 +361,11 @@ export function createApiClient(options: ApiClientOptions) {
 
     media: {
       upload: uploadMedia,
+      /** Phase 3 §3.5: newest first, excludes `failed`. Used by the editor media picker. */
+      list: async (filters: MediaListFilters = {}): Promise<Paginated<Media[]>> => {
+        const envelope = await requestEnvelope<Media[]>('/media', { query: mediaListQuery(filters) });
+        return { data: envelope?.data ?? [], meta: envelope?.meta };
+      },
       get: (mediaId: string) => request<Media>(`/media/${enc(mediaId)}`),
       /** 409 `media_in_use` when it is the current logo/favicon. */
       delete: (mediaId: string) => request<void>(`/media/${enc(mediaId)}`, { method: 'DELETE' }),
@@ -349,6 +379,56 @@ export function createApiClient(options: ApiClientOptions) {
         }
         return current;
       },
+    },
+
+    /** Phase 3 §3.1: theme registry (all library themes, incl. `coming_soon`). */
+    themes: {
+      catalog: () => request<ThemeCatalogEntry[]>('/themes'),
+    },
+
+    /** Phase 3 §3.1: a store's installed themes with draft/publish. `code` is the theme code, e.g. `modern-commerce`. */
+    storeThemes: {
+      list: (storeId: string) => request<StoreThemeSummary[]>(`/stores/${enc(storeId)}/themes`),
+      get: (storeId: string, code: string) => request<StoreTheme>(`/stores/${enc(storeId)}/themes/${enc(code)}`),
+      /** 409 `revision_conflict` when `base_revision` is stale; 422 `validation_failed` / `theme_mismatch`; 413. */
+      saveDraft: (storeId: string, code: string, input: SaveThemeDraftInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<StoreTheme>(`/stores/${enc(storeId)}/themes/${enc(code)}/draft`, { method: 'PUT', body: input, signal: opts?.signal }),
+      /** 409 `revision_conflict` / `theme_not_active`. */
+      publish: (storeId: string, code: string, input: PublishThemeInput) =>
+        request<StoreTheme>(`/stores/${enc(storeId)}/themes/${enc(code)}/publish`, { method: 'POST', body: input }),
+      /** Draft := published. 409 `nothing_published`. */
+      discard: (storeId: string, code: string) => request<StoreTheme>(`/stores/${enc(storeId)}/themes/${enc(code)}/discard`, { method: 'POST' }),
+      /** Install (if needed) and activate. 409 `theme_unavailable` for coming-soon or premium themes. */
+      apply: (storeId: string, code: string) => request<StoreTheme>(`/stores/${enc(storeId)}/themes/${enc(code)}/apply`, { method: 'POST' }),
+    },
+
+    pageTemplates: {
+      list: () => request<PageTemplate[]>('/page-templates'),
+    },
+
+    /** Phase 3 §3.2: pages save live (no draft copy); `revision` guards concurrent edits (409 `revision_conflict`). */
+    pages: {
+      list: async (storeId: string, filters: { status?: PageStatus[]; q?: string } = {}): Promise<{ data: StorePageSummary[]; meta: PageListMeta }> => {
+        const envelope = await requestEnvelope<StorePageSummary[]>(`/stores/${enc(storeId)}/pages`, {
+          query: { 'filter[status]': filters.status?.length ? filters.status.join(',') : undefined, q: filters.q || undefined },
+        });
+        const fallback: PageListMeta = { counts: { all: 0, draft: 0, published: 0, hidden: 0 }, limit: 50 };
+        return { data: envelope?.data ?? [], meta: (envelope?.meta as PageListMeta | undefined) ?? fallback };
+      },
+      get: (storeId: string, pageId: string) => request<StorePage>(`/stores/${enc(storeId)}/pages/${enc(pageId)}`),
+      /** 409 `page_limit_reached` (50). */
+      create: (storeId: string, input: CreatePageInput) => request<StorePage>(`/stores/${enc(storeId)}/pages`, { method: 'POST', body: input }),
+      update: (storeId: string, pageId: string, input: UpdatePageInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<StorePage>(`/stores/${enc(storeId)}/pages/${enc(pageId)}`, { method: 'PATCH', body: input, signal: opts?.signal }),
+      delete: (storeId: string, pageId: string) => request<void>(`/stores/${enc(storeId)}/pages/${enc(pageId)}`, { method: 'DELETE' }),
+    },
+
+    /** Phase 3 §3.3: always the three menus `main`, `footer`, `help` in that order. */
+    navigation: {
+      list: (storeId: string) => request<NavigationMenu[]>(`/stores/${enc(storeId)}/navigation`),
+      /** Saves the whole menu. 409 `revision_conflict`; 422 for depth/count/link errors. */
+      save: (storeId: string, handle: NavigationHandle, input: SaveNavigationInput) =>
+        request<NavigationMenu>(`/stores/${enc(storeId)}/navigation/${enc(handle)}`, { method: 'PUT', body: input }),
     },
 
     plans: { list: () => request<Plan[]>('/plans', { anonymous: true }) },

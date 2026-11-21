@@ -1,4 +1,4 @@
-export { auditLogQuery, createApiClient, normalizeHost } from './client';
+export { auditLogQuery, createApiClient, mediaListQuery, normalizeHost } from './client';
 export type { ApiClient, ApiClientOptions, Paginated, RequestOptions, UploadMediaInput, UploadOptions } from './client';
 export { ApiError, isApiError } from './errors';
 export type { ApiErrorDetails } from './errors';

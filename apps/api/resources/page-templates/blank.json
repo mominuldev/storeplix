@@ -1,0 +1,10 @@
+{
+  "code": "blank",
+  "name": "Blank page",
+  "description": "Start from an empty page.",
+  "category": "blank",
+  "default_title": "New page",
+  "default_slug": null,
+  "highlights": [],
+  "body": []
+}

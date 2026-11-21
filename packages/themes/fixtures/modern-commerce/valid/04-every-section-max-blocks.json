@@ -1,0 +1,763 @@
+{
+  "theme": "modern-commerce",
+  "version": "1.1.0",
+  "settings": {
+    "primaryColor": "#0846c2",
+    "secondaryColor": "#ff7a00",
+    "textColor": "#0e1a33",
+    "backgroundColor": "#fffcf8",
+    "fontFamily": "Instrument Sans",
+    "headingFontFamily": "Fraunces",
+    "cornerStyle": "pill",
+    "buttonStyle": "solid",
+    "stylePreset": null,
+    "logoOnDarkMediaId": null,
+    "announcement": {
+      "enabled": true,
+      "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+      "href": null
+    },
+    "header": {
+      "sticky": true,
+      "showSearch": true,
+      "promoLink": {
+        "label": "Winter offers",
+        "href": "/collections/winter"
+      }
+    },
+    "footer": {
+      "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+      "showPaymentMethods": true,
+      "paymentMethods": [
+        "cod",
+        "bkash",
+        "nagad",
+        "visa",
+        "mastercard"
+      ]
+    }
+  },
+  "sections": [
+    {
+      "id": "h3ro0001",
+      "type": "hero",
+      "enabled": true,
+      "settings": {
+        "eyebrow": "Winter '26 collection",
+        "heading": "Little things,",
+        "headingAccent": "chosen well.",
+        "subheading": "Clothing for every season, toys that teach, food you can trust and the everyday essentials in between.",
+        "primaryCtaLabel": "Shop new arrivals",
+        "primaryCtaHref": "/collections/new",
+        "secondaryCtaLabel": "Explore by age",
+        "secondaryCtaHref": "/collections/by-age",
+        "imageMediaId": null,
+        "imageAlt": "Child in a warm knit cardigan",
+        "detailImageMediaId": null,
+        "tagLabel": "New season",
+        "showFeaturedProduct": true,
+        "layout": "image_right",
+        "height": "fit",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 64,
+          "paddingBottom": 96,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "h3rom000",
+          "type": "stat",
+          "settings": {
+            "value": "4.9 ★",
+            "label": "11k+ parent reviews"
+          }
+        },
+        {
+          "id": "h3rom001",
+          "type": "stat",
+          "settings": {
+            "value": "4.9 ★",
+            "label": "11k+ parent reviews"
+          }
+        },
+        {
+          "id": "h3rom002",
+          "type": "stat",
+          "settings": {
+            "value": "4.9 ★",
+            "label": "11k+ parent reviews"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ch1p0001",
+      "type": "chip-links",
+      "enabled": true,
+      "settings": {
+        "title": "Shop by age",
+        "subtitle": "— every size, every stage",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 96,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "ch1pm000",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm001",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm002",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm003",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm004",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm005",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm006",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        },
+        {
+          "id": "ch1pm007",
+          "type": "chip",
+          "settings": {
+            "badge": "0–3",
+            "label": "Newborn",
+            "sublabel": "months",
+            "href": "/collections/newborn"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fl4sh001",
+      "type": "flash-sale",
+      "enabled": true,
+      "settings": {
+        "eyebrow": "Flash sale",
+        "title": "Today's flash deals",
+        "subtitle": "Fresh deals every day at 10am — while stock lasts.",
+        "endsAt": null,
+        "linkLabel": "See all deals",
+        "linkHref": "/collections/flash-sale",
+        "limit": 4,
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    },
+    {
+      "id": "c4tg0001",
+      "type": "category-grid",
+      "enabled": true,
+      "settings": {
+        "title": "Six rooms, one visit",
+        "subtitle": "The gallery",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "c4tgm000",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm001",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm002",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm003",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm004",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm005",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm006",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        },
+        {
+          "id": "c4tgm007",
+          "type": "category",
+          "settings": {
+            "title": "Winter wear",
+            "imageMediaId": null,
+            "href": "/collections/winter"
+          }
+        }
+      ]
+    },
+    {
+      "id": "n3wa0001",
+      "type": "featured-products",
+      "enabled": true,
+      "settings": {
+        "eyebrow": "New this week",
+        "title": "Fresh from the gallery",
+        "linkLabel": "View all",
+        "linkHref": "/collections/new",
+        "source": "latest",
+        "limit": 4,
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    },
+    {
+      "id": "ed1t0001",
+      "type": "image-with-text",
+      "enabled": true,
+      "settings": {
+        "eyebrow": "The winter edit",
+        "heading": "Warm layers for Dhaka winters.",
+        "text": "Breathable merino, quilted cotton and soft fleece — warm in the morning, never too much by noon. Sizes newborn to 10 years.",
+        "ctaLabel": "Shop winter wear",
+        "ctaHref": "/collections/winter",
+        "imageMediaId": null,
+        "imageAlt": "A mother and child under a warm blanket",
+        "layout": "image_right",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    },
+    {
+      "id": "w0rld001",
+      "type": "feature-tiles",
+      "enabled": true,
+      "settings": {
+        "title": "Play, nourish, every day",
+        "subtitle": "Beyond clothing",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 0,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "w0rlm000",
+          "type": "tile",
+          "settings": {
+            "title": "Toys that teach quietly",
+            "text": "Montessori-inspired wood, puzzles and pretend play — chosen by age, made to last past one child.",
+            "imageMediaId": null,
+            "href": "/collections/toys",
+            "linkLabel": "Shop educational toys"
+          }
+        },
+        {
+          "id": "w0rlm001",
+          "type": "tile",
+          "settings": {
+            "title": "Toys that teach quietly",
+            "text": "Montessori-inspired wood, puzzles and pretend play — chosen by age, made to last past one child.",
+            "imageMediaId": null,
+            "href": "/collections/toys",
+            "linkLabel": "Shop educational toys"
+          }
+        },
+        {
+          "id": "w0rlm002",
+          "type": "tile",
+          "settings": {
+            "title": "Toys that teach quietly",
+            "text": "Montessori-inspired wood, puzzles and pretend play — chosen by age, made to last past one child.",
+            "imageMediaId": null,
+            "href": "/collections/toys",
+            "linkLabel": "Shop educational toys"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tr5t0001",
+      "type": "trust-badges",
+      "enabled": true,
+      "settings": {
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "tr5tm000",
+          "type": "badge",
+          "settings": {
+            "icon": "cash",
+            "title": "Cash on delivery",
+            "text": "Pay at your door, anywhere in Bangladesh"
+          }
+        },
+        {
+          "id": "tr5tm001",
+          "type": "badge",
+          "settings": {
+            "icon": "cash",
+            "title": "Cash on delivery",
+            "text": "Pay at your door, anywhere in Bangladesh"
+          }
+        },
+        {
+          "id": "tr5tm002",
+          "type": "badge",
+          "settings": {
+            "icon": "cash",
+            "title": "Cash on delivery",
+            "text": "Pay at your door, anywhere in Bangladesh"
+          }
+        },
+        {
+          "id": "tr5tm003",
+          "type": "badge",
+          "settings": {
+            "icon": "cash",
+            "title": "Cash on delivery",
+            "text": "Pay at your door, anywhere in Bangladesh"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r3vw0001",
+      "type": "reviews-club",
+      "enabled": true,
+      "settings": {
+        "title": "11,000 reviews, 4.9 average",
+        "subtitle": "From our parents",
+        "club": {
+          "enabled": true,
+          "heading": "Birthday treats & first look at new drops.",
+          "text": "Order updates and member offers on WhatsApp. One message a week, at most.",
+          "ctaLabel": "Join the club",
+          "ctaHref": "/pages/contact"
+        },
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 112,
+          "paddingBottom": 112,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": [
+        {
+          "id": "r3vwm000",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        },
+        {
+          "id": "r3vwm001",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        },
+        {
+          "id": "r3vwm002",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        },
+        {
+          "id": "r3vwm003",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        },
+        {
+          "id": "r3vwm004",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        },
+        {
+          "id": "r3vwm005",
+          "type": "review",
+          "settings": {
+            "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+            "author": "Nusrat J.",
+            "location": "Chattogram · Mother of a 3-year-old",
+            "rating": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "r1chtxt1",
+      "type": "rich-text",
+      "enabled": true,
+      "settings": {
+        "heading": "About us",
+        "doc": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Our promise"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "We deliver "
+                },
+                {
+                  "type": "text",
+                  "text": "everywhere",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    },
+                    {
+                      "type": "italic"
+                    }
+                  ]
+                },
+                {
+                  "type": "hardBreak"
+                },
+                {
+                  "type": "text",
+                  "text": "Read the "
+                },
+                {
+                  "type": "text",
+                  "text": "policy",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "/pages/delivery-return"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " or "
+                },
+                {
+                  "type": "text",
+                  "text": "email us",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "mailto:hello@example.com"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " / "
+                },
+                {
+                  "type": "text",
+                  "text": "call",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "tel:+8801700000000"
+                      }
+                    },
+                    {
+                      "type": "underline"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Cash on delivery",
+                          "marks": [
+                            {
+                              "type": "strike"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "orderedList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "blockquote",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<script>alert(1)</script> stays text"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "External",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "https://example.com/a?b=c"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "align": "left",
+        "width": "narrow",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    }
+  ]
+}

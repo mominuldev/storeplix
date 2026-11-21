@@ -8,6 +8,7 @@ use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Stores\Services\StoreLimitReachedException;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\TenantUser;
+use App\Domain\Themes\Models\StoreTheme;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +56,11 @@ class StoreApiTest extends TestCase
         $this->assertSame($tenant->id, $domain->tenant_id);
 
         $settings = StoreSetting::withoutTenancy()->where('store_id', $storeId)->sole();
-        $this->assertSame(config('storeplix.default_theme'), $settings->theme);
+        // Phase 3 (P3-13): default theme lives in store_themes (active, draft = published).
+        $theme = StoreTheme::withoutTenancy()->where('store_id', $storeId)->sole();
+        $this->assertTrue($theme->is_active);
+        $this->assertSame('modern-commerce', $theme->theme_code);
+        $this->assertSame($theme->draft_config, $theme->published_config);
         $this->assertSame($tenant->id, $settings->tenant_id);
 
         $this->assertTrue(AuditLog::query()->where('action', 'store.created')->where('subject_id', $storeId)->exists());

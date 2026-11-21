@@ -1,6 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { STOREFRONT_HOST_HEADER, isTrustedProxy, resolveRequestHost } from './lib/host';
-import { PREVIEW_COOKIE, PREVIEW_MAX_AGE, PREVIEW_PARAM, sanitizePreviewToken } from './lib/preview-token';
+import {
+  EMBED_COOKIE,
+  EMBED_PARAM,
+  PREVIEW_COOKIE,
+  PREVIEW_MAX_AGE,
+  PREVIEW_PARAM,
+  sanitizePreviewToken,
+} from './lib/preview-token';
+import { parseEditorOrigins } from './lib/editor-origins';
 import { isLocalDevHost } from './lib/seo';
 
 /**
@@ -8,9 +16,13 @@ import { isLocalDevHost } from './lib/seo';
  * the normalized host to server components via a request header. Any client-supplied value of
  * that header is overwritten here, and X-Forwarded-Host is ignored unless TRUSTED_PROXY is set.
  *
- * Merchant preview (contract D2): `?preview=<token>` becomes an httpOnly `sp_preview` cookie and
- * the visitor is redirected to the same URL without the param, so the token doesn't linger in the
- * address bar, history or Referer headers.
+ * Merchant preview (contract D2 + Phase 3 §5.3): `?preview=<token>` becomes an httpOnly
+ * `sp_preview` cookie and the visitor is redirected to the same URL without the param, so the token
+ * doesn't linger in the address bar, history or Referer headers. `&embed=1` (dashboard editor
+ * iframe) sets the cookie `SameSite=None; Secure; Partitioned` plus `sp_embed=1`.
+ *
+ * Framing: only responses to a request carrying `sp_preview` may be framed, and only by the exact
+ * STOREFRONT_EDITOR_ORIGINS; everything else sends `frame-ancestors 'none'` + `X-Frame-Options: DENY`.
  */
 export function proxy(request: NextRequest) {
   const host = resolveRequestHost(request.headers, { trustedProxy: isTrustedProxy() });
@@ -27,20 +39,45 @@ export function proxy(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(STOREFRONT_HOST_HEADER, host);
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  setFramingHeaders(res, sanitizePreviewToken(request.cookies.get(PREVIEW_COOKIE)?.value) !== null);
+  return res;
+}
+
+/** `frame-ancestors` for this response (exported for tests). */
+export function framingPolicy(previewCookie: boolean, origins: string[] = parseEditorOrigins()): string {
+  if (!previewCookie || origins.length === 0) return "frame-ancestors 'none'";
+  return `frame-ancestors 'self' ${origins.join(' ')}`;
+}
+
+function setFramingHeaders(res: NextResponse, previewCookie: boolean) {
+  const policy = framingPolicy(previewCookie);
+  res.headers.set('Content-Security-Policy', policy);
+  if (policy === "frame-ancestors 'none'") res.headers.set('X-Frame-Options', 'DENY');
+  else res.headers.delete('X-Frame-Options');
 }
 
 function previewRedirect(request: NextRequest, host: string) {
   const token = sanitizePreviewToken(request.nextUrl.searchParams.get(PREVIEW_PARAM));
-  // Same URL (Next builds nextUrl from the request's Host) minus the token param.
+  const embed = request.nextUrl.searchParams.get(EMBED_PARAM) === '1';
+  // Same URL (Next builds nextUrl from the request's Host) minus the token and embed params.
   const target = request.nextUrl.clone();
   target.searchParams.delete(PREVIEW_PARAM);
+  target.searchParams.delete(EMBED_PARAM);
 
   const res = NextResponse.redirect(target, 307);
   res.headers.set('Cache-Control', 'private, no-store');
-  res.headers.set('Referrer-Policy', 'no-referrer');
+  // Embedded: keep the editor's *origin* as the document referrer so the PreviewBridge can address
+  // it (the token URL itself is never a referrer). Otherwise send no referrer at all.
+  res.headers.set('Referrer-Policy', token && embed ? 'strict-origin' : 'no-referrer');
 
-  if (token) {
+  if (token && embed) {
+    // Cross-site iframe: SameSite=None requires Secure; browsers accept Secure on http://*.localhost.
+    const opts = { httpOnly: true, secure: true, sameSite: 'none' as const, partitioned: true, path: '/', maxAge: PREVIEW_MAX_AGE };
+    res.cookies.set(PREVIEW_COOKIE, token, opts);
+    res.cookies.set(EMBED_COOKIE, '1', opts);
+    setFramingHeaders(res, true);
+  } else if (token) {
     res.cookies.set(PREVIEW_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production' && !isLocalDevHost(host),
@@ -48,9 +85,13 @@ function previewRedirect(request: NextRequest, host: string) {
       path: '/',
       maxAge: PREVIEW_MAX_AGE,
     });
-  } else if (request.cookies.has(PREVIEW_COOKIE)) {
+    if (request.cookies.has(EMBED_COOKIE)) res.cookies.delete(EMBED_COOKIE);
+    setFramingHeaders(res, false);
+  } else {
     // `?preview=` with an empty/garbage value ends the preview session.
-    res.cookies.delete(PREVIEW_COOKIE);
+    if (request.cookies.has(PREVIEW_COOKIE)) res.cookies.delete(PREVIEW_COOKIE);
+    if (request.cookies.has(EMBED_COOKIE)) res.cookies.delete(EMBED_COOKIE);
+    setFramingHeaders(res, false);
   }
   return res;
 }

@@ -1,6 +1,7 @@
 # Storefront Engine
 
-Status: Accepted (Phase 0). ADRs 0002 (central storefront), 0004 (theme config & rendering).
+Status: Accepted (Phase 0), refined in Phase 3 (docs/development/PHASE-3-CONTRACT.md is binding where they differ).
+ADRs 0002 (central storefront), 0004 (theme config & rendering).
 Owner app: `apps/storefront` (Next.js App Router). Data source: `/api/v1/storefront/*` only.
 
 ## 1. Principles
@@ -31,6 +32,10 @@ Shopper-side mutations (cart, checkout) go through Next.js Route Handlers / Serv
 API with the same headers plus the shopper's cart token (httpOnly cookie `sp_cart`, per host).
 
 ## 3. Theme registry contract
+> **Phase 3 note:** the shipped registry is `apps/storefront/themes/registry.ts` with one theme, `modern-commerce`
+> (display name "Gallery", v1.1.0; see `themes/types.ts` for the real `ThemeDefinition`). Theme metadata, JSON Schema,
+> defaults and editor manifest live in `packages/themes` (PHASE-3-CONTRACT §4). The interface below is the target
+> shape; `classic`/`minimal` are illustrative names only.
 ```ts
 // apps/storefront/src/themes/types.ts
 export interface ThemeDefinition<S extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -66,6 +71,9 @@ Adding a theme = add a folder under `src/themes/<code>/`, register it, export it
 `themes` DB row via migration/seeder. Unknown section types in config are skipped and logged, never crash.
 
 ## 4. Config schema (matches `ThemeConfig` in `@storeplix/types`)
+> **Phase 3:** the authoritative document shape, section catalog, limits and media/link rules are in
+> PHASE-3-CONTRACT §4 (sections and blocks carry ids; images are `*MediaId`; the whole document is camelCase).
+> The example below is the Phase 0 sketch.
 ```json
 {
   "theme": "classic",
@@ -87,15 +95,14 @@ strings length-capped (heading ≤ 120, text ≤ 2000); links are relative paths
 no `javascript:`/`data:`; images referenced by `media_id` (tenant-owned, resolved server-side to CDN URLs);
 ≤ 30 sections; config payload ≤ 64 KB.
 
-Keys inside the theme config document are camelCase at the top `settings` level as fixed by the
-`ThemeConfig` type; the API passes the document through untransformed (exception to snake_case JSON).
-Section settings use snake_case. (See OPEN-QUESTIONS Q9 to unify.)
+Keys inside the theme config document are camelCase **throughout** (global, section and block settings; Q9 decided
+in Phase 3); the API passes the document through untransformed (exception to snake_case JSON).
 
 ### Dual validation
-1. **Source of truth:** Zod schema in the theme. Build step `pnpm --filter @storeplix/storefront theme:export`
-   emits JSON Schema (`zod-to-json-schema`) to `apps/storefront/theme-schemas/<code>@<major>.json`.
-   The Laravel agent copies/consumes it (CI checks the copy in `apps/api/resources/theme-schemas/` matches).
-2. **On save (Laravel):** `PUT /api/v1/stores/{store}/themes/{code}/config` validates with Form Request rules for the
+1. **Source of truth (Phase 3):** hand-written JSON Schema `packages/themes/<code>/schema.v<major>.json`; Laravel
+   validates against its byte-identical copy in `apps/api/resources/themes/` (sync test); shared fixtures prove the
+   storefront Zod schemas accept every valid config without fallback (parity test).
+2. **On save (Laravel):** `PUT /api/v1/stores/{store}/themes/{code}/draft` validates with Form Request rules for the
    envelope (theme, version, settings, sections array) and `opis/json-schema` against the exported schema;
    also checks referenced `media_id`s belong to the tenant. Invalid → 422 `validation_failed` with JSON-pointer keys
    in `details` (e.g. `"sections.1.settings.limit"`).
@@ -103,8 +110,10 @@ Section settings use snake_case. (See OPEN-QUESTIONS Q9 to unify.)
    Storefront never 500s due to config.
 
 ### Draft vs published
-`store_themes.draft_config` is edited by the merchant editor; `POST /api/v1/stores/{store}/themes/{code}/publish` copies it
-to `published_config`, sets `published_at`, and emits `StoreThemePublished`. Storefront config endpoint returns
+`store_themes.draft_config` is edited by the merchant editor (debounced autosave with `base_revision`; 409 on conflict);
+`POST /api/v1/stores/{store}/themes/{code}/publish` copies it to `published_config`, sets `published_at` and dispatches
+`RevalidateStorefront`. `.../discard` resets the draft to published; `.../apply` activates a theme. Draft saves never
+revalidate. Pages, navigation and store SEO have no draft copy (they save live). Storefront config endpoint returns
 **published** config unless a valid preview token is sent (then `draft_config`, falling back to published/defaults).
 
 ### 4.1 Draft stores: Coming soon and preview (PO decision D2)
@@ -129,6 +138,11 @@ keyed by host, so publishing shows the live store at once. On draft → active t
 4. API verifies the signature, expiry and `store_id == resolved store`. If valid → `preview: true` (+ draft theme); if
    invalid, expired or for another store → treated as a public visitor (`preview: false`), with no error detail.
 5. Storefront renders the real store with a fixed "Preview — not public yet" banner, `noindex`.
+6. **Embedded preview (Phase 3 editor):** `?preview=…&embed=1` sets `sp_preview`/`sp_embed` with
+   `SameSite=None; Secure; Partitioned; HttpOnly`; `frame-ancestors` allows only `STOREFRONT_EDITOR_ORIGINS` when a
+   preview cookie is present (otherwise `'none'` + `X-Frame-Options: DENY`). A `PreviewBridge` exchanges
+   `refresh`/`select`/`section-click` postMessages with exact-origin and `event.source` checks
+   (PHASE-3-CONTRACT §5.3). Preview also shows draft/hidden pages.
 
 ## 5. Caching, ISR and revalidation
 | Data | Fetch cache | Tags | Revalidated by |
@@ -136,7 +150,7 @@ keyed by host, so publishing shows the live store at once. On draft → active t
 | Store config | `next: { revalidate: 300, tags: ['store:{store_id}', 'host:{host}'] }` | store, host | theme publish, settings/logo/navigation change, domain change |
 | Product detail | `revalidate: 300, tags: ['store:{id}', 'product:{product_id}']` | product | product/variant/inventory-visible change |
 | Product listings/categories | `revalidate: 120, tags: ['store:{id}:catalog']` | catalog | any product/category change |
-| CMS pages | `revalidate: 600, tags: ['store:{id}:page:{slug}']` | page | page publish |
+| CMS pages | Phase 3: `revalidate: 300, tags: ['store:{host}']` (host tag, like config) | host | page save affecting public output, navigation save |
 | Cart, checkout, account, Coming soon, any request with `sp_preview` | `cache: 'no-store'` | — | — |
 
 Revalidation flow (as implemented; details PHASE-2-CONTRACT §1.8): `StorefrontRevalidationObserver` (Store status/name/slug,
@@ -150,12 +164,14 @@ Stock levels on PDP are fetched client-side (`/storefront/products/{slug}/availa
 don't invalidate HTML.
 
 ## 6. SEO
-- `generateMetadata` per route: title template `%s | {store.name}`, description, canonical = primary domain
+- `generateMetadata` per route: title template `%s · {store.name}`, description, canonical = `StorefrontConfig.store.primary_host`
   (`store_domains.is_primary`) + path; non-primary hosts 301 to primary (platform subdomain redirects once custom domain is `active`).
 - Open Graph + Twitter cards from product images / store `og_image`.
 - JSON-LD: `Organization` + `WebSite` (layout), `Product` + `Offer` (price in major units, `priceCurrency`,
   availability), `BreadcrumbList`, `ItemList` on PLP.
-- `app/_store/[host]/sitemap.ts` and `robots.ts` per host: sitemap index of products, categories, pages
+- Store-level `seo.noindex` ("Hide the whole shop from Google") forces noindex, `Disallow: /` and an empty sitemap.
+- JSON-LD strings are escaped (`<`, `>`, `&`, U+2028/9) after `JSON.stringify`.
+- `app/sitemap.xml` and `app/robots.txt` route handlers per host (Phase 3: home + published pages): sitemap index of products, categories, pages
   (from `/storefront/sitemap`), chunked at 5 000 URLs. Draft stores: `noindex`, `Disallow: /`, empty sitemap; preview: `noindex`; suspended: 404.
 - Merchant redirects (`redirects` table) resolved in middleware via cached `/storefront/redirects` map.
 - Images via `next/image` with CDN loader; width-based srcset; LCP image `priority`.

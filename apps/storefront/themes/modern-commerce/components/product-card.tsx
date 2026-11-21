@@ -72,7 +72,7 @@ export function ProductCard({ product, currency }: ProductCardProps) {
 
       <Link
         href={href}
-        className="type-label-m flex w-full items-center justify-center gap-2 rounded-full bg-brand px-5 py-3 text-on-brand hover:brightness-110"
+        className="type-label-m flex w-full items-center justify-center gap-2 rounded-control bg-brand px-5 py-3 text-on-brand hover:brightness-110"
       >
         Add to cart
         <Icon name="bag-inverse" />

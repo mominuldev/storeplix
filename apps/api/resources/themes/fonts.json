@@ -1,0 +1,17 @@
+{
+  "fonts": [
+    { "family": "Instrument Sans", "category": "sans", "scripts": ["latin"] },
+    { "family": "Inter", "category": "sans", "scripts": ["latin"] },
+    { "family": "Hind Siliguri", "category": "sans", "scripts": ["bengali", "latin"] },
+    { "family": "Fraunces", "category": "serif", "scripts": ["latin"] },
+    { "family": "Noto Serif Bengali", "category": "serif", "scripts": ["bengali", "latin"] },
+    { "family": "Baloo Da 2", "category": "rounded", "scripts": ["bengali", "latin"] }
+  ],
+  "banglaFallback": "Hind Siliguri",
+  "pairings": [
+    { "id": "gallery", "name": "Gallery", "description": "Fraunces · Instrument Sans", "headingFontFamily": "Fraunces", "fontFamily": "Instrument Sans", "themeDefault": true },
+    { "id": "modern", "name": "Modern", "description": "Inter · Hind Siliguri", "headingFontFamily": "Inter", "fontFamily": "Hind Siliguri", "themeDefault": false },
+    { "id": "editorial", "name": "Editorial", "description": "Serif · Noto Serif Bengali", "headingFontFamily": "Fraunces", "fontFamily": "Noto Serif Bengali", "themeDefault": false },
+    { "id": "friendly", "name": "Friendly", "description": "Rounded · Baloo Da", "headingFontFamily": "Baloo Da 2", "fontFamily": "Baloo Da 2", "themeDefault": false }
+  ]
+}

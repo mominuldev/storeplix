@@ -1,13 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { CurrentStore, StoreMode } from '@/lib/store';
 import { resolveStoreTheme } from '@/themes/registry';
 import { robotsResponse, sitemapResponse } from '@/lib/seo-files';
 
 let current: CurrentStore;
+let embedded = false;
 vi.mock('@/lib/store', () => ({
   requireCurrentStore: async () => current,
   findCurrentStore: async () => current,
+}));
+// The real bridge needs the App Router; its logic is covered in preview-bridge.test.ts.
+vi.mock('@/components/preview-bridge', async () => {
+  const { createElement } = await import('react');
+  return { PreviewBridge: ({ allowedOrigins }: { allowedOrigins: string[] }) => createElement('i', { 'data-bridge': allowedOrigins.join(' ') }) };
+});
+vi.mock('@/lib/preview', () => ({
+  isEmbeddedPreview: async () => embedded,
+  getPreviewToken: async () => null,
 }));
 
 const { default: StoreLayout, generateMetadata } = await import('@/app/(store)/layout');
@@ -22,13 +32,15 @@ function makeStore(status: 'active' | 'draft', mode: StoreMode): CurrentStore {
     config: {
       store: {
         id: '01J', name: 'Demo Store', slug: 'demo', status, currency: 'BDT', logo_url: null, favicon_url: null,
-        icons: { apple_touch: null, icon_192: null, icon_512: null },
+        icons: { apple_touch: null, icon_192: null, icon_512: null }, primary_host: 'demo.localhost',
       },
       contact: { phone: null, email: null, whatsapp: null, support_hours: null },
       social: { facebook: null, instagram: null, youtube: null },
       preview: mode === 'preview',
       theme: undefined,
-      seo: { title: 'Demo Store', description: 'Desc' },
+      seo: { title: 'Demo Store', description: 'Desc', og_image_url: null, noindex: false },
+      navigation: { main: { title: 'Main menu', items: [] }, footer: { title: 'Shop', items: [] }, help: { title: 'Help', items: [] } },
+      media: {},
     },
   };
 }
@@ -72,6 +84,10 @@ describe('draft store (public visitor)', () => {
 });
 
 describe('preview', () => {
+  beforeEach(() => {
+    embedded = false;
+  });
+
   it('renders the real store with a "Preview — not public yet" banner for a draft store', async () => {
     current = makeStore('draft', 'preview');
     const html = await render();
@@ -111,5 +127,92 @@ describe('live store', () => {
     expect((await generateMetadata()).robots).toBeUndefined();
     expect(await robotsResponse(current).text()).toContain('Allow: /');
     expect(await sitemapResponse(current).text()).toContain('<loc>http://demo.localhost:3000/</loc>');
+  });
+});
+
+describe('embedded editor preview', () => {
+  afterEach(() => {
+    embedded = false;
+    vi.unstubAllEnvs();
+  });
+
+  it('mounts no bridge for a normal preview, and no banner inside the editor iframe', async () => {
+    current = makeStore('active', 'preview');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173, https://*.evil.com');
+    expect(await render()).not.toContain('data-bridge');
+    embedded = true;
+    const html = await render();
+    expect(html).toContain('data-bridge="http://localhost:5173"');
+    expect(html).not.toContain('Preview mode');
+    expect(html).toContain('STORE CONTENT');
+  });
+
+  it('never embeds the preview token in the page', async () => {
+    current = makeStore('active', 'preview');
+    embedded = true;
+    expect(await render()).not.toMatch(/sp_preview|X-Storefront-Preview/);
+  });
+});
+
+describe('SEO (Phase 3)', () => {
+  it('canonical, OG url and JSON-LD use the primary host, not the request host', async () => {
+    current = makeStore('active', 'live');
+    current.host = 'demo.localhost';
+    current.config.store.primary_host = 'shop.example.com';
+    const meta = await generateMetadata();
+    expect(meta.alternates?.canonical).toBe('https://shop.example.com/');
+    expect(meta.openGraph).toMatchObject({ url: 'https://shop.example.com/', siteName: 'Demo Store' });
+    expect(meta.twitter).toMatchObject({ card: 'summary_large_image' });
+    const html = await render();
+    expect(html).toContain('<script type="application/ld+json">');
+    expect(html).toContain('"@type":"Organization"');
+    expect(html).toContain('"url":"https://shop.example.com/"');
+  });
+
+  it('uses the store share image, then the logo, for OG', async () => {
+    current = makeStore('active', 'live');
+    current.config.store.logo_url = 'https://cdn.storeplix.com/logo.png';
+    expect((await generateMetadata()).openGraph).toMatchObject({ images: [{ url: 'https://cdn.storeplix.com/logo.png' }] });
+    current.config.seo.og_image_url = 'https://cdn.storeplix.com/share.png';
+    expect((await generateMetadata()).openGraph).toMatchObject({ images: [{ url: 'https://cdn.storeplix.com/share.png' }] });
+  });
+
+  it('escapes the store name inside JSON-LD (no script breakout)', async () => {
+    current = makeStore('active', 'live');
+    current.config.store.name = '</script><script>alert(1)</script>';
+    const html = await render('x');
+    const ld = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]!;
+    expect(ld).not.toContain('<');
+    expect(JSON.parse(ld)[0].name).toBe('</script><script>alert(1)</script>');
+  });
+
+  it('"hide from search" → noindex meta, Disallow: / and an empty sitemap; JSON-LD only for live', async () => {
+    current = makeStore('active', 'live');
+    current.config.seo.noindex = true;
+    expect((await generateMetadata()).robots).toMatchObject({ index: false, follow: false });
+    expect(await robotsResponse(current).text()).toBe('User-agent: *\nDisallow: /\n');
+    expect(await sitemapResponse(current, [{ slug: 'about', updated_at: null }]).text()).not.toContain('<url>');
+
+    current = makeStore('active', 'preview');
+    expect(await render()).not.toContain('application/ld+json');
+  });
+
+  it('robots.txt (live) disallows /search and points at the primary-host sitemap', async () => {
+    current = makeStore('active', 'live');
+    current.config.store.primary_host = 'shop.example.com';
+    const robots = await robotsResponse(current).text();
+    expect(robots).toContain('Disallow: /search');
+    expect(robots).toContain('Sitemap: https://shop.example.com/sitemap.xml');
+  });
+
+  it('sitemap lists home + published pages with lastmod on the canonical origin', async () => {
+    current = makeStore('active', 'live');
+    const xml = await sitemapResponse(current, [
+      { slug: 'about', updated_at: '2026-11-20T10:00:00Z' },
+      { slug: 'contact', updated_at: null },
+    ]).text();
+    expect(xml).toContain('<url><loc>http://demo.localhost:3000/</loc></url>');
+    expect(xml).toContain('<url><loc>http://demo.localhost:3000/pages/about</loc><lastmod>2026-11-20T10:00:00.000Z</lastmod></url>');
+    expect(xml).toContain('<loc>http://demo.localhost:3000/pages/contact</loc>');
   });
 });

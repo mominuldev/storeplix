@@ -1,0 +1,366 @@
+{
+  "theme": "modern-commerce",
+  "version": "1.1.0",
+  "settings": {
+    "primaryColor": "#0846c2",
+    "secondaryColor": "#ff7a00",
+    "textColor": "#0e1a33",
+    "backgroundColor": "#fffcf8",
+    "fontFamily": "Hind Siliguri",
+    "headingFontFamily": "Noto Serif Bengali",
+    "cornerStyle": "square",
+    "buttonStyle": "outline",
+    "stylePreset": "jamdani-green",
+    "logoOnDarkMediaId": "01jcz8m4q9w7t3x5y6z8a0b2c4",
+    "announcement": {
+      "enabled": true,
+      "text": "",
+      "href": "https://example.com/offer"
+    },
+    "header": {
+      "sticky": false,
+      "showSearch": false,
+      "promoLink": null
+    },
+    "footer": {
+      "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+      "showPaymentMethods": true,
+      "paymentMethods": [
+        "cod",
+        "bkash",
+        "nagad",
+        "rocket",
+        "upay",
+        "visa",
+        "mastercard",
+        "amex"
+      ]
+    }
+  },
+  "sections": [
+    {
+      "id": "h3ro0002",
+      "type": "hero",
+      "enabled": true,
+      "settings": {
+        "heading": "Only the heading",
+        "imageMediaId": "01jcz8m4q9w7t3x5y6z8a0b2c4",
+        "detailImageMediaId": "01JCZ8M4Q9W7T3X5Y6Z8A0B2C4",
+        "layout": "full_image",
+        "height": "full",
+        "design": {
+          "background": "custom",
+          "customBackground": "#123abc",
+          "textTone": "light",
+          "paddingTop": 0,
+          "paddingBottom": 160,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      },
+      "blocks": []
+    },
+    {
+      "id": "fl4sh002",
+      "type": "flash-sale",
+      "enabled": true,
+      "settings": {
+        "title": "Weekend deals",
+        "endsAt": "2026-12-31T18:00:00+06:00",
+        "limit": 8,
+        "design": {
+          "background": "brand",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    },
+    {
+      "id": "n3wa0002",
+      "type": "featured-products",
+      "enabled": true,
+      "settings": {
+        "title": "Bestsellers",
+        "source": "bestsellers",
+        "limit": 1,
+        "design": {
+          "background": "inverse",
+          "customBackground": null,
+          "textTone": "dark",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    },
+    {
+      "id": "ed1t0002",
+      "type": "image-with-text",
+      "enabled": true,
+      "settings": {
+        "heading": "Left",
+        "layout": "image_left",
+        "imageMediaId": "01jcz8m4q9w7t3x5y6z8a0b2c4",
+        "design": {
+          "background": "accent",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": false,
+            "tablet": true,
+            "phone": false
+          }
+        }
+      }
+    },
+    {
+      "id": "r3vw0002",
+      "type": "reviews-club",
+      "enabled": true,
+      "settings": {
+        "club": {
+          "enabled": false
+        }
+      },
+      "blocks": []
+    },
+    {
+      "id": "tr5t0002",
+      "type": "trust-badges",
+      "enabled": true,
+      "settings": {},
+      "blocks": [
+        {
+          "id": "badge000",
+          "type": "badge",
+          "settings": {
+            "icon": "chat",
+            "title": "chat"
+          }
+        },
+        {
+          "id": "badge001",
+          "type": "badge",
+          "settings": {
+            "icon": "gift",
+            "title": "gift"
+          }
+        },
+        {
+          "id": "badge002",
+          "type": "badge",
+          "settings": {
+            "icon": "star",
+            "title": "star"
+          }
+        },
+        {
+          "id": "badge003",
+          "type": "badge",
+          "settings": {
+            "icon": "leaf",
+            "title": "leaf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r1chtxt1",
+      "type": "rich-text",
+      "enabled": true,
+      "settings": {
+        "heading": null,
+        "doc": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Our promise"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "We deliver "
+                },
+                {
+                  "type": "text",
+                  "text": "everywhere",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    },
+                    {
+                      "type": "italic"
+                    }
+                  ]
+                },
+                {
+                  "type": "hardBreak"
+                },
+                {
+                  "type": "text",
+                  "text": "Read the "
+                },
+                {
+                  "type": "text",
+                  "text": "policy",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "/pages/delivery-return"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " or "
+                },
+                {
+                  "type": "text",
+                  "text": "email us",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "mailto:hello@example.com"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " / "
+                },
+                {
+                  "type": "text",
+                  "text": "call",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "tel:+8801700000000"
+                      }
+                    },
+                    {
+                      "type": "underline"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Cash on delivery",
+                          "marks": [
+                            {
+                              "type": "strike"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "orderedList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "blockquote",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<script>alert(1)</script> stays text"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "External",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "https://example.com/a?b=c"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "align": "center",
+        "width": "wide",
+        "design": {
+          "background": "default",
+          "customBackground": null,
+          "textTone": "auto",
+          "paddingTop": 48,
+          "paddingBottom": 48,
+          "visibility": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+          }
+        }
+      }
+    }
+  ]
+}

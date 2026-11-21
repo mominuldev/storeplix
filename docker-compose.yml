@@ -214,6 +214,9 @@ services:
       STOREFRONT_LOCAL_PORT: ${HTTP_PORT:-80}   # canonical URLs point at nginx, not :3000
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-dev-revalidate-secret-change-me}   # must equal the api value
       STOREFRONT_MEDIA_ORIGINS: http://localhost:${API_PORT:-8000}
+      # Phase 3 (P3-10): exact dashboard origins allowed to frame the preview / talk to the PreviewBridge.
+      # Comma list, no wildcards; empty = embedding impossible (fail closed). Prod: https://app.storeplix.com
+      STOREFRONT_EDITOR_ORIGINS: ${STOREFRONT_EDITOR_ORIGINS:-http://localhost:5173}
       STOREFRONT_API_KEY: ${STOREFRONT_API_KEY:-dev-storefront-key-change-me}
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-storeplix.test}
     ports:

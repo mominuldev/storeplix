@@ -6,7 +6,10 @@
   "description": "Store Plix React UI primitives (Figma Components page 2:3). Styled with @storeplix/config tokens.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts", "./assets/*": "./src/assets/*" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./assets/*": "./src/assets/*"
+  },
   "sideEffects": false,
   "scripts": {
     "build": "tsc --noEmit",
@@ -15,6 +18,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.77.0",
     "tailwind-merge": "^3.7.1"

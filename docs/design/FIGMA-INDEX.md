@@ -48,3 +48,38 @@ is very large (Merchant Admin desktop ≈ 4.9 MB) — query a specific section/f
 - Spacing / radius: read frame 128:221.
 
 Brand assets (logos, favicons): `assets/brand/`.
+
+## Online store V3 — "premium & simple" (section 2028:44400) — Phase 3 primary UI
+Decision (Phase 3): V3 is the editor/online-store UI. Frame ids (each frame = Sidebar + Main unless noted):
+| Screen | Frame | Notes |
+|---|---|---|
+| Overview | `2028:44401` (Main `2028:44403`) | |
+| Themes (gallery + current theme) | `2032:44891` (Main `2032:44893`) | 9 library cards; only "Gallery" has storefront designs |
+| Brand style | `2035:46054` (Main `2035:46056`) | logo/icons, style presets, colours, fonts, corners, draft bar |
+| Pages | `2036:46279` (Main `2036:46281`) | |
+| New page dialog | page `2046:48852`, dialog `2046:49298` | templates |
+| Navigation | `2037:46510` (Main `2037:46512`) | menus + tree + live preview |
+| SEO overview / SEO settings | `2043:47848` / `2044:48073` (Main `2044:48075`) | Phase 3 builds a subset of settings |
+| Editor · Home · Desktop (shell, section list, settings panel, preview) | `2045:48301` (Toolbar `2045:48302`, Body `2045:48342`) | block actions `2057:51109`, Show on `2057:51202`, full-screen tooltip `2047:49090` |
+| Editor · Block design (Design tab) | `2050:49617` (Toolbar `2050:49618`, Body `2050:49660`) | |
+| Editor · Full screen | `2047:49102` (bar `2047:50107`) | |
+| Editor · Landing page · Phone | `2045:48770` | device toggle reference (landing pages out of scope) |
+| Media picker (hero image) | `2053:50828`, picker `2053:51939`; dragging `2054:51605` | |
+| Quick pick (Brand style logo) | `2053:52101`, picker `2053:52607` | |
+| Local components | `2033:46024`: OS3/NavPill `2033:46029`, Locked block dropdown `2057:51297`, Show on submenu `2057:51337` | |
+| Out of scope (Phase 3) | Shop settings `2031:44654`, Popups `2038:46729`, Cart settings `2040:46952`, Landing pages `2041:47174`, Domains `2042:47403`, Buy a domain `2042:48250`, Media library `2051:50179` / `2052:50386` / `2052:51024` | |
+
+V1 frames still referenced: Edit page (block list) `74:22532`.
+
+## Storefront (page 1:9207) — theme "Gallery" (code `modern-commerce`)
+Home desktop `1:10112` · tablet `1:10482` · mobile `1:10335`. Sections (desktop / mobile): Hero `1:10114` / `1:10337` ·
+Shop by age `1:10153` / `1:10355` · Flash sale `1:10195` / `1:10373` · Categories `1:10216` / `1:10391` ·
+New arrivals `1:10225` / `1:10406` · Editorial · Winter `1:10238` / `1:10419` · Three worlds `1:10248` / `1:10427` ·
+Bestsellers `1:10279` · Promises `1:10292` / `1:10456` · Reviews & club `1:10297` / `1:10461`.
+Chrome `1:10644`: header desktop `1:10645`, footer desktop `1:10700`, header mobile `1:10751`, footer mobile `1:10765`,
+tab bar `1:10782`, header tablet `1:10799`. Menu drawer `1:14585`, mega menu `1:13837`.
+Templates: PLP `1:10821` / `1:10946` · PDP `1:11034` / `1:11250` · Cart `1:11378` / `1:11506` · Checkout `1:11591` / `1:11690` ·
+Order confirmed `1:11788` · Track order `1:11959` · Search `1:12443` · Flash sale page `1:12628` · About `1:13114` / `1:13189` ·
+Help centre `1:13264` · Journal `1:13401` · Article `1:13455` · 404 `1:13565` / `1:13588`. Foundations `1:9864`, components `1:9319`, photography `1:9800`.
+Storefront – Mobile (page 2:6): Product + order form `16:2`, Cart `31:6473`, Checkout `32:5087`, Order placed `33:5751`,
+Track order `33:5864`, Landing page COD offer `149:1009`, Policy page (Delivery & returns) `149:1294`.

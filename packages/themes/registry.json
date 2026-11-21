@@ -1,0 +1,11 @@
+[
+  { "code": "modern-commerce", "name": "Gallery", "description": "Editorial serif, shop by age & collection", "version": "1.1.0", "status": "available", "tier": "free", "price_amount": null, "currency": null, "tags": ["editorial", "kids", "collections"], "is_new": true },
+  { "code": "boutique", "name": "Boutique", "description": "Big photos, calm and elegant", "version": "0.0.0", "status": "coming_soon", "tier": "free", "price_amount": null, "currency": null, "tags": ["fashion", "photos"], "is_new": false },
+  { "code": "bazaar", "name": "Bazaar", "description": "Busy grid, deals up front", "version": "0.0.0", "status": "coming_soon", "tier": "free", "price_amount": null, "currency": null, "tags": ["deals", "grid"], "is_new": false },
+  { "code": "minimal", "name": "Minimal", "description": "Clean white, lets products talk", "version": "0.0.0", "status": "coming_soon", "tier": "free", "price_amount": null, "currency": null, "tags": ["minimal"], "is_new": false },
+  { "code": "festive", "name": "Festive", "description": "Eid & Puja ready, warm tones", "version": "0.0.0", "status": "coming_soon", "tier": "premium", "price_amount": 99000, "currency": "BDT", "tags": ["festive", "seasonal"], "is_new": false },
+  { "code": "saree-house", "name": "Saree House", "description": "Full-bleed drapes, size-free", "version": "0.0.0", "status": "coming_soon", "tier": "premium", "price_amount": 149000, "currency": "BDT", "tags": ["fashion", "sarees"], "is_new": false },
+  { "code": "kids-corner", "name": "Kids Corner", "description": "Playful, age filters on top", "version": "0.0.0", "status": "coming_soon", "tier": "free", "price_amount": null, "currency": null, "tags": ["kids", "playful"], "is_new": false },
+  { "code": "classic", "name": "Classic", "description": "Familiar shop layout, fast", "version": "0.0.0", "status": "coming_soon", "tier": "free", "price_amount": null, "currency": null, "tags": ["classic"], "is_new": false },
+  { "code": "one-product", "name": "One Product", "description": "Single-product sales page", "version": "0.0.0", "status": "coming_soon", "tier": "premium", "price_amount": 79000, "currency": "BDT", "tags": ["single-product", "landing"], "is_new": false }
+]

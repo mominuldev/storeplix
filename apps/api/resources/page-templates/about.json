@@ -1,0 +1,83 @@
+{
+  "code": "about",
+  "name": "Our story / About us",
+  "description": "Tell buyers who you are and why they can trust you.",
+  "category": "about",
+  "default_title": "About us",
+  "default_slug": "about",
+  "highlights": [
+    "Who you are",
+    "What you sell",
+    "Why buyers trust you"
+  ],
+  "body": [
+    {
+      "id": "ujzde8gxd6",
+      "type": "heading",
+      "text": "Our story",
+      "level": 2
+    },
+    {
+      "id": "ncf10epf91",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "{store_name} started with a simple idea: good things, chosen carefully and delivered with care."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Every item we sell is checked by our team before it reaches you."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dhodzdoc9i",
+      "type": "heading",
+      "text": "Why shop with us",
+      "level": 2
+    },
+    {
+      "id": "s0j8ht9lgm",
+      "type": "callout",
+      "title": null,
+      "items": [
+        "Cash on delivery all over Bangladesh",
+        "Every parcel checked before it ships",
+        "Friendly help when you need it"
+      ],
+      "tone": "success"
+    },
+    {
+      "id": "xg9edn581u",
+      "type": "rich_text",
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Questions? Call us at {store_phone} or write to {store_email}. We reply {support_hours}."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

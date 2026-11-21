@@ -1,0 +1,105 @@
+{
+  "expect": "sections.0.settings.primaryCtaHref",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "h3ro0001",
+        "type": "hero",
+        "enabled": true,
+        "settings": {
+          "eyebrow": "Winter '26 collection",
+          "heading": "Little things,",
+          "headingAccent": "chosen well.",
+          "subheading": "Clothing for every season, toys that teach, food you can trust and the everyday essentials in between.",
+          "primaryCtaLabel": "Shop new arrivals",
+          "primaryCtaHref": "data:text/html,<script>alert(1)</script>",
+          "secondaryCtaLabel": "Explore by age",
+          "secondaryCtaHref": "/collections/by-age",
+          "imageMediaId": null,
+          "imageAlt": "Child in a warm knit cardigan",
+          "detailImageMediaId": null,
+          "tagLabel": "New season",
+          "showFeaturedProduct": true,
+          "layout": "image_right",
+          "height": "fit",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 64,
+            "paddingBottom": 96,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "id": "st4t0001",
+            "type": "stat",
+            "settings": {
+              "value": "4.9 ★",
+              "label": "11k+ parent reviews"
+            }
+          },
+          {
+            "id": "st4t0002",
+            "type": "stat",
+            "settings": {
+              "value": "64",
+              "label": "districts delivered"
+            }
+          },
+          {
+            "id": "st4t0003",
+            "type": "stat",
+            "settings": {
+              "value": "2,400+",
+              "label": "products, hand-checked"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

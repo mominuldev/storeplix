@@ -16,8 +16,10 @@ export const urls = {
 
 export default defineConfig({
   testDir: './specs',
-  timeout: 30_000,
-  fullyParallel: true,
+  timeout: 60_000,
+  // The flow specs mutate the shared demo store (theme, menus, SEO, logo): run files one at a time.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',

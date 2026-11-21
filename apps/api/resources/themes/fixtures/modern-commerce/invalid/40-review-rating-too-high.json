@@ -1,0 +1,95 @@
+{
+  "expect": "sections.0.blocks.0.settings.rating",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "r3vw0001",
+        "type": "reviews-club",
+        "enabled": true,
+        "settings": {
+          "title": "11,000 reviews, 4.9 average",
+          "subtitle": "From our parents",
+          "club": {
+            "enabled": true,
+            "heading": "Birthday treats & first look at new drops.",
+            "text": "Order updates and member offers on WhatsApp. One message a week, at most.",
+            "ctaLabel": "Join the club",
+            "ctaHref": "/pages/contact"
+          },
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 112,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "id": "r3vw0101",
+            "type": "review",
+            "settings": {
+              "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+              "author": "Nusrat J.",
+              "location": "Chattogram · Mother of a 3-year-old",
+              "rating": 6
+            }
+          },
+          {
+            "id": "r3vw0102",
+            "type": "review",
+            "settings": {
+              "quote": "Finally, baby food where the expiry date is shown before I buy. The puzzle set was a hit at my son's first birthday.",
+              "author": "Tanvir A.",
+              "location": "Dhaka · Father of a 1-year-old",
+              "rating": 5
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

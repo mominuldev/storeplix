@@ -1,4 +1,4 @@
-import { Fraunces, Hind_Siliguri, Instrument_Sans, Inter } from 'next/font/google';
+import { Baloo_Da_2, Fraunces, Hind_Siliguri, Instrument_Sans, Inter, Noto_Serif_Bengali } from 'next/font/google';
 
 // Self-hosted at build time by next/font. Only allowlisted families (themes/fonts.ts) exist.
 export const instrumentSans = Instrument_Sans({ subsets: ['latin'], variable: '--font-instrument-sans', display: 'swap' });
@@ -17,5 +17,14 @@ export const hindSiliguri = Hind_Siliguri({
   display: 'swap',
   preload: false,
 });
+export const notoSerifBengali = Noto_Serif_Bengali({
+  subsets: ['bengali', 'latin'],
+  variable: '--font-noto-serif-bengali',
+  display: 'swap',
+  preload: false,
+});
+export const balooDa2 = Baloo_Da_2({ subsets: ['bengali', 'latin'], variable: '--font-baloo-da-2', display: 'swap', preload: false });
 
-export const fontVariables = [instrumentSans, fraunces, inter, hindSiliguri].map((f) => f.variable).join(' ');
+export const fontVariables = [instrumentSans, fraunces, inter, hindSiliguri, notoSerifBengali, balooDa2]
+  .map((f) => f.variable)
+  .join(' ');

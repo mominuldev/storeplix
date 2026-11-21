@@ -1,0 +1,5687 @@
+{
+  "expect": "sections",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "many0000",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0001",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0002",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0003",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0004",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0005",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0006",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0007",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0008",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0009",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0010",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0011",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0012",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0013",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0014",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0015",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0016",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0017",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0018",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0019",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0020",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0021",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0022",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0023",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0024",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0025",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0026",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0027",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0028",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0029",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      },
+      {
+        "id": "many0030",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Our promise"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We deliver "
+                  },
+                  {
+                    "type": "text",
+                    "text": "everywhere",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      },
+                      {
+                        "type": "italic"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Read the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "policy",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "/pages/delivery-return"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " or "
+                  },
+                  {
+                    "type": "text",
+                    "text": "email us",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "mailto:hello@example.com"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " / "
+                  },
+                  {
+                    "type": "text",
+                    "text": "call",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "tel:+8801700000000"
+                        }
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Cash on delivery",
+                            "marks": [
+                              {
+                                "type": "strike"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "orderedList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "<script>alert(1)</script> stays text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "External",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://example.com/a?b=c"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    ]
+  }
+}

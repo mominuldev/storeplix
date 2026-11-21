@@ -9,8 +9,14 @@
   --sp-on-brand: #fffcf8;
   --sp-accent: #ff7a00;
   --sp-on-accent: #0e1a33;
-  --sp-font-body: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
-  --sp-font-heading: var(--font-fraunces), ui-serif, Georgia, serif;
+  --sp-ink: #0e1a33;
+  --sp-ink-secondary: #33405c;
+  --sp-ink-muted: #66728c;
+  --sp-canvas: #fffcf8;
+  --sp-sunken: #faf5ee;
+  --sp-radius-control: 999px;
+  --sp-font-body: var(--font-instrument-sans), var(--font-hind-siliguri), ui-sans-serif, system-ui, sans-serif;
+  --sp-font-heading: var(--font-fraunces), var(--font-hind-siliguri), ui-serif, Georgia, serif;
 }
 
 @theme inline {
@@ -29,16 +35,20 @@
 
   --font-body: var(--sp-font-body);
   --font-heading: var(--sp-font-heading);
+
+  /* Corners & buttons (square 4 · rounded 10 · pill 999) */
+  --radius-control: var(--sp-radius-control);
 }
 
 @theme {
-  /* Fixed theme palette (not merchant-editable in v1) */
-  --color-canvas: #fffcf8; /* bg/canvas */
-  --color-sunken: #faf5ee; /* bg/sunken */
+  /* Merchant-editable text/background (v1.1 "Text"/"Background"); section text tones override these. */
+  --color-canvas: var(--sp-canvas); /* bg/canvas #fffcf8 */
+  --color-sunken: var(--sp-sunken); /* bg/sunken #faf5ee */
+  --color-ink: var(--sp-ink); /* text/primary, border/strong #0e1a33 */
+  --color-ink-secondary: var(--sp-ink-secondary); /* text/secondary #33405c */
+  --color-ink-muted: var(--sp-ink-muted); /* text/muted #66728c */
+  /* Fixed theme palette */
   --color-surface: #ffffff; /* bg/surface */
-  --color-ink: #0e1a33; /* text/primary, border/strong */
-  --color-ink-secondary: #33405c; /* text/secondary */
-  --color-ink-muted: #66728c; /* text/muted */
   --color-paper: #fffcf8; /* text/inverse */
   --color-sale: #c24e00; /* text/sale */
   --color-line-subtle: #f1e8dc; /* border/subtle */
@@ -46,12 +56,16 @@
   --color-sun: #ffb300; /* illo/sun */
   --color-sun-soft: #fff3cc; /* bg/sun-soft */
   --color-sky-soft: #f0f5ff; /* bg/sage-soft */
+  --color-sky-tint: #e1f3ff; /* bg/sky-soft */
+  --color-sky: #0ea0f0; /* illo/sky */
+  --color-orange: #ff7a00; /* illo/orange */
 
   /* radius/xs 4 · radius/md 6 · radius/sm 8 · radius/lg 10 */
   --radius-sf-xs: 4px;
   --radius-sf-md: 6px;
   --radius-sf-sm: 8px;
   --radius-sf-lg: 10px;
+  --radius-sf-xl: 14px;
 
   /* BG/Elevation/e3 */
   --shadow-e3: 0 28px 64px 0 rgba(20, 51, 43, 0.12), 0 12px 24px 0 rgba(20, 51, 43, 0.08);
@@ -150,4 +164,63 @@
   mask-repeat: no-repeat;
   mask-position: center;
   mask-size: contain;
+}
+
+@utility type-h1 {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 36px;
+  line-height: 1.12;
+  letter-spacing: -1px;
+}
+@utility type-h2 {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.16;
+  letter-spacing: -0.5px;
+}
+@utility type-accent-italic-s {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+/*
+ * Home sections: background + padding from validated design settings (themes/design.ts).
+ * Phones get half the vertical space (Figma: 96–128px desktop, 48–64px mobile).
+ */
+.sp-section {
+  background-color: var(--sp-section-bg, transparent);
+  padding-top: calc(var(--sp-pt, 0px) / 2);
+  padding-bottom: calc(var(--sp-pb, 0px) / 2);
+}
+@media (width >= 48rem) {
+  .sp-section {
+    padding-top: var(--sp-pt, 0px);
+    padding-bottom: var(--sp-pb, 0px);
+  }
+}
+.tone-light {
+  --color-ink: var(--color-paper);
+  --color-ink-secondary: color-mix(in srgb, var(--color-paper) 85%, transparent);
+  --color-ink-muted: color-mix(in srgb, var(--color-paper) 72%, transparent);
+  color: var(--color-paper);
+}
+.tone-dark {
+  --color-ink: #0e1a33;
+  --color-ink-secondary: #33405c;
+  --color-ink-muted: #66728c;
+  color: #0e1a33;
+}
+
+/* Embedded editor preview: the selected section (PreviewBridge `select`). */
+[data-sp-section-id][data-sp-selected] {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
 }

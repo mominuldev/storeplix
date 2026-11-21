@@ -38,12 +38,14 @@ class StorefrontConfigTest extends TestCase
         $response = $this->config('demo.storeplix.test')->assertOk();
 
         $response->assertExactJsonStructure(['data' => [
-            'store' => ['id', 'name', 'slug', 'status', 'currency', 'logo_url', 'favicon_url', 'icons' => ['apple_touch', 'icon_192', 'icon_512']],
+            'store' => ['id', 'name', 'slug', 'primary_host', 'status', 'currency', 'logo_url', 'favicon_url', 'icons' => ['apple_touch', 'icon_192', 'icon_512']],
             'contact' => ['phone', 'email', 'whatsapp', 'support_hours'],
             'social' => ['facebook', 'instagram', 'youtube'],
             'preview',
-            'theme' => ['theme', 'version', 'settings' => ['primaryColor', 'secondaryColor', 'fontFamily'], 'sections' => ['*' => ['type', 'enabled']]],
-            'seo' => ['title', 'description'],
+            'theme' => ['theme', 'version', 'settings', 'sections'],
+            'seo' => ['title', 'description', 'og_image_url', 'noindex'],
+            'navigation' => ['main' => ['title', 'items'], 'footer' => ['title', 'items'], 'help' => ['title', 'items']],
+            'media',
         ]])
             ->assertJsonPath('data.store.id', $store->id)
             ->assertJsonPath('data.store.slug', 'demo')
@@ -51,8 +53,11 @@ class StorefrontConfigTest extends TestCase
             ->assertJsonPath('data.preview', false)
             ->assertJsonPath('data.store.currency', 'BDT')
             ->assertJsonPath('data.theme.theme', 'modern-commerce')
-            ->assertJsonPath('data.theme.settings.primaryColor', '#5b53ff')
-            ->assertJsonPath('data.theme.sections.1.type', 'featured-products')
+            ->assertJsonPath('data.store.primary_host', 'demo.storeplix.test')
+            ->assertJsonPath('data.theme.version', '1.1.0')
+            ->assertJsonPath('data.theme.settings.primaryColor', '#0846c2')
+            ->assertJsonPath('data.theme.sections.0.type', 'hero')
+            ->assertJsonPath('data.seo.noindex', false)
             ->assertJsonPath('data.seo.title', 'Demo Store');
 
         $body = $response->getContent();

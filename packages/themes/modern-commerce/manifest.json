@@ -1,0 +1,1527 @@
+{
+  "theme": "modern-commerce",
+  "name": "Gallery",
+  "version": "1.1.0",
+  "schema": "schema.v1.json",
+  "limits": {
+    "maxSections": 30,
+    "maxConfigBytes": 65536,
+    "maxRichTextBytes": 10240,
+    "idPattern": "^[a-z0-9]{8,16}$"
+  },
+  "sectionDesign": {
+    "key": "design",
+    "fields": [
+      {
+        "key": "background",
+        "label": "Background",
+        "widget": "segmented",
+        "options": [
+          {
+            "value": "default",
+            "label": "Page"
+          },
+          {
+            "value": "muted",
+            "label": "Soft"
+          },
+          {
+            "value": "brand",
+            "label": "Primary"
+          },
+          {
+            "value": "accent",
+            "label": "Accent"
+          },
+          {
+            "value": "inverse",
+            "label": "Dark"
+          },
+          {
+            "value": "custom",
+            "label": "Custom"
+          }
+        ]
+      },
+      {
+        "key": "customBackground",
+        "label": "Custom colour",
+        "widget": "color",
+        "showIf": {
+          "key": "background",
+          "equals": "custom"
+        }
+      },
+      {
+        "key": "textTone",
+        "label": "Text colour",
+        "widget": "segmented",
+        "options": [
+          {
+            "value": "auto",
+            "label": "Auto"
+          },
+          {
+            "value": "dark",
+            "label": "Dark"
+          },
+          {
+            "value": "light",
+            "label": "Light"
+          }
+        ]
+      },
+      {
+        "key": "paddingTop",
+        "label": "Space above",
+        "widget": "slider",
+        "min": 0,
+        "max": 160,
+        "step": 8,
+        "unit": "px"
+      },
+      {
+        "key": "paddingBottom",
+        "label": "Space below",
+        "widget": "slider",
+        "min": 0,
+        "max": 160,
+        "step": 8,
+        "unit": "px"
+      },
+      {
+        "key": "visibility",
+        "label": "Show on",
+        "widget": "visibility",
+        "options": [
+          {
+            "value": "desktop",
+            "label": "Desktop"
+          },
+          {
+            "value": "tablet",
+            "label": "Tablet"
+          },
+          {
+            "value": "phone",
+            "label": "Phone"
+          }
+        ]
+      }
+    ]
+  },
+  "globalSettings": [
+    {
+      "group": "colours",
+      "label": "Colours",
+      "fields": [
+        {
+          "key": "primaryColor",
+          "label": "Primary",
+          "widget": "color",
+          "help": "Buttons, links, prices"
+        },
+        {
+          "key": "secondaryColor",
+          "label": "Accent",
+          "widget": "color",
+          "help": "Sale badges, highlights"
+        },
+        {
+          "key": "textColor",
+          "label": "Text",
+          "widget": "color",
+          "help": "Headings and body"
+        },
+        {
+          "key": "backgroundColor",
+          "label": "Background",
+          "widget": "color",
+          "help": "Page background"
+        }
+      ]
+    },
+    {
+      "group": "fonts",
+      "label": "Fonts",
+      "fields": [
+        {
+          "key": "fontPairing",
+          "label": "Fonts",
+          "widget": "font-pairing",
+          "writes": [
+            "headingFontFamily",
+            "fontFamily"
+          ],
+          "source": "fonts.json#/pairings"
+        }
+      ]
+    },
+    {
+      "group": "shape",
+      "label": "Corners & buttons",
+      "fields": [
+        {
+          "key": "cornerStyle",
+          "label": "Corners & buttons",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "square",
+              "label": "Square"
+            },
+            {
+              "value": "rounded",
+              "label": "Rounded"
+            },
+            {
+              "value": "pill",
+              "label": "Pill"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "announcement",
+      "label": "Announcement bar",
+      "locked": true,
+      "fields": [
+        {
+          "key": "announcement.enabled",
+          "label": "Show announcement bar",
+          "widget": "toggle"
+        },
+        {
+          "key": "announcement.text",
+          "label": "Message",
+          "widget": "text",
+          "maxLength": 120
+        },
+        {
+          "key": "announcement.href",
+          "label": "Link",
+          "widget": "link",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "group": "header",
+      "label": "Header & menu",
+      "locked": true,
+      "fields": [
+        {
+          "key": "header.promoLink",
+          "label": "Promo link",
+          "widget": "promo-link",
+          "nullable": true,
+          "labelMaxLength": 30
+        }
+      ],
+      "help": "Menu links come from Online store › Navigation."
+    },
+    {
+      "group": "footer",
+      "label": "Footer",
+      "locked": true,
+      "fields": [
+        {
+          "key": "footer.tagline",
+          "label": "Tagline",
+          "widget": "textarea",
+          "maxLength": 240,
+          "nullable": true
+        },
+        {
+          "key": "footer.showPaymentMethods",
+          "label": "Show payment methods",
+          "widget": "toggle"
+        },
+        {
+          "key": "footer.paymentMethods",
+          "label": "Payment methods",
+          "widget": "multi-select",
+          "maxItems": 8,
+          "options": [
+            {
+              "value": "cod",
+              "label": "Cash on delivery"
+            },
+            {
+              "value": "bkash",
+              "label": "bKash"
+            },
+            {
+              "value": "nagad",
+              "label": "Nagad"
+            },
+            {
+              "value": "rocket",
+              "label": "Rocket"
+            },
+            {
+              "value": "upay",
+              "label": "Upay"
+            },
+            {
+              "value": "visa",
+              "label": "Visa"
+            },
+            {
+              "value": "mastercard",
+              "label": "Mastercard"
+            },
+            {
+              "value": "amex",
+              "label": "American Express"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "hiddenSettings": [
+    "buttonStyle",
+    "logoOnDarkMediaId",
+    "header.sticky",
+    "header.showSearch"
+  ],
+  "stylePresets": [
+    {
+      "id": "mugdho-violet",
+      "name": "Mugdho Violet",
+      "primaryColor": "#5b53ff",
+      "secondaryColor": "#fc856d",
+      "textColor": "#0d0d18",
+      "backgroundColor": "#f3f2ff",
+      "pairing": "modern",
+      "cornerStyle": "rounded"
+    },
+    {
+      "id": "jamdani-green",
+      "name": "Jamdani Green",
+      "primaryColor": "#0f5b3a",
+      "secondaryColor": "#d4a93a",
+      "textColor": "#10231a",
+      "backgroundColor": "#eef6f0",
+      "pairing": "editorial",
+      "cornerStyle": "rounded"
+    },
+    {
+      "id": "eid-gold",
+      "name": "Eid Gold",
+      "primaryColor": "#9a6b12",
+      "secondaryColor": "#0f5b3a",
+      "textColor": "#2a1e08",
+      "backgroundColor": "#fbf5e8",
+      "pairing": "editorial",
+      "cornerStyle": "square"
+    },
+    {
+      "id": "rose-blush",
+      "name": "Rose Blush",
+      "primaryColor": "#d6336c",
+      "secondaryColor": "#f59f00",
+      "textColor": "#2b0f1a",
+      "backgroundColor": "#fff0f5",
+      "pairing": "friendly",
+      "cornerStyle": "pill"
+    },
+    {
+      "id": "midnight",
+      "name": "Midnight",
+      "primaryColor": "#111827",
+      "secondaryColor": "#6366f1",
+      "textColor": "#111827",
+      "backgroundColor": "#f3f4f6",
+      "pairing": "modern",
+      "cornerStyle": "square"
+    },
+    {
+      "id": "fresh-market",
+      "name": "Fresh Market",
+      "primaryColor": "#16a34a",
+      "secondaryColor": "#f97316",
+      "textColor": "#0f1a12",
+      "backgroundColor": "#f0fdf4",
+      "pairing": "friendly",
+      "cornerStyle": "pill"
+    },
+    {
+      "id": "ocean",
+      "name": "Ocean",
+      "primaryColor": "#0e7490",
+      "secondaryColor": "#f59e0b",
+      "textColor": "#0b2530",
+      "backgroundColor": "#ecfeff",
+      "pairing": "modern",
+      "cornerStyle": "rounded"
+    },
+    {
+      "id": "terracotta",
+      "name": "Terracotta",
+      "primaryColor": "#c2410c",
+      "secondaryColor": "#0f766e",
+      "textColor": "#2a140a",
+      "backgroundColor": "#fff4ec",
+      "pairing": "editorial",
+      "cornerStyle": "rounded"
+    }
+  ],
+  "sections": [
+    {
+      "type": "hero",
+      "label": "Hero",
+      "maxInstances": 1,
+      "figma": {
+        "desktop": "1:10114",
+        "mobile": "1:10337"
+      },
+      "usesSampleProducts": true,
+      "fields": [
+        {
+          "key": "eyebrow",
+          "label": "Small label",
+          "widget": "text",
+          "maxLength": 40
+        },
+        {
+          "key": "heading",
+          "label": "Heading",
+          "widget": "text",
+          "maxLength": 60,
+          "required": true
+        },
+        {
+          "key": "headingAccent",
+          "label": "Heading accent (italic)",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "subheading",
+          "label": "Text",
+          "widget": "textarea",
+          "maxLength": 140
+        },
+        {
+          "key": "primaryCtaLabel",
+          "label": "Button",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "primaryCtaHref",
+          "label": "Button link",
+          "widget": "link"
+        },
+        {
+          "key": "secondaryCtaLabel",
+          "label": "Second button",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "secondaryCtaHref",
+          "label": "Second button link",
+          "widget": "link"
+        },
+        {
+          "key": "imageMediaId",
+          "label": "Image",
+          "widget": "image"
+        },
+        {
+          "key": "imageAlt",
+          "label": "Image description",
+          "widget": "text",
+          "maxLength": 160
+        },
+        {
+          "key": "detailImageMediaId",
+          "label": "Detail image",
+          "widget": "image"
+        },
+        {
+          "key": "tagLabel",
+          "label": "Swing tag",
+          "widget": "text",
+          "maxLength": 24
+        },
+        {
+          "key": "showFeaturedProduct",
+          "label": "Show a featured product",
+          "widget": "toggle"
+        },
+        {
+          "key": "layout",
+          "label": "Layout",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "image_right",
+              "label": "Image right"
+            },
+            {
+              "value": "image_left",
+              "label": "Image left"
+            },
+            {
+              "value": "full_image",
+              "label": "Full image"
+            }
+          ]
+        },
+        {
+          "key": "height",
+          "label": "Height",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "fit",
+              "label": "Fit"
+            },
+            {
+              "value": "half",
+              "label": "Half screen"
+            },
+            {
+              "value": "full",
+              "label": "Full screen"
+            }
+          ]
+        }
+      ],
+      "blocks": {
+        "type": "stat",
+        "label": "Stat",
+        "max": 3,
+        "fields": [
+          {
+            "key": "value",
+            "label": "Number",
+            "widget": "text",
+            "maxLength": 12,
+            "required": true
+          },
+          {
+            "key": "label",
+            "label": "Label",
+            "widget": "text",
+            "maxLength": 40,
+            "required": true
+          }
+        ]
+      },
+      "preset": {
+        "type": "hero",
+        "settings": {
+          "eyebrow": "Winter '26 collection",
+          "heading": "Little things,",
+          "headingAccent": "chosen well.",
+          "subheading": "Clothing for every season, toys that teach, food you can trust and the everyday essentials in between.",
+          "primaryCtaLabel": "Shop new arrivals",
+          "primaryCtaHref": "/collections/new",
+          "secondaryCtaLabel": "Explore by age",
+          "secondaryCtaHref": "/collections/by-age",
+          "imageMediaId": null,
+          "imageAlt": "Child in a warm knit cardigan",
+          "detailImageMediaId": null,
+          "tagLabel": "New season",
+          "showFeaturedProduct": true,
+          "layout": "image_right",
+          "height": "fit",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 64,
+            "paddingBottom": 96,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "stat",
+            "settings": {
+              "value": "4.9 ★",
+              "label": "11k+ parent reviews"
+            }
+          },
+          {
+            "type": "stat",
+            "settings": {
+              "value": "64",
+              "label": "districts delivered"
+            }
+          },
+          {
+            "type": "stat",
+            "settings": {
+              "value": "2,400+",
+              "label": "products, hand-checked"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "chip-links",
+      "label": "Shop by age",
+      "maxInstances": 3,
+      "figma": {
+        "desktop": "1:10153",
+        "mobile": "1:10355"
+      },
+      "fields": [
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "subtitle",
+          "label": "Subtitle",
+          "widget": "text",
+          "maxLength": 60
+        }
+      ],
+      "blocks": {
+        "type": "chip",
+        "label": "Chip",
+        "max": 8,
+        "fields": [
+          {
+            "key": "badge",
+            "label": "Badge",
+            "widget": "text",
+            "maxLength": 6
+          },
+          {
+            "key": "label",
+            "label": "Label",
+            "widget": "text",
+            "maxLength": 24,
+            "required": true
+          },
+          {
+            "key": "sublabel",
+            "label": "Small text",
+            "widget": "text",
+            "maxLength": 24
+          },
+          {
+            "key": "href",
+            "label": "Link",
+            "widget": "link",
+            "required": true
+          }
+        ]
+      },
+      "preset": {
+        "type": "chip-links",
+        "settings": {
+          "title": "Shop by age",
+          "subtitle": "— every size, every stage",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 96,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "0–3",
+              "label": "Newborn",
+              "sublabel": "months",
+              "href": "/collections/newborn"
+            }
+          },
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "3–12",
+              "label": "Baby",
+              "sublabel": "months",
+              "href": "/collections/baby"
+            }
+          },
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "1–2",
+              "label": "Toddler",
+              "sublabel": "years",
+              "href": "/collections/toddler"
+            }
+          },
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "2–4",
+              "label": "Little one",
+              "sublabel": "years",
+              "href": "/collections/little-one"
+            }
+          },
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "4–6",
+              "label": "Pre-school",
+              "sublabel": "years",
+              "href": "/collections/pre-school"
+            }
+          },
+          {
+            "type": "chip",
+            "settings": {
+              "badge": "6–10",
+              "label": "Big kid",
+              "sublabel": "years",
+              "href": "/collections/big-kid"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "flash-sale",
+      "label": "Flash sale",
+      "maxInstances": 1,
+      "figma": {
+        "desktop": "1:10195",
+        "mobile": "1:10373"
+      },
+      "usesSampleProducts": true,
+      "fields": [
+        {
+          "key": "eyebrow",
+          "label": "Small label",
+          "widget": "text",
+          "maxLength": 24
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60,
+          "required": true
+        },
+        {
+          "key": "subtitle",
+          "label": "Text",
+          "widget": "textarea",
+          "maxLength": 140
+        },
+        {
+          "key": "endsAt",
+          "label": "Ends at",
+          "widget": "datetime",
+          "nullable": true,
+          "help": "The countdown hides when empty or past."
+        },
+        {
+          "key": "linkLabel",
+          "label": "Link text",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "linkHref",
+          "label": "Link",
+          "widget": "link"
+        },
+        {
+          "key": "limit",
+          "label": "Products to show",
+          "widget": "slider",
+          "min": 1,
+          "max": 8,
+          "step": 1
+        }
+      ],
+      "preset": {
+        "type": "flash-sale",
+        "settings": {
+          "eyebrow": "Flash sale",
+          "title": "Today's flash deals",
+          "subtitle": "Fresh deals every day at 10am — while stock lasts.",
+          "endsAt": null,
+          "linkLabel": "See all deals",
+          "linkHref": "/collections/flash-sale",
+          "limit": 4,
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "category-grid",
+      "label": "Categories",
+      "maxInstances": 3,
+      "figma": {
+        "desktop": "1:10216",
+        "mobile": "1:10391"
+      },
+      "fields": [
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "subtitle",
+          "label": "Small label",
+          "widget": "textarea",
+          "maxLength": 140
+        }
+      ],
+      "blocks": {
+        "type": "category",
+        "label": "Category",
+        "max": 8,
+        "fields": [
+          {
+            "key": "title",
+            "label": "Name",
+            "widget": "text",
+            "maxLength": 40,
+            "required": true
+          },
+          {
+            "key": "imageMediaId",
+            "label": "Image",
+            "widget": "image"
+          },
+          {
+            "key": "href",
+            "label": "Link",
+            "widget": "link",
+            "required": true
+          }
+        ]
+      },
+      "preset": {
+        "type": "category-grid",
+        "settings": {
+          "title": "Six rooms, one visit",
+          "subtitle": "The gallery",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "category",
+            "settings": {
+              "title": "Winter wear",
+              "imageMediaId": null,
+              "href": "/collections/winter"
+            }
+          },
+          {
+            "type": "category",
+            "settings": {
+              "title": "Summer wear",
+              "imageMediaId": null,
+              "href": "/collections/summer"
+            }
+          },
+          {
+            "type": "category",
+            "settings": {
+              "title": "Baby clothing",
+              "imageMediaId": null,
+              "href": "/collections/baby-clothing"
+            }
+          },
+          {
+            "type": "category",
+            "settings": {
+              "title": "Educational toys",
+              "imageMediaId": null,
+              "href": "/collections/toys"
+            }
+          },
+          {
+            "type": "category",
+            "settings": {
+              "title": "Baby food",
+              "imageMediaId": null,
+              "href": "/collections/baby-food"
+            }
+          },
+          {
+            "type": "category",
+            "settings": {
+              "title": "Daily essentials",
+              "imageMediaId": null,
+              "href": "/collections/essentials"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "featured-products",
+      "label": "Products",
+      "maxInstances": 3,
+      "figma": {
+        "desktop": "1:10225",
+        "desktopAlt": "1:10279",
+        "mobile": "1:10406"
+      },
+      "usesSampleProducts": true,
+      "fields": [
+        {
+          "key": "eyebrow",
+          "label": "Small label",
+          "widget": "text",
+          "maxLength": 40
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60,
+          "required": true
+        },
+        {
+          "key": "linkLabel",
+          "label": "Link text",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "linkHref",
+          "label": "Link",
+          "widget": "link"
+        },
+        {
+          "key": "source",
+          "label": "Show",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "latest",
+              "label": "New arrivals"
+            },
+            {
+              "value": "bestsellers",
+              "label": "Bestsellers"
+            }
+          ]
+        },
+        {
+          "key": "limit",
+          "label": "Products to show",
+          "widget": "slider",
+          "min": 1,
+          "max": 8,
+          "step": 1
+        }
+      ],
+      "preset": {
+        "type": "featured-products",
+        "settings": {
+          "eyebrow": "New this week",
+          "title": "Fresh from the gallery",
+          "linkLabel": "View all",
+          "linkHref": "/collections/new",
+          "source": "latest",
+          "limit": 4,
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "image-with-text",
+      "label": "Editorial",
+      "maxInstances": 3,
+      "figma": {
+        "desktop": "1:10238",
+        "mobile": "1:10419"
+      },
+      "fields": [
+        {
+          "key": "eyebrow",
+          "label": "Small label",
+          "widget": "text",
+          "maxLength": 40
+        },
+        {
+          "key": "heading",
+          "label": "Heading",
+          "widget": "text",
+          "maxLength": 80,
+          "required": true
+        },
+        {
+          "key": "text",
+          "label": "Text",
+          "widget": "textarea",
+          "maxLength": 400
+        },
+        {
+          "key": "ctaLabel",
+          "label": "Button",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "ctaHref",
+          "label": "Button link",
+          "widget": "link"
+        },
+        {
+          "key": "imageMediaId",
+          "label": "Image",
+          "widget": "image"
+        },
+        {
+          "key": "imageAlt",
+          "label": "Image description",
+          "widget": "text",
+          "maxLength": 160
+        },
+        {
+          "key": "layout",
+          "label": "Layout",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "image_left",
+              "label": "Text left"
+            },
+            {
+              "value": "image_right",
+              "label": "Text right"
+            }
+          ]
+        }
+      ],
+      "preset": {
+        "type": "image-with-text",
+        "settings": {
+          "eyebrow": "The winter edit",
+          "heading": "Warm layers for Dhaka winters.",
+          "text": "Breathable merino, quilted cotton and soft fleece — warm in the morning, never too much by noon. Sizes newborn to 10 years.",
+          "ctaLabel": "Shop winter wear",
+          "ctaHref": "/collections/winter",
+          "imageMediaId": null,
+          "imageAlt": "A mother and child under a warm blanket",
+          "layout": "image_right",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "feature-tiles",
+      "label": "Three worlds",
+      "maxInstances": 3,
+      "figma": {
+        "desktop": "1:10248",
+        "mobile": "1:10427"
+      },
+      "fields": [
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "subtitle",
+          "label": "Small label",
+          "widget": "textarea",
+          "maxLength": 140
+        }
+      ],
+      "blocks": {
+        "type": "tile",
+        "label": "Tile",
+        "max": 3,
+        "fields": [
+          {
+            "key": "title",
+            "label": "Title",
+            "widget": "text",
+            "maxLength": 40,
+            "required": true
+          },
+          {
+            "key": "text",
+            "label": "Text",
+            "widget": "textarea",
+            "maxLength": 140
+          },
+          {
+            "key": "imageMediaId",
+            "label": "Image",
+            "widget": "image"
+          },
+          {
+            "key": "href",
+            "label": "Link",
+            "widget": "link",
+            "required": true
+          },
+          {
+            "key": "linkLabel",
+            "label": "Link text",
+            "widget": "text",
+            "maxLength": 30
+          }
+        ]
+      },
+      "preset": {
+        "type": "feature-tiles",
+        "settings": {
+          "title": "Play, nourish, every day",
+          "subtitle": "Beyond clothing",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "tile",
+            "settings": {
+              "title": "Toys that teach quietly",
+              "text": "Montessori-inspired wood, puzzles and pretend play — chosen by age, made to last past one child.",
+              "imageMediaId": null,
+              "href": "/collections/toys",
+              "linkLabel": "Shop educational toys"
+            }
+          },
+          {
+            "type": "tile",
+            "settings": {
+              "title": "Nourish, gently",
+              "text": "Purées, cereals and formula with batch and expiry shown on every product page.",
+              "imageMediaId": null,
+              "href": "/collections/baby-food",
+              "linkLabel": "Shop baby food"
+            }
+          },
+          {
+            "type": "tile",
+            "settings": {
+              "title": "The everyday, done well",
+              "text": "Feeding, bath, school and bedtime — the small things you reorder every month.",
+              "imageMediaId": null,
+              "href": "/collections/essentials",
+              "linkLabel": "Shop essentials"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "trust-badges",
+      "label": "Promises",
+      "maxInstances": 2,
+      "figma": {
+        "desktop": "1:10292",
+        "mobile": "1:10456"
+      },
+      "fields": [],
+      "blocks": {
+        "type": "badge",
+        "label": "Promise",
+        "max": 4,
+        "fields": [
+          {
+            "key": "icon",
+            "label": "Icon",
+            "widget": "select",
+            "options": [
+              {
+                "value": "cash",
+                "label": "Cash"
+              },
+              {
+                "value": "truck",
+                "label": "Delivery"
+              },
+              {
+                "value": "return",
+                "label": "Returns"
+              },
+              {
+                "value": "shield",
+                "label": "Authentic"
+              },
+              {
+                "value": "chat",
+                "label": "Chat"
+              },
+              {
+                "value": "gift",
+                "label": "Gift"
+              },
+              {
+                "value": "star",
+                "label": "Star"
+              },
+              {
+                "value": "leaf",
+                "label": "Natural"
+              }
+            ]
+          },
+          {
+            "key": "title",
+            "label": "Title",
+            "widget": "text",
+            "maxLength": 40,
+            "required": true
+          },
+          {
+            "key": "text",
+            "label": "Text",
+            "widget": "text",
+            "maxLength": 100
+          }
+        ]
+      },
+      "preset": {
+        "type": "trust-badges",
+        "settings": {
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "badge",
+            "settings": {
+              "icon": "cash",
+              "title": "Cash on delivery",
+              "text": "Pay at your door, anywhere in Bangladesh"
+            }
+          },
+          {
+            "type": "badge",
+            "settings": {
+              "icon": "truck",
+              "title": "Delivery in 1–3 days",
+              "text": "Dhaka next-day · 64 districts nationwide"
+            }
+          },
+          {
+            "type": "badge",
+            "settings": {
+              "icon": "return",
+              "title": "7-day easy returns",
+              "text": "Wrong size? We collect it, free"
+            }
+          },
+          {
+            "type": "badge",
+            "settings": {
+              "icon": "shield",
+              "title": "100% authentic",
+              "text": "Sourced direct, batch & expiry shown"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "reviews-club",
+      "label": "Reviews & club",
+      "maxInstances": 1,
+      "figma": {
+        "desktop": "1:10297",
+        "mobile": "1:10461"
+      },
+      "fields": [
+        {
+          "key": "title",
+          "label": "Title",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "subtitle",
+          "label": "Small label",
+          "widget": "textarea",
+          "maxLength": 140
+        },
+        {
+          "key": "club.enabled",
+          "label": "Show the club card",
+          "widget": "toggle"
+        },
+        {
+          "key": "club.heading",
+          "label": "Club heading",
+          "widget": "text",
+          "maxLength": 60
+        },
+        {
+          "key": "club.text",
+          "label": "Club text",
+          "widget": "textarea",
+          "maxLength": 200
+        },
+        {
+          "key": "club.ctaLabel",
+          "label": "Club button",
+          "widget": "text",
+          "maxLength": 30
+        },
+        {
+          "key": "club.ctaHref",
+          "label": "Club button link",
+          "widget": "link"
+        }
+      ],
+      "blocks": {
+        "type": "review",
+        "label": "Review",
+        "max": 6,
+        "fields": [
+          {
+            "key": "quote",
+            "label": "Quote",
+            "widget": "textarea",
+            "maxLength": 280,
+            "required": true
+          },
+          {
+            "key": "author",
+            "label": "Name",
+            "widget": "text",
+            "maxLength": 40,
+            "required": true
+          },
+          {
+            "key": "location",
+            "label": "Place",
+            "widget": "text",
+            "maxLength": 40
+          },
+          {
+            "key": "rating",
+            "label": "Stars",
+            "widget": "slider",
+            "min": 1,
+            "max": 5,
+            "step": 1
+          }
+        ]
+      },
+      "preset": {
+        "type": "reviews-club",
+        "settings": {
+          "title": "11,000 reviews, 4.9 average",
+          "subtitle": "From our parents",
+          "club": {
+            "enabled": true,
+            "heading": "Birthday treats & first look at new drops.",
+            "text": "Order updates and member offers on WhatsApp. One message a week, at most.",
+            "ctaLabel": "Join the club",
+            "ctaHref": "/pages/contact"
+          },
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 112,
+            "paddingBottom": 112,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "type": "review",
+            "settings": {
+              "quote": "The cardigan washed beautifully and my daughter refuses to take it off. Delivery to Chattogram took two days and I paid cash at the door.",
+              "author": "Nusrat J.",
+              "location": "Chattogram · Mother of a 3-year-old",
+              "rating": 5
+            }
+          },
+          {
+            "type": "review",
+            "settings": {
+              "quote": "Finally, baby food where the expiry date is shown before I buy. The puzzle set was a hit at my son's first birthday.",
+              "author": "Tanvir A.",
+              "location": "Dhaka · Father of a 1-year-old",
+              "rating": 5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "rich-text",
+      "label": "Text",
+      "maxInstances": 5,
+      "figma": null,
+      "fields": [
+        {
+          "key": "heading",
+          "label": "Heading",
+          "widget": "text",
+          "maxLength": 80,
+          "nullable": true
+        },
+        {
+          "key": "doc",
+          "label": "Text",
+          "widget": "richtext",
+          "required": true,
+          "maxBytes": 10240
+        },
+        {
+          "key": "align",
+          "label": "Align",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Centre"
+            }
+          ]
+        },
+        {
+          "key": "width",
+          "label": "Width",
+          "widget": "segmented",
+          "options": [
+            {
+              "value": "narrow",
+              "label": "Narrow"
+            },
+            {
+              "value": "wide",
+              "label": "Wide"
+            }
+          ]
+        }
+      ],
+      "preset": {
+        "type": "rich-text",
+        "settings": {
+          "heading": "About our shop",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Tell buyers what makes your shop special."
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "sampleProductsNote": "Shows sample products until you add your own"
+}

@@ -1,0 +1,86 @@
+{
+  "expect": "sections.0.settings.doc.content.0.content.0.marks.0.type",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "r1chtxt1",
+        "type": "rich-text",
+        "enabled": true,
+        "settings": {
+          "heading": "About us",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "x",
+                    "marks": [
+                      {
+                        "type": "script"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "align": "left",
+          "width": "narrow",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 48,
+            "paddingBottom": 48,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        }
+      }
+    ]
+  }
+}

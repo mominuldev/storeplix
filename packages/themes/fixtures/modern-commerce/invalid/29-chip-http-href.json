@@ -1,0 +1,128 @@
+{
+  "expect": "sections.0.blocks.0.settings.href",
+  "config": {
+    "theme": "modern-commerce",
+    "version": "1.1.0",
+    "settings": {
+      "primaryColor": "#0846c2",
+      "secondaryColor": "#ff7a00",
+      "textColor": "#0e1a33",
+      "backgroundColor": "#fffcf8",
+      "fontFamily": "Instrument Sans",
+      "headingFontFamily": "Fraunces",
+      "cornerStyle": "pill",
+      "buttonStyle": "solid",
+      "stylePreset": null,
+      "logoOnDarkMediaId": null,
+      "announcement": {
+        "enabled": true,
+        "text": "Free delivery inside Dhaka over ৳2,000 · Cash on delivery nationwide",
+        "href": null
+      },
+      "header": {
+        "sticky": true,
+        "showSearch": true,
+        "promoLink": {
+          "label": "Winter offers",
+          "href": "/collections/winter"
+        }
+      },
+      "footer": {
+        "tagline": "A calm, carefully edited home for everything children need — from the first onesie to the first school bag.",
+        "showPaymentMethods": true,
+        "paymentMethods": [
+          "cod",
+          "bkash",
+          "nagad",
+          "visa",
+          "mastercard"
+        ]
+      }
+    },
+    "sections": [
+      {
+        "id": "ch1p0001",
+        "type": "chip-links",
+        "enabled": true,
+        "settings": {
+          "title": "Shop by age",
+          "subtitle": "— every size, every stage",
+          "design": {
+            "background": "default",
+            "customBackground": null,
+            "textTone": "auto",
+            "paddingTop": 0,
+            "paddingBottom": 96,
+            "visibility": {
+              "desktop": true,
+              "tablet": true,
+              "phone": true
+            }
+          }
+        },
+        "blocks": [
+          {
+            "id": "ch1p0101",
+            "type": "chip",
+            "settings": {
+              "badge": "0–3",
+              "label": "Newborn",
+              "sublabel": "months",
+              "href": "http://example.com"
+            }
+          },
+          {
+            "id": "ch1p0102",
+            "type": "chip",
+            "settings": {
+              "badge": "3–12",
+              "label": "Baby",
+              "sublabel": "months",
+              "href": "/collections/baby"
+            }
+          },
+          {
+            "id": "ch1p0103",
+            "type": "chip",
+            "settings": {
+              "badge": "1–2",
+              "label": "Toddler",
+              "sublabel": "years",
+              "href": "/collections/toddler"
+            }
+          },
+          {
+            "id": "ch1p0104",
+            "type": "chip",
+            "settings": {
+              "badge": "2–4",
+              "label": "Little one",
+              "sublabel": "years",
+              "href": "/collections/little-one"
+            }
+          },
+          {
+            "id": "ch1p0105",
+            "type": "chip",
+            "settings": {
+              "badge": "4–6",
+              "label": "Pre-school",
+              "sublabel": "years",
+              "href": "/collections/pre-school"
+            }
+          },
+          {
+            "id": "ch1p0106",
+            "type": "chip",
+            "settings": {
+              "badge": "6–10",
+              "label": "Big kid",
+              "sublabel": "years",
+              "href": "/collections/big-kid"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

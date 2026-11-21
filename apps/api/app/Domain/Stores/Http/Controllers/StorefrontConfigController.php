@@ -16,7 +16,7 @@ class StorefrontConfigController
         $resolved = $request->attributes->get(ResolveStorefront::ATTRIBUTE);
 
         // Tenant-scoped query: the TenantContext was set from the validated host.
-        $store = Store::query()->with('settings')->findOrFail($resolved->storeId);
+        $store = Store::query()->with(['settings', 'primaryDomain'])->findOrFail($resolved->storeId);
 
         return new StorefrontConfigResource($store);
     }

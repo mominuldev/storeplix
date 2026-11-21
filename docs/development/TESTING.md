@@ -14,7 +14,8 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | Unit / component (TS) | Vitest + Testing Library | `apps/*/src/**/*.test.ts(x)`, `packages/*/src` | yes |
 | Type contracts | `tsc --noEmit` against `@storeplix/types` | all TS packages | yes |
 | Bundle secret scan | grep build output for `STOREFRONT_API_KEY` | `.next/static`, `dist/` | yes |
-| E2E smoke | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
+| Theme schema parity (Phase 3) | Vitest + AJV (`packages/themes`), storefront Zod (`tests/theme.test.ts`), PHP opis (`tests/Feature/Themes`) + `ThemeSchemaSyncTest` | `packages/themes/fixtures` | yes, `themes` job (also when only `packages/themes` changes) |
+| E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
 happy path + validation + authz + cross-tenant case), a handful of E2E smoke flows.
@@ -34,9 +35,54 @@ pnpm -r --if-present run lint
 pnpm -r --if-present run test
 pnpm -r --if-present run build
 
-# E2E (stack must be running + seeded; see docker-compose.yml header)
+# Theme schema parity (Phase 3; the CI `themes` job runs exactly this)
+for e in registry.json fonts.json modern-commerce fixtures; do diff -r packages/themes/$e apps/api/resources/themes/$e; done
+pnpm --filter @storeplix/themes test                                  # AJV: valid fixtures pass, invalid fail at `expect`
+pnpm --filter @storeplix/storefront exec vitest run tests/theme.test.ts  # Zod resolver never throws on fixtures
+cd apps/api && php artisan test tests/Feature/Themes tests/Unit/SafeHrefTest.php   # opis parity + sync + upgrader
+
+# E2E (stack must be running + seeded; see docker-compose.yml header and §2c)
 cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium && pnpm test
 ```
+
+## 2b. Browser testing: Playwright only (product owner rule)
+- Whenever a change needs checking in a real browser (visual check, click-through, screenshots, console errors), use
+  **Playwright**: the `tests/e2e` project (`pnpm exec playwright test`) or a one-off Playwright script.
+- Do **not** use the Claude in Chrome extension or the user's own Google Chrome for testing.
+- Install once: `cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium`.
+- Ad-hoc check example (screenshot + console errors):
+  ```bash
+  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3000 /tmp/home.png
+  ```
+  For flows (login, editor, preview), write a spec under `tests/e2e/specs/` and run it with `pnpm exec playwright test <spec>`.
+- Save screenshots and traces outside the repo (or under the git-ignored `tests/e2e/test-results/`).
+
+## 2c. E2E flow specs (`tests/e2e/specs`)
+
+| Spec | Covers |
+|---|---|
+| `api.health`, `merchant.login`, `storefront.home` | Phase 1 smoke |
+| `phase2.auth-flows` | invite → accept (mailed link, UI form) and password reset (mailed link → new password → UI sign-in) |
+| `phase2.settings-logo` | Settings → Store details logo upload → storefront header shows it |
+| `phase3.theme-editor` | edit hero in the editor → iframe preview updates; public unchanged until Publish; Publish → public in < 5 s |
+| `phase3.pages-nav-seo` | page create (dialog) → publish → `/pages/{slug}` (+ breadcrumb, canonical, sitemap; draft 404); main-menu item → header link; "Hide the whole shop from Google" → robots `Disallow: /` + noindex |
+
+How they run:
+- **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
+  seeded demo store). Override with `API_URL`, `MERCHANT_URL`, `STOREFRONT_URL`. The queue worker is required:
+  mail and storefront revalidation are queued.
+- **Idempotent and self-cleaning.** Each spec snapshots what it changes and restores it in `finally`/`afterAll`
+  (theme draft + published config, menus, SEO flag, logo, created pages, invited user). Unique names per run.
+- **Serial** (`workers: 1`): the specs share the demo store.
+- **Sign-in:** one API login per run, cached in `tests/e2e/.auth/demo.json` (git-ignored) and injected into the
+  dashboard's sessionStorage. `throttle:auth` allows 10 auth calls/min per IP and `phase2.auth-flows` uses 5, so
+  **wait ~60 s between back-to-back full runs** or the reset mail is silently throttled.
+- **Mail:** with `MAIL_MAILER=log` (local `apps/api/.env`) the specs read the link from
+  `apps/api/storage/logs/laravel.log` (only the bytes appended after the action; override with `LARAVEL_LOG`).
+  With docker compose (Mailpit) set `MAILPIT_URL=http://localhost:8025`.
+- **Throwaway users** (`*@e2e.storeplix.test` only) are deleted with `php artisan tinker` in `apps/api`
+  (`API_DIR` to override) or `docker compose exec api` when `E2E_ARTISAN=docker`. Users have no delete endpoint.
+- Typecheck: `cd tests/e2e && pnpm exec tsc -p .`.
 
 ## 3. The `tenancy` test group (required)
 
@@ -87,6 +133,13 @@ Phase column = when the test becomes mandatory (the feature must exist first).
 | T-22 | Auth: login rate limit, token revoked on logout, password not in any response, `/auth/me` without token → 401 envelope | as stated | 1 |
 | T-23 | File uploads: path traversal, SVG/HTML upload, another tenant's storage path | rejected / served from tenant-scoped prefix | 4+ |
 | T-24 | Audit log entries are written with the correct tenant and are not readable cross-tenant | — | 2+ |
+| T-25 | Theme/page/menu of tenant B read or written by A (`/stores/{B}/themes`, `/pages`, `/navigation`) | 404; B unchanged | 3 |
+| T-26 | Tenant B's media id in A's theme config (`*MediaId`, any depth), page body/`og_image`, store SEO share image; B's `page_id` in A's menu | 422 | 3 |
+| T-27 | Storefront host A + slug of B's page; B's preview token with host A | 404 / public (published) data only | 3 |
+| T-28 | Href injection in rich text, page buttons, theme hrefs, nav urls (`javascript:`, encoded/whitespace/control-char variants, `data:`, `//`, `/\`, credentials) | 422; storefront `sanitizeHref` drops it again | 3 |
+| T-29 | Preview/draft leakage: draft theme/page never served to a cookie-less request after a preview render; preview responses `private, no-store` | public HTML unchanged | 3 |
+| T-30 | Framing: live pages `frame-ancestors 'none'` + `X-Frame-Options: DENY`; with `sp_preview` only the `STOREFRONT_EDITOR_ORIGINS` | headers as stated | 3 |
+| T-31 | Staff (role `staff`) on every theme/page/nav/SEO write | 403; GETs 200 | 3 |
 
 Non-PHP checks (CI or review):
 

@@ -61,8 +61,8 @@ Binding API/type contract: `docs/development/PHASE-2-CONTRACT.md` (tasks 2.1, 2.
 |---|---|---|---|
 | 3.1 | Theme registry, Zod schemas, JSON Schema export, CI sync check | SF/API | Invalid config → 422 on save, fallback on render |
 | 3.2 | Theme config API: get/put draft, publish, preview token | API | Draft vs published separation tested |
-| 3.3 | `classic` theme: layout, home sections (hero, featured, category grid, banner, rich text, newsletter) per Storefront 1:9207 / 2:6 | SF | Matches Figma desktop + mobile; Lighthouse mobile ≥ 90 |
-| 3.4 | Theme editor UI (Online store 60:11061) with live preview iframe | WEB | Edit → preview updates; publish revalidates storefront in < 5 s |
+| 3.3 | `modern-commerce` ("Gallery") theme 1.1: layout + 10 home section types per Storefront 1:9207 / 2:6 (PHASE-3-CONTRACT §4.3) | SF | Matches Figma desktop + mobile; Lighthouse mobile ≥ 90 |
+| 3.4 | Theme editor UI (Online store **V3** 2028:44400, see PHASE-3-CONTRACT) with live preview iframe | WEB | Edit → preview updates; publish revalidates storefront in < 5 s |
 | 3.8 | Onboarding 04 Pick a theme `48:8119` / M4 `54:810` | WEB | Selection writes `store_themes`; preview link works |
 | 3.5 | Revalidation endpoint + Laravel listener | API/SF | Tag revalidation test |
 | 3.6 | Pages + navigation API/UI | API/WEB/SF | Custom page renders; sanitized HTML |
