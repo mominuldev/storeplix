@@ -1,6 +1,6 @@
 import type { LoginInput, MeResponse } from '@storeplix/api-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, use, useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { session } from '../lib/session';
 
@@ -28,9 +28,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60_000,
   });
 
+  // Proactive logout when expires_at passes (contract D3).
+  useEffect(() => {
+    if (!token) return;
+    const ms = session.msUntilExpiry();
+    if (ms === null) return;
+    if (ms <= 0) {
+      session.expire();
+      return;
+    }
+    const id = setTimeout(() => session.expire(), Math.min(ms, 2 ** 31 - 1));
+    return () => clearTimeout(id);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'health' });
+  }, [token, queryClient]);
+
   const login = useCallback(async (input: LoginInput) => {
-    const { token: newToken } = await api.auth.login(input);
-    session.setToken(newToken);
+    session.setAuth(await api.auth.login(input));
   }, []);
 
   const logout = useCallback(async () => {

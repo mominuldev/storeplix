@@ -11,9 +11,11 @@ use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\TenantCache;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-#[\PHPUnit\Framework\Attributes\Group('tenancy')]
+#[Group('tenancy')]
+#[Group('tenancy')]
 class CrossTenantIsolationTest extends TestCase
 {
     use RefreshDatabase;

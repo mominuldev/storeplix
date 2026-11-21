@@ -1,7 +1,9 @@
 import { cn } from '@storeplix/ui';
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
+import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 function initial(name: string | undefined) {
   return (name ?? '?').trim().charAt(0).toUpperCase() || '?';
@@ -9,9 +11,12 @@ function initial(name: string | undefined) {
 
 // Figma Components · Store switcher 5:15 — surface-canvas, radius 10, px 12 py 8, gap 10;
 // 28px accent-100 tile (rounded-sm) with Body/14 Semibold initial in status-warning.
-// Lists tenants from GET /auth/me.
+// Contract D1 (revised): one store per tenant — this switches TENANT (membership from GET /auth/me);
+// the label shows the active tenant's store name and domain.
 export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const { tenants, activeTenant, setTenant } = useAuth();
+  const store = useTenantStore().data;
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -29,8 +34,8 @@ export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
     };
   }, [open]);
 
-  const name = activeTenant?.name ?? 'No shop yet';
-  const sub = activeTenant?.slug ? `${activeTenant.slug}.storeplix.com` : activeTenant?.role ?? 'Create your first shop';
+  const name = store?.name ?? activeTenant?.name ?? 'No shop yet';
+  const sub = store ? storeDomain(store) : (activeTenant?.role ?? '');
 
   return (
     <div ref={ref} className="relative">
@@ -47,7 +52,7 @@ export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
         )}
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-accent-100 text-body font-semibold text-warning">
-          {initial(activeTenant?.name)}
+          {initial(name)}
         </span>
         {!collapsed && (
           <>
@@ -72,6 +77,7 @@ export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
                 onClick={() => {
                   setTenant(t.id);
                   setOpen(false);
+                  navigate('/');
                 }}
                 className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left hover:bg-surface-subtle"
               >

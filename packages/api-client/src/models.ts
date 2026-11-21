@@ -1,5 +1,7 @@
-// Request/response shapes not (yet) in @storeplix/types. Proposed for promotion to packages/types.
+// Request shapes not (yet) in @storeplix/types. Proposed for promotion to packages/types.
 import type { User } from '@storeplix/types';
+
+export type { TenantMembership, TenantRole } from '@storeplix/types';
 
 export interface RegisterInput {
   name: string;
@@ -14,17 +16,12 @@ export interface LoginInput {
   password: string;
 }
 
-export type TenantRole = 'owner' | 'admin' | 'staff' | (string & {});
-
-export interface TenantMembership {
-  id: string;
-  name: string;
-  slug?: string;
-  role: TenantRole;
+export interface ForgotPasswordInput {
+  email: string;
 }
 
-/** `GET /auth/me`. `tenants` is optional until the contract adds it. */
-export type MeResponse = User & { tenants?: TenantMembership[] };
+/** `GET /auth/me` returns `User` (with `tenants`). */
+export type MeResponse = User;
 
 export interface CreateStoreInput {
   name: string;

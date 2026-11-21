@@ -4,17 +4,32 @@ import { Label } from './Label';
 
 // Figma Components · Input 3:58 — stack gap 6; field min-h 44, px 12, py 8, radius md,
 // surface-card, 1px border-default, Body/14; placeholder text-muted; optional 20px trailing icon.
-// Focus/error/hint states are not drawn in Figma; derived from tokens.
+// Error/hint states are not drawn in Figma; derived from tokens.
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: string;
   error?: string;
+  /** Leading adornment, e.g. a country code. Rendered with a 1×24 divider (Figma phone field). */
+  leading?: ReactNode;
   trailing?: ReactNode;
   containerClassName?: string;
+  /** Field box class (height/radius overrides, e.g. `min-h-12` for 48px onboarding fields). */
+  fieldClassName?: string;
   ref?: React.Ref<HTMLInputElement>;
 }
 
-export function Input({ label, hint, error, trailing, id, className, containerClassName, ...props }: InputProps) {
+export function Input({
+  label,
+  hint,
+  error,
+  leading,
+  trailing,
+  id,
+  className,
+  containerClassName,
+  fieldClassName,
+  ...props
+}: InputProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
   const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
@@ -25,10 +40,18 @@ export function Input({ label, hint, error, trailing, id, className, containerCl
       <div
         className={cn(
           'flex min-h-11 items-center gap-2 rounded-md border bg-surface-card px-3 transition-shadow',
-          'focus-within:border-brand-600 focus-within:shadow-focus',
+          // Figma L1/L3: focused field = 2px brand-600 border (inset ring avoids layout shift) + focus halo.
+          'focus-within:border-brand-600 focus-within:shadow-[inset_0_0_0_1px_var(--color-brand-600),var(--shadow-focus)]',
           error ? 'border-danger' : 'border-border-default',
+          fieldClassName,
         )}
       >
+        {leading && (
+          <>
+            <span className="flex shrink-0 items-center gap-1.5 text-body-lg font-medium text-text-secondary">{leading}</span>
+            <span aria-hidden className="h-6 w-px shrink-0 bg-border-default" />
+          </>
+        )}
         <input
           id={inputId}
           aria-invalid={error ? true : undefined}

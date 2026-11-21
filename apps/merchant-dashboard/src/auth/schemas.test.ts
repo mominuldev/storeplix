@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loginSchema, registerSchema } from './schemas';
 
-const valid = { name: 'Rahim Ahmed', email: 'rahim@shop.com', phone: '', password: 'secret123', password_confirmation: 'secret123' };
+const valid = { name: 'Rahim Ahmed', email: 'rahim@shop.com', phone: '01712345678', password: 'secret123', password_confirmation: 'secret123' };
 
 describe('auth schemas', () => {
   it('rejects an invalid email and empty password on login', () => {
@@ -11,7 +11,7 @@ describe('auth schemas', () => {
     expect(fields).toEqual(expect.arrayContaining(['email', 'password']));
   });
 
-  it('accepts a valid registration with optional empty phone', () => {
+  it('accepts a valid registration', () => {
     expect(registerSchema.safeParse(valid).success).toBe(true);
   });
 
@@ -24,6 +24,6 @@ describe('auth schemas', () => {
 
   it('validates phone format when provided', () => {
     expect(registerSchema.safeParse({ ...valid, phone: 'abc' }).success).toBe(false);
-    expect(registerSchema.safeParse({ ...valid, phone: '+8801712345678' }).success).toBe(true);
+    expect(registerSchema.safeParse({ ...valid, phone: '+8801712-345678' }).data?.phone).toBe('01712345678');
   });
 });

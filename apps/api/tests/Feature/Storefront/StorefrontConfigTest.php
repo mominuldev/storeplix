@@ -7,9 +7,11 @@ use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Services\StorefrontResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-#[\PHPUnit\Framework\Attributes\Group('tenancy')]
+#[Group('tenancy')]
+#[Group('tenancy')]
 class StorefrontConfigTest extends TestCase
 {
     use RefreshDatabase;
@@ -36,12 +38,15 @@ class StorefrontConfigTest extends TestCase
         $response = $this->config('demo.storeplix.test')->assertOk();
 
         $response->assertExactJsonStructure(['data' => [
-            'store' => ['id', 'name', 'slug', 'currency', 'logo_url', 'favicon_url'],
+            'store' => ['id', 'name', 'slug', 'status', 'currency', 'logo_url', 'favicon_url'],
+            'preview',
             'theme' => ['theme', 'version', 'settings' => ['primaryColor', 'secondaryColor', 'fontFamily'], 'sections' => ['*' => ['type', 'enabled']]],
             'seo' => ['title', 'description'],
         ]])
             ->assertJsonPath('data.store.id', $store->id)
             ->assertJsonPath('data.store.slug', 'demo')
+            ->assertJsonPath('data.store.status', 'active')
+            ->assertJsonPath('data.preview', false)
             ->assertJsonPath('data.store.currency', 'BDT')
             ->assertJsonPath('data.theme.theme', 'modern-commerce')
             ->assertJsonPath('data.theme.settings.primaryColor', '#5b53ff')
@@ -166,5 +171,18 @@ class StorefrontConfigTest extends TestCase
 
         $this->config('alpha.storeplix.test')->assertOk()->assertJsonPath('data.store.id', $a->id);
         $this->config('bravo.storeplix.test')->assertOk()->assertJsonPath('data.store.id', $b->id);
+    }
+
+    public function test_draft_store_resolves_with_draft_status_and_suspended_stays_404(): void
+    {
+        [, $tenant] = $this->merchant();
+        $store = $this->storeFor($tenant, 'soon', status: Store::STATUS_DRAFT);
+
+        $this->config('soon.storeplix.test')->assertOk()
+            ->assertJsonPath('data.store.status', 'draft')
+            ->assertJsonPath('data.preview', false);
+
+        $this->tenancy()->run($tenant, fn () => $store->update(['status' => Store::STATUS_SUSPENDED]));
+        $this->config('soon.storeplix.test')->assertNotFound()->assertJsonPath('error.code', 'store_not_found');
     }
 }

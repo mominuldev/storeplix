@@ -8,6 +8,9 @@ Plans with trials, limits and feature gates; merchants pay in BDT; card recurrin
 ## Decision
 - Own billing engine (no Stripe Billing — Stripe is unavailable to BD entities): `plans`, `subscriptions`,
   `subscription_items`, `invoices`. 14-day trial on signup (no payment method).
+  **Amendment (Phase 2, pending PO Q10):** plans follow Figma (`free`, `starter` ৳499, `growth` ৳1,499). The trial runs on
+  `starter`; when it ends the tenant drops to the `free` plan (active, nothing locked) instead of expiring.
+  `FeatureGate` API: PHASE-2-CONTRACT §1.6.
 - **Manual-renewal model:** invoice generated 7 days before period end; merchant pays via bKash/SSLCommerz
   using the same `PaymentGateway` drivers with **platform** credentials; paid invoice extends the period.
   Unpaid → `past_due` (7-day grace, banner) → `expired` (store read-only for merchant, storefront shows

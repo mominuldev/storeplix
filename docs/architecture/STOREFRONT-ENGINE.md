@@ -19,7 +19,9 @@ middleware.ts
   rewrite → /_store/{host}{pathname}                    // host is a route segment ⇒ part of the cache key
 app/_store/[host]/layout.tsx
   config = await getStorefrontConfig(host)              // fetch with X-Storefront-Host, X-Storefront-Key
-  if 404 → notFound() (platform "store not available" page, noindex)
+  if 404 → notFound() (platform "store not available" page, noindex)   // unknown host or suspended store
+  if config.store.status === 'draft' && !config.preview → render <ComingSoon> (§4.1)
+  if config.preview → render the store + "Preview — not public yet" banner
   theme = themeRegistry.get(config.theme.theme)
   parsed = theme.schema.safeParse(config.theme)         // Zod; on failure fall back to theme.defaults + log
   <ThemeProvider tokens=parsed.settings><theme.Layout>{children}</theme.Layout></ThemeProvider>
@@ -93,7 +95,7 @@ Section settings use snake_case. (See OPEN-QUESTIONS Q9 to unify.)
 1. **Source of truth:** Zod schema in the theme. Build step `pnpm --filter @storeplix/storefront theme:export`
    emits JSON Schema (`zod-to-json-schema`) to `apps/storefront/theme-schemas/<code>@<major>.json`.
    The Laravel agent copies/consumes it (CI checks the copy in `apps/api/resources/theme-schemas/` matches).
-2. **On save (Laravel):** `PUT /api/v1/merchant/themes/{code}/config` validates with Form Request rules for the
+2. **On save (Laravel):** `PUT /api/v1/stores/{store}/themes/{code}/config` validates with Form Request rules for the
    envelope (theme, version, settings, sections array) and `opis/json-schema` against the exported schema;
    also checks referenced `media_id`s belong to the tenant. Invalid → 422 `validation_failed` with JSON-pointer keys
    in `details` (e.g. `"sections.1.settings.limit"`).
@@ -101,11 +103,32 @@ Section settings use snake_case. (See OPEN-QUESTIONS Q9 to unify.)
    Storefront never 500s due to config.
 
 ### Draft vs published
-`store_themes.draft_config` is edited by the merchant editor; `POST /merchant/themes/{code}/publish` copies it
+`store_themes.draft_config` is edited by the merchant editor; `POST /api/v1/stores/{store}/themes/{code}/publish` copies it
 to `published_config`, sets `published_at`, and emits `StoreThemePublished`. Storefront config endpoint returns
-**published** only. Preview: editor iframe loads `https://{host}/?preview=<signed token>`; token (HMAC, 15 min,
-bound to store_id) makes the API return `draft_config`; preview responses are `Cache-Control: private, no-store`
-and use Next.js `draftMode()`.
+**published** config unless a valid preview token is sent (then `draft_config`, falling back to published/defaults).
+
+### 4.1 Draft stores: Coming soon and preview (PO decision D2)
+`StorefrontConfig.store.status` is `'active' | 'draft'`; suspended stores stay 404.
+
+**Public visitor, draft store:** HTTP 200 branded **Coming soon** page (store name, logo, theme colours from the
+validated config, no catalog data), `<meta name="robots" content="noindex">`, `robots.txt` = `Disallow: /`, empty
+sitemap. Rendered dynamically with `Cache-Control: private, no-store`; it never goes into the shared ISR/edge cache
+keyed by host, so publishing shows the live store at once. On draft → active the API revalidates `store:{id}` and `host:{host}`.
+
+**Merchant preview:**
+1. Dashboard calls `POST /api/v1/stores/{store}/preview-token` (Bearer + `X-Tenant-Id`, any role with store access)
+   → 201 `{data:{token, url, expires_at}}`. Token = HMAC-SHA256-signed payload `{store_id, exp, jti}` with
+   `PREVIEW_TOKEN_SECRET` (separate from `APP_KEY` and the storefront key), TTL **60 min**.
+   `url` = `https://{primary_domain}/?preview={token}` (local: `http://{host}:3000/...`).
+2. Storefront `middleware.ts` sees `?preview=`: sets cookie `sp_preview` (httpOnly, `Secure` in prod, `SameSite=Lax`,
+   `Max-Age=3600`, host-only) and 302s to the same URL **without** the param, so the token doesn't stay in history,
+   logs or `Referer`.
+3. Server reads the cookie and forwards it as `X-Storefront-Preview` to `/storefront/config` (and later catalog
+   endpoints). These fetches use `cache: 'no-store'` and the response is `private, no-store`. Preview never reads
+   from or writes to the tagged shared cache.
+4. API verifies the signature, expiry and `store_id == resolved store`. If valid → `preview: true` (+ draft theme); if
+   invalid, expired or for another store → treated as a public visitor (`preview: false`), with no error detail.
+5. Storefront renders the real store with a fixed "Preview — not public yet" banner, `noindex`.
 
 ## 5. Caching, ISR and revalidation
 | Data | Fetch cache | Tags | Revalidated by |
@@ -114,11 +137,14 @@ and use Next.js `draftMode()`.
 | Product detail | `revalidate: 300, tags: ['store:{id}', 'product:{product_id}']` | product | product/variant/inventory-visible change |
 | Product listings/categories | `revalidate: 120, tags: ['store:{id}:catalog']` | catalog | any product/category change |
 | CMS pages | `revalidate: 600, tags: ['store:{id}:page:{slug}']` | page | page publish |
-| Cart, checkout, account | `cache: 'no-store'` | — | — |
+| Cart, checkout, account, Coming soon, any request with `sp_preview` | `cache: 'no-store'` | — | — |
 
-Revalidation flow: Laravel listener (queued, tenant-aware) on domain events → `POST https://storefront.internal/api/revalidate`
-with `{ tags: [...] }` and header `X-Revalidate-Secret` (`STOREFRONT_REVALIDATE_SECRET`, distinct from the API key) →
-route handler calls `revalidateTag` for each. Debounced per store (1 s) to batch bulk edits. If Cloudflare caches
+Revalidation flow (as implemented; details PHASE-2-CONTRACT §1.8): `StorefrontRevalidationObserver` (Store status/name/slug,
+StoreSettings incl. theme, StoreDomain) → queued `RevalidateStorefront` job (after commit, unique per store for 2 s, retries) →
+`POST ${STOREFRONT_REVALIDATE_URL}` (internal, e.g. `http://storefront:3000/api/revalidate`) with
+`Authorization: Bearer ${REVALIDATE_SECRET}` and `{ "hosts": [...] }` → route handler expires tag `store:{host}` for each
+host. `REVALIDATE_SECRET` is distinct from `STOREFRONT_API_KEY`. Phase 1 uses a single host-level tag; per-product/catalog
+tags in the table above arrive with the catalog endpoints (Phase 5). If Cloudflare caches
 HTML (Phase 9), the same listener purges by Cloudflare cache tag `store-{id}` (`Cache-Tag` response header).
 Stock levels on PDP are fetched client-side (`/storefront/products/{slug}/availability`, no-store) so stock changes
 don't invalidate HTML.
@@ -130,7 +156,7 @@ don't invalidate HTML.
 - JSON-LD: `Organization` + `WebSite` (layout), `Product` + `Offer` (price in major units, `priceCurrency`,
   availability), `BreadcrumbList`, `ItemList` on PLP.
 - `app/_store/[host]/sitemap.ts` and `robots.ts` per host: sitemap index of products, categories, pages
-  (from `/storefront/sitemap`), chunked at 5 000 URLs. Draft/suspended stores and preview: `noindex`.
+  (from `/storefront/sitemap`), chunked at 5 000 URLs. Draft stores: `noindex`, `Disallow: /`, empty sitemap; preview: `noindex`; suspended: 404.
 - Merchant redirects (`redirects` table) resolved in middleware via cached `/storefront/redirects` map.
 - Images via `next/image` with CDN loader; width-based srcset; LCP image `priority`.
 - Performance budget: LCP < 2.5 s on 4G mid-tier Android (primary BD device), JS < 120 KB gz on home.

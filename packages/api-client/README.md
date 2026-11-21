@@ -21,3 +21,13 @@ const config = await api.storefront.getConfig(host, process.env.STOREFRONT_API_K
   init: { next: { revalidate: 60 } },
 });
 ```
+
+## Phase 1.1
+
+- `api.auth.forgotPassword({ email })` — resolves on 202.
+- `api.stores.createPreviewToken(storeId)` → `{ token, url, expires_at }` (open `url` in a new tab).
+- `api.stores.list(query, { tenantId })` — per-call `X-Tenant-Id` override.
+- `api.storefront.getConfig(host, key, { previewToken })` — forwards `X-Storefront-Preview`.
+- `createAuthSession({ prefix })` — browser session store: token + `expires_at` in sessionStorage,
+  active tenant in localStorage, `expire()` leaves a one-shot `session_expired` notice
+  (`SESSION_EXPIRED_MESSAGE`). Wire `onUnauthorized: () => session.expire()`.

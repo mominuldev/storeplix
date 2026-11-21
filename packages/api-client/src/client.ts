@@ -3,6 +3,7 @@ import type {
   AuthToken,
   HealthStatus,
   PaginationMeta,
+  PreviewToken,
   Store,
   StorefrontConfig,
 
@@ -10,6 +11,7 @@ import type {
 import { ApiError, isErrorEnvelope } from './errors';
 import type {
   CreateStoreInput,
+  ForgotPasswordInput,
   LoginInput,
   MeResponse,
   RegisterInput,
@@ -38,6 +40,8 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Skip Authorization / X-Tenant-Id (public or server-to-server endpoints). */
   anonymous?: boolean;
+  /** Override the X-Tenant-Id for this call (e.g. listing each membership's store). */
+  tenantId?: string;
   /** Passed through to fetch (Next.js uses `next`/`cache`). */
   init?: RequestInit & { next?: { revalidate?: number | false; tags?: string[] } };
 }
@@ -75,7 +79,7 @@ export function createApiClient(options: ApiClientOptions) {
     if (!opts.anonymous) {
       const token = options.getToken?.();
       if (token) headers.Authorization = `Bearer ${token}`;
-      const tenantId = options.getTenantId?.();
+      const tenantId = opts.tenantId ?? options.getTenantId?.();
       if (tenantId) headers['X-Tenant-Id'] = tenantId;
     }
 
@@ -113,6 +117,8 @@ export function createApiClient(options: ApiClientOptions) {
       throw error;
     }
 
+    // e.g. 202 Accepted with no body
+    if (!text) return undefined;
     if (typeof body !== 'object' || body === null || !('data' in body)) {
       throw new ApiError(response.status, 'invalid_response', 'Unexpected response from the server.');
     }
@@ -137,17 +143,24 @@ export function createApiClient(options: ApiClientOptions) {
       login: (input: LoginInput) =>
         request<AuthToken>('/auth/login', { method: 'POST', body: input, anonymous: true }),
       logout: () => request<void>('/auth/logout', { method: 'POST' }),
-      /** Contract returns `User`; `tenants` is included when the API supports it (see proposal). */
+      /** `User` including `tenants` memberships. */
       me: () => request<MeResponse>('/auth/me'),
+      /** Always resolves (API returns 202 whether or not the email exists). */
+      forgotPassword: (input: ForgotPasswordInput) =>
+        request<void>('/auth/forgot-password', { method: 'POST', body: input, anonymous: true }),
     },
 
     stores: {
-      /** Tenant-scoped: requires X-Tenant-Id. */
-      list: async (query?: { page?: number; per_page?: number }): Promise<Paginated<Store[]>> => {
-        const envelope = await requestEnvelope<Store[]>('/stores', { query });
+      /** Tenant-scoped (X-Tenant-Id). Contract D1: a tenant has at most one store. */
+      list: async (query?: { page?: number; per_page?: number }, opts?: { tenantId?: string }): Promise<Paginated<Store[]>> => {
+        const envelope = await requestEnvelope<Store[]>('/stores', { query, tenantId: opts?.tenantId });
         return { data: envelope?.data ?? [], meta: envelope?.meta };
       },
+      /** 409 `store_limit_reached` when the tenant already has its store. */
       create: (input: CreateStoreInput) => request<Store>('/stores', { method: 'POST', body: input }),
+      /** Short-lived signed link to preview a draft store (opens `url` in a new tab). */
+      createPreviewToken: (storeId: string) =>
+        request<PreviewToken>(`/stores/${encodeURIComponent(storeId)}/preview-token`, { method: 'POST' }),
     },
 
     storefront: {
@@ -155,11 +168,20 @@ export function createApiClient(options: ApiClientOptions) {
        * Server-to-server only (Next.js storefront). Never call from a browser — `key` is a secret.
        * Throws ApiError with code `store_not_found` (404) for unknown hosts.
        */
-      getConfig: (host: string, key: string, opts?: Pick<RequestOptions, 'init' | 'signal'>) =>
+      getConfig: (
+        host: string,
+        key: string,
+        opts?: Pick<RequestOptions, 'init' | 'signal'> & { previewToken?: string | null },
+      ) =>
         request<StorefrontConfig>('/storefront/config', {
-          ...opts,
+          init: opts?.init,
+          signal: opts?.signal,
           anonymous: true,
-          headers: { 'X-Storefront-Host': normalizeHost(host), 'X-Storefront-Key': key },
+          headers: {
+            'X-Storefront-Host': normalizeHost(host),
+            'X-Storefront-Key': key,
+            ...(opts?.previewToken ? { 'X-Storefront-Preview': opts.previewToken } : {}),
+          },
         }),
     },
   };

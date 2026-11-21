@@ -3,6 +3,7 @@
 namespace App\Domain\Stores\Http\Requests;
 
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Services\StoreLimitReachedException;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -10,7 +11,17 @@ class StoreStoreRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('create', Store::class) ?? false;
+        if (! ($this->user()?->can('create', Store::class) ?? false)) {
+            return false;
+        }
+
+        // D1: one store per tenant. Checked before validation so the client gets 409, not a slug error.
+        // (Tenant-scoped query; the DB unique constraint in StoreProvisioner covers races.)
+        if (Store::query()->exists()) {
+            throw new StoreLimitReachedException;
+        }
+
+        return true;
     }
 
     protected function prepareForValidation(): void

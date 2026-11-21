@@ -2,6 +2,7 @@
 
 namespace App\Domain\Identity\Http\Controllers;
 
+use App\Domain\Identity\Http\Requests\ForgotPasswordRequest;
 use App\Domain\Identity\Http\Requests\LoginRequest;
 use App\Domain\Identity\Http\Requests\RegisterRequest;
 use App\Domain\Identity\Http\Resources\UserResource;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class AuthController
@@ -67,6 +69,26 @@ class AuthController
         return $this->tokenResponse($user, 200);
     }
 
+    /**
+     * Phase 1.1 stub: always 202 with the same body, whether or not the account exists
+     * (no enumeration). Logs the request; no mail is sent yet.
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $email = $request->validated('email');
+        $exists = User::query()->where('email', $email)->exists();
+
+        Log::info('auth.password_reset_requested', [
+            'email_hash' => hash('sha256', $email),
+            'account_exists' => $exists,
+            'ip' => $request->ip(),
+        ]);
+
+        return new JsonResponse([
+            'data' => ['message' => 'If an account exists for that email, a reset link will be sent.'],
+        ], 202);
+    }
+
     public function logout(Request $request): Response
     {
         $request->user()->currentAccessToken()?->delete();
@@ -81,11 +103,13 @@ class AuthController
 
     private function tokenResponse(User $user, int $status): JsonResponse
     {
-        $token = $user->createToken('merchant-dashboard')->plainTextToken;
+        $expiresAt = now()->addMinutes((int) config('sanctum.expiration'));
+        $token = $user->createToken('merchant-dashboard', ['*'], $expiresAt)->plainTextToken;
 
         return new JsonResponse([
             'data' => [
                 'token' => $token,
+                'expires_at' => $expiresAt->toIso8601ZuluString(),
                 'user' => (new UserResource($user->load('tenants')))->resolve(),
             ],
         ], $status);

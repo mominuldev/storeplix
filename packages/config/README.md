@@ -17,7 +17,7 @@ We use **Tailwind CSS v4** with a CSS-first `@theme` (no JS preset).
 
 - Vite: add `@tailwindcss/vite` to `vite.config.ts` plugins.
 - Next.js: use `@tailwindcss/postcss` in `postcss.config.mjs`.
-- Load Inter (Google Fonts `<link>` in Vite `index.html`, or `next/font/google` with `variable` and keep `--font-sans` pointing to Inter).
+- Load Inter and Hind Siliguri 400/600 (Google Fonts `<link>` in Vite `index.html`, or `next/font/google` with `variable` and keep `--font-sans` pointing to Inter).
 
 ### Utilities generated
 
@@ -29,7 +29,8 @@ We use **Tailwind CSS v4** with a CSS-first `@theme` (no JS preset).
 | Surface | `bg-surface-canvas`, `bg-surface-card`, `bg-surface-subtle` |
 | Border | `border-border-default`, `border-border-strong` |
 | Status | `text-success bg-success-bg`, `warning`, `danger`, `info` (+ `-bg`) |
-| Type | `text-display` (40/48 bold), `text-heading` (20/28 semibold), `text-heading-24` (24/32 semibold), `text-body-lg` (16/24), `text-body` (14/20), `text-caption` (12/16); add `font-medium`/`font-semibold` for Medium/Semibold styles |
+| Type | `text-display` (40/48 bold), `text-heading` (20/28 semibold), `text-heading-32` (32/40 bold), `text-heading-24` (24/32 semibold), `text-body-lg` (16/24), `text-body` (14/20), `text-caption` (12/16); add `font-medium`/`font-semibold` for Medium/Semibold styles |
+| Fonts | `font-sans` (Inter), `font-bangla` (Hind Siliguri — Bangla copy and ৳) |
 | Spacing | default 4px scale = Figma `space/1..10` (`p-1`=4 … `p-10`=40); `w-sidebar` 256, `w-sidebar-collapsed` 72, `h-topbar` 64 |
 | Radius | `rounded-sm` 6, `rounded-md` 8, `rounded-lg` 12, `rounded-control` 10, `rounded-card` 16, `rounded-full` |
 | Elevation | `shadow-elevation-1` (cards/tables), `shadow-focus` (4px brand/600 @14% focus ring) |

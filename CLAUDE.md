@@ -37,7 +37,8 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
    `BelongsToTenant` trait (global scope + auto-fill `tenant_id`). Tenant is set once per request by
    middleware into the `TenantContext` singleton. Never call `withoutGlobalScope(TenantScope::class)`
    outside `app/Support/Tenancy/` or super-admin code paths explicitly marked `// cross-tenant: reason`.
-   See `docs/architecture/MULTI-TENANCY.md`.
+   **One store per tenant** (`UNIQUE(stores.tenant_id)`); store-scoped models still use `BelongsToStore` (`store_id`
+   + composite FK `(tenant_id, store_id) → stores(tenant_id, id)`) to keep multi-store cheap later. A user may belong to several tenants. See `docs/architecture/MULTI-TENANCY.md`.
 2. Merchant API: tenant comes from `X-Tenant-Id`, validated against `tenant_users` membership.
    Storefront API: tenant comes from `X-Storefront-Host`, validated against `store_domains`
    (plus `X-Storefront-Key`). Never trust `Host`/`X-Forwarded-Host` without that lookup.
@@ -57,7 +58,8 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
 - **IDs:** ULID strings (26 chars) everywhere, generated in the app (`HasUlids`).
 - **JSON:** snake_case keys. Exception: the contents of theme config documents (`ThemeConfig.settings`)
   keep camelCase and are passed through untransformed.
-- **API:** plural resource nouns, kebab-case path segments, `/api/v1/merchant/...` for merchant,
+- **API:** plural resource nouns, kebab-case path segments; merchant store-scoped routes `/api/v1/stores/{store}/...`
+  (`{store}` must belong to the `X-Tenant-Id` tenant, else 404), tenant-level merchant routes `/api/v1/{resource}`,
   `/api/v1/storefront/...` for public render data, `/api/v1/admin/...` for super admin.
   Error `code` is snake_case and stable (e.g. `validation_failed`, `store_not_found`).
 - **DB:** snake_case plural tables, `tenant_id` first column after `id` on tenant-owned tables, composite
@@ -69,7 +71,9 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
 - Full rules: `docs/development/CODING-STANDARDS.md`.
 
 ## Security rules
-- Every merchant endpoint: `auth:sanctum` + `tenant` middleware + Policy check. No exceptions.
+- Every merchant endpoint: `auth:sanctum` + `tenant` middleware (+ `store` on `/stores/{store}/...`) + Policy check. No exceptions.
+- Sanctum tokens expire after 7 days (`expires_at` in token responses); SPAs keep them in `sessionStorage`, never `localStorage`.
+- Draft stores show only a no-store, `noindex` Coming soon page; previews need a signed 60-min preview token.
 - Super-admin endpoints live under `/api/v1/admin`, require `platform_role`, and are never reachable
   with a merchant token.
 - Validate every input with Form Requests; never `$request->all()` into `create()`/`fill()`.
@@ -82,8 +86,8 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
 - Full threat model: `docs/architecture/SECURITY.md`.
 
 ## Testing requirements
-- API: Pest feature tests for every endpoint (happy path, validation, authz, **cross-tenant access
-  returns 404**). Use the `assertTenantIsolation` helper for every new tenant-owned resource.
+- API: Pest feature tests for every endpoint (happy path, validation, authz, **cross-tenant and cross-store
+  access returns 404**). Use `assertTenantIsolation` / `assertStoreIsolation` for every new tenant-/store-owned resource.
 - Unit tests for services with business logic (pricing, stock, payment state machines).
 - Frontend: Vitest + Testing Library for components/hooks; Playwright E2E for critical flows (QA owns).
 - PR must pass: lint, typecheck, unit/feature tests, build. Coverage must not drop on touched modules.

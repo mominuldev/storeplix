@@ -37,7 +37,7 @@ Ownership = TXT match (required). Routing = CNAME resolves to our target (or A r
 DNS lookups use a dedicated resolver (Cloudflare 1.1.1.1 + Google 8.8.8.8 via DoH, both must agree) to avoid
 cached/poisoned answers; never the merchant's claim.
 
-Validation on add (`POST /merchant/domains`):
+Validation on add (`POST /api/v1/stores/{store}/domains`):
 - Normalize (HostNormalizer); must be a registrable FQDN (Public Suffix List check, `jeremykendall/php-domain-parser`).
 - Reject: platform domain and subdomains (`*.storeplix.com`), IPs, `localhost`, internal TLDs, hostnames already
   in `store_domains` (global unique) — unless the existing row is `verification_failed` for > 7 days and the new

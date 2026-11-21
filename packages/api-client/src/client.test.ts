@@ -99,3 +99,36 @@ describe('api-client', () => {
     expect(normalizeHost('shop.example.com.')).toBe('shop.example.com');
   });
 });
+
+describe('api-client phase 1.1', () => {
+  it('stores.createPreviewToken posts to the store-scoped path', async () => {
+    const preview = { token: 'p', url: 'http://demo.localhost:3000/?preview=p', expires_at: 'x' };
+    const { client, fetchMock } = setup(jsonResponse(201, { data: preview }), { getToken: () => 't', getTenantId: () => 'ten' });
+    await expect(client.stores.createPreviewToken('01STORE')).resolves.toEqual(preview);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/api/v1/stores/01STORE/preview-token',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('auth.forgotPassword resolves on an empty 202', async () => {
+    const { client } = setup(new Response(null, { status: 202 }));
+    await expect(client.auth.forgotPassword({ email: 'a@b.co' })).resolves.toBeUndefined();
+  });
+
+  it('storefront.getConfig forwards the preview token header', async () => {
+    const { client, fetchMock } = setup(jsonResponse(200, { data: {} }));
+    await client.storefront.getConfig('demo.localhost', 'k', { previewToken: 'pt' });
+    const headers = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
+    expect(headers['X-Storefront-Preview']).toBe('pt');
+  });
+});
+
+describe('tenant override', () => {
+  it('stores.list can target a specific tenant', async () => {
+    const { client, fetchMock } = setup(jsonResponse(200, { data: [] }), { getToken: () => 't', getTenantId: () => 'active' });
+    await client.stores.list(undefined, { tenantId: 'other' });
+    const headers = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
+    expect(headers['X-Tenant-Id']).toBe('other');
+  });
+});

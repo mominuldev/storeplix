@@ -1,11 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { SESSION_EXPIRED_MESSAGE } from '@storeplix/api-client';
 import { Badge, Button, Input, Logo } from '@storeplix/ui';
 import { ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
 import { loginSchema, type LoginValues } from '../auth/schemas';
+import { session } from '../lib/session';
 
 // Figma Platform Admin · "Platform / Sign in" 44:4707 — split screen: brand gradient panel
 // (logo, "Platform admin", INTERNAL CONSOLE eyebrow, staff-only notice) + white form panel.
@@ -13,12 +15,13 @@ export function LoginPage() {
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const notice = useSyncExternalStore(session.subscribe, session.peekNotice, () => null);
   const {
     register,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { email: '', password: '', remember: true } });
+  } = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { email: '', password: '' } });
 
   const onSubmit = handleSubmit(async ({ email, password }) => {
     setFormError(null);
@@ -54,6 +57,11 @@ export function LoginPage() {
           </Badge>
           <h2 className="text-heading-24 text-text-primary">Sign in to Platform admin</h2>
           <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
+            {notice === 'session_expired' && (
+              <p role="status" className="rounded-md bg-info-bg px-3 py-2 text-body text-info">
+                {SESSION_EXPIRED_MESSAGE}
+              </p>
+            )}
             {formError && (
               <p role="alert" className="rounded-md bg-danger-bg px-3 py-2 text-body text-danger">
                 {formError}
@@ -72,10 +80,6 @@ export function LoginPage() {
               }
               {...register('password')}
             />
-            <label className="flex items-center gap-2 text-body text-text-secondary">
-              <input type="checkbox" className="size-[18px] rounded-sm accent-brand-600" {...register('remember')} />
-              Keep me signed in on this device
-            </label>
             <Button type="submit" fullWidth loading={isSubmitting} className="mt-2">
               Continue
             </Button>

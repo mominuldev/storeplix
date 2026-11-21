@@ -29,13 +29,28 @@ Owners: **ARCH** architecture/docs · **API** Laravel · **WEB** React SPAs + pa
 | 1.13 | Docker Compose (postgres, redis, minio, mailpit, api), CI (lint, typecheck, test, build) | QA | `docker compose up` + all apps talk; CI green on main |
 | 1.14 | Cross-tenant test harness `assertTenantIsolation` | API/QA | Used by at least store/domain tests |
 
-## Phase 2 — SaaS foundation (tenants, stores, onboarding, roles)
+## Phase 1.1 — PO decisions D1–D4 (AGENT-CONTRACTS "Phase 1.1 contract additions")
+Onboarding screens are Figma page `43:13544` (ids below). Only the screens listed here are built now; the rest are
+mapped to later phases and must be omitted or shown disabled. Don't fake them.
 | # | Task | Owner | AC |
 |---|---|---|---|
-| 2.1 | Create store API (`POST /merchant/stores` during onboarding: name, slug, category, country, currency) + platform subdomain row | API | Slug regex/reserved list; global unique; owner membership created in one transaction |
-| 2.2 | Tenant switcher + `GET /auth/me/tenants` | API/WEB | User with 2 tenants switches; query cache keyed by tenant |
+| 1.1.1 | Store scoping plumbing (one store per tenant kept: `UNIQUE(stores.tenant_id)`): `(tenant_id, id)` unique on stores, `StoreContext` + `BelongsToStore` + `store` middleware | API | Foreign `{store}` → 404; second store → 409 `store_limit_reached` |
+| 1.1.2 | `GET /stores`, `POST /stores` (name your shop) + platform subdomain row | API | Slug regex/reserved/global unique; store created `draft` |
+| 1.1.3 | Sign up 01 `46:8583` / M1 `53:758`; sign in L1 `57:911` / L5 `58:1132` | WEB | Matches Figma desktop + mobile |
+| 1.1.4 | Forgot password L3 `57:1198` (UI) + `POST /auth/forgot-password` stub → always 202 | WEB/API | Same response for known/unknown email; throttled |
+| 1.1.5 | Post-login routing: 0 tenants with a store → Name your shop 03 `48:7869` / M3 `53:885`; 1 → open; > 1 memberships → Choose a shop L4 `58:957` (picks the tenant); tenant switcher kept, no store switcher | WEB | Query keys `[tenantId, storeId, …]` |
+| 1.1.6 | Coming soon for draft stores + preview token flow (STOREFRONT-ENGINE §4.1) | API/SF/WEB | SECURITY T21/T22 tests pass; preview banner shown |
+| 1.1.7 | Token expiry 7 days, `expires_at`, prune schedule; SPA 401/expiry logout to sessionStorage | API/WEB | Expired token → 401 → login with "session expired" message |
+
+## Phase 2 — SaaS foundation (tenants, stores, onboarding, roles)
+Binding API/type contract: `docs/development/PHASE-2-CONTRACT.md` (tasks 2.1, 2.3, 2.5–2.9; 2.4 blocked on Q16).
+| # | Task | Owner | AC |
+|---|---|---|---|
+| 2.1 | Extend store creation (business category, country, currency) + real forgot/reset password email | API/WEB | Reset token 60 min single-use; audit row |
+| 2.2 | Tenant switcher (memberships from `/auth/me`) | API/WEB | User with 2 tenants switches; query cache keyed by tenant + store |
 | 2.3 | Staff invites + roles owner/admin/staff (ADR 0005 matrix) | API/WEB | Policies tested per role; Staff & roles basic list (89:26676) |
-| 2.4 | Onboarding wizard UI (43:13544): store details → template pick → branding | WEB | Completes in < 2 min; resumable |
+| 2.4 | **Phone OTP**: SMS provider driver (`SmsGateway` interface), Verify phone 02 `46:8705` / M2 `53:831`, SMS sign-in L2 `57:1050`. **Blocked on OPEN-QUESTIONS Q16 (SMS provider)** | API/WEB | OTP 6 digits, 5-min TTL, hashed, 5 attempts, resend 60 s, per-phone + per-IP limits |
+| 2.9 | Onboarding checklist shell (steps 04–08 as Checklist items `45:8102`, enabled as their phases land) | WEB | Resumable; incomplete steps link to the right screen |
 | 2.5 | Store settings API + Settings screens (60:11161, 148:33261 Account) | API/WEB | Validation + audit log rows |
 | 2.6 | Media upload pipeline (ADR 0009) | API | MIME sniffing, size caps, tenant path, variants job |
 | 2.7 | Plans table + trial subscription on tenant creation (no payment yet) | API | 14-day trial row; FeatureGate helper with tests |
@@ -48,6 +63,7 @@ Owners: **ARCH** architecture/docs · **API** Laravel · **WEB** React SPAs + pa
 | 3.2 | Theme config API: get/put draft, publish, preview token | API | Draft vs published separation tested |
 | 3.3 | `classic` theme: layout, home sections (hero, featured, category grid, banner, rich text, newsletter) per Storefront 1:9207 / 2:6 | SF | Matches Figma desktop + mobile; Lighthouse mobile ≥ 90 |
 | 3.4 | Theme editor UI (Online store 60:11061) with live preview iframe | WEB | Edit → preview updates; publish revalidates storefront in < 5 s |
+| 3.8 | Onboarding 04 Pick a theme `48:8119` / M4 `54:810` | WEB | Selection writes `store_themes`; preview link works |
 | 3.5 | Revalidation endpoint + Laravel listener | API/SF | Tag revalidation test |
 | 3.6 | Pages + navigation API/UI | API/WEB/SF | Custom page renders; sanitized HTML |
 | 3.7 | SEO: metadata, sitemap, robots, JSON-LD, canonical | SF | Validators pass (Rich Results test fixtures) |
@@ -60,6 +76,7 @@ Owners: **ARCH** architecture/docs · **API** Laravel · **WEB** React SPAs + pa
 | 4.3 | Inventory list + adjustments + movements ledger (Inventory 26:2146, single location) | API/WEB | Atomic adjustments, ledger rows |
 | 4.4 | CSV product import/export (queued) | API/WEB | 5 000 rows < 2 min; formula-injection safe |
 | 4.5 | Customers list/detail (61:12478) | API/WEB | Search by phone/email |
+| 4.9 | Onboarding 05 Add first products `50:312` / M5 `54:941` (quick-add + CSV) | WEB | Product created in active store |
 | 4.6 | Dashboard home KPIs (26:2144) — read models only | API/WEB | Empty/loading/error states (148:34032) |
 | 4.7 | Migrate SPA auth to cookie-based Sanctum (ADR 0005) | API/WEB | Token no longer in JS storage; contract updated |
 | 4.8 | Mobile merchant layouts (2:5) | WEB | Key screens responsive per Figma |
@@ -78,6 +95,8 @@ Owners: **ARCH** architecture/docs · **API** Laravel · **WEB** React SPAs + pa
 | 5.9 | Invoice & label templates (44:16156) — JSON-configured PDFs | API/WEB | Printable A4 invoice + label |
 | 5.10 | Enable Postgres RLS (MULTI-TENANCY §9) | API/QA | Isolation suite passes with RLS on |
 | 5.11 | Transactional email/SMS (order confirmation) | API | Tenant-branded; queued |
+| 5.12 | Onboarding 06 Delivery `50:604` (shipping methods + courier connect cards `45:8086`) and 07 Get paid `52:564` (COD/bKash/SSLCommerz connect) | WEB/API | Uses 5.3/5.6/5.8 APIs |
+| 5.13 | Onboarding 08 You're live `52:765`: publish store (draft → active) with go-live checklist | API/WEB | Publish revalidates host; Coming soon disappears; platform URL shown |
 
 ## Phase 6 — Custom domains
 | # | Task | Owner | AC |

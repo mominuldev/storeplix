@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from '../types';
+import { ComingSoon } from './coming-soon';
 import { ModernCommerceLayout } from './layout';
 import { featuredProductsSchema, heroSchema, modernCommerceSettingsSchema, type ModernCommerceSettings } from './schema';
 import { FeaturedProductsSection } from './sections/featured-products';
@@ -18,6 +19,7 @@ export const modernCommerce: ThemeDefinition<ModernCommerceSettings> = {
     { type: 'featured-products', enabled: true },
   ],
   Layout: ModernCommerceLayout,
+  ComingSoon,
   sections: {
     hero: HeroSection,
     'featured-products': FeaturedProductsSection,

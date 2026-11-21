@@ -1,7 +1,8 @@
 import { requireCurrentStore } from '@/lib/store';
 
 export default async function StoreHomePage() {
-  const { host, theme, themeConfig, config } = await requireCurrentStore();
+  const { host, theme, themeConfig, config, mode } = await requireCurrentStore();
+  if (mode === 'coming_soon') return null; // layout renders Coming soon
 
   return (
     <>

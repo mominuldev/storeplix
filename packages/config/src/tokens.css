@@ -9,6 +9,8 @@
 @theme {
   /* ---- Typeface ---- */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Bangla copy and the ৳ sign (Figma: Hind Siliguri) */
+  --font-bangla: 'Hind Siliguri', 'Inter', ui-sans-serif, sans-serif;
 
   /* ---- Color · brand ---- */
   --color-brand-50: #f3f2ff;
@@ -53,6 +55,9 @@
   --text-heading: 20px;
   --text-heading--line-height: 28px;
   --text-heading--font-weight: 600;
+  --text-heading-32: 32px; /* Heading/32 — onboarding form titles, KPI values */
+  --text-heading-32--line-height: 40px;
+  --text-heading-32--font-weight: 700;
   --text-heading-24: 24px; /* Heading/24 — page titles, stat values */
   --text-heading-24--line-height: 32px;
   --text-heading-24--font-weight: 600;

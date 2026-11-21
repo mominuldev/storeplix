@@ -2,6 +2,7 @@
 
 namespace App\Domain\Stores\Http\Resources;
 
+use App\Domain\Stores\Http\Middleware\ResolveStorefront;
 use App\Domain\Stores\Models\Store;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -24,10 +25,12 @@ class StorefrontConfigResource extends JsonResource
                 'id' => $this->id,
                 'name' => $this->name,
                 'slug' => $this->slug,
+                'status' => $this->status, // 'active' | 'draft' (suspended never resolves)
                 'currency' => $this->currency,
                 'logo_url' => $settings?->logo_url,
                 'favicon_url' => $settings?->favicon_url,
             ],
+            'preview' => (bool) $request->attributes->get(ResolveStorefront::PREVIEW_ATTRIBUTE, false),
             'theme' => ThemeConfigPresenter::present($theme),
             'seo' => [
                 'title' => $settings?->seo_title ?: $this->name,

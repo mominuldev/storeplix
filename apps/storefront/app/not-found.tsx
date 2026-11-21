@@ -9,6 +9,11 @@ import { findCurrentStore } from '@/lib/store';
 export default async function NotFound() {
   const store = await findCurrentStore().catch(() => null);
 
+  if (store?.mode === 'coming_soon') {
+    const { ComingSoon } = store.theme;
+    return <ComingSoon store={store.config.store} settings={store.themeConfig.settings} />;
+  }
+
   if (store) {
     const { Layout } = store.theme;
     return (

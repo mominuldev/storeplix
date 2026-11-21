@@ -14,7 +14,7 @@ export interface User {
   /** Present on /auth/me and auth token responses. */
   tenants?: TenantMembership[];
 }
-export interface AuthToken { token: string; user: User }
+export interface AuthToken { token: string; user: User; /** ISO-8601 */ expires_at: string }
 
 export type StoreStatus = 'draft' | 'active' | 'suspended';
 export interface Store {
@@ -36,7 +36,11 @@ export interface ThemeConfig {
 
 /** Public, render-only payload for GET /api/v1/storefront/config. No internal ids beyond store id. */
 export interface StorefrontConfig {
-  store: { id: string; name: string; slug: string; currency: string; logo_url: string | null; favicon_url: string | null };
+  store: { id: string; name: string; slug: string; status: 'active' | 'draft'; currency: string; logo_url: string | null; favicon_url: string | null };
+  /** true only when a valid X-Storefront-Preview token for this store was sent */
+  preview: boolean;
   theme: ThemeConfig;
   seo: { title: string; description: string | null };
 }
+
+export interface PreviewToken { token: string; url: string; /** ISO-8601 */ expires_at: string }

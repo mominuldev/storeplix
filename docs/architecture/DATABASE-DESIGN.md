@@ -19,7 +19,8 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters. Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
 | Money | `*_amount bigint NOT NULL` in minor units (BDT poisha) + `currency char(3)`. `CHECK (amount >= 0)` where applicable. |
@@ -45,7 +46,7 @@ erDiagram
   THEMES ||--o{ STORE_THEMES : instantiates
   STORES ||--o{ STORE_PAGES : has
   STORES ||--o{ STORE_NAVIGATION : has
-  TENANTS ||--o{ PRODUCTS : owns
+  STORES ||--o{ PRODUCTS : sells
   PRODUCTS ||--o{ PRODUCT_VARIANTS : has
   PRODUCTS ||--o{ PRODUCT_IMAGES : has
   MEDIA ||--o{ PRODUCT_IMAGES : file
@@ -54,7 +55,7 @@ erDiagram
   CATEGORIES ||--o{ CATEGORIES : parent
   PRODUCT_VARIANTS ||--|| INVENTORIES : stock
   INVENTORIES ||--o{ INVENTORY_MOVEMENTS : ledger
-  TENANTS ||--o{ CUSTOMERS : owns
+  STORES ||--o{ CUSTOMERS : has
   CUSTOMERS ||--o{ CUSTOMER_ADDRESSES : has
   CUSTOMERS ||--o{ CARTS : has
   CARTS ||--o{ CART_ITEMS : contains
@@ -79,10 +80,10 @@ erDiagram
   STORE_DOMAINS { char26 id PK; char26 tenant_id FK; char26 store_id FK; string hostname UK; string status }
   USERS { char26 id PK; citext email UK; string platform_role }
   TENANT_USERS { char26 id PK; char26 tenant_id FK; char26 user_id FK; string role }
-  PRODUCTS { char26 id PK; char26 tenant_id FK; string slug; string type; string status }
+  PRODUCTS { char26 id PK; char26 tenant_id FK; char26 store_id FK; string slug; string type; string status }
   PRODUCT_VARIANTS { char26 id PK; char26 tenant_id FK; char26 product_id FK; string sku; bigint price_amount }
   INVENTORIES { char26 id PK; char26 tenant_id FK; char26 variant_id FK; int on_hand; int reserved }
-  ORDERS { char26 id PK; char26 tenant_id FK; string number; string status; bigint total_amount }
+  ORDERS { char26 id PK; char26 tenant_id FK; char26 store_id FK; string number; string status; bigint total_amount }
   PAYMENTS { char26 id PK; char26 tenant_id FK; char26 order_id FK; string provider; string status }
 ```
 
@@ -118,7 +119,7 @@ id PK · code varchar(40) **U** (`classic`, `minimal`) · name · latest_version
 preview_image_url · timestamps. Theme code/schemas live in the storefront repo; this table controls availability.
 
 ### personal_access_tokens
-Laravel Sanctum default, `tokenable_id char(26)`. Plus `expires_at` enforced (30 days, sliding).
+Laravel Sanctum default, `tokenable_id char(26)`. `expires_at` set at issue from `SANCTUM_EXPIRATION` (default 10080 min = 7 days, not sliding, D3); `sanctum:prune-expired --hours=24` daily.
 
 ## 5. Tenant-owned core tables
 
@@ -132,7 +133,9 @@ Phase 8: `role_id` → `roles` for custom roles (Figma Staff & roles).
 id PK · tenant_id · name varchar(160) · slug varchar(63) · status `CHECK IN ('draft','active','suspended')` ·
 country char(2) · currency char(3) · business_category varchar(64) null · logo_media_id, favicon_media_id FK(t) media null ·
 published_at timestamptz null · deleted_at · timestamps.
-**U(slug) WHERE deleted_at IS NULL** (global — slug is a subdomain). **U(tenant_id)** (1 store/tenant, Phase 1–8).
+**U(slug) WHERE deleted_at IS NULL** (global — slug is a subdomain). **U(tenant_id)** — exactly one store per tenant
+(D1, revised). **U(tenant_id, id)** (composite FK target). `store_id` columns on store-scoped tables are kept so multi-store
+can be enabled later by dropping `U(tenant_id)`.
 `CHECK (slug ~ '^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$')`.
 
 ### store_domains
@@ -169,25 +172,25 @@ id PK · tenant_id · store_id FK(t) · location `CHECK IN ('header','footer')` 
 id PK · tenant_id · disk varchar(16) · path varchar(255) · mime varchar(64) · size_bytes int · width, height int null ·
 alt varchar(255) null · checksum char(64) · uploaded_by char(26) · timestamps. **U(path)**. IX(tenant_id, created_at).
 
-### categories
-id PK · tenant_id · parent_id FK(t) categories null SET NULL · name varchar(120) · slug varchar(140) ·
+### categories [S]
+id PK · tenant_id · store_id · parent_id FK(t) categories null SET NULL · name varchar(120) · slug varchar(140) ·
 description text null · image_media_id null · position int · is_visible boolean · seo jsonb · deleted_at · timestamps.
-**U(tenant_id, slug) WHERE deleted_at IS NULL**. IX(tenant_id, parent_id, position).
+**U(store_id, slug) WHERE deleted_at IS NULL**. IX(tenant_id, parent_id, position).
 
-### products
-id PK · tenant_id · name varchar(200) · slug varchar(220) · type `CHECK IN ('simple','variable')` ·
+### products [S]
+id PK · tenant_id · store_id · name varchar(200) · slug varchar(220) · type `CHECK IN ('simple','variable')` ·
 status `CHECK IN ('draft','active','archived')` · description_html text (sanitized) · short_description varchar(500) ·
 brand varchar(120) null · tags text[] default '{}' · options jsonb (`[{name:'Size', values:['S','M']}]`) ·
 seo jsonb · search tsvector GENERATED · published_at · deleted_at · timestamps.
-**U(tenant_id, slug) WHERE deleted_at IS NULL**. IX(tenant_id, status, created_at). GIN(search). GIN(tags).
+**U(store_id, slug) WHERE deleted_at IS NULL**. IX(tenant_id, status, created_at). GIN(search). GIN(tags).
 Price lives on variants; a simple product has exactly one variant (`is_default`).
 
-### product_variants
-id PK · tenant_id · product_id FK(t) products CASCADE · sku varchar(64) null · barcode varchar(64) null ·
+### product_variants [S]
+id PK · tenant_id · store_id · product_id FK(t) products CASCADE · sku varchar(64) null · barcode varchar(64) null ·
 option_values jsonb (`{"Size":"M"}`) · price_amount bigint · compare_at_amount bigint null ·
 cost_amount bigint null · currency char(3) · weight_grams int null · is_default boolean · position int ·
 track_inventory boolean default true · allow_backorder boolean default false · deleted_at · timestamps.
-**U(tenant_id, sku) WHERE sku IS NOT NULL AND deleted_at IS NULL**. IX(tenant_id, product_id).
+**U(store_id, sku) WHERE sku IS NOT NULL AND deleted_at IS NULL**. IX(tenant_id, product_id).
 CHECK(price_amount >= 0).
 
 ### product_images
@@ -208,12 +211,12 @@ id PK · tenant_id · variant_id FK(t) · delta int · reason `CHECK IN ('manual
 reference_type varchar(32) null · reference_id char(26) null · actor_user_id null · note varchar(255) · created_at.
 IX(tenant_id, variant_id, created_at).
 
-### customers
-id PK · tenant_id · name varchar(120) · email citext null · phone varchar(20) null · password varchar(255) null
+### customers [S]
+id PK · tenant_id · store_id · name varchar(120) · email citext null · phone varchar(20) null · password varchar(255) null
 (null = guest) · accepts_marketing boolean · notes text · tags text[] · orders_count int · total_spent_amount bigint ·
 risk_flags jsonb (fake-order guard later) · last_order_at · deleted_at · timestamps.
-**U(tenant_id, email) WHERE email IS NOT NULL AND deleted_at IS NULL**; **U(tenant_id, phone) WHERE phone IS NOT NULL AND deleted_at IS NULL**.
-Customers are per-store identities, never shared across tenants.
+**U(store_id, email) WHERE email IS NOT NULL AND deleted_at IS NULL**; **U(store_id, phone) WHERE phone IS NOT NULL AND deleted_at IS NULL**.
+Customers are per-store identities, never shared across stores or tenants.
 
 ### customer_addresses
 id PK · tenant_id · customer_id FK(t) CASCADE · name · phone · line1 · line2 · area varchar(120) · city varchar(80) ·
@@ -237,10 +240,10 @@ courier_provider varchar(32) null · is_active · position · timestamps.
 id PK · tenant_id · code varchar(40) · type `CHECK IN ('percent','fixed','free_shipping')` · value int
 (bps for percent, minor units for fixed) · min_subtotal_amount bigint null · usage_limit int null ·
 usage_per_customer int null · used_count int · starts_at, ends_at · is_active · timestamps.
-**U(tenant_id, upper(code))**.
+**U(store_id, upper(code))**.
 
-### orders
-id PK · tenant_id · store_id FK(t) · number varchar(20) (per-tenant sequence, e.g. `1001`) · customer_id FK(t) null ·
+### orders [S]
+id PK · tenant_id · store_id FK(t) · number varchar(20) (per-store sequence, e.g. `1001`) · customer_id FK(t) null ·
 status `CHECK IN ('pending_payment','pending','confirmed','processing','shipped','delivered','cancelled','returned','failed')` ·
 payment_status `CHECK IN ('unpaid','authorized','paid','partially_refunded','refunded','failed')` ·
 fulfillment_status `CHECK IN ('unfulfilled','partial','fulfilled')` · payment_method varchar(32) (`cod`,`bkash`,`sslcommerz`) ·
@@ -249,9 +252,9 @@ coupon_id FK(t) null · coupon_code varchar(40) null · shipping_method_id FK(t)
 customer_snapshot jsonb (name/email/phone) · shipping_address jsonb · billing_address jsonb null ·
 notes text · source `CHECK IN ('storefront','pos','manual','inbox','api')` · ip inet · user_agent varchar(255) ·
 idempotency_key varchar(64) · placed_at, cancelled_at timestamptz · timestamps.
-**U(tenant_id, number)**. **U(tenant_id, idempotency_key)**. IX(tenant_id, status, placed_at DESC).
+**U(store_id, number)**. **U(store_id, idempotency_key)**. IX(tenant_id, status, placed_at DESC).
 IX(tenant_id, customer_id). CHECK(total_amount = subtotal_amount - discount_amount + shipping_amount + tax_amount).
-Order numbers from `tenant_counters(tenant_id, key, value)` row updated `... RETURNING value` in the order transaction.
+Order numbers from `store_counters(tenant_id, store_id, key, value)` row updated `... RETURNING value` in the order transaction.
 
 ### order_items
 id PK · tenant_id · order_id FK(t) CASCADE · product_id FK(t) null SET NULL · variant_id FK(t) null SET NULL ·
@@ -272,7 +275,7 @@ failure_code varchar(64) · parent_payment_id FK(t) null (refund → charge) · 
 
 ### payment_gateway_accounts (merchant credentials)
 id PK · tenant_id · provider · mode `CHECK IN ('sandbox','live')` · credentials text (encrypted cast, never returned by API) ·
-is_active · timestamps. **U(tenant_id, provider)**.
+is_active · timestamps. **U(store_id, provider)**.
 
 ### shipping_orders (courier consignments)
 id PK · tenant_id · order_id FK(t) · provider `CHECK IN ('pathao','steadfast','redx','manual')` · consignment_id varchar(64) ·
@@ -286,7 +289,7 @@ payload jsonb · processed_at · error text · created_at. **U(provider, event_i
 
 ### idempotency_keys
 id PK · tenant_id · key varchar(64) · scope varchar(64) (route) · request_hash char(64) · response_status smallint ·
-response_body jsonb · locked_until timestamptz · created_at. **U(tenant_id, scope, key)**. Rows purged after 24 h.
+response_body jsonb · locked_until timestamptz · created_at. **U(store_id, scope, key)** (store_id nullable for tenant-level routes; then **U(tenant_id, scope, key) WHERE store_id IS NULL**). Rows purged after 24 h.
 
 ### redirects (SEO)
 id PK · tenant_id · store_id FK(t) · from_path varchar(512) · to_path varchar(512) · code smallint CHECK IN (301,302) · timestamps.
@@ -308,7 +311,7 @@ id PK · tenant_id · subscription_id FK(t) null · number varchar(24) **U** (gl
 due_at, paid_at · provider_payment_id null · lines jsonb · pdf_path null · timestamps. IX(tenant_id, created_at DESC).
 
 ### audit_logs (append-only; app role has INSERT/SELECT only)
-id PK · tenant_id null (null = platform action) · actor_type `CHECK IN ('user','platform_admin','system','api_key')` ·
+id PK · tenant_id null (null = platform action) · store_id null · actor_type `CHECK IN ('user','platform_admin','system','api_key')` ·
 actor_id char(26) null · action varchar(64) (`product.updated`, `domain.verified`, `staff.role_changed`) ·
 subject_type varchar(64) · subject_id char(26) · changes jsonb (before/after, secrets redacted) · ip inet ·
 user_agent varchar(255) · request_id varchar(64) · created_at. IX(tenant_id, created_at DESC). IX(tenant_id, subject_type, subject_id).
@@ -337,4 +340,5 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
   `$table->foreign(['tenant_id','product_id'])->references(['tenant_id','id'])->on('products')`.
 - Seed data idempotent (`updateOrCreate`), dev seed per AGENT-CONTRACTS.md.
 - Backups: PITR (WAL archiving) daily base backup, 14-day retention; monthly restore drill (Phase 9).
+- RLS (MULTI-TENANCY §9) policies use `tenant_id` only; `store_id` isolation is app-level + composite FKs.
 - Tenant export/deletion: all tenant data reachable via `tenant_id`; hard delete job deletes in FK order after 30-day grace.

@@ -13,13 +13,18 @@ Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase).
   | Prefix | Auth | Tenant |
   |---|---|---|
   | `/auth/*` | public / Bearer | none |
-  | `/merchant/*` | Bearer (`merchant` ability) | `X-Tenant-Id` |
+  | `/stores`, `/stores/{store}/*` | Bearer (`merchant` ability) | `X-Tenant-Id`; `{store}` must belong to it (else 404) |
+  | other tenant-level merchant routes (`/staff`, `/subscriptions`, `/invoices`, `/audit-logs`, `/media`) | Bearer (`merchant`) | `X-Tenant-Id` |
   | `/storefront/*` | `X-Storefront-Key` | `X-Storefront-Host` |
   | `/admin/*` | Bearer (`admin` ability + platform_role) | explicit route param |
   | `/webhooks/{provider}` | provider signature | resolved from payload |
   | `/health` | public | none |
-  Blueprint resources (`stores, products, categories, inventory, orders, customers, domains, themes, subscriptions,
-  payments, shipping`) live under `/merchant/` e.g. `/api/v1/merchant/products`.
+  One store per tenant (D1, revised); a second `POST /stores` → 409 `store_limit_reached`. Paths keep `{store}` for a
+  future multi-store option. Store-scoped resources (`products, categories, inventory, orders, customers, domains,
+  themes, pages, payments, shipping`) live under `/api/v1/stores/{store}/` e.g. `/api/v1/stores/{store}/products`.
+  Tenant-level resources (`stores, staff, subscriptions, invoices`) live at `/api/v1/{resource}`.
+- Phase 1.1 endpoints: `GET/POST /stores`, `POST /stores/{store}/preview-token`, `POST /auth/forgot-password` (see openapi.yaml).
+- Phase 2 endpoints (staff, invitations, settings, media, plans/features, audit logs, account): `docs/development/PHASE-2-CONTRACT.md`.
 
 ## 2. Requests
 - JSON bodies, `Content-Type: application/json`; uploads `multipart/form-data`.
@@ -40,10 +45,10 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 |---|---|---|
 | 400 | `bad_request`, `tenant_required`, `idempotency_key_required` | malformed request / missing header |
 | 401 | `unauthenticated`, `invalid_storefront_key` | missing/invalid token or key |
-| 402 | `plan_limit_reached`, `subscription_inactive` | plan gate |
-| 403 | `forbidden`, `tenant_suspended`, `email_not_verified` | authenticated but not allowed |
-| 404 | `not_found`, `tenant_not_found`, `store_not_found` | missing **or belongs to another tenant** |
-| 409 | `conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition` | state conflict |
+| 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
+| 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
+| 404 | `not_found`, `store_not_found`, `invitation_invalid` | missing **or belongs to another tenant** |
+| 409 | `conflict`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition` | state conflict |
 | 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid` | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
@@ -57,7 +62,7 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
 Cursor pagination (`?cursor=...`, `meta: { next_cursor, prev_cursor, per_page }`) for high-volume feeds (storefront
-product lists, audit logs, webhooks) — added as `CursorMeta` to `packages/types` when first used (Phase 3).
+product lists, webhook deliveries; audit logs use offset pagination per PHASE-2-CONTRACT §1.7) — added as `CursorMeta` to `packages/types` when first used (Phase 3).
 
 ## 5. Filtering, sorting, search, includes
 - Filter: `?filter[status]=active&filter[category_id]=01J...&filter[created_at][gte]=2026-01-01`. Allowlisted per endpoint
@@ -68,15 +73,27 @@ product lists, audit logs, webhooks) — added as `CursorMeta` to `packages/type
 - Sparse fields not supported in v1.
 
 ## 6. Resource naming
-Plural nouns, kebab-case multiword (`/merchant/shipping-methods`), nested max one level
-(`/merchant/products/{id}/variants`). Actions that aren't CRUD use sub-resource verbs as POST:
-`/merchant/orders/{id}/cancel`, `/merchant/domains/{id}/verify`, `/merchant/themes/{code}/publish`.
+Plural nouns, kebab-case multiword (`/stores/{store}/shipping-methods`), nested max one level below the store
+(`/stores/{store}/products/{id}/variants`). Actions that aren't CRUD use sub-resource verbs as POST:
+`/stores/{store}/orders/{id}/cancel`, `/stores/{store}/domains/{id}/verify`, `/stores/{store}/themes/{code}/publish`,
+`/stores/{store}/preview-token`.
 Route params are ULIDs (except `themes/{code}` and storefront `{slug}`).
 
 ## 7. Authentication headers
 `Authorization: Bearer <token>`; merchant routes also `X-Tenant-Id: <tenant ulid>`. Storefront server sends
 `X-Storefront-Key` and `X-Storefront-Host`; shopper session for cart/checkout via `X-Cart-Token` (set by storefront
-server from `sp_cart` cookie) and, for logged-in customers, `X-Customer-Token` (Phase 5).
+server from `sp_cart` cookie) and, for logged-in customers, `X-Customer-Token` (Phase 5). Merchant preview: storefront
+forwards the `sp_preview` cookie value as `X-Storefront-Preview`; invalid/expired is silently ignored (`preview: false`).
+
+**Token lifetime (D3):** Sanctum tokens expire after `SANCTUM_EXPIRATION` minutes (default 10080 = 7 days). Token
+responses (`register`, `login`) include `expires_at` (ISO 8601). Expired/invalid → 401 `unauthenticated`; clients clear
+the session and redirect to login. Store the token in `sessionStorage` until cookie auth (Phase 4).
+
+**Forgot password:** `POST /auth/forgot-password {email}` → always **202** `{data:{status:"sent"}}`, whether or not the
+email exists (no enumeration); `auth` rate limiter. Phase 1.1 is a stub (no email sent); real reset emails come in Phase 2.
+
+**Preview token (D2):** `POST /stores/{store}/preview-token` → 201 `{data:{token, url, expires_at}}`; 60-min signed token
+bound to the store; see STOREFRONT-ENGINE §4.1.
 
 ## 8. Rate limits (Redis, per tenant)
 | Limiter | Key | Limit |
@@ -92,8 +109,8 @@ Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`; 429 includes `Re
 
 ## 9. Idempotency
 Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,
-`POST /merchant/orders/{id}/refunds`, `POST /merchant/subscriptions/*/pay`, and accepted on all other POSTs.
-Behaviour (`idempotency_keys` table, scope = tenant + route): first request locks the key and stores status+body;
+`POST /stores/{store}/orders/{id}/refunds`, `POST /subscriptions/*/pay`, and accepted on all other POSTs.
+Behaviour (`idempotency_keys` table, scope = tenant + store + route): first request locks the key and stores status+body;
 repeats with the same body hash return the stored response with header `Idempotent-Replayed: true`; same key with a
 different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 `idempotency_key_in_use`. Keys kept 24 h.
 
@@ -115,4 +132,4 @@ Retries with exponential backoff (1 m → 24 h, 8 attempts), endpoint auto-disab
 
 ## 12. Caching headers
 Merchant/admin: `Cache-Control: no-store`. Storefront render endpoints: `Cache-Control: public, max-age=0, s-maxage=60`
-+ `ETag`; cart/checkout `no-store`. Storefront relies on Next.js tag revalidation (STOREFRONT-ENGINE §5).
++ `ETag`; cart/checkout, draft-store and preview responses `private, no-store`. Storefront relies on Next.js tag revalidation (STOREFRONT-ENGINE §5).

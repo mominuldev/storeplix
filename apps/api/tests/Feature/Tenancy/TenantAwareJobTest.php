@@ -5,10 +5,12 @@ namespace Tests\Feature\Tenancy;
 use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\Fixtures\RecordTenantJob;
 use Tests\TestCase;
 
-#[\PHPUnit\Framework\Attributes\Group('tenancy')]
+#[Group('tenancy')]
+#[Group('tenancy')]
 class TenantAwareJobTest extends TestCase
 {
     use RefreshDatabase;

@@ -36,7 +36,7 @@ flowchart LR
 | Queue workers | Same codebase as API (`php artisan horizon`); DNS checks, emails, courier sync, webhook processing, image processing, revalidation calls | Run without tenant context for tenant data |
 | Scheduler | `php artisan schedule:work` single instance; domain re-checks, subscription renewals, abandoned carts | — |
 | `apps/storefront` | One Next.js deployment serving every store; resolves store by `Host`, fetches render data from API, renders theme | Hold secrets beyond `STOREFRONT_API_KEY`; query DB; run merchant JS |
-| `apps/merchant-dashboard` | Merchant SPA; all writes through `/api/v1/merchant/*` | Call storefront or admin endpoints |
+| `apps/merchant-dashboard` | Merchant SPA; all writes through tenant routes and `/api/v1/stores/{store}/*` | Call storefront or admin endpoints |
 | `apps/super-admin` | Platform admin SPA; `/api/v1/admin/*` | Use merchant tokens |
 | PostgreSQL | Shared DB, shared schema, `tenant_id` column + RLS (phased) | — |
 | Redis | Cache (tenant-prefixed), queues, rate limiter, locks, sessions for storefront carts (token lookup) | Be the source of truth |
@@ -71,8 +71,8 @@ docs, blog, shop, store, storeplix, dashboard, billing, support, ns1, ns2`, any 
    renders platform "store not found" page with `noindex`.
 
 ### 4.2 Merchant write
-SPA → `POST /api/v1/merchant/products` with Bearer + `X-Tenant-Id` → `auth:sanctum` → `tenant` middleware
-(membership check, binds `TenantContext`) → Form Request → Policy → Action → Eloquent (scoped) →
+SPA → `POST /api/v1/stores/{store}/products` with Bearer + `X-Tenant-Id` → `auth:sanctum` → `tenant` middleware
+(membership check, binds `TenantContext`) → `store` middleware (binds `StoreContext`; foreign store → 404) → Form Request → Policy → Action → Eloquent (scoped) →
 domain event → listeners (queue) e.g. `RevalidateStorefront`, `WriteAuditLog`.
 
 ### 4.3 Checkout & payment

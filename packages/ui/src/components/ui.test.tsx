@@ -34,3 +34,17 @@ describe('@storeplix/ui', () => {
     expect(img).toHaveAttribute('width', '70');
   });
 });
+
+import { Chip, Step } from '../index';
+
+describe('onboarding components', () => {
+  it('Chip exposes selection via aria-pressed', () => {
+    render(<Chip selected>Fashion</Chip>);
+    expect(screen.getByRole('button', { name: 'Fashion' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Step marks the current step', () => {
+    render(<Step index={3} title="Name your shop" state="current" />);
+    expect(screen.getByText('Name your shop').closest('[aria-current]')).toHaveAttribute('aria-current', 'step');
+  });
+});

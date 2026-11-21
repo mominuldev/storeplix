@@ -8,6 +8,7 @@ use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,7 +26,33 @@ class StoreProvisioner
      * @param  array{name: string, slug: string, country?: string, currency?: string, business_category?: string|null, status?: string}  $data
      * @param  list<string>  $extraPlatformHosts  additional active platform hostnames (e.g. dev aliases)
      */
+    /**
+     * @throws StoreLimitReachedException when the tenant already owns a store (D1: one store per tenant)
+     */
     public function provision(Tenant $tenant, array $data, array $extraPlatformHosts = []): Store
+    {
+        // Fast path for a friendly error; the UNIQUE(stores.tenant_id) constraint is the real guard.
+        if (Store::withoutTenancy()->where('tenant_id', $tenant->getKey())->exists()) {
+            throw new StoreLimitReachedException;
+        }
+
+        try {
+            return $this->create($tenant, $data, $extraPlatformHosts);
+        } catch (UniqueConstraintViolationException $e) {
+            // Lost a race with a concurrent create for the same tenant (or the same slug).
+            if (Store::withoutTenancy()->where('tenant_id', $tenant->getKey())->exists()) {
+                throw new StoreLimitReachedException;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $extraPlatformHosts
+     */
+    private function create(Tenant $tenant, array $data, array $extraPlatformHosts): Store
     {
         return $this->context->run($tenant, fn () => DB::transaction(function () use ($data, $extraPlatformHosts) {
             $slug = strtolower($data['slug']);

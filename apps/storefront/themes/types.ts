@@ -57,6 +57,8 @@ export interface ThemeDefinition<TSettings extends BaseThemeSettings = BaseTheme
   /** Sections rendered when the merchant has not configured any. */
   defaultSections: Array<{ type: string; enabled: boolean }>;
   Layout: ComponentType<LayoutProps<TSettings>>;
+  /** Full-page "Coming soon" shown on every path of a draft store (contract D2). */
+  ComingSoon: ComponentType<{ store: ThemeStore; settings: TSettings }>;
   // Section props are validated by the matching schema before render.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sections: Record<string, ComponentType<SectionProps<any>>>;

@@ -1,13 +1,15 @@
 import { buttonVariants, cn } from '@storeplix/ui';
 import { Bell, ExternalLink, PanelLeft, Search } from 'lucide-react';
-import { useAuth } from '../auth/AuthProvider';
+import { PreviewStoreButton } from '../stores/PreviewStoreButton';
+import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 import { UserMenu } from './UserMenu';
 
 // Figma Merchant Admin – Desktop · TopBar 10:755 — h 64, surface-card, bottom border,
 // pl 20 / pr 32, gap 12: collapse · search (420×40) · spacer · View shop · bell · avatar.
 export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
-  const { activeTenant } = useAuth();
-  const shopUrl = activeTenant?.slug ? `https://${activeTenant.slug}.storeplix.com` : undefined;
+  const store = useTenantStore().data;
+  // Live stores: "View shop" (Figma). Draft stores aren't public yet → "Preview store" (contract D2).
+  const shopUrl = store?.status === 'active' ? `https://${storeDomain(store)}` : undefined;
 
   return (
     <header className="sticky top-0 z-20 hidden h-topbar items-center gap-3 border-b border-border-default bg-surface-card pr-8 pl-5 lg:flex">
@@ -30,6 +32,7 @@ export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <kbd className="rounded-[4px] border border-border-default bg-surface-card px-1.5 py-px text-caption text-text-muted">/</kbd>
       </label>
       <div className="flex-1" />
+      {store && <PreviewStoreButton store={store} className="px-3 font-medium" />}
       {shopUrl && (
         <a
           href={shopUrl}

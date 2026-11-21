@@ -1,13 +1,11 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { session } from '../lib/session';
-import { jsonResponse, renderApp } from '../test/utils';
+import { future, jsonResponse, mockApi, renderApp } from '../test/utils';
 import { LoginPage } from './LoginPage';
 
 describe('LoginPage', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it('shows validation errors and does not call the API for invalid input', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -19,23 +17,29 @@ describe('LoginPage', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('stores the token on successful login', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, { data: { token: 'new-token', user: { id: '1' } } }));
-    vi.stubGlobal('fetch', fetchMock);
+  it('stores token and expires_at in sessionStorage on success', async () => {
+    const expires = future();
+    mockApi({ 'POST /auth/login': jsonResponse(200, { data: { token: 'new-token', user: { id: '1' }, expires_at: expires } }) });
     renderApp(<LoginPage />, { route: '/login' });
     await userEvent.type(screen.getByLabelText('Email'), 'demo@storeplix.test');
     await userEvent.type(screen.getByLabelText('Password'), 'password');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await waitFor(() => expect(session.getToken()).toBe('new-token'));
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/api/v1/auth/login', expect.objectContaining({ method: 'POST' }));
+    expect(session.getExpiresAt()).toBe(expires);
   });
 
   it('shows a form error for wrong credentials', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { error: { code: 'invalid_credentials', message: 'Invalid credentials' } })));
+    mockApi({ 'POST /auth/login': jsonResponse(401, { error: { code: 'invalid_credentials', message: 'Invalid credentials' } }) });
     renderApp(<LoginPage />, { route: '/login' });
     await userEvent.type(screen.getByLabelText('Email'), 'demo@storeplix.test');
     await userEvent.type(screen.getByLabelText('Password'), 'wrong');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
+  });
+
+  it('keeps SMS sign-in disabled until it ships', () => {
+    renderApp(<LoginPage />, { route: '/login' });
+    expect(screen.getByRole('tab', { name: /SMS code/ })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'Password' })).toHaveAttribute('aria-selected', 'true');
   });
 });

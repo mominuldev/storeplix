@@ -1,24 +1,33 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.0.0-phase1
+  version: 1.2.0-phase2
   description: |
-    Phase 1 endpoints as fixed by docs/development/AGENT-CONTRACTS.md.
-    Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    Phase 1, 1.1 (D1–D4) and Phase 2 endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md and
+    docs/development/PHASE-2-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
+    Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
+    a resource id of another tenant → 404 `not_found`.
 servers:
-  - url: http://localhost:8000/api/v1
-    description: Local
-  - url: https://api.storeplix.com/api/v1
-    description: Production
+- url: http://localhost:8000/api/v1
+  description: Local
+- url: https://api.storeplix.com/api/v1
+  description: Production
 tags:
-  - name: system
-  - name: auth
-  - name: storefront
+- name: system
+- name: auth
+- name: stores
+- name: staff
+- name: media
+- name: billing
+- name: audit
+- name: storefront
 paths:
   /health:
     get:
-      tags: [system]
+      tags:
+      - system
+      summary: Get health
       operationId: getHealth
       security: []
       responses:
@@ -28,12 +37,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                required:
+                - data
                 properties:
-                  data: { $ref: '#/components/schemas/HealthStatus' }
+                  data:
+                    $ref: '#/components/schemas/HealthStatus'
   /auth/register:
     post:
-      tags: [auth]
+      tags:
+      - auth
+      summary: Register
       operationId: register
       security: []
       requestBody:
@@ -42,24 +55,47 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, email, password, password_confirmation]
+              required:
+              - name
+              - email
+              - password
+              - password_confirmation
               properties:
-                name: { type: string, maxLength: 120 }
-                email: { type: string, format: email, maxLength: 254 }
-                password: { type: string, minLength: 8, maxLength: 128 }
-                password_confirmation: { type: string }
-                phone: { type: [string, 'null'], maxLength: 20, description: 'E.164 preferred, e.g. +8801712345678' }
+                name:
+                  type: string
+                  maxLength: 120
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                password_confirmation:
+                  type: string
+                phone:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 20
+                  description: E.164 preferred, e.g. +8801712345678
       responses:
         '201':
           description: Registered; token issued
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/login:
     post:
-      tags: [auth]
+      tags:
+      - auth
+      summary: Login
       operationId: login
       security: []
       requestBody:
@@ -68,36 +104,126 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required:
+              - email
+              - password
               properties:
-                email: { type: string, format: email }
-                password: { type: string }
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
       responses:
         '200':
           description: Authenticated
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
         '401':
           description: Invalid credentials (code `invalid_credentials`)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiError' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/forgot-password:
+    post:
+      tags:
+      - auth
+      summary: Forgot password
+      operationId: forgotPassword
+      security: []
+      description: |
+        Always returns 202 with the same body whether or not the email exists (no account enumeration).
+        Phase 2: sends a reset email (60-min single-use token; Mailpit locally). Rate-limited by the `auth` limiter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '202':
+          description: Accepted (identical for known and unknown emails)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MessageResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/reset-password:
+    post:
+      tags:
+      - auth
+      summary: Reset password
+      operationId: resetPassword
+      description: Consumes a 60-min single-use reset token; revokes all of the user's tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordInput'
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: '`invalid_reset_token` (unknown/expired/used/email mismatch) or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/logout:
     post:
-      tags: [auth]
+      tags:
+      - auth
+      summary: Logout
       operationId: logout
-      security: [{ bearerAuth: [] }]
+      security:
+      - bearerAuth: []
       responses:
-        '204': { description: Current token revoked }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '204':
+          description: Current token revoked
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
   /auth/me:
     get:
-      tags: [auth]
+      tags:
+      - auth
+      summary: Me
       operationId: me
-      security: [{ bearerAuth: [] }]
+      security:
+      - bearerAuth: []
       responses:
         '200':
           description: Current user
@@ -105,24 +231,1003 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                required:
+                - data
                 properties:
-                  data: { $ref: '#/components/schemas/User' }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    patch:
+      tags:
+      - auth
+      summary: Update profile
+      operationId: updateProfile
+      description: Update own profile. Changing `email` requires `current_password`.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileInput'
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/password:
+    put:
+      tags:
+      - auth
+      summary: Change password
+      operationId: changePassword
+      description: Change own password. Returns a NEW token; all other tokens (including the current one) are revoked.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthTokenOk'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores:
+    get:
+      tags:
+      - stores
+      summary: List stores
+      operationId: listStores
+      description: Stores of the current tenant (0 or 1 items; one store per tenant, D1). Any role.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Stores
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Store'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+    post:
+      tags:
+      - stores
+      summary: Create store
+      operationId: createStore
+      description: Create the tenant's store (owner/admin). Created as `draft` with a platform subdomain. The one-store check
+        runs BEFORE validation, so a second request returns 409 even with an empty body.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoreInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Store'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '409':
+          description: Tenant already has a store (code `store_limit_reached`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}:
+    get:
+      tags:
+      - stores
+      summary: Get store
+      operationId: getStore
+      description: Any role.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: store
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      responses:
+        '200':
+          description: Store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Store'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/settings:
+    get:
+      tags:
+      - stores
+      summary: Get store settings
+      operationId: getStoreSettings
+      description: Any role.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: store
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - stores
+      summary: Update store settings
+      operationId: updateStoreSettings
+      description: 'Owner/admin. Partial update: only sections/keys present change; null clears a nullable field. Validation
+        rules: docs/development/PHASE-2-CONTRACT.md §1.4. Triggers storefront revalidation.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: store
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStoreSettingsInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`currency_locked` (Phase 5+, store has orders)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/preview-token:
+    post:
+      tags:
+      - stores
+      summary: Create preview token
+      operationId: createPreviewToken
+      description: |
+        Issues a signed preview token (60 min, bound to the store) so the merchant can view a draft store.
+        `url` = https://{primary_domain}/?preview={token} (http + :3000 in local env). See STOREFRONT-ENGINE.md §4.1.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: store
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: Must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      responses:
+        '201':
+          description: Preview token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PreviewToken'
+        '400':
+          description: Missing X-Tenant-Id (code `tenant_required`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: X-Tenant-Id is not one of the user's memberships (code `tenant_forbidden`), or role not allowed (`forbidden`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`{store}` is not a store of the X-Tenant-Id tenant (code `not_found`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /staff:
+    get:
+      tags:
+      - staff
+      summary: List staff
+      operationId: listStaff
+      description: Owner/admin. Members (owner first) then pending invitations. Not paginated.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StaffMember'
+                  meta:
+                    $ref: '#/components/schemas/StaffSeatsMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /staff/{member}:
+    patch:
+      tags:
+      - staff
+      summary: Update staff role
+      operationId: updateStaffRole
+      description: 'Owner/admin. Assignable roles: admin, staff.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: member
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: tenant_users.id; another tenant's → 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStaffRoleInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StaffMember'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: '`tenant_forbidden`, `forbidden`, or `cannot_change_own_role`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_owner` (target is the owner)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - staff
+      summary: Remove staff
+      operationId: removeStaff
+      description: Owner/admin; any role may remove itself (leave).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: member
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: tenant_users.id; another tenant's → 404.
+      responses:
+        '204':
+          description: Removed
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_owner` (the owner can never be removed)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /staff/invitations:
+    post:
+      tags:
+      - staff
+      summary: Invite staff
+      operationId: inviteStaff
+      description: Owner/admin. Emails a 7-day invite link.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteStaffInput'
+      responses:
+        '201':
+          description: Invitation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StaffMember'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (details.staff_seats)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '409':
+          description: '`already_member` or `invitation_pending`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /staff/invitations/{invitation}:
+    delete:
+      tags:
+      - staff
+      summary: Revoke invitation
+      operationId: revokeInvitation
+      description: Owner/admin.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: invitation
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: staff_invitations.id; another tenant's → 404.
+      responses:
+        '204':
+          description: Revoked
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invitation_not_pending`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /staff/invitations/{invitation}/resend:
+    post:
+      tags:
+      - staff
+      summary: Resend invitation
+      operationId: resendInvitation
+      description: Owner/admin. New token + 7-day expiry; max 1/min per invitation.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: invitation
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: staff_invitations.id; another tenant's → 404.
+      responses:
+        '200':
+          description: Invitation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StaffMember'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invitation_not_pending`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /invitations/{token}:
+    get:
+      tags:
+      - staff
+      summary: Get invitation
+      operationId: getInvitation
+      description: Public preview of an invitation.
+      security: []
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+        description: Invitation token from the email link.
+      responses:
+        '200':
+          description: Preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InvitationPreview'
+        '404':
+          description: '`invitation_invalid` (unknown/expired/revoked/accepted)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /invitations/{token}/accept:
+    post:
+      tags:
+      - staff
+      summary: Accept invitation
+      operationId: acceptInvitation
+      description: 'Without Bearer: body AcceptInvitationInput creates the user → 201 AuthToken. With Bearer (user email must
+        equal the invitation email): empty body → 200 TenantMembership.'
+      security:
+      - {}
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+        description: Invitation token from the email link.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationInput'
+      responses:
+        '200':
+          description: Joined (existing user)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TenantMembership'
+        '201':
+          $ref: '#/components/responses/AuthTokenCreated'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`invitation_email_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`invitation_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`login_required` (account exists, no Bearer) or `already_member`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /media:
+    post:
+      tags:
+      - media
+      summary: Upload media
+      operationId: uploadMedia
+      description: Any role. MIME sniffed from bytes; per-purpose limits in PHASE-2-CONTRACT §1.5. Variants generated asynchronously.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              - purpose
+              properties:
+                file:
+                  type: string
+                  format: binary
+                purpose:
+                  $ref: '#/components/schemas/MediaPurpose'
+                alt:
+                  type: string
+                  maxLength: 255
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Media'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '413':
+          description: Body larger than 6 MB (rejected by Nginx)
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /media/{media}:
+    get:
+      tags:
+      - media
+      summary: Get media
+      operationId: getMedia
+      description: Any role. Poll until status != processing.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: media
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      responses:
+        '200':
+          description: Media
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Media'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - media
+      summary: Delete media
+      operationId: deleteMedia
+      description: Any role; owner/admin for logo/favicon.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: path
+        name: media
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`media_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /plans:
+    get:
+      tags:
+      - billing
+      summary: List plans
+      operationId: listPlans
+      description: Public list of active plans.
+      security: []
+      responses:
+        '200':
+          description: Plans
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plan'
+  /subscription:
+    get:
+      tags:
+      - billing
+      summary: Get subscription
+      operationId: getSubscription
+      description: Owner/admin.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /features:
+    get:
+      tags:
+      - billing
+      summary: Get features
+      operationId: getFeatures
+      description: Any role. Effective plan features and limit usage (FeatureGate).
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Features
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FeatureAccess'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /audit-logs:
+    get:
+      tags:
+      - audit
+      summary: List audit logs
+      operationId: listAuditLogs
+      description: Owner/admin. Only this tenant's rows; newest first.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+      - in: query
+        name: filter[action]
+        schema:
+          type: string
+        description: Comma list of action names; `prefix.*` allowed
+      - in: query
+        name: filter[actor_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[subject_type]
+        schema:
+          type: string
+          enum:
+          - store
+          - store_settings
+          - staff_member
+          - staff_invitation
+          - media
+          - subscription
+          - user
+      - in: query
+        name: filter[subject_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[created_at][gte]
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: filter[created_at][lte]
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - -created_at
+      responses:
+        '200':
+          description: Audit log
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /storefront/config:
     get:
-      tags: [storefront]
+      tags:
+      - storefront
+      summary: Get storefront config
       operationId: getStorefrontConfig
       description: |
         Server-to-server only (Next.js storefront). Tenant resolved from X-Storefront-Host validated against
-        store_domains (routable rows only). Returns published theme config.
-      security: [{ storefrontKey: [] }]
+        store_domains (routable rows only). Active and draft stores resolve (draft → storefront renders Coming soon
+        unless `preview` is true); suspended stores → 404. Returns published theme config unless previewing.
+      security:
+      - storefrontKey: []
       parameters:
-        - in: header
-          name: X-Storefront-Host
-          required: true
-          schema: { type: string, maxLength: 253, example: demo.localhost }
-          description: Normalized host (lowercase, no port, no trailing dot, punycode).
+      - in: header
+        name: X-Storefront-Host
+        required: true
+        schema:
+          type: string
+          maxLength: 253
+          example: demo.localhost
+        description: Normalized host (lowercase, no port, no trailing dot, punycode).
+      - in: header
+        name: X-Storefront-Preview
+        required: false
+        schema:
+          type: string
+        description: |
+          Preview token from the `sp_preview` cookie. Valid for the resolved store → `preview: true` (draft theme);
+          invalid/expired/other store → silently ignored (`preview: false`). Responses are `Cache-Control: private, no-store`
+          when the store is draft or a preview header is present.
       responses:
         '200':
           description: Render configuration
@@ -130,21 +1235,36 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                required:
+                - data
                 properties:
-                  data: { $ref: '#/components/schemas/StorefrontConfig' }
+                  data:
+                    $ref: '#/components/schemas/StorefrontConfig'
         '401':
           description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiError' }
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '404':
           description: Unknown or non-routable host (code `store_not_found`)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiError' }
-              example: { error: { code: store_not_found, message: Store not found. } }
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                error:
+                  code: store_not_found
+                  message: Store not found.
 components:
+  parameters:
+    TenantId:
+      in: header
+      name: X-Tenant-Id
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Tenant ULID; validated against the user's tenant_users membership.
   securitySchemes:
     bearerAuth:
       type: http
@@ -160,141 +1280,1391 @@ components:
       description: Validation failed (code `validation_failed`)
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+          schema:
+            $ref: '#/components/schemas/ApiError'
           example:
             error:
               code: validation_failed
               message: The given data was invalid.
-              details: { email: ['The email has already been taken.'] }
+              details:
+                email:
+                - The email has already been taken.
     Unauthenticated:
       description: Missing or invalid token (code `unauthenticated`)
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+          schema:
+            $ref: '#/components/schemas/ApiError'
     RateLimited:
       description: Too many requests (code `rate_limited`); see Retry-After header
       headers:
-        Retry-After: { schema: { type: integer } }
+        Retry-After:
+          schema:
+            type: integer
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    TenantRequired:
+      description: X-Tenant-Id missing (code `tenant_required`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    TenantForbiddenOrRole:
+      description: X-Tenant-Id not one of the user's memberships (code `tenant_forbidden`), or the role may not call this
+        endpoint (`forbidden`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Not found or belongs to another tenant (code `not_found`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    AuthTokenOk:
+      description: Token issued
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthTokenResponse'
+    AuthTokenCreated:
+      description: User created and token issued
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthTokenResponse'
   schemas:
     Ulid:
       type: string
-      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+      pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
       example: 01JD3Z8Q6V2K9X4M7N5P0R1S2T
     ApiError:
       type: object
-      required: [error]
+      required:
+      - error
       properties:
         error:
           type: object
-          required: [code, message]
+          required:
+          - code
+          - message
           properties:
-            code: { type: string, example: not_found }
-            message: { type: string }
+            code:
+              type: string
+              example: not_found
+            message:
+              type: string
             details:
               type: object
-              additionalProperties: { type: array, items: { type: string } }
+              additionalProperties:
+                type: array
+                items:
+                  type: string
     PaginationMeta:
       type: object
-      required: [current_page, per_page, total, last_page]
+      required:
+      - current_page
+      - per_page
+      - total
+      - last_page
       properties:
-        current_page: { type: integer }
-        per_page: { type: integer }
-        total: { type: integer }
-        last_page: { type: integer }
+        current_page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        last_page:
+          type: integer
     HealthStatus:
       type: object
-      required: [status, version, time]
+      required:
+      - status
+      - version
+      - time
       properties:
-        status: { type: string, enum: [ok] }
-        version: { type: string, example: 0.1.0 }
-        time: { type: string, format: date-time }
+        status:
+          type: string
+          enum:
+          - ok
+        version:
+          type: string
+          example: 0.1.0
+        time:
+          type: string
+          format: date-time
     User:
       type: object
-      required: [id, name, email, phone, created_at]
+      required:
+      - id
+      - name
+      - email
+      - phone
+      - created_at
+      - password_changed_at
       properties:
-        id: { $ref: '#/components/schemas/Ulid' }
-        name: { type: string }
-        email: { type: string, format: email }
-        phone: { type: [string, 'null'] }
-        created_at: { type: string, format: date-time }
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+        password_changed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantMembership'
+          description: Present on /auth/me and token responses.
     AuthToken:
       type: object
-      required: [token, user]
+      required:
+      - token
+      - user
+      - expires_at
       properties:
-        token: { type: string }
-        user: { $ref: '#/components/schemas/User' }
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+        expires_at:
+          type: string
+          format: date-time
+          description: Token expiry (SANCTUM_EXPIRATION, default 7 days).
+    PreviewToken:
+      type: object
+      required:
+      - token
+      - url
+      - expires_at
+      properties:
+        token:
+          type: string
+        url:
+          type: string
+          format: uri
+          example: https://demo.storeplix.com/?preview=eyJ...
+        expires_at:
+          type: string
+          format: date-time
     AuthTokenResponse:
       type: object
-      required: [data]
+      required:
+      - data
       properties:
-        data: { $ref: '#/components/schemas/AuthToken' }
+        data:
+          $ref: '#/components/schemas/AuthToken'
     StoreStatus:
       type: string
-      enum: [draft, active, suspended]
+      enum:
+      - draft
+      - active
+      - suspended
     DomainStatus:
       type: string
-      enum: [pending_verification, verification_failed, verified, ssl_provisioning, active, expired, suspended]
+      enum:
+      - pending_verification
+      - verification_failed
+      - verified
+      - ssl_provisioning
+      - active
+      - expired
+      - suspended
     Store:
       type: object
-      required: [id, tenant_id, name, slug, status, country, currency, business_category, primary_domain, created_at]
+      required:
+      - id
+      - tenant_id
+      - name
+      - slug
+      - status
+      - country
+      - currency
+      - primary_domain
+      - created_at
+      - business_categories
+      - name_bn
+      - timezone
       properties:
-        id: { $ref: '#/components/schemas/Ulid' }
-        tenant_id: { $ref: '#/components/schemas/Ulid' }
-        name: { type: string }
-        slug: { type: string }
-        status: { $ref: '#/components/schemas/StoreStatus' }
-        country: { type: string, minLength: 2, maxLength: 2 }
-        currency: { type: string, minLength: 3, maxLength: 3 }
-        business_category: { type: [string, 'null'] }
-        primary_domain: { type: string }
-        created_at: { type: string, format: date-time }
+        id:
+          $ref: '#/components/schemas/Ulid'
+        tenant_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/StoreStatus'
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        primary_domain:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+        business_categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessCategory'
+          description: 'Phase 2: replaces business_category (string).'
+        name_bn:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        timezone:
+          type: string
+          example: Asia/Dhaka
     ThemeSection:
       type: object
-      required: [type, enabled]
+      required:
+      - type
+      - enabled
       properties:
-        type: { type: string, example: hero }
-        enabled: { type: boolean }
-        settings: { type: object, additionalProperties: true }
+        type:
+          type: string
+          example: hero
+        enabled:
+          type: boolean
+        settings:
+          type: object
+          additionalProperties: true
     ThemeConfig:
       type: object
       description: Theme config document; top-level `settings` keys are camelCase and passed through untransformed.
-      required: [theme, version, settings, sections]
+      required:
+      - theme
+      - version
+      - settings
+      - sections
       properties:
-        theme: { type: string, example: classic }
-        version: { type: string, example: 1.0.0 }
+        theme:
+          type: string
+          example: classic
+        version:
+          type: string
+          example: 1.0.0
         settings:
           type: object
-          required: [primaryColor, secondaryColor, fontFamily]
+          required:
+          - primaryColor
+          - secondaryColor
+          - fontFamily
           additionalProperties: true
           properties:
-            primaryColor: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
-            secondaryColor: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
-            fontFamily: { type: string, example: Inter }
+            primaryColor:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            secondaryColor:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            fontFamily:
+              type: string
+              example: Inter
         sections:
           type: array
           maxItems: 30
-          items: { $ref: '#/components/schemas/ThemeSection' }
+          items:
+            $ref: '#/components/schemas/ThemeSection'
     StorefrontConfig:
       type: object
-      required: [store, theme, seo]
+      required:
+      - store
+      - preview
+      - theme
+      - seo
+      - contact
+      - social
       properties:
         store:
           type: object
-          required: [id, name, slug, currency, logo_url, favicon_url]
+          required:
+          - id
+          - name
+          - slug
+          - status
+          - currency
+          - logo_url
+          - favicon_url
+          - icons
           properties:
-            id: { $ref: '#/components/schemas/Ulid' }
-            name: { type: string }
-            slug: { type: string }
-            currency: { type: string }
-            logo_url: { type: [string, 'null'], format: uri }
-            favicon_url: { type: [string, 'null'], format: uri }
-        theme: { $ref: '#/components/schemas/ThemeConfig' }
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+            status:
+              type: string
+              enum:
+              - active
+              - draft
+            currency:
+              type: string
+            logo_url:
+              type:
+              - string
+              - 'null'
+              format: uri
+              description: Logo variant w320 (or original while processing).
+            favicon_url:
+              type:
+              - string
+              - 'null'
+              format: uri
+              description: favicon_32 variant.
+            icons:
+              type: object
+              required:
+              - apple_touch
+              - icon_192
+              - icon_512
+              properties:
+                apple_touch:
+                  type:
+                  - string
+                  - 'null'
+                  format: uri
+                icon_192:
+                  type:
+                  - string
+                  - 'null'
+                  format: uri
+                icon_512:
+                  type:
+                  - string
+                  - 'null'
+                  format: uri
+        preview:
+          type: boolean
+          description: true only when a valid X-Storefront-Preview token for this store was sent.
+        theme:
+          $ref: '#/components/schemas/ThemeConfig'
         seo:
           type: object
-          required: [title, description]
+          required:
+          - title
+          - description
           properties:
-            title: { type: string }
-            description: { type: [string, 'null'] }
+            title:
+              type: string
+            description:
+              type:
+              - string
+              - 'null'
+        contact:
+          $ref: '#/components/schemas/StoreContact'
+        social:
+          $ref: '#/components/schemas/SocialLinks'
+    TenantRole:
+      type: string
+      enum:
+      - owner
+      - admin
+      - staff
+    AssignableRole:
+      type: string
+      enum:
+      - admin
+      - staff
+    TenantMembership:
+      type: object
+      required:
+      - id
+      - name
+      - role
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/TenantRole'
+    MessageResponse:
+      type: object
+      required:
+      - message
+      properties:
+        message:
+          type: string
+    BusinessCategory:
+      type: string
+      enum:
+      - fashion
+      - beauty
+      - kids
+      - food_grocery
+      - electronics
+      - home
+    CreateStoreInput:
+      type: object
+      required:
+      - name
+      - slug
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        slug:
+          type: string
+          minLength: 3
+          maxLength: 63
+          pattern: ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$
+          description: Not reserved; globally unique.
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          default: BD
+        currency:
+          type: string
+          enum:
+          - BDT
+          - USD
+          default: BDT
+        business_categories:
+          type: array
+          maxItems: 6
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/BusinessCategory'
+        name_bn:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        timezone:
+          type: string
+          default: Asia/Dhaka
+    ResetPasswordInput:
+      type: object
+      required:
+      - email
+      - token
+      - password
+      - password_confirmation
+      properties:
+        email:
+          type: string
+          format: email
+        token:
+          type: string
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        password_confirmation:
+          type: string
+    UpdateProfileInput:
+      type: object
+      required: []
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 20
+        current_password:
+          type: string
+          description: Required when email changes.
+    ChangePasswordInput:
+      type: object
+      required:
+      - current_password
+      - password
+      - password_confirmation
+      properties:
+        current_password:
+          type: string
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        password_confirmation:
+          type: string
+    StaffMember:
+      type: object
+      required:
+      - id
+      - kind
+      - user_id
+      - name
+      - email
+      - phone
+      - role
+      - status
+      - is_you
+      - invited_by
+      - joined_at
+      - expires_at
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          type: string
+          enum:
+          - member
+          - invitation
+        user_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+          format: email
+        phone:
+          type:
+          - string
+          - 'null'
+        role:
+          $ref: '#/components/schemas/TenantRole'
+        status:
+          type: string
+          enum:
+          - active
+          - invited
+          - expired
+        is_you:
+          type: boolean
+        invited_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        joined_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    StaffSeatsMeta:
+      type: object
+      required:
+      - seats_used
+      - seats_limit
+      properties:
+        seats_used:
+          type: integer
+        seats_limit:
+          type:
+          - integer
+          - 'null'
+    InviteStaffInput:
+      type: object
+      required:
+      - email
+      - role
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        name:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+    UpdateStaffRoleInput:
+      type: object
+      required:
+      - role
+      properties:
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+    InvitationPreview:
+      type: object
+      required:
+      - tenant_name
+      - store_name
+      - email
+      - role
+      - invited_by_name
+      - expires_at
+      - user_exists
+      properties:
+        tenant_name:
+          type: string
+        store_name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invited_by_name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        user_exists:
+          type: boolean
+    AcceptInvitationInput:
+      type: object
+      required:
+      - name
+      - password
+      - password_confirmation
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        password_confirmation:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+          maxLength: 20
+    MediaPurpose:
+      type: string
+      enum:
+      - logo
+      - favicon
+      - product_image
+      - page_image
+    MediaStatus:
+      type: string
+      enum:
+      - processing
+      - ready
+      - failed
+    MediaVariant:
+      type: object
+      required:
+      - key
+      - width
+      - height
+      - mime
+      - url
+      properties:
+        key:
+          type: string
+          example: w320
+        width:
+          type: integer
+        height:
+          type: integer
+        mime:
+          type: string
+        url:
+          type: string
+          format: uri
+    Media:
+      type: object
+      required:
+      - id
+      - purpose
+      - status
+      - mime
+      - size_bytes
+      - width
+      - height
+      - alt
+      - url
+      - variants
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        purpose:
+          $ref: '#/components/schemas/MediaPurpose'
+        status:
+          $ref: '#/components/schemas/MediaStatus'
+        mime:
+          type: string
+        size_bytes:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        alt:
+          type:
+          - string
+          - 'null'
+        url:
+          type: string
+          format: uri
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaVariant'
+        created_at:
+          type: string
+          format: date-time
+    MediaRef:
+      type: object
+      required:
+      - id
+      - url
+      - width
+      - height
+      - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        url:
+          type: string
+          format: uri
+        width:
+          type: integer
+        height:
+          type: integer
+        status:
+          $ref: '#/components/schemas/MediaStatus'
+    SocialLinks:
+      type: object
+      required:
+      - facebook
+      - instagram
+      - youtube
+      properties:
+        facebook:
+          type:
+          - string
+          - 'null'
+          format: uri
+          maxLength: 255
+        instagram:
+          type:
+          - string
+          - 'null'
+          format: uri
+          maxLength: 255
+        youtube:
+          type:
+          - string
+          - 'null'
+          format: uri
+          maxLength: 255
+    StoreContact:
+      type: object
+      required:
+      - phone
+      - email
+      - whatsapp
+      - support_hours
+      properties:
+        phone:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+        whatsapp:
+          type:
+          - string
+          - 'null'
+        support_hours:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+    BusinessAddress:
+      type: object
+      required:
+      - street
+      - division
+      - district
+      - area
+      - postcode
+      - use_for_returns
+      properties:
+        street:
+          type:
+          - string
+          - 'null'
+          maxLength: 255
+        division:
+          type:
+          - string
+          - 'null'
+        district:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        area:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        postcode:
+          type:
+          - string
+          - 'null'
+          maxLength: 12
+        use_for_returns:
+          type: boolean
+    StoreSettings:
+      type: object
+      required:
+      - store_id
+      - identity
+      - branding
+      - contact
+      - social
+      - address
+      - region
+      - updated_at
+      properties:
+        store_id:
+          $ref: '#/components/schemas/Ulid'
+        identity:
+          type: object
+          required:
+          - name
+          - name_bn
+          - slug
+          - primary_domain
+          - business_categories
+          properties:
+            name:
+              type: string
+            name_bn:
+              type:
+              - string
+              - 'null'
+            slug:
+              type: string
+            primary_domain:
+              type:
+              - string
+              - 'null'
+            business_categories:
+              type: array
+              items:
+                $ref: '#/components/schemas/BusinessCategory'
+        branding:
+          type: object
+          required:
+          - logo
+          - favicon
+          - primary_color
+          - secondary_color
+          properties:
+            logo:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+            favicon:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+            primary_color:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            secondary_color:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+        contact:
+          $ref: '#/components/schemas/StoreContact'
+        social:
+          $ref: '#/components/schemas/SocialLinks'
+        address:
+          $ref: '#/components/schemas/BusinessAddress'
+        region:
+          type: object
+          required:
+          - country
+          - currency
+          - timezone
+          properties:
+            country:
+              type: string
+            currency:
+              type: string
+            timezone:
+              type: string
+        updated_at:
+          type: string
+          format: date-time
+    UpdateStoreSettingsInput:
+      type: object
+      required: []
+      properties:
+        identity:
+          type: object
+          required: []
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 80
+            name_bn:
+              type:
+              - string
+              - 'null'
+              maxLength: 80
+            business_categories:
+              type: array
+              maxItems: 6
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/BusinessCategory'
+        branding:
+          type: object
+          required: []
+          properties:
+            logo_media_id:
+              oneOf:
+              - $ref: '#/components/schemas/Ulid'
+              - type: 'null'
+            favicon_media_id:
+              oneOf:
+              - $ref: '#/components/schemas/Ulid'
+              - type: 'null'
+            primary_color:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+            secondary_color:
+              type: string
+              pattern: ^#[0-9a-fA-F]{6}$
+        contact:
+          type: object
+          required: []
+          properties:
+            phone:
+              type:
+              - string
+              - 'null'
+              description: BD mobile (01XXXXXXXXX, +8801…) or E.164; stored E.164
+            email:
+              type:
+              - string
+              - 'null'
+              format: email
+              maxLength: 254
+            whatsapp:
+              type:
+              - string
+              - 'null'
+            support_hours:
+              type:
+              - string
+              - 'null'
+              maxLength: 80
+        social:
+          type: object
+          required: []
+          properties:
+            facebook:
+              type:
+              - string
+              - 'null'
+              format: uri
+              maxLength: 255
+              description: https only; host allowlisted per network
+            instagram:
+              type:
+              - string
+              - 'null'
+              format: uri
+              maxLength: 255
+              description: https only; host allowlisted per network
+            youtube:
+              type:
+              - string
+              - 'null'
+              format: uri
+              maxLength: 255
+              description: https only; host allowlisted per network
+        address:
+          type: object
+          required: []
+          properties:
+            street:
+              type:
+              - string
+              - 'null'
+              maxLength: 255
+            division:
+              type:
+              - string
+              - 'null'
+            district:
+              type:
+              - string
+              - 'null'
+              maxLength: 80
+            area:
+              type:
+              - string
+              - 'null'
+              maxLength: 80
+            postcode:
+              type:
+              - string
+              - 'null'
+            use_for_returns:
+              type: boolean
+        region:
+          type: object
+          required: []
+          properties:
+            country:
+              type: string
+              minLength: 2
+              maxLength: 2
+            currency:
+              type: string
+              enum:
+              - BDT
+              - USD
+            timezone:
+              type: string
+    FeatureKey:
+      type: string
+      enum:
+      - custom_domain
+      - all_couriers
+      - bulk_courier_booking
+      - fake_order_guard
+      - sms_automation
+      - custom_roles
+      - multi_warehouse
+      - pos
+      - profit_reports
+      - api_webhooks
+    LimitKey:
+      type: string
+      enum:
+      - orders_per_month
+      - staff_seats
+      - products
+      - courier_connections
+    Plan:
+      type: object
+      required:
+      - id
+      - code
+      - name
+      - price_amount
+      - currency
+      - interval
+      - limits
+      - features
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        code:
+          type: string
+          example: starter
+        name:
+          type: string
+        price_amount:
+          type: integer
+          description: Minor units (BDT poisha)
+        currency:
+          type: string
+        interval:
+          type: string
+          enum:
+          - month
+          - year
+        limits:
+          type: object
+          required:
+          - orders_per_month
+          - staff_seats
+          - products
+          - courier_connections
+          properties:
+            orders_per_month:
+              type:
+              - integer
+              - 'null'
+            staff_seats:
+              type:
+              - integer
+              - 'null'
+            products:
+              type:
+              - integer
+              - 'null'
+            courier_connections:
+              type:
+              - integer
+              - 'null'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeatureKey'
+    SubscriptionStatus:
+      type: string
+      enum:
+      - trialing
+      - active
+      - past_due
+      - cancelled
+      - expired
+    Subscription:
+      type: object
+      required:
+      - id
+      - status
+      - plan
+      - trial_ends_at
+      - current_period_start
+      - current_period_end
+      - cancel_at_period_end
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        plan:
+          $ref: '#/components/schemas/Plan'
+        trial_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current_period_start:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current_period_end:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+    FeatureAccess:
+      type: object
+      required:
+      - plan_code
+      - subscription_status
+      - trial_ends_at
+      - features
+      - limits
+      properties:
+        plan_code:
+          type: string
+        subscription_status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        trial_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        features:
+          type: object
+          required:
+          - custom_domain
+          - all_couriers
+          - bulk_courier_booking
+          - fake_order_guard
+          - sms_automation
+          - custom_roles
+          - multi_warehouse
+          - pos
+          - profit_reports
+          - api_webhooks
+          properties:
+            custom_domain:
+              type: boolean
+            all_couriers:
+              type: boolean
+            bulk_courier_booking:
+              type: boolean
+            fake_order_guard:
+              type: boolean
+            sms_automation:
+              type: boolean
+            custom_roles:
+              type: boolean
+            multi_warehouse:
+              type: boolean
+            pos:
+              type: boolean
+            profit_reports:
+              type: boolean
+            api_webhooks:
+              type: boolean
+        limits:
+          type: object
+          required:
+          - orders_per_month
+          - staff_seats
+          - products
+          - courier_connections
+          properties:
+            orders_per_month:
+              type: object
+              required:
+              - limit
+              - used
+              properties:
+                limit:
+                  type:
+                  - integer
+                  - 'null'
+                used:
+                  type: integer
+            staff_seats:
+              type: object
+              required:
+              - limit
+              - used
+              properties:
+                limit:
+                  type:
+                  - integer
+                  - 'null'
+                used:
+                  type: integer
+            products:
+              type: object
+              required:
+              - limit
+              - used
+              properties:
+                limit:
+                  type:
+                  - integer
+                  - 'null'
+                used:
+                  type: integer
+            courier_connections:
+              type: object
+              required:
+              - limit
+              - used
+              properties:
+                limit:
+                  type:
+                  - integer
+                  - 'null'
+                used:
+                  type: integer
+    AuditLog:
+      type: object
+      required:
+      - id
+      - action
+      - actor
+      - subject
+      - meta
+      - ip
+      - user_agent
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        action:
+          type: string
+          example: staff.invited
+        actor:
+          oneOf:
+          - type: object
+            required:
+            - type
+            - id
+            - name
+            properties:
+              type:
+                type: string
+                enum:
+                - user
+                - system
+              id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+              name:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        subject:
+          oneOf:
+          - type: object
+            required:
+            - type
+            - id
+            properties:
+              type:
+                type: string
+              id:
+                $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        ip:
+          type:
+          - string
+          - 'null'
+        user_agent:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time

@@ -5,9 +5,14 @@ namespace Tests\Feature\Stores;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Models\StoreSetting;
+use App\Domain\Stores\Services\StoreLimitReachedException;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\TenantUser;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 class StoreApiTest extends TestCase
@@ -57,13 +62,12 @@ class StoreApiTest extends TestCase
     {
         [$user, $tenant] = $this->merchant();
         $this->storeFor($tenant, 'alpha');
-        $this->storeFor($tenant, 'beta');
 
         $this->withHeaders($this->tenantHeaders($user, $tenant))->getJson('/api/v1/stores')
             ->assertOk()
-            ->assertJsonCount(2, 'data')
+            ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.slug', 'alpha')
-            ->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('meta.total', 1)
             ->assertJsonStructure(['meta' => ['current_page', 'per_page', 'total', 'last_page']]);
     }
 
@@ -103,5 +107,86 @@ class StoreApiTest extends TestCase
         $this->withToken($user->createToken('t')->plainTextToken)->getJson('/api/v1/stores')
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'tenant_required');
+    }
+
+    #[Group('tenancy')]
+    public function test_second_store_for_same_tenant_returns_409(): void
+    {
+        [$user, $tenant] = $this->merchant();
+        $headers = $this->tenantHeaders($user, $tenant);
+
+        $this->withHeaders($headers)->postJson('/api/v1/stores', ['name' => 'Shop', 'slug' => 'shop-one'])->assertCreated();
+
+        // Even with an otherwise-invalid (taken) slug, the limit wins.
+        foreach (['shop-two', 'shop-one'] as $slug) {
+            $this->withHeaders($headers)->postJson('/api/v1/stores', ['name' => 'Shop', 'slug' => $slug])
+                ->assertStatus(409)
+                ->assertJsonPath('error.code', 'store_limit_reached')
+                ->assertJsonStructure(['error' => ['code', 'message']]);
+        }
+
+        $this->assertSame(1, Store::withoutTenancy()->where('tenant_id', $tenant->id)->count());
+        $this->assertSame(1, StoreDomain::withoutTenancy()->where('tenant_id', $tenant->id)->count());
+    }
+
+    public function test_provisioner_also_enforces_the_limit(): void
+    {
+        [, $tenant] = $this->merchant();
+        $this->storeFor($tenant, 'first');
+
+        $this->expectException(StoreLimitReachedException::class);
+        $this->storeFor($tenant, 'second');
+    }
+
+    #[Group('tenancy')]
+    public function test_database_enforces_one_store_per_tenant_when_api_is_bypassed(): void
+    {
+        [, $tenant] = $this->merchant();
+        $this->storeFor($tenant, 'first');
+
+        $this->expectException(UniqueConstraintViolationException::class);
+
+        DB::table('stores')->insert([
+            'id' => strtolower((string) Str::ulid()),
+            'tenant_id' => $tenant->id,
+            'name' => 'Second',
+            'slug' => 'second',
+            'status' => 'draft',
+            'country' => 'BD',
+            'currency' => 'BDT',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    #[Group('tenancy')]
+    public function test_member_of_two_tenants_sees_each_tenants_single_store_and_foreign_ids_404(): void
+    {
+        [$user, $tenantA] = $this->merchant();
+        [, $tenantB] = $this->merchant();
+        TenantUser::query()->create(['tenant_id' => $tenantB->id, 'user_id' => $user->id, 'role' => TenantUser::ROLE_STAFF]);
+        [, $tenantC] = $this->merchant();
+
+        $a = $this->storeFor($tenantA, 'shop-a');
+        $b = $this->storeFor($tenantB, 'shop-b');
+        $c = $this->storeFor($tenantC, 'shop-c');
+
+        $headersA = $this->tenantHeaders($user, $tenantA);
+        $headersB = $this->tenantHeaders($user, $tenantB);
+
+        $this->withHeaders($headersA)->getJson('/api/v1/stores')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $a->id);
+        $this->withHeaders($headersB)->getJson('/api/v1/stores')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $b->id);
+
+        // B's store is not reachable through tenant A (even though the user is a member of B).
+        $this->withHeaders($headersA)->getJson("/api/v1/stores/{$b->id}")
+            ->assertNotFound()->assertJsonPath('error.code', 'not_found');
+
+        // Non-member tenant C: 404 through own tenant, 403 when spoofing X-Tenant-Id.
+        $this->withHeaders($headersA)->getJson("/api/v1/stores/{$c->id}")->assertNotFound();
+        $this->withHeaders($headersA)->postJson("/api/v1/stores/{$c->id}/preview-token")->assertNotFound();
+        $this->withHeaders($this->tenantHeaders($user, $tenantC))->getJson('/api/v1/stores')
+            ->assertForbidden()->assertJsonPath('error.code', 'tenant_forbidden');
     }
 }

@@ -36,6 +36,12 @@ class StorePolicy
             && in_array($this->context->role(), [TenantUser::ROLE_OWNER, TenantUser::ROLE_ADMIN], true);
     }
 
+    /** Any member of the owning tenant may preview its (draft) storefront. */
+    public function preview(User $user, Store $store): bool
+    {
+        return $this->view($user, $store);
+    }
+
     private function inCurrentTenant(Store $store): bool
     {
         return $this->context->has() && $store->tenant_id === $this->context->id();

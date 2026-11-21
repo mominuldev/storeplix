@@ -19,7 +19,8 @@ return new class extends Migration
             $table->string('business_category', 100)->nullable();
             $table->timestamps();
 
-            $table->index('tenant_id');
+            // D1: exactly one store per tenant (enforced by the DB, race-safe).
+            $table->unique('tenant_id', 'stores_tenant_id_unique');
             // Composite key so child tables can enforce (tenant_id, store_id) consistency.
             $table->unique(['tenant_id', 'id']);
         });

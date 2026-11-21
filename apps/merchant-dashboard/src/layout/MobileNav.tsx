@@ -1,22 +1,22 @@
 import { cn } from '@storeplix/ui';
 import { Bell, ChevronDown, House, Menu, Package, Plus, Search, ShoppingBag } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
-import { useAuth } from '../auth/AuthProvider';
+import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 // Figma Merchant Admin – Mobile · Today app bar 31:4300 (60h): shop avatar, name + domain, search, bell.
 export function MobileAppBar() {
-  const { activeTenant } = useAuth();
+  const store = useTenantStore().data;
   return (
     <header className="sticky top-0 z-20 flex h-15 items-center gap-3 border-b border-border-default bg-surface-card px-4 lg:hidden">
       <Link to="/more" className="flex min-w-0 flex-1 items-center gap-3" aria-label="Switch shop">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-accent-100 text-body font-semibold text-warning">
-          {(activeTenant?.name ?? '?').charAt(0).toUpperCase()}
+          {(store?.name ?? '?').charAt(0).toUpperCase()}
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="flex items-center gap-1 truncate text-body font-semibold text-text-primary">
-            {activeTenant?.name ?? 'Store Plix'} <ChevronDown className="size-4 text-text-muted" aria-hidden />
+            {store?.name ?? 'Store Plix'} <ChevronDown className="size-4 text-text-muted" aria-hidden />
           </span>
-          {activeTenant?.slug && <span className="truncate text-caption text-text-muted">{activeTenant.slug}.storeplix.com</span>}
+          {store && <span className="truncate text-caption text-text-muted">{storeDomain(store)}</span>}
         </span>
       </Link>
       <button type="button" aria-label="Search" className="flex size-11 items-center justify-center text-text-primary">

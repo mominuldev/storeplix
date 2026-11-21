@@ -50,7 +50,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Minutes; D3 default 7 days. Token responses expose expires_at.
+    'expiration' => (int) env('SANCTUM_EXPIRATION', 10080) ?: 10080,
 
     /*
     |--------------------------------------------------------------------------

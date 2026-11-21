@@ -3,6 +3,7 @@
 namespace App\Domain\Stores\Http\Middleware;
 
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Stores\Preview\PreviewTokenService;
 use App\Domain\Stores\Services\ResolvedStorefront;
 use App\Domain\Stores\Services\StorefrontResolver;
 use App\Domain\Tenancy\TenantContext;
@@ -23,11 +24,16 @@ class ResolveStorefront
 
     public const HOST_HEADER = 'X-Storefront-Host';
 
+    public const PREVIEW_HEADER = 'X-Storefront-Preview';
+
     public const ATTRIBUTE = 'storefront';
+
+    public const PREVIEW_ATTRIBUTE = 'storefront_preview';
 
     public function __construct(
         private readonly StorefrontResolver $resolver,
         private readonly TenantContext $context,
+        private readonly PreviewTokenService $previews,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -51,11 +57,24 @@ class ResolveStorefront
             throw new ApiException(404, 'store_not_found', 'No store is registered for this host.');
         }
 
+        // D2: a preview token only counts when it is valid for THIS resolved store. Invalid/expired
+        // tokens silently degrade to a public visitor (no error leak). The host cache only ever holds
+        // {tenant_id, store_id}; preview state is computed per request and never cached.
+        $preview = $this->previews->isValidFor($request->header(self::PREVIEW_HEADER), $resolved->storeId);
+
         $request->attributes->set(self::ATTRIBUTE, $resolved);
+        $request->attributes->set(self::PREVIEW_ATTRIBUTE, $preview);
         $this->context->set($resolved->tenantId);
 
         try {
-            return $next($request);
+            $response = $next($request);
+
+            if ($preview) {
+                $response->headers->set('Cache-Control', 'private, no-store');
+                $response->headers->set('Vary', 'X-Storefront-Preview', false);
+            }
+
+            return $response;
         } finally {
             $this->context->clear();
         }

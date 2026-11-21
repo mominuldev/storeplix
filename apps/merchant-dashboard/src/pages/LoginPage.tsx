@@ -1,18 +1,26 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Input } from '@storeplix/ui';
+import { SESSION_EXPIRED_MESSAGE } from '@storeplix/api-client';
+import { Badge, Button, Input, SegmentedControl } from '@storeplix/ui';
 import { Eye, EyeOff } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router';
-import { AuthLayout } from '../auth/AuthLayout';
 import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
 import { loginSchema, type LoginValues } from '../auth/schemas';
+import { session } from '../lib/session';
+import { AuthShell, FormAlert, FormTitle, SessionNotice } from '../onboarding/AuthShell';
 
+const BANGLA = 'আবার স্বাগতম — আজকের অর্ডারগুলো দেখে নিন।';
+
+// Figma Merchant Onboarding · L1 Sign in · Password 57:911 (desktop) / L5 Sign in · Mobile 58:1132.
+// Contract login is email + password, so the identifier field is Email (Figma shows mobile number).
+// SMS code sign-in (L2) is a later phase → tab disabled with "Coming soon". Google sign-in is omitted.
 export function LoginPage() {
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const notice = useSyncExternalStore(session.subscribe, session.peekNotice, () => null);
   const {
     register,
     handleSubmit,
@@ -29,52 +37,82 @@ export function LoginPage() {
     }
   });
 
-  return (
-    <AuthLayout
-      headline="Welcome back. Your orders are waiting."
-      points={['Confirm and ship orders in one place', 'Book Pathao, Steadfast and RedX in a click', 'Know your real profit every day']}
-    >
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-heading-24 text-text-primary">Sign in to your shop</h2>
-          <p className="text-body text-text-secondary">
-            New here?{' '}
-            <Link to="/register" className="font-semibold text-brand-600 hover:text-brand-700">
-              Create your free shop
-            </Link>
-          </p>
-        </div>
+  const createLink = (
+    <Link to="/register" className="text-body font-semibold text-brand-600 hover:text-brand-700">
+      Create your shop
+    </Link>
+  );
 
-        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
-          {formError && (
-            <p role="alert" className="rounded-md bg-danger-bg px-3 py-2 text-body text-danger">
-              {formError}
-            </p>
-          )}
-          <Input label="Email" type="email" autoComplete="email" placeholder="you@shop.com" error={errors.email?.message} {...register('email')} />
+  return (
+    <AuthShell
+      pitch={{ eyebrow: 'Your shop, orders and money — in one place', headline: 'Welcome back. Your orders are waiting.', bangla: BANGLA }}
+      topLeft="Welcome back"
+      topRight={<>New to Storeplix? {createLink}</>}
+      mobile={{ variant: 'hero', title: 'Welcome back', bangla: BANGLA }}
+      mobileFooter={
+        <>
+          <p className="flex gap-1 text-body text-text-secondary">New to Storeplix? {createLink}</p>
+          <p className="text-caption text-text-muted">Help in Bangla · 09678-112233</p>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4 lg:gap-7">
+        <FormTitle className="hidden lg:flex" title="Sign in to your shop" subtitle="Use the email you signed up with." />
+        {notice === 'session_expired' && <SessionNotice>{SESSION_EXPIRED_MESSAGE}</SessionNotice>}
+        {formError && <FormAlert>{formError}</FormAlert>}
+        <SegmentedControl
+          aria-label="Sign-in method"
+          value="password"
+          onChange={() => undefined}
+          options={[
+            { value: 'password', label: 'Password' },
+            {
+              value: 'sms',
+              disabled: true,
+              label: (
+                <>
+                  SMS code <Badge className="h-auto px-1.5 py-0">Coming soon</Badge>
+                </>
+              ),
+            },
+          ]}
+        />
+        <div className="flex flex-col gap-4">
           <Input
-            label="Password"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            placeholder="Your password"
-            error={errors.password?.message}
-            trailing={
-              <button type="button" onClick={() => setShowPassword((s) => !s)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                {showPassword ? <EyeOff /> : <Eye />}
-              </button>
-            }
-            {...register('password')}
+            label="Email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@shop.com"
+            fieldClassName="min-h-12"
+            hint="The email you signed up with, or the one your shop owner invited."
+            error={errors.email?.message}
+            {...register('email')}
           />
-          <div className="flex justify-end">
-            <Link to="/forgot-password" className="text-body font-medium text-brand-600 hover:text-brand-700">
+          <div className="flex flex-col gap-1.5">
+            <Input
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              error={errors.password?.message}
+              trailing={
+                <button type="button" onClick={() => setShowPassword((s) => !s)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </button>
+              }
+              {...register('password')}
+            />
+            <Link to="/forgot-password" className="self-end text-body font-medium text-brand-600 hover:text-brand-700">
               Forgot password?
             </Link>
           </div>
-          <Button type="submit" fullWidth loading={isSubmitting} className="mt-2">
-            Sign in
-          </Button>
-        </form>
-      </div>
-    </AuthLayout>
+        </div>
+        <Button type="submit" fullWidth loading={isSubmitting} className="min-h-[52px] lg:min-h-12">
+          Sign in
+        </Button>
+        <p className="hidden text-center text-caption text-text-muted lg:block">
+          Staff invited to a shop? Sign in with the email your shop owner added.
+        </p>
+      </form>
+    </AuthShell>
   );
 }
