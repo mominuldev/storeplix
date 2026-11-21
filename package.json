@@ -1,0 +1,14 @@
+{
+  "name": "store-plix",
+  "private": true,
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "dev:merchant": "pnpm --filter @storeplix/merchant-dashboard dev",
+    "dev:admin": "pnpm --filter @storeplix/super-admin dev",
+    "dev:storefront": "pnpm --filter @storeplix/storefront dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  }
+}

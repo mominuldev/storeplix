@@ -1,0 +1,5 @@
+packages:
+  - "apps/merchant-dashboard"
+  - "apps/super-admin"
+  - "apps/storefront"
+  - "packages/*"

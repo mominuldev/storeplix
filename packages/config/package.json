@@ -1,0 +1,43 @@
+{
+  "name": "@storeplix/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared design tokens (Tailwind v4 @theme), tsconfig, ESLint and Prettier config for Store Plix.",
+  "exports": {
+    "./tokens.css": "./src/tokens.css",
+    "./tokens": "./src/tokens.ts",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/react.json": "./tsconfig/react.json",
+    "./tsconfig/next.json": "./tsconfig/next.json",
+    "./eslint": "./eslint/index.js",
+    "./eslint/react": "./eslint/react.js",
+    "./prettier": "./prettier.config.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.73.0"
+  },
+  "peerDependencies": {
+    "eslint": ">=9",
+    "prettier": ">=3",
+    "tailwindcss": ">=4"
+  },
+  "devDependencies": {
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1",
+    "@types/node": "^24.19.2"
+  }
+}

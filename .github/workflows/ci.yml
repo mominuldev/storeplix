@@ -1,0 +1,226 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Sentinel used to prove the storefront secret never reaches client bundles.
+  STOREFRONT_API_KEY: ci-sentinel-storefront-key-3f9a1c7e
+  PLATFORM_DOMAIN: storeplix.test
+
+jobs:
+  # Path filtering is done in-job (not with `on.paths`) so required checks always report.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'apps/merchant-dashboard/**'
+              - 'apps/super-admin/**'
+              - 'apps/storefront/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+
+  api:
+    name: api (lint + tests, sqlite)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, pdo_pgsql, redis, bcmath, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Pint (code style)
+        run: vendor/bin/pint --test
+
+      - name: Test suite
+        run: php artisan test
+
+      # REQUIRED GATE. Tests must be tagged #[Group('tenancy')] (see docs/development/TESTING.md).
+      # Fails if the group is empty so the gate can't silently pass.
+      - name: tenant-isolation
+        run: |
+          mkdir -p build
+          php artisan test --group=tenancy --log-junit build/tenancy.xml
+          count=$(grep -o 'tests="[0-9]*"' build/tenancy.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "tenancy tests executed: ${count}"
+          if [ "${count:-0}" -lt 1 ]; then
+            echo "::error::No tests in group 'tenancy' — tenant isolation is not being verified"
+            exit 1
+          fi
+
+  api-postgres:
+    name: api (migrations + tenancy on postgres)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: storeplix_test
+          POSTGRES_USER: storeplix
+          POSTGRES_PASSWORD: storeplix
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U storeplix"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: storeplix_test
+      DB_USERNAME: storeplix
+      DB_PASSWORD: storeplix
+      REDIS_HOST: 127.0.0.1
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip
+          coverage: none
+          tools: composer:v2
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Migrate fresh + seed
+        run: php artisan migrate:fresh --seed --force
+      - name: Rollback is reversible
+        run: php artisan migrate:rollback --force && php artisan migrate --force
+      # phpunit.xml may force sqlite; override so the tenancy group also runs against real Postgres.
+      - name: tenant-isolation (postgres)
+        run: php artisan test --group=tenancy
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+
+  web:
+    name: web (typecheck, lint, test, build)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4   # version from root package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/storefront/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/storefront/**/*.ts', 'apps/storefront/**/*.tsx') }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+      - run: pnpm -r --if-present run typecheck
+      - run: pnpm -r --if-present run lint
+      - run: pnpm -r --if-present run test
+      - run: pnpm -r --if-present run build
+        env:
+          STOREFRONT_API_URL: http://127.0.0.1:8000
+          VITE_API_URL: http://127.0.0.1:8000
+      - name: Secret leak check (client bundles)
+        run: |
+          set -e
+          dirs=""
+          for d in apps/storefront/.next/static apps/merchant-dashboard/dist apps/super-admin/dist; do
+            [ -d "$d" ] && dirs="$dirs $d"
+          done
+          if [ -z "$dirs" ]; then echo "::warning::no client bundles found"; exit 0; fi
+          if grep -rl -e "$STOREFRONT_API_KEY" -e "STOREFRONT_API_KEY" $dirs; then
+            echo "::error::STOREFRONT_API_KEY (or its name) found in a client bundle"
+            exit 1
+          fi
+          echo "no storefront secret in client bundles"
+
+  # Single required status for branch protection.
+  ci-ok:
+    if: always()
+    needs: [changes, api, api-postgres, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify job results
+        run: |
+          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.web.result }}"; do
+            case "$r" in success|skipped) ;; *) echo "job result: $r"; exit 1 ;; esac
+          done

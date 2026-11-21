@@ -1,0 +1,21 @@
+{
+  "extends": "@storeplix/config/tsconfig/next.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "tsBuildInfoFile": ".next/cache/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

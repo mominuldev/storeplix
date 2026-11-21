@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+/* Platform (Store Plix) tokens - used only by platform-branded pages such as "Store not found". */
+@import '@storeplix/config/tokens.css';
+/* Storefront theme tokens (Figma "Storefront" page 1:9207 · 01 Foundations). */
+@import '../themes/modern-commerce/theme.css';

@@ -1,0 +1,300 @@
+openapi: 3.1.0
+info:
+  title: Store Plix API
+  version: 1.0.0-phase1
+  description: |
+    Phase 1 endpoints as fixed by docs/development/AGENT-CONTRACTS.md.
+    Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local
+  - url: https://api.storeplix.com/api/v1
+    description: Production
+tags:
+  - name: system
+  - name: auth
+  - name: storefront
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/HealthStatus' }
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, password_confirmation]
+              properties:
+                name: { type: string, maxLength: 120 }
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                password_confirmation: { type: string }
+                phone: { type: [string, 'null'], maxLength: 20, description: 'E.164 preferred, e.g. +8801712345678' }
+      responses:
+        '201':
+          description: Registered; token issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
+        '401':
+          description: Invalid credentials (code `invalid_credentials`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Current token revoked }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /storefront/config:
+    get:
+      tags: [storefront]
+      operationId: getStorefrontConfig
+      description: |
+        Server-to-server only (Next.js storefront). Tenant resolved from X-Storefront-Host validated against
+        store_domains (routable rows only). Returns published theme config.
+      security: [{ storefrontKey: [] }]
+      parameters:
+        - in: header
+          name: X-Storefront-Host
+          required: true
+          schema: { type: string, maxLength: 253, example: demo.localhost }
+          description: Normalized host (lowercase, no port, no trailing dot, punycode).
+      responses:
+        '200':
+          description: Render configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/StorefrontConfig' }
+        '401':
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: Unknown or non-routable host (code `store_not_found`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: { code: store_not_found, message: Store not found. } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Sanctum personal access token.
+    storefrontKey:
+      type: apiKey
+      in: header
+      name: X-Storefront-Key
+      description: Shared secret STOREFRONT_API_KEY (server-to-server only).
+  responses:
+    ValidationFailed:
+      description: Validation failed (code `validation_failed`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            error:
+              code: validation_failed
+              message: The given data was invalid.
+              details: { email: ['The email has already been taken.'] }
+    Unauthenticated:
+      description: Missing or invalid token (code `unauthenticated`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    RateLimited:
+      description: Too many requests (code `rate_limited`); see Retry-After header
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    Ulid:
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+      example: 01JD3Z8Q6V2K9X4M7N5P0R1S2T
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: not_found }
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: { type: array, items: { type: string } }
+    PaginationMeta:
+      type: object
+      required: [current_page, per_page, total, last_page]
+      properties:
+        current_page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        last_page: { type: integer }
+    HealthStatus:
+      type: object
+      required: [status, version, time]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string, example: 0.1.0 }
+        time: { type: string, format: date-time }
+    User:
+      type: object
+      required: [id, name, email, phone, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+    AuthToken:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+    AuthTokenResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/AuthToken' }
+    StoreStatus:
+      type: string
+      enum: [draft, active, suspended]
+    DomainStatus:
+      type: string
+      enum: [pending_verification, verification_failed, verified, ssl_provisioning, active, expired, suspended]
+    Store:
+      type: object
+      required: [id, tenant_id, name, slug, status, country, currency, business_category, primary_domain, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        tenant_id: { $ref: '#/components/schemas/Ulid' }
+        name: { type: string }
+        slug: { type: string }
+        status: { $ref: '#/components/schemas/StoreStatus' }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        business_category: { type: [string, 'null'] }
+        primary_domain: { type: string }
+        created_at: { type: string, format: date-time }
+    ThemeSection:
+      type: object
+      required: [type, enabled]
+      properties:
+        type: { type: string, example: hero }
+        enabled: { type: boolean }
+        settings: { type: object, additionalProperties: true }
+    ThemeConfig:
+      type: object
+      description: Theme config document; top-level `settings` keys are camelCase and passed through untransformed.
+      required: [theme, version, settings, sections]
+      properties:
+        theme: { type: string, example: classic }
+        version: { type: string, example: 1.0.0 }
+        settings:
+          type: object
+          required: [primaryColor, secondaryColor, fontFamily]
+          additionalProperties: true
+          properties:
+            primaryColor: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+            secondaryColor: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+            fontFamily: { type: string, example: Inter }
+        sections:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/ThemeSection' }
+    StorefrontConfig:
+      type: object
+      required: [store, theme, seo]
+      properties:
+        store:
+          type: object
+          required: [id, name, slug, currency, logo_url, favicon_url]
+          properties:
+            id: { $ref: '#/components/schemas/Ulid' }
+            name: { type: string }
+            slug: { type: string }
+            currency: { type: string }
+            logo_url: { type: [string, 'null'], format: uri }
+            favicon_url: { type: [string, 'null'], format: uri }
+        theme: { $ref: '#/components/schemas/ThemeConfig' }
+        seo:
+          type: object
+          required: [title, description]
+          properties:
+            title: { type: string }
+            description: { type: [string, 'null'] }

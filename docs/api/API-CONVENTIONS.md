@@ -1,0 +1,118 @@
+# API Conventions
+
+Status: Accepted (Phase 0). Binding for `apps/api` and all clients. Contract types: `packages/types/src/index.ts`.
+Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase).
+**Change process:** response shape change ⇒ update Laravel API Resource + `packages/types` + `openapi.yaml` in the same PR.
+
+## 1. Base & versioning
+- Base URL `https://api.storeplix.com/api/v1` (local `http://localhost:8000/api/v1`).
+- Major version in path. Within v1 only additive changes (new endpoints, new optional fields, new enum values clients
+  must tolerate). Breaking change ⇒ `/api/v2` for the affected routes, v1 kept ≥ 6 months, responses carry
+  `Deprecation: true` and `Sunset: <date>` headers.
+- Route groups:
+  | Prefix | Auth | Tenant |
+  |---|---|---|
+  | `/auth/*` | public / Bearer | none |
+  | `/merchant/*` | Bearer (`merchant` ability) | `X-Tenant-Id` |
+  | `/storefront/*` | `X-Storefront-Key` | `X-Storefront-Host` |
+  | `/admin/*` | Bearer (`admin` ability + platform_role) | explicit route param |
+  | `/webhooks/{provider}` | provider signature | resolved from payload |
+  | `/health` | public | none |
+  Blueprint resources (`stores, products, categories, inventory, orders, customers, domains, themes, subscriptions,
+  payments, shipping`) live under `/merchant/` e.g. `/api/v1/merchant/products`.
+
+## 2. Requests
+- JSON bodies, `Content-Type: application/json`; uploads `multipart/form-data`.
+- snake_case keys. IDs are ULID strings. Timestamps ISO 8601 UTC (`2026-11-21T10:00:00Z`).
+- Money: `{ "amount": 125000, "currency": "BDT" }` objects in responses, or `*_amount` integer fields alongside a
+  resource-level `currency`. Always minor units. Clients format for display (`packages/types` `formatMoney`).
+- Headers: `Accept: application/json` (required — API returns JSON regardless), `X-Request-Id` (optional; echoed,
+  generated if absent), `Idempotency-Key` (see §9).
+- Unknown body fields are ignored; never mass-assigned.
+
+## 3. Response envelope
+Success: `{ "data": <object|array>, "meta"?: {...} }` — `201` on create with `data` = created resource; `204` no body on
+delete/logout. Never return bare arrays or top-level fields besides `data`/`meta`.
+
+Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe to show", "details"?: { "field": ["msg"] } } }`
+
+| HTTP | code | When |
+|---|---|---|
+| 400 | `bad_request`, `tenant_required`, `idempotency_key_required` | malformed request / missing header |
+| 401 | `unauthenticated`, `invalid_storefront_key` | missing/invalid token or key |
+| 402 | `plan_limit_reached`, `subscription_inactive` | plan gate |
+| 403 | `forbidden`, `tenant_suspended`, `email_not_verified` | authenticated but not allowed |
+| 404 | `not_found`, `tenant_not_found`, `store_not_found` | missing **or belongs to another tenant** |
+| 409 | `conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition` | state conflict |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid` | validation / business rule |
+| 429 | `rate_limited` | + `Retry-After` header |
+| 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
+| 503 | `maintenance` | |
+
+`details` keys are dot paths (`items.0.quantity`, `sections.2.settings.limit`). Laravel exception handler maps
+`ValidationException`, `AuthenticationException`, `AuthorizationException`, `ModelNotFoundException`,
+`ThrottleRequestsException`, domain exceptions (each has a `code`) into this shape. Stack traces never leave the server.
+
+## 4. Pagination
+Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
+`meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
+Cursor pagination (`?cursor=...`, `meta: { next_cursor, prev_cursor, per_page }`) for high-volume feeds (storefront
+product lists, audit logs, webhooks) — added as `CursorMeta` to `packages/types` when first used (Phase 3).
+
+## 5. Filtering, sorting, search, includes
+- Filter: `?filter[status]=active&filter[category_id]=01J...&filter[created_at][gte]=2026-01-01`. Allowlisted per endpoint
+  (spatie/laravel-query-builder). Multiple values comma-separated: `filter[status]=pending,confirmed`.
+- Sort: `?sort=-created_at,name` (prefix `-` = desc); allowlisted; default `-created_at`.
+- Search: `?q=shirt` (Postgres full-text / trigram).
+- Includes: `?include=variants,images` allowlisted; otherwise relations not loaded (no N+1 by surprise).
+- Sparse fields not supported in v1.
+
+## 6. Resource naming
+Plural nouns, kebab-case multiword (`/merchant/shipping-methods`), nested max one level
+(`/merchant/products/{id}/variants`). Actions that aren't CRUD use sub-resource verbs as POST:
+`/merchant/orders/{id}/cancel`, `/merchant/domains/{id}/verify`, `/merchant/themes/{code}/publish`.
+Route params are ULIDs (except `themes/{code}` and storefront `{slug}`).
+
+## 7. Authentication headers
+`Authorization: Bearer <token>`; merchant routes also `X-Tenant-Id: <tenant ulid>`. Storefront server sends
+`X-Storefront-Key` and `X-Storefront-Host`; shopper session for cart/checkout via `X-Cart-Token` (set by storefront
+server from `sp_cart` cookie) and, for logged-in customers, `X-Customer-Token` (Phase 5).
+
+## 8. Rate limits (Redis, per tenant)
+| Limiter | Key | Limit |
+|---|---|---|
+| `auth` (login/register/forgot) | email + IP | 5/min, 20/hour |
+| `merchant` | tenant + user | 120/min |
+| `merchant-bulk` (imports/exports) | tenant | 10/hour |
+| `storefront` | tenant + shopper IP (`X-Storefront-Client-Ip` forwarded by storefront, only trusted with valid key) | 300/min |
+| `storefront` (whole store) | tenant | 3 000/min |
+| `checkout` | tenant + IP, tenant + phone | 10/min, 5/10 min |
+| `webhooks` | provider | 600/min |
+Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`; 429 includes `Retry-After`. Limits scale with plan (Phase 7).
+
+## 9. Idempotency
+Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,
+`POST /merchant/orders/{id}/refunds`, `POST /merchant/subscriptions/*/pay`, and accepted on all other POSTs.
+Behaviour (`idempotency_keys` table, scope = tenant + route): first request locks the key and stores status+body;
+repeats with the same body hash return the stored response with header `Idempotent-Replayed: true`; same key with a
+different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 `idempotency_key_in_use`. Keys kept 24 h.
+
+## 10. Webhooks
+**Inbound** (`POST /api/v1/webhooks/{bkash|sslcommerz|pathao|steadfast|redx|cloudflare}`): verify signature / validation
+API / source IP per provider before anything else; store in `webhook_events` (unique `provider,event_id`); respond 200
+fast; process in `webhooks` queue (tenant-aware); never trust payload amounts — re-query provider (ADR 0007).
+**Outbound** (Phase 8, Developer section): events `order.created|updated|paid|cancelled`, `product.*`, `inventory.low`,
+`customer.created`. Body `{ id, type, created_at, tenant_id, data }`. Headers `X-StorePlix-Event`, `X-StorePlix-Delivery`,
+`X-StorePlix-Signature: t=<unix>,v1=<hex hmac_sha256(secret, t + "." + body)>`; receivers reject if |now − t| > 300 s.
+Retries with exponential backoff (1 m → 24 h, 8 attempts), endpoint auto-disabled after 3 days failing.
+
+## 11. Resource representation rules
+- Always include `id`, `created_at`, `updated_at`; tenant-owned resources do **not** expose `tenant_id` to storefront.
+- Never expose: passwords, tokens, credentials, `cost_amount` on storefront, internal flags, other tenants' data.
+- Enums as snake_case strings; nullable fields present with `null` (not omitted).
+- Booleans prefixed `is_`/`has_` only where ambiguous.
+- Storefront endpoints return render data only (StorefrontConfig, product display data, cart totals).
+
+## 12. Caching headers
+Merchant/admin: `Cache-Control: no-store`. Storefront render endpoints: `Cache-Control: public, max-age=0, s-maxage=60`
++ `ETag`; cart/checkout `no-store`. Storefront relies on Next.js tag revalidation (STOREFRONT-ENGINE §5).

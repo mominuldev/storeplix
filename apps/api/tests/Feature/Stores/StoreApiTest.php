@@ -1,0 +1,107 @@
+<?php
+
+namespace Tests\Feature\Stores;
+
+use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreDomain;
+use App\Domain\Stores\Models\StoreSetting;
+use App\Domain\Tenancy\Models\AuditLog;
+use App\Domain\Tenancy\Models\TenantUser;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class StoreApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_owner_creates_store_with_platform_domain_and_default_theme(): void
+    {
+        [$user, $tenant] = $this->merchant();
+
+        $response = $this->withHeaders($this->tenantHeaders($user, $tenant))->postJson('/api/v1/stores', [
+            'name' => 'Rahim Fashion',
+            'slug' => 'Rahim-Fashion',
+            'business_category' => 'fashion',
+            'country' => 'bd',
+            'currency' => 'bdt',
+        ]);
+
+        $response->assertCreated()
+            ->assertExactJsonStructure(['data' => [
+                'id', 'tenant_id', 'name', 'slug', 'status', 'country', 'currency',
+                'business_category', 'primary_domain', 'created_at',
+            ]])
+            ->assertJsonPath('data.tenant_id', $tenant->id)
+            ->assertJsonPath('data.slug', 'rahim-fashion')
+            ->assertJsonPath('data.status', 'draft')
+            ->assertJsonPath('data.country', 'BD')
+            ->assertJsonPath('data.currency', 'BDT')
+            ->assertJsonPath('data.primary_domain', 'rahim-fashion.storeplix.test');
+
+        $storeId = $response->json('data.id');
+
+        $domain = StoreDomain::withoutTenancy()->where('store_id', $storeId)->sole();
+        $this->assertSame('platform', $domain->type);
+        $this->assertSame('active', $domain->status);
+        $this->assertTrue($domain->is_primary);
+        $this->assertSame($tenant->id, $domain->tenant_id);
+
+        $settings = StoreSetting::withoutTenancy()->where('store_id', $storeId)->sole();
+        $this->assertSame(config('storeplix.default_theme'), $settings->theme);
+        $this->assertSame($tenant->id, $settings->tenant_id);
+
+        $this->assertTrue(AuditLog::query()->where('action', 'store.created')->where('subject_id', $storeId)->exists());
+    }
+
+    public function test_store_listing_returns_paginated_envelope(): void
+    {
+        [$user, $tenant] = $this->merchant();
+        $this->storeFor($tenant, 'alpha');
+        $this->storeFor($tenant, 'beta');
+
+        $this->withHeaders($this->tenantHeaders($user, $tenant))->getJson('/api/v1/stores')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.slug', 'alpha')
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonStructure(['meta' => ['current_page', 'per_page', 'total', 'last_page']]);
+    }
+
+    public function test_slug_validation(): void
+    {
+        [$user, $tenant] = $this->merchant();
+        [, $other] = $this->merchant();
+        $this->storeFor($other, 'taken');
+        $headers = $this->tenantHeaders($user, $tenant);
+
+        foreach (['taken', 'www', '-bad-', 'a', 'has space', 'ünï'] as $slug) {
+            $this->withHeaders($headers)->postJson('/api/v1/stores', ['name' => 'X Store', 'slug' => $slug])
+                ->assertStatus(422)
+                ->assertJsonPath('error.code', 'validation_failed')
+                ->assertJsonStructure(['error' => ['details' => ['slug']]]);
+        }
+
+        $this->assertSame(1, Store::withoutTenancy()->count());
+    }
+
+    public function test_staff_cannot_create_store(): void
+    {
+        [$user, $tenant] = $this->merchant(TenantUser::ROLE_STAFF);
+
+        $this->withHeaders($this->tenantHeaders($user, $tenant))
+            ->postJson('/api/v1/stores', ['name' => 'Nope', 'slug' => 'nope-store'])
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'forbidden');
+    }
+
+    public function test_store_endpoints_require_tenant_header_and_auth(): void
+    {
+        [$user] = $this->merchant();
+
+        $this->getJson('/api/v1/stores')->assertUnauthorized();
+
+        $this->withToken($user->createToken('t')->plainTextToken)->getJson('/api/v1/stores')
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'tenant_required');
+    }
+}

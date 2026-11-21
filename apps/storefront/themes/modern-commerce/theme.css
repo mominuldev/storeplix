@@ -1,0 +1,153 @@
+/*
+ * modern-commerce theme tokens - Figma 2W1wMKN79hhcr1czQS63oN, page Storefront (1:9207).
+ * Merchant-controlled values arrive as sanitized CSS variables on <html> (see themes/css-vars.ts):
+ *   --sp-brand, --sp-on-brand, --sp-accent, --sp-on-accent, --sp-font-body, --sp-font-heading
+ * Derived tones are computed from them with color-mix() so merchants only pick two colors.
+ */
+:root {
+  --sp-brand: #0846c2;
+  --sp-on-brand: #fffcf8;
+  --sp-accent: #ff7a00;
+  --sp-on-accent: #0e1a33;
+  --sp-font-body: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --sp-font-heading: var(--font-fraunces), ui-serif, Georgia, serif;
+}
+
+@theme inline {
+  /* bg/brand, text/brand */
+  --color-brand: var(--sp-brand);
+  --color-on-brand: var(--sp-on-brand);
+  /* bg/brand-soft #dde8fd */
+  --color-brand-soft: color-mix(in srgb, var(--sp-brand) 14%, white);
+  /* bg/inverse #0a2563 (announcement bar, footer) */
+  --color-inverse: color-mix(in srgb, var(--sp-brand) 50%, #0c0418);
+  /* bg/accent #ff7a00, bg/accent-soft #ffebd6, text/accent #c24e00 */
+  --color-accent: var(--sp-accent);
+  --color-on-accent: var(--sp-on-accent);
+  --color-accent-soft: color-mix(in srgb, var(--sp-accent) 16%, white);
+  --color-accent-ink: color-mix(in srgb, var(--sp-accent) 76%, black);
+
+  --font-body: var(--sp-font-body);
+  --font-heading: var(--sp-font-heading);
+}
+
+@theme {
+  /* Fixed theme palette (not merchant-editable in v1) */
+  --color-canvas: #fffcf8; /* bg/canvas */
+  --color-sunken: #faf5ee; /* bg/sunken */
+  --color-surface: #ffffff; /* bg/surface */
+  --color-ink: #0e1a33; /* text/primary, border/strong */
+  --color-ink-secondary: #33405c; /* text/secondary */
+  --color-ink-muted: #66728c; /* text/muted */
+  --color-paper: #fffcf8; /* text/inverse */
+  --color-sale: #c24e00; /* text/sale */
+  --color-line-subtle: #f1e8dc; /* border/subtle */
+  --color-line: #e3d7c6; /* border/default */
+  --color-sun: #ffb300; /* illo/sun */
+  --color-sun-soft: #fff3cc; /* bg/sun-soft */
+  --color-sky-soft: #f0f5ff; /* bg/sage-soft */
+
+  /* radius/xs 4 · radius/md 6 · radius/sm 8 · radius/lg 10 */
+  --radius-sf-xs: 4px;
+  --radius-sf-md: 6px;
+  --radius-sf-sm: 8px;
+  --radius-sf-lg: 10px;
+
+  /* BG/Elevation/e3 */
+  --shadow-e3: 0 28px 64px 0 rgba(20, 51, 43, 0.12), 0 12px 24px 0 rgba(20, 51, 43, 0.08);
+}
+
+/* Type styles from Figma (BG/*) */
+@utility type-display-xl {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  /* 88px at the 1440 Figma frame, scaled down on narrower desktops */
+  font-size: clamp(64px, 6.1vw, 88px);
+  line-height: 1;
+  letter-spacing: -3px;
+}
+@utility type-display-m {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 44px;
+  line-height: 1.08;
+  letter-spacing: -1.5px;
+}
+@utility type-h3 {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.25px;
+}
+@utility type-price-l {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+@utility type-price-m {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.1;
+  letter-spacing: -0.25px;
+}
+@utility type-accent-italic {
+  font-family: var(--font-heading);
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-style: italic;
+  font-weight: 400;
+}
+@utility type-body-l {
+  font-size: 18px;
+  line-height: 1.56;
+}
+@utility type-body-m {
+  font-size: 16px;
+  line-height: 1.56;
+}
+@utility type-body-s {
+  font-size: 14px;
+  line-height: 1.5;
+}
+@utility type-label-m {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+@utility type-label-s {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+@utility type-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 1.44px;
+  text-transform: uppercase;
+}
+
+/* Theme root: applied by the theme Layout wrapper */
+@utility theme-root {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
+}
+
+/* Icons are the exact Figma SVG assets, used as a mask so they follow currentColor. */
+@utility icon-mask {
+  display: inline-block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}

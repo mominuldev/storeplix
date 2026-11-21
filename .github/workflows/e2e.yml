@@ -1,0 +1,41 @@
+name: E2E (manual)
+
+# Not part of required CI until the full stack boots reliably in Actions.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot stack
+        run: |
+          cp infrastructure/docker/.env.example .env
+          cp apps/api/.env.example apps/api/.env
+          docker compose up -d --build --wait
+          docker compose exec -T api php artisan key:generate --force
+          docker compose exec -T api php artisan migrate --seed --force
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Playwright
+        working-directory: tests/e2e
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Run smoke
+        working-directory: tests/e2e
+        run: npx playwright test
+      - if: failure()
+        run: docker compose logs --no-color > compose.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            tests/e2e/playwright-report
+            compose.log
+          if-no-files-found: ignore
