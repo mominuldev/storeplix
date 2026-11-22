@@ -65,6 +65,8 @@ class CatalogSecurityTest extends TestCase
         $this->api($h, 'POST', $url, $this->simpleProduct(variant: ['compare_at_amount' => 1]))->assertStatus(422);
         $this->api($h, 'POST', $url, $this->simpleProduct(variant: ['cost_amount' => -5]))->assertStatus(422);
         if (DB::getDriverName() === 'pgsql') {
+            // Needs a row: on an empty table the UPDATE touches nothing and the CHECK never fires.
+            $this->api($h, 'POST', $url, $this->simpleProduct())->assertCreated();
             $this->expectException(QueryException::class);
             DB::table('product_variants')->update(['compare_at_amount' => 0]);
         }
