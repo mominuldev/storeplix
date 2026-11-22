@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Artisan;
  * store "demo" with domains demo.{PLATFORM_DOMAIN} (primary) and demo.localhost, public contact
  * and social links. Logo/favicon URLs derive from media, so none are seeded. Idempotent.
  * Phase 3: stores:ensure-content gives existing stores their default theme, pages and menus.
+ * Phase 4: DemoCatalogSeeder adds 3 categories, 8 active products and 5 customers (idempotent).
  */
 class DemoSeeder extends Seeder
 {
@@ -71,5 +72,7 @@ class DemoSeeder extends Seeder
         ])->save());
 
         Artisan::call('stores:ensure-content', ['--store' => 'demo']);
+
+        $this->call(DemoCatalogSeeder::class);
     }
 }

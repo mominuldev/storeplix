@@ -21,7 +21,9 @@ class StoreContentMigrationTest extends TestCase
         $store = $this->storeFor($tenant, 'legacy');
 
         // Back to the Phase 2 schema with a legacy store that has a stored 1.0 theme and no Phase 3 content.
-        $this->artisan('migrate:rollback', ['--step' => 2])->assertSuccessful();
+        // Roll back the two Phase 3 migrations and everything after them (Phase 4+).
+        $steps = count(array_filter(scandir(database_path('migrations')), fn ($f) => strcmp($f, '2026_03_01_000100') >= 0 && str_ends_with($f, '.php')));
+        $this->artisan('migrate:rollback', ['--step' => $steps])->assertSuccessful();
         $this->assertTrue(Schema::hasColumn('store_settings', 'theme'));
         $this->assertFalse(Schema::hasTable('store_pages'));
         DB::table('store_settings')->where('store_id', $store->id)->update(['theme' => json_encode([
@@ -62,7 +64,9 @@ class StoreContentMigrationTest extends TestCase
         $this->assertFalse(StorePage::withoutTenancy()->where('slug', 'terms')->exists());
 
         // down() restores the column from the published config.
-        $this->artisan('migrate:rollback', ['--step' => 2])->assertSuccessful();
+        // Roll back the two Phase 3 migrations and everything after them (Phase 4+).
+        $steps = count(array_filter(scandir(database_path('migrations')), fn ($f) => strcmp($f, '2026_03_01_000100') >= 0 && str_ends_with($f, '.php')));
+        $this->artisan('migrate:rollback', ['--step' => $steps])->assertSuccessful();
         $restored = json_decode(DB::table('store_settings')->where('store_id', $store->id)->value('theme'), true);
         $this->assertSame('1.1.0', $restored['version']);
     }

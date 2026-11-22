@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button } from './Button';
-import { Modal } from './Modal';
+import { Modal, type ModalProps } from './Modal';
 
 // Confirmation dialog on top of Modal (Foundations 128:221 Overlay). Used for Discard / Delete / conflict reload.
 export interface DialogProps {
@@ -12,6 +12,12 @@ export interface DialogProps {
   cancelLabel?: string | null;
   tone?: 'primary' | 'danger';
   loading?: boolean;
+  /** Disable the confirm button (e.g. until a form is valid). */
+  confirmDisabled?: boolean;
+  /** Submit this form id instead of calling onConfirm directly (Enter submits; onConfirm is not called). */
+  formId?: string;
+  size?: ModalProps['size'];
+  footerStart?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -25,6 +31,10 @@ export function Dialog({
   cancelLabel = 'Cancel',
   tone = 'primary',
   loading = false,
+  confirmDisabled = false,
+  formId,
+  size = 'sm',
+  footerStart,
   onConfirm,
   onCancel,
 }: DialogProps) {
@@ -34,7 +44,8 @@ export function Dialog({
       onClose={onCancel}
       title={title}
       description={description}
-      className="max-w-[440px]"
+      size={size}
+      footerStart={footerStart}
       footer={
         <>
           {cancelLabel && (
@@ -42,7 +53,14 @@ export function Dialog({
               {cancelLabel}
             </Button>
           )}
-          <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
+          <Button
+            variant={tone === 'danger' ? 'danger' : 'primary'}
+            type={formId ? 'submit' : 'button'}
+            form={formId}
+            onClick={formId ? undefined : onConfirm}
+            loading={loading}
+            disabled={confirmDisabled}
+          >
             {confirmLabel}
           </Button>
         </>

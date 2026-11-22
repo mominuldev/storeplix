@@ -22,7 +22,7 @@ class ListAuditLogsRequest extends FormRequest
             'filter' => ['sometimes', 'array:action,actor_id,subject_type,subject_id,created_at'],
             'filter.action' => ['sometimes', 'string', 'max:500', 'regex:/^[a-z0-9_.*,]+$/'],
             'filter.actor_id' => ['sometimes', 'string', 'ulid'],
-            'filter.subject_type' => ['sometimes', 'string', Rule::in(['store', 'store_settings', 'staff_member', 'staff_invitation', 'media', 'subscription', 'user', 'store_theme', 'store_page', 'store_navigation'])],
+            'filter.subject_type' => ['sometimes', 'string', Rule::in(['store', 'store_settings', 'staff_member', 'staff_invitation', 'media', 'subscription', 'user', 'store_theme', 'store_page', 'store_navigation', 'product', 'category', 'customer', 'data_import', 'data_export'])],
             'filter.subject_id' => ['sometimes', 'string', 'ulid'],
             'filter.created_at' => ['sometimes', 'array:gte,lte'],
             'filter.created_at.gte' => ['sometimes', 'date'],

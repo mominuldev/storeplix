@@ -12,7 +12,7 @@ describe('SMS sign-in (L2) and dev OTP hint', () => {
   it('sends a code, shows the dev hint, autofills and signs in', async () => {
     const api = mockApi({
       'POST /auth/otp/send': jsonResponse(202, { data: { expires_in: 300, resend_in: 60, dev_otp: '123456' } }),
-      'POST /auth/login/otp': jsonResponse(200, { data: { token: 'otp-token', user: user(), expires_at: future() } }),
+      'POST /auth/login/otp': jsonResponse(200, { data: { user: user(), expires_at: future() } }),
       'GET /auth/me': jsonResponse(200, signedInUser()),
       'GET /stores': jsonResponse(200, { data: [store()] }),
       'GET /health': okHealth(),
@@ -28,7 +28,7 @@ describe('SMS sign-in (L2) and dev OTP hint', () => {
     expect(screen.getByLabelText('Verification code digit 6')).toHaveValue('6');
     await userEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
-    await waitFor(() => expect(session.getToken()).toBe('otp-token'));
+    await waitFor(() => expect(session.isSignedIn()).toBe(true));
     const send = api.mock.calls.find(([u]) => String(u).endsWith('/auth/otp/send'))!;
     expect(JSON.parse(String(send[1]!.body))).toEqual({ phone: '8801712345678', purpose: 'login' });
     const login = api.mock.calls.find(([u]) => String(u).endsWith('/auth/login/otp'))!;
@@ -79,7 +79,7 @@ describe('SMS sign-in (L2) and dev OTP hint', () => {
 
 describe('Verify phone (02) and banner', () => {
   it('auto-sends a code to an unverified user and verifies it', async () => {
-    session.setAuth({ token: 'tok', expires_at: future() });
+    session.start({ expires_at: future() });
     let verified = false;
     const api = mockApi({
       'GET /auth/me': () => jsonResponse(200, { data: { ...user(), phone_verified_at: verified ? 'now' : null } }),
@@ -101,7 +101,7 @@ describe('Verify phone (02) and banner', () => {
   });
 
   it('nags unverified users on the dashboard', async () => {
-    session.setAuth({ token: 'tok', expires_at: future() });
+    session.start({ expires_at: future() });
     mockApi({
       'GET /auth/me': jsonResponse(200, { data: { ...user(), phone_verified_at: null } }),
       'GET /stores': jsonResponse(200, { data: [store()] }),

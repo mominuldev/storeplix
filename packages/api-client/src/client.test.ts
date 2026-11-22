@@ -24,20 +24,20 @@ describe('api-client', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v1/health', expect.objectContaining({ method: 'GET' }));
   });
 
-  it('sends Bearer token and X-Tenant-Id on authenticated calls', async () => {
+  it('sends the session cookie (credentials) and X-Tenant-Id, never an Authorization header (4.7b)', async () => {
     const { client, fetchMock } = setup(jsonResponse(200, { data: [], meta: { total: 0 } }), {
-      getToken: () => 'tok',
       getTenantId: () => '01TENANT',
     });
     const result = await client.stores.list();
     expect(result).toEqual({ data: [], meta: { total: 0 } });
     const headers = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer tok');
+    expect(headers.Authorization).toBeUndefined();
     expect(headers['X-Tenant-Id']).toBe('01TENANT');
+    expect(fetchMock.mock.calls[0]![1]!.credentials).toBe('same-origin');
   });
 
   it('does not send credentials on anonymous endpoints', async () => {
-    const { client, fetchMock } = setup(jsonResponse(200, { data: { token: 't', user: {} } }), { getToken: () => 'tok' });
+    const { client, fetchMock } = setup(jsonResponse(200, { data: { user: {}, expires_at: 'x' } }), {});
     await client.auth.login({ email: 'a@b.co', password: 'x' });
     const init = fetchMock.mock.calls[0]![1]!;
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
@@ -81,9 +81,7 @@ describe('api-client', () => {
   });
 
   it('storefront.getConfig sends normalized host and key without auth', async () => {
-    const { client, fetchMock } = setup(jsonResponse(404, { error: { code: 'store_not_found', message: 'Not found' } }), {
-      getToken: () => 'tok',
-    });
+    const { client, fetchMock } = setup(jsonResponse(404, { error: { code: 'store_not_found', message: 'Not found' } }), {});
     await expect(client.storefront.getConfig('Demo.LocalHost:3000', 'secret')).rejects.toMatchObject({
       status: 404,
       code: 'store_not_found',
@@ -103,7 +101,7 @@ describe('api-client', () => {
 describe('api-client phase 1.1', () => {
   it('stores.createPreviewToken posts to the store-scoped path', async () => {
     const preview = { token: 'p', url: 'http://demo.localhost:3000/?preview=p', expires_at: 'x' };
-    const { client, fetchMock } = setup(jsonResponse(201, { data: preview }), { getToken: () => 't', getTenantId: () => 'ten' });
+    const { client, fetchMock } = setup(jsonResponse(201, { data: preview }), { getTenantId: () => 'ten' });
     await expect(client.stores.createPreviewToken('01STORE')).resolves.toEqual(preview);
     expect(fetchMock).toHaveBeenCalledWith(
       'http://api.test/api/v1/stores/01STORE/preview-token',
@@ -126,7 +124,7 @@ describe('api-client phase 1.1', () => {
 
 describe('tenant override', () => {
   it('stores.list can target a specific tenant', async () => {
-    const { client, fetchMock } = setup(jsonResponse(200, { data: [] }), { getToken: () => 't', getTenantId: () => 'active' });
+    const { client, fetchMock } = setup(jsonResponse(200, { data: [] }), { getTenantId: () => 'active' });
     await client.stores.list(undefined, { tenantId: 'other' });
     const headers = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
     expect(headers['X-Tenant-Id']).toBe('other');

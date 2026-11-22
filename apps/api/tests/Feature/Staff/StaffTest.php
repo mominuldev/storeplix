@@ -239,7 +239,7 @@ class StaffTest extends TestCase
 
         $this->postJson("/api/v1/invitations/{$token}/accept", ['name' => 'New Person', 'password' => 'secret12', 'password_confirmation' => 'secret12'])
             ->assertCreated()
-            ->assertJsonStructure(['data' => ['token', 'expires_at', 'user']])
+            ->assertJsonStructure(['data' => ['expires_at', 'user']])
             ->assertJsonPath('data.user.tenants.0.id', $tenant->id)
             ->assertJsonPath('data.user.tenants.0.role', 'admin');
 
@@ -265,11 +265,11 @@ class StaffTest extends TestCase
         $this->postJson("/api/v1/invitations/{$token}/accept", ['name' => 'X', 'password' => 'secret12', 'password_confirmation' => 'secret12'])
             ->assertStatus(409)->assertJsonPath('error.code', 'login_required');
 
-        $this->withToken($stranger->createToken('t')->plainTextToken)->postJson("/api/v1/invitations/{$token}/accept")
+        $this->withHeaders(['X-Testing-User' => $stranger->id, 'Referer' => 'http://localhost:5173/'])->postJson("/api/v1/invitations/{$token}/accept")
             ->assertForbidden()->assertJsonPath('error.code', 'invitation_email_mismatch');
         $this->app['auth']->forgetGuards();
 
-        $this->withToken($existing->createToken('t')->plainTextToken)->postJson("/api/v1/invitations/{$token}/accept")
+        $this->withHeaders(['X-Testing-User' => $existing->id, 'Referer' => 'http://localhost:5173/'])->postJson("/api/v1/invitations/{$token}/accept")
             ->assertOk()
             ->assertExactJson(['data' => ['id' => $tenant->id, 'name' => $tenant->name, 'role' => 'staff']]);
 

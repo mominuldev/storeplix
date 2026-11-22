@@ -1,0 +1,35 @@
+import { useAuth } from '../auth/AuthProvider';
+import { can } from '../lib/permissions';
+import { useTenantStore } from '../stores/useTenantStore';
+
+/** Active tenant + store ids, used as the query-key prefix `[tenantId, storeId, …]` (contract §9.2). */
+export function useStoreScope() {
+  const { tenantId, activeTenant } = useAuth();
+  const store = useTenantStore().data ?? null;
+  const role = activeTenant?.role;
+  return {
+    tenantId,
+    storeId: store?.id ?? null,
+    store,
+    role,
+    canViewCosts: can.viewCosts(role),
+    canManageCatalog: can.manageCatalog(role),
+    canBulkData: can.bulkData(role),
+  };
+}
+
+type Scope = { tenantId: string | null; storeId: string | null };
+
+export const keys = {
+  all: (s: Scope) => [s.tenantId, s.storeId] as const,
+  products: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'products'] as const) : ([s.tenantId, s.storeId, 'products', filters] as const)),
+  product: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'product', id] as const,
+  categories: (s: Scope) => [s.tenantId, s.storeId, 'categories'] as const,
+  inventory: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'inventory'] as const) : ([s.tenantId, s.storeId, 'inventory', filters] as const)),
+  movements: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'movements'] as const) : ([s.tenantId, s.storeId, 'movements', filters] as const)),
+  customers: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'customers'] as const) : ([s.tenantId, s.storeId, 'customers', filters] as const)),
+  customer: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'customer', id] as const,
+  dashboard: (s: Scope) => [s.tenantId, s.storeId, 'dashboard'] as const,
+  import: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'import', id] as const,
+  importRows: (s: Scope, id: string | null, filter: string) => [s.tenantId, s.storeId, 'import', id, 'rows', filter] as const,
+};

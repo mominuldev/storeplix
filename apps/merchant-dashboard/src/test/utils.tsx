@@ -26,11 +26,14 @@ export function jsonResponse(status: number, body?: unknown) {
 
 type Handler = (init: RequestInit, headers: Record<string, string>) => Response;
 
-/** Stubs global fetch with handlers keyed by "METHOD /path" (path after /api/v1). Unknown routes → 404. */
+/** Stubs global fetch with handlers keyed by "METHOD /path" (path after /api/v1). Unknown routes → 404. `GET /auth/me` is 401 while signed out. */
 export function mockApi(routes: Record<string, Handler | Response>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-    const url = new URL(String(input));
+    const url = new URL(String(input), 'http://localhost');
     const key = `${init.method ?? 'GET'} ${url.pathname.replace('/api/v1', '')}`;
+    if (url.pathname === '/sanctum/csrf-cookie') return new Response(null, { status: 204 });
+    // 4.7b: the HttpOnly session cookie is simulated by the session store's signed-in flag.
+    if (key === 'GET /auth/me' && !session.isSignedIn()) return jsonResponse(401, { error: { code: 'unauthenticated', message: 'Unauthenticated.' } });
     const route = routes[key];
     if (!route) return jsonResponse(404, { error: { code: 'not_found', message: `No mock for ${key}` } });
     return typeof route === 'function' ? route(init, (init.headers ?? {}) as Record<string, string>) : route.clone();
@@ -103,7 +106,7 @@ export function member(overrides: Record<string, unknown> = {}) {
 
 /** Signed-in merchant with one tenant + store; extra routes override/extend. */
 export function signedIn(role: 'owner' | 'admin' | 'staff', routes: Record<string, Parameters<typeof mockApi>[0][string]> = {}) {
-  session.setAuth({ token: 'tok', expires_at: future() });
+  session.start({ expires_at: future() });
   return mockApi({
     'GET /auth/me': jsonResponse(200, { data: user([{ ...tenantA, role }]) }),
     'GET /stores': jsonResponse(200, { data: [store()] }),
@@ -111,4 +114,9 @@ export function signedIn(role: 'owner' | 'admin' | 'staff', routes: Record<strin
     'GET /stores/S1/settings': jsonResponse(200, { data: settingsFixture() }),
     ...routes,
   });
+}
+
+/** Calls made to an API path (after /api/v1), ignoring the 4.7b boot calls (/auth/me, /sanctum/csrf-cookie). */
+export function callsTo(fetchMock: { mock: { calls: unknown[][] } }, path: string) {
+  return fetchMock.mock.calls.filter((c) => new URL(String(c[0]), 'http://localhost').pathname === `/api/v1${path}`) as [string, RequestInit][];
 }

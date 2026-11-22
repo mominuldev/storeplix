@@ -52,6 +52,8 @@ export interface SectionContext {
   host: string;
   /** Media referenced by the served theme config (`StorefrontConfig.media`). */
   media: Record<string, StorefrontMedia>;
+  /** Valid merchant preview (mode 'preview'): data lookups forward the preview token, uncached. */
+  preview: boolean;
 }
 
 export interface SectionProps<TSettings = Record<string, unknown>, TBlock = Record<string, unknown>> {

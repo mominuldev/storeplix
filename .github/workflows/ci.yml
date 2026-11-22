@@ -235,6 +235,97 @@ jobs:
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
+      # Phase 4: advisory locks (plan-limit race), partial/expression unique indexes and FOR UPDATE only
+      # behave for real on Postgres.
+      - name: security (postgres)
+        run: php artisan test --group=security
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+
+  # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
+  # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
+  # (50 × -1 on 50 → 0, 50 ledger rows) fails. Also fails when the group is empty.
+  api-perf:
+    name: api (perf group on postgres)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: storeplix_perf
+          POSTGRES_USER: storeplix
+          POSTGRES_PASSWORD: storeplix
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U storeplix"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: storeplix_perf
+      DB_USERNAME: storeplix
+      DB_PASSWORD: storeplix
+      REDIS_HOST: 127.0.0.1
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip, pcntl
+          ini-values: memory_limit=1G
+          coverage: none
+          tools: composer:v2
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Migrate (pg_trgm + Phase 4 indexes)
+        run: php artisan migrate:fresh --force
+      - name: perf group
+        run: |
+          mkdir -p build
+          start=$(date +%s)
+          php artisan test --group=perf --log-junit build/perf.xml
+          echo "perf group wall time: $(( $(date +%s) - start )) s"
+          count=$(grep -o 'tests="[0-9]*"' build/perf.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "perf tests executed: ${count}"
+          if [ "${count:-0}" -lt 1 ]; then
+            echo "::error::No tests in group 'perf': the 5 000-row import budget is not being verified"
+            exit 1
+          fi
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-junit
+          path: apps/api/build/perf.xml
+          if-no-files-found: ignore
 
   web:
     name: web (typecheck, lint, test, build)
@@ -280,11 +371,11 @@ jobs:
   # Single required status for branch protection.
   ci-ok:
     if: always()
-    needs: [changes, api, api-postgres, web, themes]
+    needs: [changes, api, api-postgres, api-perf, web, themes]
     runs-on: ubuntu-latest
     steps:
       - name: Verify job results
         run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.api-perf.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
             case "$r" in success|skipped) ;; *) echo "job result: $r"; exit 1 ;; esac
           done

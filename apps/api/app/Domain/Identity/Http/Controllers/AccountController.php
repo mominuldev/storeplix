@@ -41,7 +41,7 @@ class AccountController
         return new UserResource($user->load('tenants'));
     }
 
-    /** Returns a NEW token; every other token (including the current one) is revoked. */
+    /** Rotates the current session; every other session dies on its next request (AuthenticateSession hash check). */
     public function changePassword(ChangePasswordRequest $request): JsonResponse
     {
         /** @var User $user */
@@ -49,11 +49,10 @@ class AccountController
 
         DB::transaction(function () use ($user, $request) {
             $user->forceFill(['password' => $request->validated('password'), 'password_changed_at' => now()])->save();
-            $user->tokens()->delete();
         });
 
         $this->audit->log('auth.password_changed', $user, tenantId: false);
 
-        return $this->tokenResponse($user);
+        return $this->sessionResponse($user);
     }
 }

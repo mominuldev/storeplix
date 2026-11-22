@@ -13,12 +13,13 @@ const baseSteps: { title: string; hint: string }[] = [
   { title: 'Get paid', hint: 'COD & gateways' },
 ];
 
-/** `current` = 1-based step number (3 Name your shop, 4 Pick a theme). */
-export function StepRail({ shopName, current = 3 }: { shopName: string; current?: 3 | 4 }) {
-  const steps = baseSteps.map((s, i): { title: string; hint: string; state: StepState } => ({
-    ...s,
-    state: i + 1 === current ? 'current' : i === 0 || (i === 2 && current > 3) ? 'done' : 'upcoming',
-  }));
+/** `current` = 1-based step number (3 Name your shop, 4 Pick a theme, 5 Add products). */
+export function StepRail({ shopName, current = 3, phoneVerified = false }: { shopName: string; current?: 3 | 4 | 5; phoneVerified?: boolean }) {
+  const steps = baseSteps.map((s, i): { title: string; hint: string; state: StepState } => {
+    const n = i + 1;
+    const done = n === 1 || (n === 2 && phoneVerified) || (n === 3 && current > 3) || (n === 4 && current > 4);
+    return { ...s, hint: n === 2 && phoneVerified ? '6-digit code' : s.hint, state: n === current ? 'current' : done ? 'done' : 'upcoming' };
+  });
   const done = steps.filter((s) => s.state === 'done').length;
   return (
     <aside className="hidden w-[300px] shrink-0 flex-col justify-between border-r border-border-default bg-surface-card px-6 py-8 lg:flex">

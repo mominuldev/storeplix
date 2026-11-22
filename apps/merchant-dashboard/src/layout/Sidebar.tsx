@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, LifeBuoy } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { mainNav, type NavEntry } from './nav';
+import { useStoreScope } from '../catalog/scope';
 import { PlanCard } from '../plan/PlanCard';
 import { TenantSwitcher } from './TenantSwitcher';
 
@@ -39,7 +40,9 @@ function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean 
   const { pathname } = useLocation();
   const inSection = item.to !== '/' && pathname.startsWith(item.to);
   const [expanded, setExpanded] = useState(inSection);
+  const { canBulkData } = useStoreScope();
   const Icon = item.icon;
+  const children = item.children?.filter((c) => c.requires !== 'bulkData' || canBulkData);
 
   if (!item.children || collapsed) {
     return (
@@ -62,7 +65,7 @@ function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean 
       </button>
       {expanded && (
         <ul className="mt-0.5 flex flex-col gap-0.5">
-          {item.children.map((child) => (
+          {children!.map((child) => (
             <li key={child.to}>
               {/* Figma SubNavItem 8:264 — h 32, pl 40, pr 12, radius 8 */}
               <NavLink

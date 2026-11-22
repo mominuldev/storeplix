@@ -1,4 +1,4 @@
-import { createAuthSession } from '@storeplix/api-client';
+import { createSessionStore } from '@storeplix/api-client';
 
-/** Token + expires_at in sessionStorage (contract D3). */
-export const session = createAuthSession({ prefix: 'storeplix.admin' });
+/** Phase 4.7b: cookie session — only expires_at + a signed-in flag in sessionStorage, never a token. */
+export const session = createSessionStore({ prefix: 'storeplix.admin' });

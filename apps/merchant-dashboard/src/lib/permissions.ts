@@ -1,4 +1,4 @@
-import type { StaffMember, TenantRole } from '@storeplix/types';
+import { ROLE_CAN, type StaffMember, type TenantRole } from '@storeplix/types';
 
 // ADR 0005 role map (UI mirror; the API enforces the same rules).
 export const roleLabel: Record<TenantRole, string> = { owner: 'Owner', admin: 'Manager', staff: 'Staff' };
@@ -9,7 +9,15 @@ export const roleDescription: Record<TenantRole, string> = {
   staff: 'Products, inventory, orders & customers',
 };
 
+const has = (list: readonly TenantRole[], role: TenantRole | undefined) => !!role && list.includes(role);
+
 export const can = {
+  /** Phase 4 P4-5: cost, profit, margin and stock value at cost (O A). */
+  viewCosts: (role: TenantRole | undefined) => has(ROLE_CAN.view_costs, role),
+  /** Phase 4 P4-14: delete products, categories and customers (O A). */
+  manageCatalog: (role: TenantRole | undefined) => has(ROLE_CAN.manage_catalog, role),
+  /** Phase 4 P4-14/15: CSV imports and exports (O A). */
+  bulkData: (role: TenantRole | undefined) => has(ROLE_CAN.bulk_data, role),
   manageStaff: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   editSettings: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   viewBilling: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',

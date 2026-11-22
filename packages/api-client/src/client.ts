@@ -3,8 +3,42 @@ import type {
   ApiSuccess,
   AuditLog,
   AuditLogFilters,
-  AuthToken,
+  AuthSession as AuthSessionResponse,
+  Category,
   ChangePasswordInput,
+  CreateCategoryInput,
+  CreateCustomerInput,
+  CreateExportInput,
+  CreateProductInput,
+  Customer,
+  CustomerDetail,
+  CustomerListFilters,
+  CustomerListMeta,
+  CustomerNote,
+  DashboardSummary,
+  DataExport,
+  DataImport,
+  DataImportRow,
+  DataImportType,
+  InventoryItem,
+  InventoryListFilters,
+  InventoryListMeta,
+  Product,
+  ProductBulkInput,
+  ProductBulkResult,
+  ProductListFilters,
+  ProductListMeta,
+  ProductSummary,
+  ReorderCategoriesInput,
+  RunImportInput,
+  StockAdjustmentInput,
+  StockAdjustmentResult,
+  StockMovement,
+  StockMovementFilters,
+  UpdateCategoryInput,
+  UpdateCustomerInput,
+  UpdateProductInput,
+  ValidateImportInput,
   CreatePageInput,
   CreateStoreInput,
   FeatureAccess,
@@ -13,6 +47,7 @@ import type {
   InvitationPreview,
   InviteStaffInput,
   LoginInput,
+  MeMeta,
   Media,
   MediaListFilters,
   MediaPurpose,
@@ -55,12 +90,23 @@ import type {
 } from '@storeplix/types';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { MeResponse } from './models';
+import { customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, productListQuery } from './queries';
 
 export interface ApiClientOptions {
-  /** API origin, e.g. `http://localhost:8000`. `/api/v1` is appended automatically. */
+  /**
+   * API origin. `''` (the SPAs, Phase 4.7) = same-origin relative URLs through the Vite/Nginx proxy;
+   * `http://localhost:8000` for server-to-server use. `/api/v1` is appended automatically.
+   */
   baseUrl: string;
-  /** Returns the current Bearer token (merchant/admin SPA). */
-  getToken?: () => string | null | undefined;
+  /** fetch credentials mode. Default `same-origin` (session cookie, contract §7.3). */
+  credentials?: RequestCredentials;
+  /**
+   * Sanctum CSRF (contract §7.3): fetch `/sanctum/csrf-cookie` when needed, send `X-XSRF-TOKEN` on writes, retry a
+   * 419 once. Default: on in browsers (when `document` exists), off elsewhere.
+   */
+  csrf?: boolean;
+  /** Cookie reader (tests). Defaults to `document.cookie`. */
+  readCookies?: () => string;
   /** Returns the active tenant ULID, sent as `X-Tenant-Id`. */
   getTenantId?: () => string | null | undefined;
   /** Custom fetch (tests, Next.js `fetch` with cache options). Defaults to global fetch. */
@@ -79,9 +125,9 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
   headers?: Record<string, string>;
   signal?: AbortSignal;
-  /** Skip Authorization / X-Tenant-Id (public or server-to-server endpoints). */
+  /** Skip X-Tenant-Id (public or server-to-server endpoints). */
   anonymous?: boolean;
-  /** Send Authorization but no X-Tenant-Id (account-level endpoints, invitation accept). */
+  /** No X-Tenant-Id (account-level endpoints, invitation accept). */
   noTenant?: boolean;
   /** Override the X-Tenant-Id for this call (e.g. listing each membership's store). */
   tenantId?: string;
@@ -100,6 +146,12 @@ export interface UploadMediaInput {
   alt?: string;
   /** File name sent in the multipart body (defaults to `File.name` or "upload"). */
   filename?: string;
+}
+
+/** A downloaded file (CSV template, error report). */
+export interface DownloadedFile {
+  blob: Blob;
+  filename: string;
 }
 
 export interface UploadOptions {
@@ -165,10 +217,33 @@ export function auditLogQuery(f: AuditLogFilters = {}): Record<string, string | 
   };
 }
 
+/** Reads a cookie value (URL-decoded) from a `document.cookie` string. */
+export function readCookie(cookies: string, name: string): string | null {
+  for (const part of cookies.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) {
+      try {
+        return decodeURIComponent(part.slice(i + 1).trim());
+      } catch {
+        return part.slice(i + 1).trim();
+      }
+    }
+  }
+  return null;
+}
+
+const CSRF_PATH = '/sanctum/csrf-cookie';
+const isWrite = (method: string | undefined) => !!method && method !== 'GET' && method !== 'HEAD';
+
 export function createApiClient(options: ApiClientOptions) {
   const baseUrl = options.baseUrl.replace(/\/+$/, '');
   const doFetch = options.fetch ?? ((...args: Parameters<typeof fetch>) => globalThis.fetch(...args));
   const makeXhr = options.xhr ?? (typeof XMLHttpRequest !== 'undefined' ? () => new XMLHttpRequest() : undefined);
+  const credentials = options.credentials ?? 'same-origin';
+  const csrf = options.csrf ?? typeof document !== 'undefined';
+  const cookies = options.readCookies ?? (() => (typeof document !== 'undefined' ? document.cookie : ''));
+  let csrfPromise: Promise<void> | null = null;
 
   function buildUrl(path: string, query?: RequestOptions['query']): string {
     const url = `${baseUrl}${API_PREFIX}${path.startsWith('/') ? path : `/${path}`}`;
@@ -181,38 +256,76 @@ export function createApiClient(options: ApiClientOptions) {
     return qs ? `${url}?${qs}` : url;
   }
 
-  function authHeaders(opts: Pick<RequestOptions, 'anonymous' | 'noTenant' | 'tenantId'>): Record<string, string> {
-    const headers: Record<string, string> = {};
-    if (opts.anonymous) return headers;
-    const token = options.getToken?.();
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (!opts.noTenant) {
-      const tenantId = opts.tenantId ?? options.getTenantId?.();
-      if (tenantId) headers['X-Tenant-Id'] = tenantId;
+  /** Cross-origin only when `baseUrl` is absolute and differs from the page origin (never in the 4.7 design). */
+  function isCrossOrigin(): boolean {
+    if (!baseUrl || typeof location === 'undefined') return false;
+    try {
+      return new URL(baseUrl).origin !== location.origin;
+    } catch {
+      return false;
     }
+  }
+
+  function tenantHeaders(opts: Pick<RequestOptions, 'anonymous' | 'noTenant' | 'tenantId'>): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (opts.anonymous || opts.noTenant) return headers;
+    const tenantId = opts.tenantId ?? options.getTenantId?.();
+    if (tenantId) headers['X-Tenant-Id'] = tenantId;
     return headers;
   }
+
+  const xsrfToken = () => readCookie(cookies(), 'XSRF-TOKEN');
+
+  /**
+   * GET /sanctum/csrf-cookie (outside /api/v1): sets `XSRF-TOKEN` and the session cookie. Concurrent callers share
+   * one request. Called on boot, after login and logout, and automatically before the first write or after a 419.
+   */
+  function ensureCsrf(force = false): Promise<void> {
+    if (!csrf) return Promise.resolve();
+    if (!force && xsrfToken()) return Promise.resolve();
+    csrfPromise ??= doFetch(`${baseUrl}${CSRF_PATH}`, { method: 'GET', credentials, headers: { Accept: 'application/json' } })
+      .then(() => undefined)
+      .catch(() => {
+        throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
+      })
+      .finally(() => {
+        csrfPromise = null;
+      });
+    return csrfPromise;
+  }
+
+  async function csrfHeaders(method: string | undefined): Promise<Record<string, string>> {
+    if (!csrf || !isWrite(method)) return {};
+    await ensureCsrf();
+    const token = xsrfToken();
+    return token ? { 'X-XSRF-TOKEN': token } : {};
+  }
+
+  const isCsrfMismatch = (e: unknown) => e instanceof ApiError && e.status === 419;
 
   function handleError(error: unknown): never {
     if (error instanceof ApiError && error.status === 401) options.onUnauthorized?.(error);
     throw error;
   }
 
-  /** Low-level call returning the full envelope `{ data, meta? }`. */
-  async function requestEnvelope<T>(path: string, opts: RequestOptions = {}): Promise<ApiSuccess<T> | undefined> {
+  /** Low-level call returning the full envelope `{ data, meta? }`. A 419 refreshes the CSRF cookie and retries once. */
+  async function requestEnvelope<T>(path: string, opts: RequestOptions = {}, retried = false): Promise<ApiSuccess<T> | undefined> {
+    const method = opts.method ?? 'GET';
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...options.headers,
       ...opts.headers,
-      ...authHeaders(opts),
+      ...tenantHeaders(opts),
+      ...(await csrfHeaders(method)),
     };
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
 
     let response: Response;
     try {
       response = await doFetch(buildUrl(path, opts.query), {
+        credentials,
         ...opts.init,
-        method: opts.method ?? 'GET',
+        method,
         headers,
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
         signal: opts.signal,
@@ -225,6 +338,10 @@ export function createApiClient(options: ApiClientOptions) {
     try {
       return parseResponse<T>(response.status, response.statusText, await response.text());
     } catch (error) {
+      if (csrf && !retried && isCsrfMismatch(error)) {
+        await ensureCsrf(true);
+        return requestEnvelope<T>(path, opts, true);
+      }
       return handleError(error);
     }
   }
@@ -235,40 +352,53 @@ export function createApiClient(options: ApiClientOptions) {
     return envelope?.data as T;
   }
 
-  /** Multipart upload with progress (XHR); falls back to fetch without progress. */
-  function uploadMedia(input: UploadMediaInput, opts: UploadOptions = {}): Promise<Media> {
-    const form = new FormData();
-    const name = input.filename ?? (input.file instanceof File ? input.file.name : 'upload');
-    form.append('file', input.file, name);
-    form.append('purpose', input.purpose);
-    if (input.alt) form.append('alt', input.alt);
-    const url = buildUrl('/media');
-    const headers = { Accept: 'application/json', ...options.headers, ...authHeaders({}) };
+  /** Multipart POST with progress (XHR); falls back to fetch without progress. 419 → refresh CSRF, retry once. */
+  function uploadForm<T>(path: string, form: FormData, opts: UploadOptions = {}, retried = false): Promise<T> {
+    // Without CSRF the XHR is opened synchronously (callers and tests can observe it immediately).
+    return csrf ? csrfHeaders('POST').then((h) => sendUpload<T>(path, form, opts, retried, h)) : sendUpload<T>(path, form, opts, retried, {});
+  }
+
+  async function sendUpload<T>(path: string, form: FormData, opts: UploadOptions, retried: boolean, csrfHeader: Record<string, string>): Promise<T> {
+    const url = buildUrl(path);
+    const headers = { Accept: 'application/json', ...options.headers, ...tenantHeaders({}), ...csrfHeader };
+    const retry = async (error: unknown): Promise<T> => {
+      if (csrf && !retried && isCsrfMismatch(error)) {
+        await ensureCsrf(true);
+        return uploadForm<T>(path, form, opts, true);
+      }
+      return handleError(error);
+    };
 
     if (!makeXhr) {
-      return doFetch(url, { method: 'POST', headers, body: form, signal: opts.signal })
-        .catch(() => {
-          throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
-        })
-        .then(async (res) => parseResponse<Media>(res.status, res.statusText, await res.text())!.data)
-        .catch(handleError);
+      let res: Response;
+      try {
+        res = await doFetch(url, { method: 'POST', credentials, headers, body: form, signal: opts.signal });
+      } catch {
+        throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
+      }
+      try {
+        return parseResponse<T>(res.status, res.statusText, await res.text())!.data;
+      } catch (error) {
+        return retry(error);
+      }
     }
 
-    return new Promise<Media>((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const xhr = makeXhr();
       xhr.open('POST', url);
+      // Same-origin requests always carry cookies; only a cross-origin client would need withCredentials.
+      if (isCrossOrigin() && credentials === 'include') xhr.withCredentials = true;
       for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
       };
       xhr.onload = () => {
         try {
-          const envelope = parseResponse<Media>(xhr.status, xhr.statusText, xhr.responseText);
+          const envelope = parseResponse<T>(xhr.status, xhr.statusText, xhr.responseText);
           opts.onProgress?.(1);
           resolve(envelope!.data);
         } catch (error) {
-          if (error instanceof ApiError && error.status === 401) options.onUnauthorized?.(error);
-          reject(error);
+          retry(error).then(resolve, reject);
         }
       };
       xhr.onerror = () => reject(new ApiError(0, 'network_error', 'Upload failed. Check your connection.'));
@@ -278,23 +408,72 @@ export function createApiClient(options: ApiClientOptions) {
     });
   }
 
+  function uploadMedia(input: UploadMediaInput, opts: UploadOptions = {}): Promise<Media> {
+    const form = new FormData();
+    const name = input.filename ?? (input.file instanceof File ? input.file.name : 'upload');
+    form.append('file', input.file, name);
+    form.append('purpose', input.purpose);
+    if (input.alt) form.append('alt', input.alt);
+    return uploadForm<Media>('/media', form, opts);
+  }
+
+  /** GET a file (CSV) with the session cookie + tenant header; errors still use the JSON envelope. */
+  async function requestBlob(path: string, opts: Pick<RequestOptions, 'query' | 'signal'> & { fallbackName: string }): Promise<DownloadedFile> {
+    let response: Response;
+    try {
+      response = await doFetch(buildUrl(path, opts.query), {
+        method: 'GET',
+        credentials,
+        headers: { Accept: 'text/csv, application/json', ...options.headers, ...tenantHeaders({}) },
+        signal: opts.signal,
+      });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+      throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
+    }
+    if (!response.ok) {
+      try {
+        parseResponse<never>(response.status, response.statusText, await response.text());
+      } catch (error) {
+        return handleError(error);
+      }
+    }
+    return { blob: await response.blob(), filename: filenameFromDisposition(response.headers.get('Content-Disposition'), opts.fallbackName) };
+  }
+
+  /** Unwraps a list envelope with a typed meta (fallback when the server sends none). */
+  async function listOf<T, M>(path: string, query: RequestOptions['query'], fallback: M): Promise<{ data: T[]; meta: M }> {
+    const envelope = await requestEnvelope<T[]>(path, { query });
+    return { data: envelope?.data ?? [], meta: (envelope?.meta as M | undefined) ?? fallback };
+  }
+
+  const emptyPage = (): PaginationMeta => ({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
+  const store = (storeId: string) => `/stores/${enc(storeId)}`;
+
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   return {
     request,
-    requestEnvelope,
+    requestEnvelope: <T>(path: string, opts?: RequestOptions) => requestEnvelope<T>(path, opts),
+    /** Contract §7.3: fetch the XSRF-TOKEN cookie (boot, after login/logout). `force` re-fetches. */
+    ensureCsrf,
 
     health: (opts?: RequestOptions) => request<HealthStatus>('/health', { anonymous: true, ...opts }),
 
     auth: {
-      register: (input: RegisterInput) => request<AuthToken>('/auth/register', { method: 'POST', body: input, anonymous: true }),
-      login: (input: LoginInput) => request<AuthToken>('/auth/login', { method: 'POST', body: input, anonymous: true }),
+      register: (input: RegisterInput) => request<AuthSessionResponse>('/auth/register', { method: 'POST', body: input, anonymous: true }),
+      login: (input: LoginInput) => request<AuthSessionResponse>('/auth/login', { method: 'POST', body: input, anonymous: true }),
       logout: () => request<void>('/auth/logout', { method: 'POST', noTenant: true }),
       /** `User` including `tenants` memberships. */
       me: () => request<MeResponse>('/auth/me', { noTenant: true }),
+      /** `/auth/me` plus `meta.session_expires_at` (absolute expiry, contract §3.7). 401 = signed out. */
+      session: async (): Promise<{ user: MeResponse; session_expires_at: string | null }> => {
+        const envelope = await requestEnvelope<MeResponse>('/auth/me', { noTenant: true });
+        return { user: envelope!.data, session_expires_at: (envelope?.meta as MeMeta | undefined)?.session_expires_at ?? null };
+      },
       updateProfile: (input: UpdateProfileInput) => request<MeResponse>('/auth/me', { method: 'PATCH', body: input, noTenant: true }),
-      /** Returns a NEW token; every other token (incl. the current one) is revoked. */
-      changePassword: (input: ChangePasswordInput) => request<AuthToken>('/auth/password', { method: 'PUT', body: input, noTenant: true }),
+      /** Regenerates this session; every other session is logged out (`AuthenticateSession`). */
+      changePassword: (input: ChangePasswordInput) => request<AuthSessionResponse>('/auth/password', { method: 'PUT', body: input, noTenant: true }),
       /** Always resolves (202) whether or not the email exists. */
       forgotPassword: (input: ForgotPasswordInput) =>
         request<MessageResponse | undefined>('/auth/forgot-password', { method: 'POST', body: input, anonymous: true }),
@@ -303,11 +482,11 @@ export function createApiClient(options: ApiClientOptions) {
        * `retryAfter` (seconds). `dev_otp` only appears in local dev with the log SMS driver.
        */
       sendOtp: (input: SendOtpInput) =>
-        // verify_phone needs Bearer; login/reset are public.
+        // verify_phone needs the signed-in session; login/reset are public.
         request<SendOtpResponse>('/auth/otp/send', { method: 'POST', body: input, noTenant: true, anonymous: input.purpose !== 'verify_phone' }),
       verifyPhone: (input: VerifyPhoneInput) => request<User>('/auth/phone/verify', { method: 'POST', body: input, noTenant: true }),
       /** Same shape as password login. Wrong code → 422 `invalid_otp`. */
-      loginWithOtp: (input: OtpLoginInput) => request<AuthToken>('/auth/login/otp', { method: 'POST', body: input, anonymous: true }),
+      loginWithOtp: (input: OtpLoginInput) => request<AuthSessionResponse>('/auth/login/otp', { method: 'POST', body: input, anonymous: true }),
       resetPasswordWithOtp: (input: OtpResetPasswordInput) =>
         request<MessageResponse>('/auth/reset-password/otp', { method: 'POST', body: input, anonymous: true }),
       /** 422 `invalid_reset_token` for unknown/expired/used tokens. */
@@ -349,12 +528,12 @@ export function createApiClient(options: ApiClientOptions) {
 
     invitations: {
       preview: (token: string) => request<InvitationPreview>(`/invitations/${enc(token)}`, { anonymous: true }),
-      /** New user: pass `input` → `AuthToken` (201). Signed-in existing user: omit → `TenantMembership` (200). */
+      /** New user: pass `input` → `AuthSession` (201, session cookie). Signed-in existing user: omit → `TenantMembership` (200). */
       accept: ((token: string, input?: AcceptInvitationInput) =>
         input
-          ? request<AuthToken>(`/invitations/${enc(token)}/accept`, { method: 'POST', body: input, anonymous: true })
+          ? request<AuthSessionResponse>(`/invitations/${enc(token)}/accept`, { method: 'POST', body: input, anonymous: true })
           : request<TenantMembership>(`/invitations/${enc(token)}/accept`, { method: 'POST', noTenant: true })) as {
-        (token: string, input: AcceptInvitationInput): Promise<AuthToken>;
+        (token: string, input: AcceptInvitationInput): Promise<AuthSessionResponse>;
         (token: string): Promise<TenantMembership>;
       },
     },
@@ -440,6 +619,117 @@ export function createApiClient(options: ApiClientOptions) {
         const envelope = await requestEnvelope<AuditLog[]>('/audit-logs', { query: auditLogQuery(filters) });
         return { data: envelope?.data ?? [], meta: envelope?.meta };
       },
+    },
+
+    /** Phase 4 §3.1: flat depth-first tree, max 500, not paginated. */
+    categories: {
+      list: async (storeId: string, q?: string): Promise<{ data: Category[]; meta: { count: number; limit: number } }> =>
+        listOf<Category, { count: number; limit: number }>(`${store(storeId)}/categories`, { q: q?.trim() || undefined }, { count: 0, limit: 500 }),
+      get: (storeId: string, id: string) => request<Category>(`${store(storeId)}/categories/${enc(id)}`),
+      /** 409 `category_limit_reached`; 422 depth/slug. */
+      create: (storeId: string, input: CreateCategoryInput) => request<Category>(`${store(storeId)}/categories`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateCategoryInput) =>
+        request<Category>(`${store(storeId)}/categories/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** Every category of the store in display order. */
+      reorder: (storeId: string, input: ReorderCategoriesInput) => request<Category[]>(`${store(storeId)}/categories/order`, { method: 'PUT', body: input }),
+      /** 409 `category_has_children`. O A only. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/categories/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    /** Phase 4 §3.2. PATCH needs `revision` (409 `revision_conflict`); create/duplicate can 402 `plan_limit_reached`. */
+    products: {
+      list: (storeId: string, filters: ProductListFilters = {}) =>
+        listOf<ProductSummary, ProductListMeta>(`${store(storeId)}/products`, productListQuery(filters), {
+          ...emptyPage(),
+          counts: { all: 0, draft: 0, active: 0, archived: 0 },
+          summary: { active_products: 0, active_variants: 0, low_stock_variants: 0, out_of_stock_variants: 0 },
+          plan: { limit: null, used: 0 },
+        }),
+      get: (storeId: string, id: string) => request<Product>(`${store(storeId)}/products/${enc(id)}`),
+      create: (storeId: string, input: CreateProductInput) => request<Product>(`${store(storeId)}/products`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateProductInput) =>
+        request<Product>(`${store(storeId)}/products/${enc(id)}`, { method: 'PATCH', body: input }),
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/products/${enc(id)}`, { method: 'DELETE' }),
+      duplicate: (storeId: string, id: string) => request<Product>(`${store(storeId)}/products/${enc(id)}/duplicate`, { method: 'POST' }),
+      bulk: (storeId: string, input: ProductBulkInput) => request<ProductBulkResult>(`${store(storeId)}/products/bulk`, { method: 'POST', body: input }),
+    },
+
+    /** Phase 4 §3.3. Stock changes only through `adjust` (atomic, never negative). */
+    inventory: {
+      list: (storeId: string, filters: InventoryListFilters = {}) =>
+        listOf<InventoryItem, InventoryListMeta>(`${store(storeId)}/inventory`, inventoryListQuery(filters), {
+          ...emptyPage(),
+          summary: {
+            currency: 'BDT',
+            stock_value_cost_amount: null,
+            stock_value_price_amount: 0,
+            units_on_hand: 0,
+            committed_units: 0,
+            low_stock_variants: 0,
+            out_of_stock_variants: 0,
+            variants_count: 0,
+            products_count: 0,
+          },
+        }),
+      setThreshold: (storeId: string, variantId: string, lowStockThreshold: number | null) =>
+        request<InventoryItem>(`${store(storeId)}/inventory/${enc(variantId)}`, { method: 'PATCH', body: { low_stock_threshold: lowStockThreshold } }),
+      /** 409 `stock_changed`; 422 `insufficient_stock`. */
+      adjust: (storeId: string, input: StockAdjustmentInput) =>
+        request<StockAdjustmentResult>(`${store(storeId)}/inventory/adjustments`, { method: 'POST', body: input }),
+      movements: (storeId: string, filters: StockMovementFilters = {}) =>
+        listOf<StockMovement, PaginationMeta>(`${store(storeId)}/inventory/movements`, movementListQuery(filters), emptyPage()),
+    },
+
+    /** Phase 4 §3.5. PATCH needs `revision`. */
+    customers: {
+      list: (storeId: string, filters: CustomerListFilters = {}) =>
+        listOf<Customer, CustomerListMeta>(`${store(storeId)}/customers`, customerListQuery(filters), { ...emptyPage(), counts: { all: 0, new_this_month: 0 } }),
+      get: (storeId: string, id: string) => request<CustomerDetail>(`${store(storeId)}/customers/${enc(id)}`),
+      create: (storeId: string, input: CreateCustomerInput) => request<CustomerDetail>(`${store(storeId)}/customers`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateCustomerInput) =>
+        request<CustomerDetail>(`${store(storeId)}/customers/${enc(id)}`, { method: 'PATCH', body: input }),
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/customers/${enc(id)}`, { method: 'DELETE' }),
+      addNote: (storeId: string, id: string, body: string) =>
+        request<CustomerNote>(`${store(storeId)}/customers/${enc(id)}/notes`, { method: 'POST', body: { body } }),
+      deleteNote: (storeId: string, id: string, noteId: string) =>
+        request<void>(`${store(storeId)}/customers/${enc(id)}/notes/${enc(noteId)}`, { method: 'DELETE' }),
+    },
+
+    /** Phase 4 §3.4 (O A only). Poll `get` every 2 s while `validating`/`importing`. */
+    imports: {
+      template: (storeId: string, type: DataImportType) =>
+        requestBlob(`${store(storeId)}/imports/template`, { query: { type }, fallbackName: `storeplix-${type}-template.csv` }),
+      upload: (storeId: string, input: { file: Blob; type: DataImportType; filename?: string }, opts?: UploadOptions) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'import.csv'));
+        form.append('type', input.type);
+        return uploadForm<DataImport>(`${store(storeId)}/imports`, form, opts);
+      },
+      get: (storeId: string, id: string) => request<DataImport>(`${store(storeId)}/imports/${enc(id)}`),
+      validate: (storeId: string, id: string, input: ValidateImportInput) =>
+        request<DataImport>(`${store(storeId)}/imports/${enc(id)}/validate`, { method: 'POST', body: input }),
+      rows: (storeId: string, id: string, filters: { status?: DataImportRow['status'][]; page?: number; per_page?: number } = {}) =>
+        listOf<DataImportRow, PaginationMeta>(
+          `${store(storeId)}/imports/${enc(id)}/rows`,
+          { 'filter[status]': filters.status?.length ? filters.status.join(',') : undefined, page: filters.page, per_page: filters.per_page },
+          emptyPage(),
+        ),
+      errorReport: (storeId: string, id: string) =>
+        requestBlob(`${store(storeId)}/imports/${enc(id)}/error-report`, { fallbackName: 'import-errors.csv' }),
+      /** 402 `plan_limit_reached` unless `allow_partial`. */
+      run: (storeId: string, id: string, input: RunImportInput = {}) =>
+        request<DataImport>(`${store(storeId)}/imports/${enc(id)}/run`, { method: 'POST', body: input }),
+      cancel: (storeId: string, id: string) => request<void>(`${store(storeId)}/imports/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    exports: {
+      create: (storeId: string, input: CreateExportInput) => request<DataExport>(`${store(storeId)}/exports`, { method: 'POST', body: input }),
+      /** `download_url` is a fresh 5-minute signed URL each call once `completed`. */
+      get: (storeId: string, id: string) => request<DataExport>(`${store(storeId)}/exports/${enc(id)}`),
+    },
+
+    dashboard: {
+      get: (storeId: string) => request<DashboardSummary>(`${store(storeId)}/dashboard`),
     },
 
     storefront: {

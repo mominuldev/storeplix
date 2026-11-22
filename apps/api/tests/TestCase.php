@@ -27,6 +27,20 @@ abstract class TestCase extends BaseTestCase
     {
         $this->app['auth']->forgetGuards();
 
+        // Test-only acting user (tenantHeaders): Phase 4.7c removed Bearer tokens, so merchant requests in feature
+        // tests authenticate like Sanctum::actingAs on the web guard. The header never reaches app code.
+        $actingAs = $server['HTTP_X_TESTING_USER'] ?? null;
+        unset($server['HTTP_X_TESTING_USER']);
+        if (is_string($actingAs) && ($user = User::query()->find($actingAs)) !== null) {
+            $this->actingAs($user, 'web');
+        }
+
+        // Sign-in endpoints are stateful-only (4.7c): unless a test sets Referer/Origin itself, requests come from the
+        // merchant SPA origin, like the real same-origin app. Tests of non-SPA callers send their own Origin.
+        if (! isset($server['HTTP_REFERER']) && ! isset($server['HTTP_ORIGIN']) && $actingAs === null) {
+            $server['HTTP_REFERER'] = 'http://localhost:5173/';
+        }
+
         return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
     }
 
@@ -61,7 +75,7 @@ abstract class TestCase extends BaseTestCase
     protected function tenantHeaders(User $user, Tenant|string $tenant): array
     {
         return [
-            'Authorization' => 'Bearer '.$user->createToken('test')->plainTextToken,
+            'X-Testing-User' => $user->id,
             'X-Tenant-Id' => $tenant instanceof Tenant ? $tenant->id : $tenant,
         ];
     }

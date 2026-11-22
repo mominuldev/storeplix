@@ -6,7 +6,7 @@ export default async function StoreHomePage() {
   const { host, theme, themeConfig, config, mode } = await requireCurrentStore();
   if (mode === 'coming_soon') return null; // layout renders Coming soon
 
-  const ctx = { store: config.store, host, media: config.media };
+  const ctx = { store: config.store, host, media: config.media, preview: mode === 'preview' };
   return (
     <>
       {themeConfig.sections

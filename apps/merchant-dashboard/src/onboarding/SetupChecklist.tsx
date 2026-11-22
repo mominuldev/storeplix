@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { can } from '../lib/permissions';
 import { settingsKey } from '../settings/schema';
 import { useTenantStore } from '../stores/useTenantStore';
+import { useDashboard } from '../catalog/queries';
 
 interface Item {
   key: string;
@@ -26,6 +27,8 @@ export function SetupChecklist() {
   const manage = can.manageStaff(activeTenant?.role);
   const settings = useQuery({ queryKey: settingsKey(store?.id), queryFn: () => api.stores.getSettings(store!.id), enabled: !!store, retry: false });
   const themes = useQuery({ queryKey: ['store-themes', store?.id], queryFn: () => api.storeThemes.list(store!.id), enabled: !!store, retry: false });
+  // Phase 4 §9.1: "Add products" is done once the store has any product.
+  const dashboard = useDashboard();
   const staff = useQuery({ queryKey: ['staff', activeTenant?.id], queryFn: () => api.staff.list(), enabled: manage, retry: false });
 
   if (!store || settings.isPending) return null;
@@ -40,7 +43,7 @@ export function SetupChecklist() {
     { key: 'brand', title: 'Add logo & contact', hint: 'Logo plus a phone customers can call', state: brandingDone ? 'done' : 'todo', to: '/settings/store' },
     ...(manage ? [{ key: 'team', title: 'Invite your team', hint: 'Managers and staff get their own sign-in', state: (teamDone ? 'done' : 'todo') as ChecklistState, to: '/staff' }] : []),
     { key: 'theme', title: 'Pick a theme', hint: 'Look & brand colour', state: themeDone ? 'done' : 'todo', to: '/online-store/themes' },
-    { key: 'products', title: 'Add products', hint: 'Your first items', state: 'locked' },
+    { key: 'products', title: 'Add products', hint: 'Your first items', state: dashboard.data?.setup.has_products ? 'done' : 'todo', to: '/onboarding/products' },
     { key: 'delivery', title: 'Delivery', hint: 'Zones & courier', state: 'locked' },
     { key: 'paid', title: 'Get paid', hint: 'COD & gateways', state: 'locked' },
     { key: 'live', title: 'Go live', hint: 'Publish your shop', state: 'locked' },

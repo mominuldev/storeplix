@@ -32,15 +32,15 @@ function acceptErrorMessage(e: unknown): string {
 }
 
 /**
- * Phase 2 §1.3 `/invite?token=`: preview → new user: set name/phone/password and accept (201 AuthToken);
- * existing user: sign in (L1) then accept with Bearer (200 membership). Public route.
+ * Phase 2 §1.3 `/invite?token=`: preview → new user: set name/phone/password and accept (201 `AuthSession`, session
+ * cookie); existing user: sign in (L1) then accept with the cookie session (200 membership). Public route.
  */
 export function InvitePage() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const location = useLocation();
   const navigate = useNavigate();
-  const { status, user, signInWithToken, setTenant, refreshUser, logout } = useAuth();
+  const { status, user, startSession, setTenant, refreshUser, logout } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
 
   const preview = useQuery({ queryKey: ['invitation', token], queryFn: () => api.invitations.preview(token), enabled: !!token, retry: false });
@@ -71,7 +71,7 @@ export function InvitePage() {
     setFormError(null);
     try {
       const auth = await api.invitations.accept(token, values);
-      signInWithToken(auth);
+      startSession(auth);
       const tenantId = auth.user.tenants?.[0]?.id;
       if (tenantId) session.setTenantId(tenantId);
       navigate('/', { replace: true });

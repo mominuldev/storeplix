@@ -1,5 +1,7 @@
 <?php
 
+use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
+use App\Domain\Identity\Http\Middleware\RequireStatefulRequest;
 use App\Domain\Shared\Http\ApiExceptionRenderer;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
 use App\Domain\Tenancy\Middleware\ResolveTenant;
@@ -20,7 +22,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'tenant' => ResolveTenant::class,
             'storefront' => ResolveStorefront::class,
+            'stateful' => RequireStatefulRequest::class,
         ]);
+
+        // Phase 4.7 (§7.2): same-origin cookie sessions for the SPAs (exact stateful domain list) with the absolute
+        // 7-day session expiry. 4.7c: Bearer tokens are no longer read (AppServiceProvider) and sign-in is stateful-only.
+        $middleware->statefulApi();
+        $middleware->api(append: [EnforceAbsoluteSessionExpiry::class]);
+
+        // X-Forwarded-* from the Nginx / Vite proxy in front of the API (comma-separated IPs/CIDRs, or "*").
+        $trusted = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))));
+        if ($trusted !== []) {
+            $middleware->trustProxies(at: $trusted === ['*'] ? '*' : $trusted);
+        }
 
         // Tenant context must exist before route-model binding runs tenant-scoped queries.
         $middleware->prependToPriorityList(SubstituteBindings::class, ResolveTenant::class);

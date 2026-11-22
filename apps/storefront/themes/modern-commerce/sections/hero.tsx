@@ -1,20 +1,22 @@
 import type { SectionProps } from '../../types';
 import type { HeroSettings, StatBlock } from '../schema';
-import { formatPrice } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { getFeaturedProducts } from '@/lib/products';
 import { DEMO, themeImage } from '../../media';
 import { ButtonLink } from '../components/button';
 import { Icon } from '../components/icon';
+import { MaybeLink } from '../components/product-card';
+import { ProductImage } from '../components/product-image';
 import { ThemeImage } from '../components/theme-image';
 
 const HEIGHT: Record<HeroSettings['height'], string> = { fit: '', half: 'xl:min-h-[50vh]', full: 'xl:min-h-[calc(100dvh-180px)]' };
 
 /**
  * Figma "Hero" - desktop 1:10114, mobile 1:10337. Framed photo with hard offset shadow, tilted
- * detail frame, swing tag and floating product card (placeholder product until Phase 5).
+ * detail frame, swing tag and floating product card (newest real product, or a placeholder).
  */
 export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps<HeroSettings, StatBlock>) {
-  const [featured] = s.showFeaturedProduct ? await getFeaturedProducts(ctx.host, 1) : [];
+  const [featured] = s.showFeaturedProduct ? await getFeaturedProducts(ctx.host, 1, 'latest', { preview: ctx.preview }) : [];
   const image = themeImage(ctx.media, s.imageMediaId, `${DEMO}/hero-main.png`);
   const detail = themeImage(ctx.media, s.detailImageMediaId, `${DEMO}/cardigan.png`);
   const alt = s.imageAlt || image.alt || '';
@@ -105,19 +107,19 @@ export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps
         ) : null}
 
         {featured ? (
-          <a
-            href={`/products/${encodeURIComponent(featured.slug)}`}
+          <MaybeLink
+            href={featured.href}
             className="absolute top-[520px] left-[290px] hidden items-center gap-3.5 rounded-sf-lg bg-surface p-3 shadow-e3 xl:flex"
           >
             <span className="relative size-16 shrink-0 overflow-hidden rounded-sf-md">
-              <ThemeImage src={featured.image_url} alt="" sizes="64px" />
+              <ProductImage image={featured.image} sizes="64px" />
             </span>
             <span className="flex flex-col gap-0.5 pr-3 whitespace-nowrap">
               <span className="type-label-m text-[#0e1a33]">{featured.name}</span>
               {featured.subtitle ? <span className="type-body-s text-[#66728c]">{featured.subtitle}</span> : null}
-              <span className="type-price-m text-[#0e1a33]">{formatPrice(featured.price, ctx.store.currency)}</span>
+              <span className="type-price-m text-[#0e1a33]">{formatMoney(featured.price_amount, featured.currency)}</span>
             </span>
-          </a>
+          </MaybeLink>
         ) : null}
       </div>
 

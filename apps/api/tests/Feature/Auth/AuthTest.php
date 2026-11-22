@@ -7,11 +7,12 @@ use App\Domain\Tenancy\Models\TenantUser;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\SpaBrowser;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, SpaBrowser;
 
     private const USER_KEYS = ['id', 'name', 'email', 'phone', 'phone_verified_at', 'password_changed_at', 'created_at', 'tenants'];
 
@@ -26,7 +27,7 @@ class AuthTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonStructure(['data' => ['token', 'expires_at', 'user' => self::USER_KEYS]])
+            ->assertJsonStructure(['data' => ['expires_at', 'user' => self::USER_KEYS]])
             ->assertJsonPath('data.user.email', 'rahim@example.com')
             ->assertJsonPath('data.user.phone', '8801711111111')
             ->assertJsonPath('data.user.tenants.0.role', 'owner')
@@ -54,26 +55,21 @@ class AuthTest extends TestCase
 
     public function test_login_me_logout_flow(): void
     {
+        $this->useSpaBrowser();
         [$user, $tenant] = $this->merchant();
 
-        $token = $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
-            ->assertOk()
-            ->assertJsonStructure(['data' => ['token', 'user' => self::USER_KEYS]])
-            ->json('data.token');
+        $this->spaLogin($user)->assertJsonStructure(['data' => ['user' => self::USER_KEYS, 'expires_at']])->assertJsonMissingPath('data.token');
 
-        $this->withToken($token)->getJson('/api/v1/auth/me')
+        $this->browser('GET', '/api/v1/auth/me')
             ->assertOk()
             ->assertJsonPath('data.id', $user->id)
             ->assertJsonPath('data.tenants.0.id', $tenant->id)
             ->assertJsonPath('data.tenants.0.name', $tenant->name)
             ->assertJsonPath('data.tenants.0.role', 'owner');
 
-        $this->withToken($token)->postJson('/api/v1/auth/logout')->assertNoContent();
+        $this->browser('POST', '/api/v1/auth/logout')->assertNoContent();
 
-        $this->assertSame(0, $user->tokens()->count());
-        $this->app['auth']->forgetGuards();
-
-        $this->withToken($token)->getJson('/api/v1/auth/me')
+        $this->browser('GET', '/api/v1/auth/me')
             ->assertUnauthorized()
             ->assertJsonPath('error.code', 'unauthenticated');
     }
@@ -107,23 +103,20 @@ class AuthTest extends TestCase
             ->assertJsonMissingPath('error.details');
     }
 
-    public function test_login_returns_expires_at_and_token_expires_after_sanctum_expiration(): void
+    public function test_login_returns_expires_at_and_session_expires_after_sanctum_expiration(): void
     {
         $this->assertSame(10080, config('sanctum.expiration'));
+        $this->useSpaBrowser();
         [$user] = $this->merchant();
 
         $this->freezeSecond();
-        $response = $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
-            ->assertOk()
-            ->assertJsonPath('data.expires_at', now()->addMinutes(10080)->toIso8601ZuluString());
-        $token = $response->json('data.token');
+        $this->spaLogin($user)->assertJsonPath('data.expires_at', now()->addMinutes(10080)->toIso8601ZuluString());
 
         $this->travel(10079)->minutes();
-        $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk();
-        $this->app['auth']->forgetGuards();
+        $this->browser('GET', '/api/v1/auth/me')->assertOk();
 
         $this->travel(2)->minutes();
-        $this->withToken($token)->getJson('/api/v1/auth/me')
+        $this->browser('GET', '/api/v1/auth/me')
             ->assertUnauthorized()
             ->assertJsonPath('error.code', 'unauthenticated');
     }

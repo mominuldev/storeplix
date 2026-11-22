@@ -2,6 +2,7 @@
 
 namespace App\Domain\Identity\Http\Controllers;
 
+use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Http\Requests\ForgotPasswordRequest;
 use App\Domain\Identity\Http\Requests\LoginRequest;
 use App\Domain\Identity\Http\Requests\RegisterRequest;
@@ -16,6 +17,8 @@ use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
@@ -60,7 +63,7 @@ class AuthController
             return $user;
         });
 
-        return $this->tokenResponse($user, 201);
+        return $this->sessionResponse($user, 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
@@ -75,7 +78,7 @@ class AuthController
 
         $this->audit->log('auth.login', $user, actor: $user, tenantId: false);
 
-        return $this->tokenResponse($user);
+        return $this->sessionResponse($user);
     }
 
     /**
@@ -103,7 +106,6 @@ class AuthController
 
         $status = Password::broker()->reset($data, function (User $user, string $password) use (&$resetUser) {
             $user->forceFill(['password' => $password, 'password_changed_at' => now()])->save();
-            $user->tokens()->delete();
             $resetUser = $user;
         });
 
@@ -116,15 +118,26 @@ class AuthController
         return new JsonResponse(['data' => ['message' => 'Your password has been reset.']]);
     }
 
+    /** Session logout + invalidate + new CSRF token. */
     public function logout(Request $request): Response
     {
-        $request->user()->currentAccessToken()?->delete();
+        if (self::isStateful($request)) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->noContent();
     }
 
-    public function me(Request $request): UserResource
+    /** GET /auth/me — adds meta.session_expires_at (absolute session expiry). */
+    public function me(Request $request): JsonResponse
     {
-        return new UserResource($request->user()->load('tenants'));
+        $at = self::isStateful($request) ? $request->session()->get(EnforceAbsoluteSessionExpiry::KEY) : null;
+        $expires = is_int($at) ? Carbon::createFromTimestamp($at)->toIso8601ZuluString() : null;
+
+        return (new UserResource($request->user()->load('tenants')))
+            ->additional(['meta' => ['session_expires_at' => $expires]])
+            ->response();
     }
 }

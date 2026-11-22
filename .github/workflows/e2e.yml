@@ -3,6 +3,11 @@ name: E2E (manual)
 # Not part of required CI until the full stack boots reliably in Actions.
 on:
   workflow_dispatch:
+    inputs:
+      visual:
+        description: 'Also take the Figma visual-pass screenshots (E2E_VISUAL)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +21,8 @@ jobs:
       - name: Boot stack
         run: |
           cp infrastructure/docker/.env.example .env
+          # The e2e suite makes ~15 bulk calls per run on the demo tenant (merchant-bulk = 10/h by default).
+          echo 'THROTTLE_MERCHANT_BULK_PER_HOUR=1000' >> .env
           cp apps/api/.env.example apps/api/.env
           docker compose up -d --build --wait
           docker compose exec -T api php artisan key:generate --force
@@ -32,6 +39,7 @@ jobs:
           # compose sends mail to Mailpit; throwaway users are deleted via `docker compose exec api`.
           MAILPIT_URL: http://localhost:8025
           E2E_ARTISAN: docker
+          E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()
         run: docker compose logs --no-color > compose.log
@@ -41,5 +49,6 @@ jobs:
           name: e2e-report
           path: |
             tests/e2e/playwright-report
+            tests/e2e/test-results
             compose.log
           if-no-files-found: ignore

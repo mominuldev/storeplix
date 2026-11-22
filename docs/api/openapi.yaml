@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.3.0
+  version: 1.4.0
   description: |
-    Phase 1, 1.1 (D1–D4), Phase 2 and Phase 3 (storefront engine) endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md,
-    docs/development/PHASE-2-CONTRACT.md and docs/development/PHASE-3-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine) and Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md,
+    docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md and PHASE-4-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -25,6 +25,11 @@ tags:
 - name: themes
 - name: pages
 - name: navigation
+- name: catalog
+- name: inventory
+- name: customers
+- name: data
+- name: dashboard
 paths:
   /health:
     get:
@@ -2003,6 +2008,1604 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /sanctum/csrf-cookie:
+    servers:
+    - url: http://localhost:5173
+      description: Merchant SPA origin (dev, via Vite proxy)
+    - url: https://app.storeplix.com
+      description: Merchant SPA origin (prod, via Nginx)
+    get:
+      tags:
+      - auth
+      summary: Get CSRF cookie (Phase 4.7)
+      operationId: csrfCookie
+      security: []
+      description: Outside /api/v1. Sets `XSRF-TOKEN` (readable) and the session cookie. SPAs send its value as `X-XSRF-TOKEN`
+        on every write.
+      responses:
+        '204':
+          description: Cookies set
+  /stores/{store}/categories:
+    get:
+      tags:
+      - catalog
+      summary: List categories
+      operationId: listCategories
+      description: Any role. Flat list in depth-first tree order (max 500), not paginated.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 80
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  meta:
+                    type: object
+                    required:
+                    - count
+                    - limit
+                    properties:
+                      count:
+                        type: integer
+                      limit:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - catalog
+      summary: Create category
+      operationId: createCategory
+      description: Any role. Appended as last sibling. Depth ≤ 3.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 500 categories already (`category_limit_reached`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/categories/order:
+    put:
+      tags:
+      - catalog
+      summary: Reorder categories
+      operationId: reorderCategories
+      description: Any role. Body lists EVERY category of the store in display order with its parent.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderCategoriesInput'
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/categories/{category}:
+    parameters:
+    - $ref: '#/components/parameters/CategoryPath'
+    get:
+      tags:
+      - catalog
+      summary: Get category
+      operationId: getCategory
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Category
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - catalog
+      summary: Update category
+      operationId: updateCategory
+      description: Any role. Moving re-computes depth of the subtree.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryInput'
+      responses:
+        '200':
+          description: Category
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - catalog
+      summary: Delete category
+      operationId: deleteCategory
+      description: Owner/admin. Soft delete; detaches products.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Has sub-categories (`category_has_children`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/products:
+    get:
+      tags:
+      - catalog
+      summary: List products
+      operationId: listProducts
+      description: Any role. `cost_amount` is null for staff.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of draft, active, archived
+      - in: query
+        name: filter[category_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[stock]
+        schema:
+          type: string
+          enum:
+          - in
+          - low
+          - out
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - -created_at
+          - created_at
+          - name
+          - -name
+          - price
+          - -price
+          - -updated_at
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Products
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductSummary'
+                  meta:
+                    $ref: '#/components/schemas/ProductListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - catalog
+      summary: Create product
+      operationId: createProduct
+      description: Any role (cost ignored for staff). Checks the `products` plan limit.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: Plan product limit reached (`plan_limit_reached`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/products/bulk:
+    post:
+      tags:
+      - catalog
+      summary: Bulk product action
+      operationId: bulkProducts
+      description: Any role; `delete` owner/admin only. 1–100 ids, all must belong to the store (else 422, nothing applied).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductBulkInput'
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ProductBulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/products/{product}:
+    parameters:
+    - $ref: '#/components/parameters/ProductPath'
+    get:
+      tags:
+      - catalog
+      summary: Get product
+      operationId: getProduct
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Product
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - catalog
+      summary: Update product
+      operationId: updateProduct
+      description: Any role. `revision` required; `variants`, `images`, `category_ids` replace when present. Stock of existing
+        variants is NOT changed here (use inventory adjustments).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductInput'
+      responses:
+        '200':
+          description: Product
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - catalog
+      summary: Delete product
+      operationId: deleteProduct
+      description: Owner/admin. Soft delete.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/products/{product}/duplicate:
+    parameters:
+    - $ref: '#/components/parameters/ProductPath'
+    post:
+      tags:
+      - catalog
+      summary: Duplicate product
+      operationId: duplicateProduct
+      description: Any role. Draft copy, SKUs cleared, stock 0.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/inventory:
+    get:
+      tags:
+      - inventory
+      summary: List stock levels
+      operationId: listInventory
+      description: Any role. One row per variant. `stock_value_cost_amount` null for staff.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: filter[stock]
+        schema:
+          type: string
+        description: Comma list of in, low, out, untracked
+      - in: query
+        name: filter[category_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[product_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - name
+          - available
+          - -available
+          - -updated_at
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Stock levels
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+                  meta:
+                    $ref: '#/components/schemas/InventoryListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inventory/adjustments:
+    post:
+      tags:
+      - inventory
+      summary: Adjust stock
+      operationId: adjustStock
+      description: Any role. All-or-nothing in one transaction with row locks; never negative; one ledger row per changed variant.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentInput'
+      responses:
+        '200':
+          description: Adjusted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockAdjustmentResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`expected_on_hand` differs from current stock (`stock_changed`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`insufficient_stock` (result would be negative) or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/inventory/movements:
+    get:
+      tags:
+      - inventory
+      summary: Stock movements ledger
+      operationId: listStockMovements
+      description: Any role. Newest first.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[variant_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[product_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[reason]
+        schema:
+          type: string
+        description: Comma list of StockMovementReason
+      - in: query
+        name: filter[created_at][gte]
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: filter[created_at][lte]
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Movements
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockMovement'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inventory/{variant}:
+    parameters:
+    - $ref: '#/components/parameters/VariantPath'
+    patch:
+      tags:
+      - inventory
+      summary: Set low-stock threshold
+      operationId: updateInventoryItem
+      description: Any role.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - low_stock_threshold
+              properties:
+                low_stock_threshold:
+                  type:
+                  - integer
+                  - 'null'
+                  minimum: 0
+                  maximum: 100000
+      responses:
+        '200':
+          description: Item
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InventoryItem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/imports/template:
+    get:
+      tags:
+      - data
+      summary: Download CSV template
+      operationId: importTemplate
+      description: Owner/admin only (`BulkData`).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: type
+        schema:
+          $ref: '#/components/schemas/DataImportType'
+      responses:
+        '200':
+          description: CSV (UTF-8 BOM)
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/imports:
+    post:
+      tags:
+      - data
+      summary: Upload CSV for import
+      operationId: createImport
+      description: Owner/admin only (`BulkData`). CSV only, ≤ 10 MB, ≤ 5 000 rows, ≤ 50 columns. Archives/binaries/non-UTF-8
+        → 422 `unsupported_file`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataImport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Another import is validating or importing (`import_in_progress`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: File over 10 MB (`payload_too_large`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              - type
+              properties:
+                file:
+                  type: string
+                  format: binary
+                type:
+                  $ref: '#/components/schemas/DataImportType'
+  /stores/{store}/imports/{import}:
+    parameters:
+    - $ref: '#/components/parameters/ImportPath'
+    get:
+      tags:
+      - data
+      summary: Get import
+      operationId: getImport
+      description: Owner/admin only (`BulkData`).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Import
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataImport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - data
+      summary: Cancel import
+      operationId: cancelImport
+      description: Owner/admin only (`BulkData`). Not while validating/importing.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Cancelled
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/imports/{import}/validate:
+    parameters:
+    - $ref: '#/components/parameters/ImportPath'
+    post:
+      tags:
+      - data
+      summary: Validate import (dry run)
+      operationId: validateImport
+      description: Owner/admin only (`BulkData`). Queued; poll GET until `validated`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateImportInput'
+      responses:
+        '202':
+          description: Validating
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataImport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`import_in_progress` or `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/imports/{import}/rows:
+    parameters:
+    - $ref: '#/components/parameters/ImportPath'
+    get:
+      tags:
+      - data
+      summary: Import row report
+      operationId: listImportRows
+      description: Owner/admin only (`BulkData`).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of ready, warning, error
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DataImportRow'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Not validated yet (`invalid_state_transition`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/imports/{import}/error-report:
+    parameters:
+    - $ref: '#/components/parameters/ImportPath'
+    get:
+      tags:
+      - data
+      summary: Download error report
+      operationId: importErrorReport
+      description: Owner/admin only (`BulkData`). Formula-safe CSV.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/imports/{import}/run:
+    parameters:
+    - $ref: '#/components/parameters/ImportPath'
+    post:
+      tags:
+      - data
+      summary: Run import
+      operationId: runImport
+      description: Owner/admin only (`BulkData`). Only from `validated`. Queued.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '202':
+          description: Importing
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataImport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: Creates exceed the remaining product limit (`plan_limit_reached`) unless `allow_partial`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` or `import_in_progress`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunImportInput'
+  /stores/{store}/exports:
+    post:
+      tags:
+      - data
+      summary: Start export
+      operationId: createExport
+      description: Owner/admin only (`BulkData`). Queued CSV (same columns as import). Customer exports are audited.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExportInput'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataExport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/exports/{export}:
+    parameters:
+    - $ref: '#/components/parameters/ExportPath'
+    get:
+      tags:
+      - data
+      summary: Get export
+      operationId: getExport
+      description: Owner/admin only (`BulkData`). `download_url` is a fresh 5-minute signed URL when completed.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Export
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataExport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/customers:
+    get:
+      tags:
+      - customers
+      summary: List customers
+      operationId: listCustomers
+      description: Any role.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+        description: Phone digits (01… or 8801…), email part or name
+      - in: query
+        name: filter[channel]
+        schema:
+          type: string
+      - in: query
+        name: filter[tag]
+        schema:
+          type: string
+      - in: query
+        name: filter[created_at][gte]
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - -created_at
+          - name
+          - -total_spent
+          - -last_order_at
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Customers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  meta:
+                    $ref: '#/components/schemas/CustomerListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - customers
+      summary: Create customer
+      operationId: createCustomer
+      description: Any role. Phone normalised to 8801XXXXXXXXX; phone or email required; unique per store.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/customers/{customer}:
+    parameters:
+    - $ref: '#/components/parameters/CustomerPath'
+    get:
+      tags:
+      - customers
+      summary: Get customer
+      operationId: getCustomer
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Customer
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - customers
+      summary: Update customer
+      operationId: updateCustomer
+      description: Any role. `revision` required.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerInput'
+      responses:
+        '200':
+          description: Customer
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - customers
+      summary: Delete customer
+      operationId: deleteCustomer
+      description: Owner/admin. Soft delete.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/customers/{customer}/notes:
+    parameters:
+    - $ref: '#/components/parameters/CustomerPath'
+    post:
+      tags:
+      - customers
+      summary: Add note
+      operationId: createCustomerNote
+      description: Any role.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - body
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerNote'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/customers/{customer}/notes/{note}:
+    parameters:
+    - $ref: '#/components/parameters/CustomerPath'
+    - $ref: '#/components/parameters/NotePath'
+    delete:
+      tags:
+      - customers
+      summary: Delete note
+      operationId: deleteCustomerNote
+      description: Author, or owner/admin.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/dashboard:
+    get:
+      tags:
+      - dashboard
+      summary: Dashboard summary
+      operationId: getDashboard
+      description: Any role. Read model; `orders` null until Phase 5; cost value null for staff.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /storefront/products:
+    get:
+      tags:
+      - storefront
+      summary: Storefront product cards
+      operationId: storefrontProducts
+      description: Active products with ≥ 1 enabled variant. Draft store without valid preview → 404. Never exposes cost, SKU
+        or stock.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - in: header
+        name: X-Storefront-Preview
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - latest
+          - bestsellers
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 24
+      - in: query
+        name: on_sale
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+      - in: query
+        name: category
+        schema:
+          type: string
+          maxLength: 140
+      responses:
+        '200':
+          description: Cards
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorefrontProductCard'
+                  meta:
+                    $ref: '#/components/schemas/StorefrontProductListMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Unknown host or draft store (`store_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 components:
   parameters:
     TenantId:
@@ -2043,11 +3646,66 @@ components:
         maxLength: 253
         example: demo.localhost
       description: Normalized host (lowercase, no port, no trailing dot, punycode).
+    CategoryPath:
+      in: path
+      name: category
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: categories.id of this store, else 404 `not_found`.
+    ProductPath:
+      in: path
+      name: product
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: products.id of this store, else 404 `not_found`.
+    VariantPath:
+      in: path
+      name: variant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: product_variants.id of this store, else 404 `not_found`.
+    CustomerPath:
+      in: path
+      name: customer
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: customers.id of this store, else 404 `not_found`.
+    NotePath:
+      in: path
+      name: note
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: customer_notes.id of this customer, else 404 `not_found`.
+    ImportPath:
+      in: path
+      name: import
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: data_imports.id of this store, else 404 `not_found`.
+    ExportPath:
+      in: path
+      name: export
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: data_exports.id of this store, else 404 `not_found`.
   securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-sp_session
+      description: Phase 4.7 Sanctum SPA session (dev cookie name `sp_session`). Same-origin only; writes also need header `X-XSRF-TOKEN`
+        (from the `XSRF-TOKEN` cookie), else 419 `csrf_token_mismatch`.
     bearerAuth:
       type: http
       scheme: bearer
-      description: Sanctum personal access token.
+      description: Sanctum personal access token. Deprecated in Phase 4.7a, removed in 4.7c (SPAs use sessionCookie).
     storefrontKey:
       type: apiKey
       in: header
@@ -2289,6 +3947,9 @@ components:
           type: string
           format: date-time
     AuthTokenResponse:
+      description: 'Phase 4.7a: login/register/OTP login/invitation accept/password change return AuthSessionResponse
+        (user, expires_at) plus this deprecated `token`. Removed in 4.7c.'
+      deprecated: true
       type: object
       required:
       - data
@@ -4279,3 +5940,1737 @@ components:
         updated_at:
           type: string
           format: date-time
+    AuthSession:
+      type: object
+      required:
+      - user
+      - expires_at
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        expires_at:
+          type: string
+          format: date-time
+          description: Absolute session expiry (7 days from login)
+        token:
+          type: string
+          deprecated: true
+          description: Phase 4.7a transition only; removed in 4.7c.
+    AuthSessionResponse:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthSession'
+    ProductStatus:
+      type: string
+      enum:
+      - draft
+      - active
+      - archived
+    ProductType:
+      type: string
+      enum:
+      - simple
+      - variable
+    ProductOption:
+      type: object
+      required:
+      - name
+      - values
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        values:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          minItems: 1
+          maxItems: 20
+    CategoryRef:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        slug:
+          type: string
+    Category:
+      type: object
+      required:
+      - id
+      - parent_id
+      - name
+      - slug
+      - description
+      - image
+      - depth
+      - position
+      - is_visible
+      - url_path
+      - product_count
+      - children_count
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        parent_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/MediaRef'
+          - type: 'null'
+        depth:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+        position:
+          type: integer
+        is_visible:
+          type: boolean
+        url_path:
+          type: string
+          example: /c/sarees
+        product_count:
+          type: integer
+        children_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateCategoryInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          maxLength: 140
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+        parent_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        image_media_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        is_visible:
+          type: boolean
+    UpdateCategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          maxLength: 140
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+        parent_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        image_media_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        is_visible:
+          type: boolean
+    ReorderCategoriesInput:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - parent_id
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              parent_id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+          maxItems: 500
+    StockStatus:
+      type: string
+      enum:
+      - in_stock
+      - low_stock
+      - out_of_stock
+      - untracked
+    InventoryLevel:
+      type: object
+      required:
+      - on_hand
+      - committed
+      - available
+      - low_stock_threshold
+      - effective_threshold
+      - status
+      properties:
+        on_hand:
+          type: integer
+        committed:
+          type: integer
+        available:
+          type: integer
+        low_stock_threshold:
+          type:
+          - integer
+          - 'null'
+        effective_threshold:
+          type: integer
+        status:
+          $ref: '#/components/schemas/StockStatus'
+    ProductVariant:
+      type: object
+      required:
+      - id
+      - title
+      - option_values
+      - sku
+      - barcode
+      - price_amount
+      - compare_at_amount
+      - cost_amount
+      - weight_grams
+      - position
+      - is_default
+      - is_enabled
+      - track_inventory
+      - allow_backorder
+      - image_media_id
+      - inventory
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+          maxItems: 3
+        sku:
+          type:
+          - string
+          - 'null'
+        barcode:
+          type:
+          - string
+          - 'null'
+        price_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Paisa (BDT minor units)
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        cost_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+          description: Paisa; null for staff where cost
+        weight_grams:
+          type:
+          - integer
+          - 'null'
+        position:
+          type: integer
+        is_default:
+          type: boolean
+        is_enabled:
+          type: boolean
+        track_inventory:
+          type: boolean
+        allow_backorder:
+          type: boolean
+        image_media_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        inventory:
+          $ref: '#/components/schemas/InventoryLevel'
+        updated_at:
+          type: string
+          format: date-time
+    ProductImage:
+      type: object
+      required:
+      - media_id
+      - alt
+      - position
+      - media
+      properties:
+        media_id:
+          $ref: '#/components/schemas/Ulid'
+        alt:
+          type:
+          - string
+          - 'null'
+        position:
+          type: integer
+        media:
+          $ref: '#/components/schemas/MediaRef'
+    ProductStockSummary:
+      type: object
+      required:
+      - on_hand
+      - available
+      - low_variants
+      - out_variants
+      - tracked
+      properties:
+        on_hand:
+          type: integer
+        available:
+          type: integer
+        low_variants:
+          type: integer
+        out_variants:
+          type: integer
+        tracked:
+          type: boolean
+    ProductSummary:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      - type
+      - status
+      - currency
+      - image
+      - price_min_amount
+      - price_max_amount
+      - price_amount
+      - compare_at_amount
+      - cost_amount
+      - variants_count
+      - first_sku
+      - stock
+      - categories
+      - published_at
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        slug:
+          type: string
+        type:
+          $ref: '#/components/schemas/ProductType'
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        currency:
+          type: string
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/MediaRef'
+          - type: 'null'
+        price_min_amount:
+          type: integer
+        price_max_amount:
+          type: integer
+        price_amount:
+          type: integer
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        cost_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+          description: Paisa; null for staff where cost
+        variants_count:
+          type: integer
+        first_sku:
+          type:
+          - string
+          - 'null'
+        stock:
+          $ref: '#/components/schemas/ProductStockSummary'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryRef'
+        published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Product:
+      allOf:
+      - $ref: '#/components/schemas/ProductSummary'
+      - type: object
+        required:
+        - description
+        - tags
+        - options
+        - variants
+        - images
+        - seo
+        - url_path
+        - revision
+        - created_by
+        - updated_by
+        properties:
+          description:
+            oneOf:
+            - $ref: '#/components/schemas/RichTextDoc'
+            - type: 'null'
+          tags:
+            type: array
+            items:
+              type: string
+          options:
+            type: array
+            items:
+              $ref: '#/components/schemas/ProductOption'
+            maxItems: 3
+          variants:
+            type: array
+            items:
+              $ref: '#/components/schemas/ProductVariant'
+            minItems: 1
+            maxItems: 100
+          images:
+            type: array
+            items:
+              $ref: '#/components/schemas/ProductImage'
+            maxItems: 10
+          seo:
+            type: object
+            required:
+            - title
+            - description
+            properties:
+              title:
+                type:
+                - string
+                - 'null'
+              description:
+                type:
+                - string
+                - 'null'
+          url_path:
+            type: string
+          revision:
+            type: integer
+          created_by:
+            oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+          updated_by:
+            oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+    ProductVariantInput:
+      type: object
+      required:
+      - price_amount
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        option_values:
+          type: array
+          items:
+            type: string
+          maxItems: 3
+        sku:
+          type:
+          - string
+          - 'null'
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$
+        barcode:
+          type:
+          - string
+          - 'null'
+          pattern: ^[A-Za-z0-9-]{1,64}$
+        price_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Paisa (BDT minor units)
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 1000000000
+        cost_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+          description: Ignored for staff
+        weight_grams:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+        is_enabled:
+          type: boolean
+        track_inventory:
+          type: boolean
+        allow_backorder:
+          type: boolean
+        image_media_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        initial_on_hand:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          description: New variants only
+        low_stock_threshold:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100000
+    ProductImageInput:
+      type: object
+      required:
+      - media_id
+      properties:
+        media_id:
+          $ref: '#/components/schemas/Ulid'
+        alt:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+    CreateProductInput:
+      type: object
+      required:
+      - name
+      - variants
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        slug:
+          type: string
+          maxLength: 220
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        description:
+          oneOf:
+          - $ref: '#/components/schemas/RichTextDoc'
+          - type: 'null'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 20
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 10
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductOption'
+          maxItems: 3
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
+          minItems: 1
+          maxItems: 100
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImageInput'
+          maxItems: 10
+        seo:
+          type: object
+          properties:
+            title:
+              type:
+              - string
+              - 'null'
+              maxLength: 70
+            description:
+              type:
+              - string
+              - 'null'
+              maxLength: 160
+    UpdateProductInput:
+      type: object
+      required:
+      - revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        slug:
+          type: string
+          maxLength: 220
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        description:
+          oneOf:
+          - $ref: '#/components/schemas/RichTextDoc'
+          - type: 'null'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 20
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 10
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductOption'
+          maxItems: 3
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
+          minItems: 1
+          maxItems: 100
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImageInput'
+          maxItems: 10
+        seo:
+          type: object
+          properties:
+            title:
+              type:
+              - string
+              - 'null'
+              maxLength: 70
+            description:
+              type:
+              - string
+              - 'null'
+              maxLength: 160
+        revision:
+          type: integer
+    ProductListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - summary
+        - plan
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - draft
+            - active
+            - archived
+            properties:
+              all:
+                type: integer
+              draft:
+                type: integer
+              active:
+                type: integer
+              archived:
+                type: integer
+          summary:
+            type: object
+            required:
+            - active_products
+            - active_variants
+            - low_stock_variants
+            - out_of_stock_variants
+            properties:
+              active_products:
+                type: integer
+              active_variants:
+                type: integer
+              low_stock_variants:
+                type: integer
+              out_of_stock_variants:
+                type: integer
+          plan:
+            type: object
+            required:
+            - limit
+            - used
+            properties:
+              limit:
+                type:
+                - integer
+                - 'null'
+              used:
+                type: integer
+    ProductBulkInput:
+      type: object
+      required:
+      - action
+      - ids
+      properties:
+        action:
+          type: string
+          enum:
+          - activate
+          - draft
+          - archive
+          - delete
+          - set_categories
+          - add_categories
+        ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          minItems: 1
+          maxItems: 100
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 10
+    ProductBulkResult:
+      type: object
+      required:
+      - action
+      - updated
+      properties:
+        action:
+          type: string
+        updated:
+          type: integer
+    InventoryItem:
+      type: object
+      required:
+      - variant_id
+      - product
+      - title
+      - option_values
+      - sku
+      - barcode
+      - on_hand
+      - committed
+      - available
+      - low_stock_threshold
+      - effective_threshold
+      - status
+      - track_inventory
+      - price_amount
+      - cost_amount
+      - updated_at
+      properties:
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type: object
+          required:
+          - id
+          - name
+          - status
+          - image
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            status:
+              $ref: '#/components/schemas/ProductStatus'
+            image:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+        title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        barcode:
+          type:
+          - string
+          - 'null'
+        on_hand:
+          type: integer
+        committed:
+          type: integer
+        available:
+          type: integer
+        low_stock_threshold:
+          type:
+          - integer
+          - 'null'
+        effective_threshold:
+          type: integer
+        status:
+          $ref: '#/components/schemas/StockStatus'
+        track_inventory:
+          type: boolean
+        price_amount:
+          type: integer
+        cost_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+          description: Paisa; null for staff where cost
+        updated_at:
+          type: string
+          format: date-time
+    InventorySummary:
+      type: object
+      required:
+      - currency
+      - stock_value_cost_amount
+      - stock_value_price_amount
+      - units_on_hand
+      - committed_units
+      - low_stock_variants
+      - out_of_stock_variants
+      - variants_count
+      - products_count
+      properties:
+        currency:
+          type: string
+        stock_value_cost_amount:
+          type:
+          - integer
+          - 'null'
+        stock_value_price_amount:
+          type: integer
+        units_on_hand:
+          type: integer
+        committed_units:
+          type: integer
+        low_stock_variants:
+          type: integer
+        out_of_stock_variants:
+          type: integer
+        variants_count:
+          type: integer
+        products_count:
+          type: integer
+    InventoryListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - summary
+        properties:
+          summary:
+            $ref: '#/components/schemas/InventorySummary'
+    StockMovementReason:
+      type: string
+      enum:
+      - initial
+      - received
+      - correction
+      - damaged
+      - lost
+      - returned
+      - import
+      - other
+    StockAdjustmentInput:
+      type: object
+      required:
+      - reason
+      - items
+      properties:
+        reason:
+          type: string
+          enum:
+          - received
+          - correction
+          - damaged
+          - lost
+          - returned
+          - other
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 255
+          description: Required when reason = other
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - variant_id
+            - mode
+            - quantity
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              mode:
+                type: string
+                enum:
+                - delta
+                - set
+              quantity:
+                type: integer
+                minimum: -1000000
+                maximum: 1000000
+              expected_on_hand:
+                type: integer
+          minItems: 1
+          maxItems: 100
+    StockMovement:
+      type: object
+      required:
+      - id
+      - variant_id
+      - product
+      - variant_title
+      - sku
+      - delta
+      - on_hand_after
+      - reason
+      - note
+      - reference
+      - actor
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type: object
+          required:
+          - id
+          - name
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+        variant_title:
+          type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        delta:
+          type: integer
+        on_hand_after:
+          type: integer
+        reason:
+          $ref: '#/components/schemas/StockMovementReason'
+        note:
+          type:
+          - string
+          - 'null'
+        reference:
+          oneOf:
+          - type: object
+            required:
+            - type
+            - id
+            properties:
+              type:
+                type: string
+                enum:
+                - import
+              id:
+                $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        actor:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    StockAdjustmentResult:
+      type: object
+      required:
+      - items
+      - movements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryItem'
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMovement'
+    CustomerChannel:
+      type: string
+      enum:
+      - facebook
+      - instagram
+      - whatsapp
+      - website
+      - phone
+      - walk_in
+      - other
+    Customer:
+      type: object
+      required:
+      - id
+      - name
+      - phone
+      - email
+      - district
+      - area
+      - channel
+      - source
+      - tags
+      - accepts_marketing
+      - orders_count
+      - total_spent_amount
+      - currency
+      - last_order_at
+      - notes_count
+      - revision
+      - created_at
+      - updated_at
+      - created_by
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+          pattern: ^8801[3-9][0-9]{8}$
+        email:
+          type:
+          - string
+          - 'null'
+        district:
+          type:
+          - string
+          - 'null'
+        area:
+          type:
+          - string
+          - 'null'
+        channel:
+          oneOf:
+          - $ref: '#/components/schemas/CustomerChannel'
+          - type: 'null'
+        source:
+          type: string
+          enum:
+          - manual
+          - import
+          - storefront
+        tags:
+          type: array
+          items:
+            type: string
+        accepts_marketing:
+          type: boolean
+        orders_count:
+          type: integer
+        total_spent_amount:
+          type: integer
+        currency:
+          type: string
+        last_order_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        notes_count:
+          type: integer
+        revision:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+    CustomerNote:
+      type: object
+      required:
+      - id
+      - body
+      - author
+      - created_at
+      - can_delete
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        body:
+          type: string
+        author:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        can_delete:
+          type: boolean
+    CustomerDetail:
+      allOf:
+      - $ref: '#/components/schemas/Customer'
+      - type: object
+        required:
+        - notes
+        properties:
+          notes:
+            type: array
+            items:
+              $ref: '#/components/schemas/CustomerNote'
+            maxItems: 100
+    CreateCustomerInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type:
+          - string
+          - 'null'
+          description: BD mobile in any common format
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+          maxLength: 254
+        district:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        area:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        channel:
+          oneOf:
+          - $ref: '#/components/schemas/CustomerChannel'
+          - type: 'null'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 20
+        accepts_marketing:
+          type: boolean
+    UpdateCustomerInput:
+      type: object
+      required:
+      - revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type:
+          - string
+          - 'null'
+          description: BD mobile in any common format
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+          maxLength: 254
+        district:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        area:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        channel:
+          oneOf:
+          - $ref: '#/components/schemas/CustomerChannel'
+          - type: 'null'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 20
+        accepts_marketing:
+          type: boolean
+        revision:
+          type: integer
+    CustomerListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - new_this_month
+            properties:
+              all:
+                type: integer
+              new_this_month:
+                type: integer
+    DataImportType:
+      type: string
+      enum:
+      - products
+      - customers
+    ImportField:
+      type: string
+      enum:
+      - handle
+      - name
+      - description
+      - status
+      - category
+      - tags
+      - option1_name
+      - option1_value
+      - option2_name
+      - option2_value
+      - option3_name
+      - option3_value
+      - sku
+      - barcode
+      - price
+      - compare_at_price
+      - cost_price
+      - stock
+      - weight_kg
+      - seo_title
+      - seo_description
+      - image_urls
+      - phone
+      - email
+      - district
+      - area
+      - channel
+      - accepts_marketing
+      - note
+    ImportOptions:
+      type: object
+      required:
+      - update_existing
+      - import_as_draft
+      - create_missing_categories
+      properties:
+        update_existing:
+          type: boolean
+        import_as_draft:
+          type: boolean
+        create_missing_categories:
+          type: boolean
+    ImportSummary:
+      type: object
+      required:
+      - total
+      - create
+      - update
+      - unchanged
+      - warnings
+      - errors
+      - over_limit
+      properties:
+        total:
+          type: integer
+        create:
+          type: integer
+        update:
+          type: integer
+        unchanged:
+          type: integer
+        warnings:
+          type: integer
+        errors:
+          type: integer
+        over_limit:
+          type: integer
+    DataImport:
+      type: object
+      required:
+      - id
+      - type
+      - status
+      - filename
+      - size_bytes
+      - row_count
+      - headers
+      - samples
+      - suggested_map
+      - column_map
+      - options
+      - summary
+      - progress
+      - failure_reason
+      - created_by
+      - created_at
+      - validated_at
+      - completed_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          $ref: '#/components/schemas/DataImportType'
+        status:
+          type: string
+          enum:
+          - uploaded
+          - validating
+          - validated
+          - importing
+          - completed
+          - failed
+          - cancelled
+        filename:
+          type: string
+        size_bytes:
+          type: integer
+        row_count:
+          type:
+          - integer
+          - 'null'
+        headers:
+          type: array
+          items:
+            type: string
+        samples:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - 'null'
+        suggested_map:
+          type: object
+          additionalProperties:
+            oneOf:
+            - $ref: '#/components/schemas/ImportField'
+            - type: 'null'
+        column_map:
+          oneOf:
+          - type: object
+            additionalProperties:
+              oneOf:
+              - $ref: '#/components/schemas/ImportField'
+              - type: 'null'
+          - type: 'null'
+        options:
+          $ref: '#/components/schemas/ImportOptions'
+        summary:
+          oneOf:
+          - $ref: '#/components/schemas/ImportSummary'
+          - type: 'null'
+        progress:
+          type: object
+          required:
+          - processed
+          - total
+          properties:
+            processed:
+              type: integer
+            total:
+              type: integer
+        failure_reason:
+          type:
+          - string
+          - 'null'
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        validated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ValidateImportInput:
+      type: object
+      required:
+      - column_map
+      - options
+      properties:
+        column_map:
+          type: object
+          additionalProperties:
+            oneOf:
+            - $ref: '#/components/schemas/ImportField'
+            - type: 'null'
+        options:
+          $ref: '#/components/schemas/ImportOptions'
+    RunImportInput:
+      type: object
+      properties:
+        allow_partial:
+          type: boolean
+    DataImportRow:
+      type: object
+      required:
+      - row_number
+      - status
+      - action
+      - label
+      - key
+      - preview
+      - messages
+      - result_id
+      properties:
+        row_number:
+          type: integer
+          minimum: 2
+          description: Line number in the uploaded spreadsheet, counting the header as line 1, so the first data row is 2. It matches the row number users see in Excel or Google Sheets.
+        status:
+          type: string
+          enum:
+          - ready
+          - warning
+          - error
+        action:
+          type: string
+          enum:
+          - create
+          - update
+          - unchanged
+          - skip
+        label:
+          type: string
+        key:
+          type:
+          - string
+          - 'null'
+        preview:
+          type: object
+          required:
+          - price_amount
+          - stock
+          - variants
+          properties:
+            price_amount:
+              type:
+              - integer
+              - 'null'
+            stock:
+              type:
+              - integer
+              - 'null'
+            variants:
+              type:
+              - integer
+              - 'null'
+        messages:
+          type: array
+          items:
+            type: object
+            required:
+            - level
+            - field
+            - message
+            properties:
+              level:
+                type: string
+                enum:
+                - warning
+                - error
+              field:
+                oneOf:
+                - $ref: '#/components/schemas/ImportField'
+                - type: 'null'
+              message:
+                type: string
+        result_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    DataExport:
+      type: object
+      required:
+      - id
+      - type
+      - status
+      - row_count
+      - filename
+      - download_url
+      - expires_at
+      - created_by
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          $ref: '#/components/schemas/DataImportType'
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - completed
+          - failed
+          - expired
+        row_count:
+          type:
+          - integer
+          - 'null'
+        filename:
+          type:
+          - string
+          - 'null'
+        download_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    CreateExportInput:
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          $ref: '#/components/schemas/DataImportType'
+        filters:
+          type: object
+          description: 'Products: status[], category_id, stock, q, ids[]. Customers: q, channel[], tag, created_from.'
+    DashboardSummary:
+      type: object
+      required:
+      - currency
+      - timezone
+      - generated_at
+      - products
+      - inventory
+      - customers
+      - orders
+      - setup
+      properties:
+        currency:
+          type: string
+        timezone:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        products:
+          type: object
+          required:
+          - total
+          - active
+          - draft
+          - archived
+          - limit
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            draft:
+              type: integer
+            archived:
+              type: integer
+            limit:
+              type:
+              - integer
+              - 'null'
+        inventory:
+          type: object
+          required:
+          - low_stock_variants
+          - out_of_stock_variants
+          - units_on_hand
+          - stock_value_cost_amount
+          properties:
+            low_stock_variants:
+              type: integer
+            out_of_stock_variants:
+              type: integer
+            units_on_hand:
+              type: integer
+            stock_value_cost_amount:
+              type:
+              - integer
+              - 'null'
+        customers:
+          type: object
+          required:
+          - total
+          - new_this_month
+          properties:
+            total:
+              type: integer
+            new_this_month:
+              type: integer
+        orders:
+          type: 'null'
+          description: Always null in Phase 4
+        setup:
+          type: object
+          required:
+          - has_products
+          properties:
+            has_products:
+              type: boolean
+    StorefrontProductCard:
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - subtitle
+      - price_amount
+      - compare_at_amount
+      - currency
+      - on_sale
+      - image
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        slug:
+          type: string
+        name:
+          type: string
+        subtitle:
+          type:
+          - string
+          - 'null'
+        price_amount:
+          type: integer
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        currency:
+          type: string
+        on_sale:
+          type: boolean
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+      additionalProperties: false
+    StorefrontProductListMeta:
+      type: object
+      required:
+      - has_products
+      properties:
+        has_products:
+          type: boolean

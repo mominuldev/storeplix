@@ -16,7 +16,6 @@ export interface User {
   /** Present on /auth/me and auth token responses. */
   tenants?: TenantMembership[];
 }
-export interface AuthToken { token: string; user: User; /** ISO-8601 */ expires_at: string }
 
 export type StoreStatus = 'draft' | 'active' | 'suspended';
 export interface Store {
@@ -346,3 +345,237 @@ export type PreviewToEditorMessage =
   | { source: 'storeplix-preview'; v: 1; type: 'ready'; path: string }
   | { source: 'storeplix-preview'; v: 1; type: 'section-click'; section_id: string }
   | { source: 'storeplix-preview'; v: 1; type: 'navigated'; path: string };
+
+// ===================== Phase 4 (PHASE-4-CONTRACT §6) =====================
+// ---------- Auth (Phase 4.7) ----------
+/** Response of register / login / login/otp / invitation accept / password change after 4.7. */
+export interface AuthSession { user: User; /** absolute session expiry, ISO-8601 */ expires_at: string }
+export interface MeMeta { session_expires_at: string | null }
+
+// ---------- Permissions surfaced to the UI ----------
+/** Mirrors App\Domain\Tenancy\Authorization\Permission (P4-14). UI derives from TenantMembership.role. */
+export const ROLE_CAN = {
+  view_costs: ['owner', 'admin'],
+  manage_catalog: ['owner', 'admin'],   // delete products/categories/customers
+  bulk_data: ['owner', 'admin'],        // imports & exports
+} as const satisfies Record<string, readonly TenantRole[]>;
+
+// ---------- Catalog (Phase 4) ----------
+export const DEFAULT_LOW_STOCK_THRESHOLD = 5;
+export const CATALOG_LIMITS = {
+  options: 3, option_values: 20, variants: 100, images: 10, categories_per_product: 10,
+  tags: 20, category_depth: 3, categories_per_store: 500, bulk_ids: 100, adjustment_items: 100,
+  max_amount: 1_000_000_000,
+} as const;
+
+export type ProductStatus = 'draft' | 'active' | 'archived';
+export type ProductType = 'simple' | 'variable';
+export interface ProductOption { name: string; values: string[] }
+export interface CategoryRef { id: string; name: string; slug: string }
+
+export interface Category {
+  id: string; parent_id: string | null; name: string; slug: string; description: string | null;
+  image: MediaRef | null; depth: 1 | 2 | 3; position: number; is_visible: boolean;
+  url_path: string;                 // "/c/{slug}"
+  product_count: number; children_count: number;
+  created_at: string; updated_at: string;
+}
+export interface CreateCategoryInput {
+  name: string; slug?: string; parent_id?: string | null; description?: string | null;
+  image_media_id?: string | null; is_visible?: boolean;
+}
+export type UpdateCategoryInput = Partial<CreateCategoryInput>;
+export interface ReorderCategoriesInput { items: { id: string; parent_id: string | null }[] }
+
+export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock' | 'untracked';
+export interface InventoryLevel {
+  on_hand: number; committed: number; available: number;
+  low_stock_threshold: number | null; effective_threshold: number; status: StockStatus;
+}
+export interface ProductVariant {
+  id: string; title: string; option_values: string[];      // ordered like Product.options
+  sku: string | null; barcode: string | null;
+  price_amount: number; compare_at_amount: number | null;
+  cost_amount: number | null;                              // null for staff (ViewCosts)
+  weight_grams: number | null; position: number; is_default: boolean; is_enabled: boolean;
+  track_inventory: boolean; allow_backorder: boolean; image_media_id: string | null;
+  inventory: InventoryLevel; updated_at: string;
+}
+export interface ProductImage { media_id: string; alt: string | null; position: number; media: MediaRef }
+export interface ProductStockSummary { on_hand: number; available: number; low_variants: number; out_variants: number; tracked: boolean }
+export interface ProductSummary {
+  id: string; name: string; slug: string; type: ProductType; status: ProductStatus; currency: string;
+  image: MediaRef | null;                                  // cover (first image)
+  price_min_amount: number; price_max_amount: number;
+  /** Card variant = cheapest enabled variant (first variant when none enabled). */
+  price_amount: number; compare_at_amount: number | null; cost_amount: number | null;
+  variants_count: number; first_sku: string | null;
+  stock: ProductStockSummary; categories: CategoryRef[];
+  published_at: string | null; created_at: string; updated_at: string;
+}
+export interface Product extends ProductSummary {
+  description: RichTextDoc | null; tags: string[]; options: ProductOption[];
+  variants: ProductVariant[]; images: ProductImage[];
+  seo: { title: string | null; description: string | null };
+  url_path: string;                                        // "/products/{slug}" (route ships in Phase 5)
+  revision: number; created_by: UserRef | null; updated_by: UserRef | null;
+}
+export interface ProductVariantInput {
+  id?: string; option_values?: string[]; sku?: string | null; barcode?: string | null;
+  price_amount: number; compare_at_amount?: number | null; cost_amount?: number | null;
+  weight_grams?: number | null; is_enabled?: boolean; track_inventory?: boolean; allow_backorder?: boolean;
+  image_media_id?: string | null;
+  /** New variants only. */
+  initial_on_hand?: number;
+  low_stock_threshold?: number | null;
+}
+export interface ProductImageInput { media_id: string; alt?: string | null }
+export interface CreateProductInput {
+  name: string; slug?: string; status?: ProductStatus; description?: RichTextDoc | null;
+  tags?: string[]; category_ids?: string[]; options?: ProductOption[];
+  variants: ProductVariantInput[]; images?: ProductImageInput[];
+  seo?: { title?: string | null; description?: string | null };
+}
+export interface UpdateProductInput extends Partial<Omit<CreateProductInput, 'variants'>> {
+  revision: number; variants?: ProductVariantInput[];
+}
+export type ProductSort = '-created_at' | 'created_at' | 'name' | '-name' | 'price' | '-price' | '-updated_at';
+export interface ProductListFilters {
+  status?: ProductStatus[]; category_id?: string; stock?: 'in' | 'low' | 'out'; q?: string;
+  sort?: ProductSort; page?: number; per_page?: number;
+}
+export interface ProductListMeta extends PaginationMeta {
+  counts: Record<'all' | ProductStatus, number>;
+  summary: { active_products: number; active_variants: number; low_stock_variants: number; out_of_stock_variants: number };
+  plan: { limit: number | null; used: number };
+}
+export type ProductBulkAction = 'activate' | 'draft' | 'archive' | 'delete' | 'set_categories' | 'add_categories';
+export interface ProductBulkInput { action: ProductBulkAction; ids: string[]; category_ids?: string[] }
+export interface ProductBulkResult { action: ProductBulkAction; updated: number }
+
+// ---------- Inventory ----------
+export interface InventoryItem {
+  variant_id: string;
+  product: { id: string; name: string; status: ProductStatus; image: MediaRef | null };
+  title: string; option_values: string[]; sku: string | null; barcode: string | null;
+  on_hand: number; committed: number; available: number;
+  low_stock_threshold: number | null; effective_threshold: number; status: StockStatus;
+  track_inventory: boolean; price_amount: number; cost_amount: number | null; updated_at: string;
+}
+export interface InventorySummary {
+  currency: string; stock_value_cost_amount: number | null; stock_value_price_amount: number;
+  units_on_hand: number; committed_units: number; low_stock_variants: number; out_of_stock_variants: number;
+  variants_count: number; products_count: number;
+}
+export interface InventoryListMeta extends PaginationMeta { summary: InventorySummary }
+export interface InventoryListFilters {
+  q?: string; stock?: ('in' | 'low' | 'out' | 'untracked')[];
+  category_id?: string; product_id?: string;
+  sort?: 'name' | 'available' | '-available' | '-updated_at'; page?: number; per_page?: number;
+}
+export type StockMovementReason = 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other';
+export type ManualStockReason = Exclude<StockMovementReason, 'initial' | 'import'>;
+export interface StockAdjustmentItem { variant_id: string; mode: 'delta' | 'set'; quantity: number; expected_on_hand?: number }
+export interface StockAdjustmentInput { reason: ManualStockReason; note?: string | null; items: StockAdjustmentItem[] }
+export interface StockMovement {
+  id: string; variant_id: string; product: { id: string; name: string };
+  variant_title: string; sku: string | null; delta: number; on_hand_after: number;
+  reason: StockMovementReason; note: string | null;
+  reference: { type: 'import'; id: string } | null; actor: UserRef | null; created_at: string;
+}
+export interface StockAdjustmentResult { items: InventoryItem[]; movements: StockMovement[] }
+export interface StockMovementFilters {
+  variant_id?: string; product_id?: string; reason?: StockMovementReason[];
+  created_from?: string; created_to?: string; page?: number; per_page?: number;
+}  // api-client maps to filter[...] / filter[created_at][gte|lte]
+
+// ---------- Customers ----------
+export type CustomerChannel = 'facebook' | 'instagram' | 'whatsapp' | 'website' | 'phone' | 'walk_in' | 'other';
+export interface Customer {
+  id: string; name: string;
+  phone: string | null;                                    // "8801XXXXXXXXX"
+  email: string | null; district: string | null; area: string | null;
+  channel: CustomerChannel | null; source: 'manual' | 'import' | 'storefront';
+  tags: string[]; accepts_marketing: boolean;
+  orders_count: number; total_spent_amount: number; currency: string; last_order_at: string | null;
+  notes_count: number; revision: number; created_at: string; updated_at: string; created_by: UserRef | null;
+}
+export interface CustomerNote { id: string; body: string; author: UserRef | null; created_at: string; can_delete: boolean }
+export interface CustomerDetail extends Customer { notes: CustomerNote[] }
+export interface CreateCustomerInput {
+  name: string; phone?: string | null; email?: string | null; district?: string | null; area?: string | null;
+  channel?: CustomerChannel | null; tags?: string[]; accepts_marketing?: boolean;
+}
+export interface UpdateCustomerInput extends Partial<CreateCustomerInput> { revision: number }
+export interface CustomerListFilters {
+  q?: string; channel?: CustomerChannel[]; tag?: string; created_from?: string;
+  sort?: '-created_at' | 'name' | '-total_spent' | '-last_order_at'; page?: number; per_page?: number;
+}
+export interface CustomerListMeta extends PaginationMeta { counts: { all: number; new_this_month: number } }
+
+// ---------- Imports / exports ----------
+export type DataImportType = 'products' | 'customers';
+export type DataImportStatus = 'uploaded' | 'validating' | 'validated' | 'importing' | 'completed' | 'failed' | 'cancelled';
+export type ProductImportField =
+  | 'handle' | 'name' | 'description' | 'status' | 'category' | 'tags'
+  | 'option1_name' | 'option1_value' | 'option2_name' | 'option2_value' | 'option3_name' | 'option3_value'
+  | 'sku' | 'barcode' | 'price' | 'compare_at_price' | 'cost_price' | 'stock' | 'weight_kg'
+  | 'seo_title' | 'seo_description' | 'image_urls';
+export type CustomerImportField = 'name' | 'phone' | 'email' | 'district' | 'area' | 'channel' | 'tags' | 'accepts_marketing' | 'note';
+export type ImportField = ProductImportField | CustomerImportField;
+export interface ImportOptions { update_existing: boolean; import_as_draft: boolean; create_missing_categories: boolean }
+export interface ImportSummary {
+  total: number; create: number; update: number; unchanged: number;
+  warnings: number; errors: number; over_limit: number;
+}
+export interface DataImport {
+  id: string; type: DataImportType; status: DataImportStatus;
+  filename: string; size_bytes: number; row_count: number | null;
+  headers: string[]; samples: Record<string, string | null>;
+  suggested_map: Record<string, ImportField | null>;
+  column_map: Record<string, ImportField | null> | null;
+  options: ImportOptions; summary: ImportSummary | null;
+  progress: { processed: number; total: number };
+  failure_reason: string | null; created_by: UserRef | null;
+  created_at: string; validated_at: string | null; completed_at: string | null;
+}
+export interface ValidateImportInput { column_map: Record<string, ImportField | null>; options: ImportOptions }
+export interface RunImportInput { allow_partial?: boolean }
+export interface ImportRowMessage { level: 'warning' | 'error'; field: ImportField | null; message: string }
+export interface DataImportRow {
+  row_number: number; status: 'ready' | 'warning' | 'error';
+  action: 'create' | 'update' | 'unchanged' | 'skip';
+  label: string; key: string | null;
+  preview: { price_amount: number | null; stock: number | null; variants: number | null };
+  messages: ImportRowMessage[]; result_id: string | null;
+}
+export type DataExportStatus = 'queued' | 'running' | 'completed' | 'failed' | 'expired';
+export interface DataExport {
+  id: string; type: DataImportType; status: DataExportStatus; row_count: number | null;
+  filename: string | null; download_url: string | null; expires_at: string | null;
+  created_by: UserRef | null; created_at: string;
+}
+export type CreateExportInput =
+  | { type: 'products'; filters?: Omit<ProductListFilters, 'page' | 'per_page' | 'sort'> & { ids?: string[] } }
+  | { type: 'customers'; filters?: Omit<CustomerListFilters, 'page' | 'per_page' | 'sort'> };
+
+// ---------- Dashboard ----------
+export interface DashboardSummary {
+  currency: string; timezone: string; generated_at: string;
+  products: { total: number; active: number; draft: number; archived: number; limit: number | null };
+  inventory: { low_stock_variants: number; out_of_stock_variants: number; units_on_hand: number; stock_value_cost_amount: number | null };
+  customers: { total: number; new_this_month: number };
+  /** Phase 5 fills this; null means "no order data yet" → empty states. */
+  orders: null;
+  setup: { has_products: boolean };
+}
+
+// ---------- Storefront product feed ----------
+export interface StorefrontProductCard {
+  id: string; slug: string; name: string;
+  subtitle: string | null;                                 // first category name
+  price_amount: number; compare_at_amount: number | null; currency: string;
+  on_sale: boolean; image: StorefrontMedia | null;
+}
+export interface StorefrontProductListMeta { has_products: boolean }
+export interface StorefrontProductQuery { sort?: 'latest' | 'bestsellers'; limit?: number; on_sale?: boolean; category?: string }

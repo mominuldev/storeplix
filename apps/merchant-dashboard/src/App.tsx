@@ -33,9 +33,21 @@ const SeoPage = lazy(() => import('./online-store/SeoPage').then((m) => ({ defau
 const ThemesPage = lazy(() => import('./online-store/ThemesPage').then((m) => ({ default: m.ThemesPage })));
 const ThemeEditorPage = lazy(() => import('./online-store/editor/ThemeEditorPage'));
 const PageEditorPage = lazy(() => import('./online-store/pages/PageEditorPage'));
+// Phase 4 catalog screens (code-split; the editor pulls Tiptap + dnd-kit).
+const ProductsPage = lazy(() => import('./products/ProductsPage').then((m) => ({ default: m.ProductsPage })));
+const ProductEditorPage = lazy(() => import('./products/ProductEditorPage'));
+const CategoriesPage = lazy(() => import('./products/CategoriesPage'));
+const ImportPage = lazy(() => import('./imports/ImportPage'));
+const InventoryPage = lazy(() => import('./inventory/InventoryPage'));
+const CustomersPage = lazy(() => import('./customers/CustomersPage'));
+const CustomerDetailPage = lazy(() => import('./customers/CustomerDetailPage'));
+const AddProductsPage = lazy(() => import('./onboarding/AddProductsPage'));
 
-/** Routes implemented in Phase 3; excluded from the generic placeholders. */
+const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
+
+/** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
 const onlineStoreRoutes = ['/online-store', '/online-store/seo'];
+const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 
 export function AppRoutes() {
   return (
@@ -48,7 +60,7 @@ export function AppRoutes() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
-        {/* Public: works signed out (new user) and signed in (existing user accepts with Bearer). */}
+        {/* Public: works signed out (new user) and signed in (existing user accepts with the session cookie). */}
         <Route path="/invite" element={<InvitePage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/choose-shop" element={<ChooseShopPage />} />
@@ -56,6 +68,7 @@ export function AppRoutes() {
           <Route path="/verify-phone" element={<VerifyPhonePage />} />
           <Route element={<StoreGate />}>
             <Route path="/onboarding/theme" element={<PickThemePage />} />
+            <Route path="/onboarding/products" element={lazyEl(<AddProductsPage />)} />
             {/* Full-screen editors (outside AppShell) */}
             <Route
               path="/online-store/editor"
@@ -123,6 +136,14 @@ export function AppRoutes() {
                   </Suspense>
                 }
               />
+              <Route path="/products" element={lazyEl(<ProductsPage />)} />
+              <Route path="/products/new" element={lazyEl(<ProductEditorPage />)} />
+              <Route path="/products/categories" element={lazyEl(<CategoriesPage />)} />
+              <Route path="/products/import" element={lazyEl(<ImportPage />)} />
+              <Route path="/products/:productId" element={lazyEl(<ProductEditorPage />)} />
+              <Route path="/inventory" element={lazyEl(<InventoryPage />)} />
+              <Route path="/customers" element={lazyEl(<CustomersPage />)} />
+              <Route path="/customers/:customerId" element={lazyEl(<CustomerDetailPage />)} />
               <Route path="/staff" element={<StaffPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/settings" element={<SettingsLayout />}>
@@ -137,7 +158,7 @@ export function AppRoutes() {
                   ))}
               </Route>
               {allRoutes
-                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes].includes(r.to))
+                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes, ...catalogRoutes].includes(r.to))
                 .map((r) => (
                   <Route key={r.to} path={r.to} element={<PlaceholderPage title={r.label} />} />
                 ))}

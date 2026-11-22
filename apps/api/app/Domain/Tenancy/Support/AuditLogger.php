@@ -3,6 +3,11 @@
 namespace App\Domain\Tenancy\Support;
 
 use App\Domain\Billing\Models\Subscription;
+use App\Domain\Catalog\Models\Category;
+use App\Domain\Catalog\Models\Product;
+use App\Domain\Customers\Models\Customer;
+use App\Domain\DataTransfer\Models\DataExport;
+use App\Domain\DataTransfer\Models\DataImport;
 use App\Domain\Identity\Models\User;
 use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
@@ -39,6 +44,11 @@ class AuditLogger
         StoreTheme::class => 'store_theme',
         StorePage::class => 'store_page',
         StoreNavigation::class => 'store_navigation',
+        Product::class => 'product',
+        Category::class => 'category',
+        Customer::class => 'customer',
+        DataImport::class => 'data_import',
+        DataExport::class => 'data_export',
     ];
 
     public function __construct(

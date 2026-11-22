@@ -83,3 +83,24 @@ Order confirmed `1:11788` · Track order `1:11959` · Search `1:12443` · Flash 
 Help centre `1:13264` · Journal `1:13401` · Article `1:13455` · 404 `1:13565` / `1:13588`. Foundations `1:9864`, components `1:9319`, photography `1:9800`.
 Storefront – Mobile (page 2:6): Product + order form `16:2`, Cart `31:6473`, Checkout `32:5087`, Order placed `33:5751`,
 Track order `33:5864`, Landing page COD offer `149:1009`, Policy page (Delivery & returns) `149:1294`.
+
+## Phase 4 — catalog, inventory, customers, dashboard (PHASE-4-CONTRACT §9)
+Each desktop frame = Sidebar + Main (1440 wide).
+| Screen | Frame | Notes |
+|---|---|---|
+| Dashboard | `10:600` (Main `10:754`; header `10:782`; KPI row `10:797`, KPI tiles `13:964`, hero money `10:798`; Today to-do `10:958`, Restock task `10:1011`) | Phase 4 builds catalog/stock cards + empty states; order/money widgets (`10:786`, `10:890`, `10:1024`, `10:1061`, `10:1085`, `10:1115`, `10:1168`) are Phase 5/7 |
+| Products list | `60:8984` (Main `60:8986`); Product row `60:11336` | |
+| Product editor | `60:9381` (Main `60:9383`); Variant row `61:13220` | |
+| Categories & collections | `60:9778` (Main `60:9780`); Category row `63:13890` | Collections deferred |
+| Import products (CSV) | `60:10175` (Main `60:10177`); Column map row `63:16638`; Import preview row `63:16857` | Also used for customer import |
+| Product reviews / Barcode labels | `60:10572` / `147:32835` (label `147:32805`) | Deferred |
+| Local components · Products | `60:10969` | |
+| Inventory (stock levels) | `11:589` (Main `11:743`) | Stock levels + Stock movements tabs only |
+| Purchase orders / New PO / Receive / Transfers / Stock count / Suppliers | `35:5619` / `35:6210` / `36:6607` / `153:34425` / `153:35246` / `153:35999` | Deferred (Phase 8) |
+| Customers list | `63:14972` (Main `63:14974`); Customer/Row `61:12494`; Avatar `61:12493` | |
+| Customer detail | `64:16382` (Main `64:16384`) | Contact, tags, notes only |
+| Customer segments / Blocked | `65:16718` / `66:17034` | Deferred |
+| Local components · Customers & Marketing | `61:12480` | |
+| States: Orders empty / Products empty / Loading-error-no results | `148:34033` / `148:34667` (Card / Empty `148:35263`) / `148:35298` (Loading `148:35302`, Error `148:35336`, No results `148:35352`, Banners `148:35364`) | |
+| Mobile (page 2:5): Today / Orders / Order detail / Create order / More / Products | `31:4281` / `31:4886` / `32:309` / `32:6124` / `32:6541` / `139:1077` | Components section `30:3010`: StatusBar `30:3012`, MobileTabBar `30:3170` (Today `30:3022`, Orders `30:3059`, Products `30:3096`, More `30:3133`), OrderCard `30:3171`, MenuRow `30:3202`, ProductCard `139:1065`. No mobile frames for editor, categories, inventory, customers, import |
+| Onboarding 05 Add first products | `50:312` | **No mobile frame**: `54:941` (listed as M5) is the mobile "You're live" screen (Phase 5.13) |

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Billing\BillingServiceProvider;
+use App\Domain\Catalog\CatalogServiceProvider;
 use App\Domain\Sms\SmsServiceProvider;
 use App\Domain\Stores\StoresServiceProvider;
 use App\Domain\Tenancy\TenancyServiceProvider;
@@ -11,5 +12,6 @@ return [
     TenancyServiceProvider::class,
     StoresServiceProvider::class,
     BillingServiceProvider::class,
+    CatalogServiceProvider::class,
     SmsServiceProvider::class,
 ];

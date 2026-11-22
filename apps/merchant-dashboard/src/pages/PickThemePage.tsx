@@ -60,7 +60,8 @@ export function PickThemePage() {
       const settings = await api.stores.updateSettings(store.id, { branding: { primary_color: color, ...(logo ? { logo_media_id: logo.id } : {}) } });
       queryClient.setQueryData(settingsKey(store.id), settings);
       await queryClient.invalidateQueries({ queryKey: ['store-themes'] });
-      navigate('/', { replace: true });
+      // Phase 4 §9.1: step 05 "Add first products" follows.
+      navigate('/onboarding/products', { replace: true });
     } catch (e) {
       setError(isApiError(e) ? (e.code === 'theme_unavailable' ? 'This theme isn’t available yet. Pick another one.' : e.message) : 'Something went wrong. Try again.');
     } finally {

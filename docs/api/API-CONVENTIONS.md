@@ -48,8 +48,10 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 | 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
 | 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
 | 404 | `not_found`, `store_not_found`, `invitation_invalid` | missing **or belongs to another tenant** |
-| 409 | `conflict`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition` | state conflict |
-| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid` | validation / business rule |
+| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition` | state conflict |
+| 413 | `payload_too_large` | body/upload over the endpoint limit |
+| 419 | `csrf_token_mismatch` | cookie-session write without a valid `X-XSRF-TOKEN` (Phase 4.7) |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file` | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
 | 503 | `maintenance` | |
@@ -80,6 +82,11 @@ Plural nouns, kebab-case multiword (`/stores/{store}/shipping-methods`), nested 
 Route params are ULIDs (except `themes/{code}` and storefront `{slug}`).
 
 ## 7. Authentication headers
+**Phase 4.7 (PHASE-4-CONTRACT §7):** merchant and admin SPAs authenticate with a Sanctum **session cookie** on their own
+origin (API proxied same-origin), call `GET /sanctum/csrf-cookie` first and send `X-XSRF-TOKEN` on every write
+(missing/stale → 419 `csrf_token_mismatch`). Login responses are `AuthSession {user, expires_at}`; Bearer tokens are
+removed in 4.7c. `X-Tenant-Id` is unchanged. The text below describes Phases 1–3.
+
 `Authorization: Bearer <token>`; merchant routes also `X-Tenant-Id: <tenant ulid>`. Storefront server sends
 `X-Storefront-Key` and `X-Storefront-Host`; shopper session for cart/checkout via `X-Cart-Token` (set by storefront
 server from `sp_cart` cookie) and, for logged-in customers, `X-Customer-Token` (Phase 5). Merchant preview: storefront

@@ -110,7 +110,7 @@ class InvitationAcceptanceController
             return new JsonResponse(['data' => ['id' => $tenant->id, 'name' => $tenant->name, 'role' => $membership->role]]);
         }
 
-        return $this->tokenResponse($user, 201);
+        return $this->sessionResponse($user, 201);
     }
 
     private function findUsable(string $token): StaffInvitation

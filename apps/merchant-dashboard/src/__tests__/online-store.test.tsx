@@ -72,7 +72,7 @@ describe('Online store — staff read-only (contract §6)', () => {
     expect(screen.queryAllByRole('button', { name: /^Reorder/ })).toHaveLength(0);
     expect(screen.getAllByLabelText(/^Heading/)[0]).toBeDisabled();
     // Only the preview token (a read) is POSTed.
-    expect(writes(api).map(([u]) => new URL(String(u)).pathname)).toEqual(['/api/v1/stores/S1/preview-token']);
+    expect(writes(api).map(([u]) => new URL(String(u), 'http://localhost').pathname)).toEqual(['/api/v1/stores/S1/preview-token']);
   });
 });
 

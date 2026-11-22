@@ -16,6 +16,8 @@ RUN apk add --no-cache icu-libs libpq libzip postgresql-client \
     && rm -rf /tmp/pear
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+# Phase 4: 10 MB CSV imports (upload_max_filesize 12M, post_max_size 13M, memory for 5 000-row jobs).
+COPY docker/php-uploads.ini /usr/local/etc/php/conf.d/zz-storeplix-uploads.ini
 
 WORKDIR /var/www/html
 

@@ -6,6 +6,7 @@ use App\Domain\Billing\Exceptions\FeatureNotInPlan;
 use App\Domain\Billing\Exceptions\PlanLimitReached;
 use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
+use App\Domain\Catalog\Models\Product;
 use App\Domain\Staff\SeatCounter;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\TenantCache;
@@ -34,11 +35,15 @@ final class FeatureGate
         return $value === null ? null : (int) $value;
     }
 
-    /** Live usage. Phase 2: staff_seats only; other limits return 0 until their module exists. */
+    /**
+     * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29).
+     * Other limits return 0 until their module exists.
+     */
     public static function usage(Tenant $tenant, Limit $limit): int
     {
         return match ($limit) {
             Limit::StaffSeats => app(SeatCounter::class)->used($tenant),
+            Limit::Products => app(TenantContext::class)->run($tenant, fn () => Product::query()->count()),
             default => 0,
         };
     }

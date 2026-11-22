@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAuthSession } from './session';
+import { createSessionStore } from './session';
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
@@ -24,30 +24,35 @@ class MemoryStorage implements Storage {
 }
 
 function make(now = Date.parse('2026-11-21T10:00:00Z')) {
-  const tokenStorage = new MemoryStorage();
+  const tabStorage = new MemoryStorage();
   const prefsStorage = new MemoryStorage();
-  const session = createAuthSession({ prefix: 't', tokenStorage, prefsStorage, now: () => now });
-  return { session, tokenStorage, prefsStorage };
+  const session = createSessionStore({ prefix: 't', sessionStorage: tabStorage, prefsStorage, now: () => now });
+  return { session, tabStorage, prefsStorage };
 }
 
-describe('createAuthSession', () => {
-  it('keeps the token in token storage and preferences separately', () => {
-    const { session, tokenStorage, prefsStorage } = make();
-    session.setAuth({ token: 'abc', expires_at: '2026-11-28T10:00:00Z' });
+const keysOf = (s: Storage) => Array.from({ length: s.length }, (_, i) => s.key(i));
+
+describe('createSessionStore (4.7b: cookie session, no token)', () => {
+  it('keeps only expires_at + a signed-in flag per tab and the tenant preference separately; never a token', () => {
+    const { session, tabStorage, prefsStorage } = make();
+    session.start({ expires_at: '2026-11-28T10:00:00Z' });
     session.setTenantId('tenant-1');
-    expect(tokenStorage.getItem('t.token')).toBe('abc');
-    expect(prefsStorage.getItem('t.token')).toBeNull();
-    expect(prefsStorage.getItem('t.tenant')).toBe('tenant-1');
+    expect(session.isSignedIn()).toBe(true);
+    expect(keysOf(tabStorage).sort()).toEqual(['t.expires_at', 't.signed_in']);
+    expect(keysOf(tabStorage).some((k) => k?.includes('token'))).toBe(false);
+    expect(keysOf(prefsStorage)).toEqual(['t.tenant']);
     expect(session.msUntilExpiry()).toBe(7 * 24 * 3600 * 1000);
     expect(session.isExpired()).toBe(false);
   });
 
-  it('detects expiry and leaves a one-shot notice on expire()', () => {
+  it('detects expiry and leaves a one-shot notice on expire(); bumps the epoch', () => {
     const { session } = make();
-    session.setAuth({ token: 'abc', expires_at: '2026-11-21T09:59:59Z' });
+    session.start({ expires_at: '2026-11-21T09:59:59Z' });
+    const epoch = session.getEpoch();
     expect(session.isExpired()).toBe(true);
     session.expire();
-    expect(session.getToken()).toBeNull();
+    expect(session.isSignedIn()).toBe(false);
+    expect(session.getEpoch()).toBe(epoch + 1);
     expect(session.consumeNotice()).toBe('session_expired');
     expect(session.consumeNotice()).toBeNull();
   });
@@ -56,9 +61,9 @@ describe('createAuthSession', () => {
     const { session } = make();
     session.expire();
     expect(session.peekNotice()).toBeNull();
-    session.setAuth({ token: 'abc' });
+    session.start({});
     session.clear();
-    expect(session.getToken()).toBeNull();
+    expect(session.isSignedIn()).toBe(false);
     expect(session.peekNotice()).toBeNull();
   });
 });

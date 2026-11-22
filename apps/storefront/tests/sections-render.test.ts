@@ -15,7 +15,7 @@ const store = {
   id: '1', name: 'Demo Store', slug: 'demo', status: 'active' as const, currency: 'BDT', logo_url: null, favicon_url: null,
   icons: { apple_touch: null, icon_192: null, icon_512: null }, primary_host: 'demo.localhost',
 };
-const ctx = (media: SectionContext['media'] = {}): SectionContext => ({ store, host: 'demo.localhost', media });
+const ctx = (media: SectionContext['media'] = {}): SectionContext => ({ store, host: 'demo.localhost', media, preview: false });
 
 async function renderHome(raw: unknown, media: SectionContext['media'] = {}) {
   const config = resolveThemeConfig(modernCommerce, raw);

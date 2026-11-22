@@ -13,7 +13,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
-use Laravel\Sanctum\HasApiTokens;
 
 /**
  * Platform-level identity. A user may belong to many tenants (tenant_users).
@@ -28,7 +27,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasUlids, Notifiable;
+    use HasFactory, HasUlids, Notifiable;
 
     protected $fillable = ['name', 'email', 'phone', 'password', 'email_verified_at', 'phone_verified_at', 'password_changed_at'];
 

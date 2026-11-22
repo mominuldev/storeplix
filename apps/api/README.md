@@ -1,6 +1,6 @@
 # Store Plix API (`apps/api`)
 
-Laravel 13 · PHP 8.4 · Sanctum (personal access tokens) · PostgreSQL · Redis. REST under `/api/v1`.
+Laravel 13 · PHP 8.4 · Sanctum (same-origin cookie sessions + CSRF; no Bearer tokens since Phase 4.7c) · PostgreSQL · Redis. REST under `/api/v1`.
 Contract: `docs/development/AGENT-CONTRACTS.md`; JSON shapes mirror `packages/types/src/index.ts`.
 
 ## Run locally
@@ -81,15 +81,15 @@ Each module may register its own service provider (`bootstrap/providers.php`). F
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/api/v1/health` | – | `{data:{status,version,time}}` |
-| POST | `/api/v1/auth/register` | – (throttled) | creates user + tenant (owner) → 201 `{data:{token,expires_at,user}}` |
-| POST | `/api/v1/auth/login` | – (throttled) | `{data:{token,expires_at,user}}`; bad credentials → 422 `validation_failed` (details.email) |
+| POST | `/api/v1/auth/register` | – (throttled, SPA origin only) | creates user + tenant (owner), signs the session in → 201 `{data:{user,expires_at}}` (AuthSession) |
+| POST | `/api/v1/auth/login` | – (throttled, SPA origin only) | session login → `{data:{user,expires_at}}`; bad credentials → 422 `validation_failed` (details.email); non-SPA caller → 400 `stateful_required` |
 | POST | `/api/v1/auth/forgot-password` | – (throttled) | `{email}` → always 202 (no enumeration); queues `ResetPasswordMail` |
-| POST | `/api/v1/auth/logout` | Bearer | 204, revokes current token |
-| GET | `/api/v1/auth/me` | Bearer | `User` + additive `tenants:[{id,name,role}]` |
-| GET | `/api/v1/stores` | Bearer + `X-Tenant-Id` | paginated `{data:Store[],meta}` (`per_page` ≤ 100) |
-| POST | `/api/v1/stores` | Bearer + `X-Tenant-Id` (owner/admin) | `{name, slug, business_categories?, name_bn?, timezone?, country?=BD, currency?=BDT}` → 201 `Store`; creates `{slug}.{PLATFORM_DOMAIN}` (active, primary) + default theme; tenant already has a store → 409 `store_limit_reached` |
-| GET | `/api/v1/stores/{id}` | Bearer + `X-Tenant-Id` | 404 for other tenants' stores |
-| POST | `/api/v1/stores/{id}/preview-token` | Bearer + `X-Tenant-Id` (any member) | 201 `PreviewToken {token,url,expires_at}`; 60 min, bound to the store; `url` = `https://{primary_domain}/?preview=…` (`http://…:3000` when `APP_ENV=local`) |
+| POST | `/api/v1/auth/logout` | session | 204; session invalidated, CSRF token rotated |
+| GET | `/api/v1/auth/me` | session | `User` + additive `tenants:[{id,name,role}]`; `meta.session_expires_at` |
+| GET | `/api/v1/stores` | session + `X-Tenant-Id` | paginated `{data:Store[],meta}` (`per_page` ≤ 100) |
+| POST | `/api/v1/stores` | session + `X-Tenant-Id` (owner/admin) | `{name, slug, business_categories?, name_bn?, timezone?, country?=BD, currency?=BDT}` → 201 `Store`; creates `{slug}.{PLATFORM_DOMAIN}` (active, primary) + default theme; tenant already has a store → 409 `store_limit_reached` |
+| GET | `/api/v1/stores/{id}` | session + `X-Tenant-Id` | 404 for other tenants' stores |
+| POST | `/api/v1/stores/{id}/preview-token` | session + `X-Tenant-Id` (any member) | 201 `PreviewToken {token,url,expires_at}`; 60 min, bound to the store; `url` = `https://{primary_domain}/?preview=…` (`http://…:3000` when `APP_ENV=local`) |
 | GET | `/api/v1/storefront/config` | `X-Storefront-Key` + `X-Storefront-Host` | `StorefrontConfig` incl. `store.status` (`active`/`draft`) and `preview`; optional `X-Storefront-Preview`; 401 `invalid_storefront_key`, 400 `storefront_host_required`, 404 `store_not_found` |
 
 Errors always: `{ "error": { "code", "message", "details"? } }` (`validation_failed`, `unauthenticated`,
@@ -100,17 +100,17 @@ Timestamps are ISO-8601 UTC (`2026-01-01T12:00:00Z`).
 
 | Method | Path | Auth / roles | Notes |
 |---|---|---|---|
-| POST | `/auth/reset-password` | public, throttled | broker token: hashed, 60 min, single use, replaces previous; revokes all tokens; 422 `invalid_reset_token` |
-| PATCH | `/auth/me` | B | name/email/phone; email change needs `current_password` |
-| PUT | `/auth/password` | B | returns a NEW `AuthToken`; all other tokens revoked |
-| POST | `/auth/otp/send` | public (B for `verify_phone`) | 202 `{expires_in, resend_in, dev_otp?}`; 429 `otp_rate_limited` |
-| POST | `/auth/phone/verify` · `/auth/login/otp` · `/auth/reset-password/otp` | B · public · public | 422 `invalid_otp` |
-| GET/POST/DELETE | `/staff`, `/staff/invitations[/{id}[/resend]]`, `/staff/{member}` | B+T, O A (leave = any role on self) | 409 `last_owner` / `already_member` / `invitation_pending` / `invitation_not_pending`; 403 `cannot_change_own_role`; 402 `plan_limit_reached` |
-| GET/POST | `/invitations/{token}[/accept]` | public or B | 404 `invitation_invalid`; 409 `login_required`; 403 `invitation_email_mismatch` |
-| GET/PATCH | `/stores/{store}/settings` | B+T (PATCH O A) | partial update, exact contract validation; colours → `theme.settings` |
-| POST/GET/DELETE | `/media[/{media}]` | B+T, all (delete logo/favicon O A) | MIME sniffed from bytes; 409 `media_in_use` |
+| POST | `/auth/reset-password` | public, throttled | broker token: hashed, 60 min, single use, replaces previous; other sessions die on their next request; 422 `invalid_reset_token` |
+| PATCH | `/auth/me` | S | name/email/phone; email change needs `current_password` |
+| PUT | `/auth/password` | S | returns `AuthSession`; the current session is rotated, every other session is logged out |
+| POST | `/auth/otp/send` | public (S for `verify_phone`) | 202 `{expires_in, resend_in, dev_otp?}`; 429 `otp_rate_limited` |
+| POST | `/auth/phone/verify` · `/auth/login/otp` · `/auth/reset-password/otp` | S · public (SPA origin only) · public | 422 `invalid_otp` |
+| GET/POST/DELETE | `/staff`, `/staff/invitations[/{id}[/resend]]`, `/staff/{member}` | S+T, O A (leave = any role on self) | 409 `last_owner` / `already_member` / `invitation_pending` / `invitation_not_pending`; 403 `cannot_change_own_role`; 402 `plan_limit_reached` |
+| GET/POST | `/invitations/{token}[/accept]` | public or S (SPA origin only) | 404 `invitation_invalid`; 409 `login_required`; 403 `invitation_email_mismatch` |
+| GET/PATCH | `/stores/{store}/settings` | S+T (PATCH O A) | partial update, exact contract validation; colours → `theme.settings` |
+| POST/GET/DELETE | `/media[/{media}]` | S+T, all (delete logo/favicon O A) | MIME sniffed from bytes; 409 `media_in_use` |
 | GET | `/plans` · `/subscription` · `/features` | public · O A · all | |
-| GET | `/audit-logs` | B+T, O A | `filter[action|actor_id|subject_type|subject_id|created_at][gte|lte]`, unknown filter → 422 |
+| GET | `/audit-logs` | S+T, O A | `filter[action|actor_id|subject_type|subject_id|created_at][gte|lte]`, unknown filter → 422 |
 
 - **Roles** come from `Tenancy\Authorization\Permission` (ADR 0005 matrix) and are enforced by Policies.
 - **Media**: originals re-encoded (EXIF/polyglot stripped) and variants rendered by `ProcessMedia` (queue `media`).
@@ -149,8 +149,10 @@ Timestamps are ISO-8601 UTC (`2026-01-01T12:00:00Z`).
   only if the token is authentic, unexpired and issued for the resolved store; anything else silently
   degrades to `preview:false`. Preview responses carry `Cache-Control: private, no-store`; the
   `domain:{host}` cache only ever stores `{tenant_id, store_id}`, never preview state.
-- **D3 token expiry**: `sanctum.expiration = SANCTUM_EXPIRATION` (minutes, default 10080); each token
-  also stores `expires_at`. Expired token → 401 `unauthenticated`. Scheduler prunes daily.
+- **D3 session expiry**: a session login is valid for `SANCTUM_EXPIRATION` minutes (default 10080) from sign-in
+  (`EnforceAbsoluteSessionExpiry`, session key `auth_expires_at`); `SESSION_LIFETIME` is the idle timeout. Past it → 401
+  `unauthenticated`. Writes need `X-XSRF-TOKEN` (from `GET /sanctum/csrf-cookie`) unless the browser sends
+  `Sec-Fetch-Site: same-origin`; failures → 419 `csrf_token_mismatch`. Abbreviations in the tables: S = session, T = `X-Tenant-Id`.
 
 ## Environment
 

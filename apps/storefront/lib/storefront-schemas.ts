@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { PageStatus, StorefrontMedia, StorefrontNavItem, StorefrontNavMenu } from '@storeplix/types';
+import type { PageStatus, StorefrontMedia, StorefrontNavItem, StorefrontNavMenu, StorefrontProductCard } from '@storeplix/types';
 import { sanitizeImageUrl, sanitizeMediaId, sanitizeNavHref } from './sanitize';
 import { cleanText } from './text';
 import { parsePageBlocks, type SafePageBlock } from './page-blocks';
@@ -29,6 +29,13 @@ function parseMedia(id: string, v: unknown): StorefrontMedia | null {
       })
     : [];
   return { id, url, width, height, alt: cleanText(v.alt, 500) ?? null, srcset };
+}
+
+/** One media object carrying its own `id` (product feed images); invalid → null. */
+export function parseStorefrontMedia(v: unknown): StorefrontMedia | null {
+  if (!isObject(v)) return null;
+  const id = sanitizeMediaId(v.id);
+  return id ? parseMedia(id, v) : null;
 }
 
 /** `{id → StorefrontMedia}`; invalid entries are dropped (the section then shows its demo image). */
@@ -127,4 +134,57 @@ export function parsePageIndex(v: unknown): Array<{ slug: string; updated_at: st
     if (!isObject(e) || !isPageSlug(e.slug)) return [];
     return [{ slug: e.slug, updated_at: isoDate.safeParse(e.updated_at).success ? (e.updated_at as string) : null }];
   });
+}
+
+// ---------- product feed (GET /storefront/products, contract §3.8) ----------
+const MAX_FEED_ITEMS = 24;
+const MAX_AMOUNT = 100_000_000_000; // 1 billion ৳ in paisa: far above any real price
+
+const amount = z.number().int().min(0).max(MAX_AMOUNT);
+
+/**
+ * Feed card. Unknown keys are stripped, so anything the API might add (cost, stock, sku, ids of
+ * other entities) can never reach a render path. A compare-at not above the price is dropped.
+ */
+const ProductCardSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    slug: z.string().min(1).max(200),
+    name: z.unknown().transform((v) => cleanText(v, 200, 1)).pipe(z.string()),
+    subtitle: z.unknown().transform((v) => cleanText(v, 120, 1) ?? null),
+    price_amount: amount,
+    compare_at_amount: amount.nullable().catch(null),
+    currency: z.string().regex(/^[A-Za-z]{3}$/).transform((c) => c.toUpperCase()).catch('BDT'),
+    on_sale: z.boolean().catch(false),
+    image: z.unknown().transform(parseStorefrontMedia),
+  })
+  .transform(
+    (c): StorefrontProductCard => ({
+      ...c,
+      compare_at_amount: c.compare_at_amount !== null && c.compare_at_amount > c.price_amount ? c.compare_at_amount : null,
+    }),
+  );
+
+const ProductFeedSchema = z.object({
+  data: z.array(z.unknown()).max(MAX_FEED_ITEMS * 4),
+  meta: z.object({ has_products: z.boolean() }),
+});
+
+export interface ProductFeed {
+  products: StorefrontProductCard[];
+  has_products: boolean;
+}
+
+/**
+ * Parse a feed response body. Invalid envelope → null (caller logs and uses placeholders).
+ * Individual invalid cards are dropped; the rest still render.
+ */
+export function parseProductFeed(body: unknown): ProductFeed | null {
+  const parsed = ProductFeedSchema.safeParse(body);
+  if (!parsed.success) return null;
+  const products = parsed.data.data.flatMap((item) => {
+    const card = ProductCardSchema.safeParse(item);
+    return card.success ? [card.data] : [];
+  });
+  return { products: products.slice(0, MAX_FEED_ITEMS), has_products: parsed.data.meta.has_products };
 }

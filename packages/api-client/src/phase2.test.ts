@@ -7,7 +7,7 @@ function json(status: number, body?: unknown) {
 
 function setup(response: Response, extra: Partial<Parameters<typeof createApiClient>[0]> = {}) {
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => response);
-  const client = createApiClient({ baseUrl: 'http://api.test', fetch: fetchMock, getToken: () => 'tok', getTenantId: () => 'T1', ...extra });
+  const client = createApiClient({ baseUrl: 'http://api.test', fetch: fetchMock, getTenantId: () => 'T1', ...extra });
   const call = (i = 0) => ({ url: String(fetchMock.mock.calls[i]![0]), init: fetchMock.mock.calls[i]![1]!, headers: fetchMock.mock.calls[i]![1]!.headers as Record<string, string> });
   return { client, call };
 }
@@ -53,11 +53,11 @@ const media = { id: 'M1', purpose: 'logo', status: 'processing', mime: 'image/pn
 
 describe('Phase 2 endpoints', () => {
   it('account endpoints skip X-Tenant-Id', async () => {
-    const { client, call } = setup(json(200, { data: { token: 'new', user: {}, expires_at: 'x' } }));
+    const { client, call } = setup(json(200, { data: { user: {}, expires_at: 'x' } }));
     await client.auth.changePassword({ current_password: 'a', password: 'b', password_confirmation: 'b' });
     expect(call().url).toBe('http://api.test/api/v1/auth/password');
     expect(call().init.method).toBe('PUT');
-    expect(call().headers.Authorization).toBe('Bearer tok');
+    expect(call().headers.Authorization).toBeUndefined();
     expect(call().headers['X-Tenant-Id']).toBeUndefined();
   });
 
@@ -76,14 +76,14 @@ describe('Phase 2 endpoints', () => {
   });
 
   it('invitations.accept is anonymous with a body and authenticated (no tenant) without', async () => {
-    const a = setup(json(201, { data: { token: 'x', user: {}, expires_at: 'x' } }));
+    const a = setup(json(201, { data: { user: {}, expires_at: 'x' } }));
     await a.client.invitations.accept('tk/1', { name: 'N', password: 'p', password_confirmation: 'p', phone: '01712345678' });
     expect(a.call().url).toBe('http://api.test/api/v1/invitations/tk%2F1/accept');
     expect(a.call().headers.Authorization).toBeUndefined();
 
     const b = setup(json(200, { data: { id: 'T2', name: 'Shop', role: 'staff' } }));
     await b.client.invitations.accept('tk');
-    expect(b.call().headers.Authorization).toBe('Bearer tok');
+    expect(b.call().headers.Authorization).toBeUndefined();
     expect(b.call().headers['X-Tenant-Id']).toBeUndefined();
     expect(b.call().init.body).toBeUndefined();
   });
@@ -100,13 +100,14 @@ describe('Phase 2 endpoints', () => {
   });
 
   it('media.upload posts multipart via XHR and reports progress', async () => {
-    const client = createApiClient({ baseUrl: 'http://api.test', getToken: () => 'tok', getTenantId: () => 'T1', xhr: () => new FakeXhr() as unknown as XMLHttpRequest });
+    const client = createApiClient({ baseUrl: 'http://api.test', getTenantId: () => 'T1', xhr: () => new FakeXhr() as unknown as XMLHttpRequest });
     const progress: number[] = [];
     const promise = client.media.upload({ file: new File(['x'], 'logo.png', { type: 'image/png' }), purpose: 'logo' }, { onProgress: (p) => progress.push(p) });
     const xhr = FakeXhr.last;
     expect(xhr.method).toBe('POST');
     expect(xhr.url).toBe('http://api.test/api/v1/media');
-    expect(xhr.headers).toMatchObject({ Authorization: 'Bearer tok', 'X-Tenant-Id': 'T1' });
+    expect(xhr.headers).toMatchObject({ 'X-Tenant-Id': 'T1' });
+    expect(xhr.headers.Authorization).toBeUndefined();
     expect(xhr.headers['Content-Type']).toBeUndefined(); // browser sets the multipart boundary
     expect(xhr.body!.get('purpose')).toBe('logo');
     expect((xhr.body!.get('file') as File).name).toBe('logo.png');
@@ -143,10 +144,10 @@ describe('phone OTP (Addendum A)', () => {
     expect(call().headers.Authorization).toBeUndefined();
   });
 
-  it('sendOtp for verify_phone sends the Bearer token', async () => {
+  it('sendOtp for verify_phone relies on the session cookie (no tenant, no bearer)', async () => {
     const { client, call } = setup(json(202, { data: { expires_in: 300, resend_in: 60 } }));
     await client.auth.sendOtp({ phone: '01712345678', purpose: 'verify_phone' });
-    expect(call().headers.Authorization).toBe('Bearer tok');
+    expect(call().headers.Authorization).toBeUndefined();
     expect(call().headers['X-Tenant-Id']).toBeUndefined();
   });
 
@@ -161,7 +162,7 @@ describe('phone OTP (Addendum A)', () => {
   });
 
   it('loginWithOtp and resetPasswordWithOtp hit the contract paths', async () => {
-    const a = setup(json(200, { data: { token: 't', user: {}, expires_at: 'x' } }));
+    const a = setup(json(200, { data: { user: {}, expires_at: 'x' } }));
     await a.client.auth.loginWithOtp({ phone: '8801712345678', code: '123456' });
     expect(a.call().url).toBe('http://api.test/api/v1/auth/login/otp');
     const b = setup(json(200, { data: { message: 'ok' } }));

@@ -6,6 +6,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -16,6 +17,10 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Phase 4.7c: no Bearer / personal-access-token authentication. Merchant and admin SPAs use same-origin cookie
+        // sessions; Phase 8 API keys will be a separate mechanism. A Bearer header is simply ignored → 401.
+        Sanctum::getAccessTokenFromRequestUsing(fn () => null);
+
         // QA M-3: per-identifier limits for credential attempts + a looser per-IP ceiling
         // (many Bangladeshi mobile users share one carrier-NAT IP). Every 429 carries retry_after.
         $ip = fn (Request $r) => (string) $r->ip();
@@ -47,6 +52,12 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(1)->by('invitation-resend:'.(is_object($invitation) ? $invitation->getKey() : (string) $invitation));
         });
+
+        // Phase 4: default merchant limiter (per user + tenant) and the bulk-data limiter (imports/exports, per tenant).
+        RateLimiter::for('merchant', fn (Request $r) => Limit::perMinute(300)
+            ->by('merchant:'.($r->user()?->getAuthIdentifier() ?? $ip($r)).'|'.strtolower((string) $r->header('X-Tenant-Id'))));
+        RateLimiter::for('merchant-bulk', fn (Request $r) => Limit::perHour((int) config('storeplix.bulk_per_hour', 10))
+            ->by('merchant-bulk:'.strtolower((string) $r->header('X-Tenant-Id'))));
 
         // Storefront traffic is proxied by the Next.js server, so limit per resolved host.
         RateLimiter::for('storefront', fn (Request $request) => Limit::perMinute(1200)

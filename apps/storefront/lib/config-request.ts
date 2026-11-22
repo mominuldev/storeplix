@@ -55,3 +55,29 @@ export function buildPageRequest(host: string, slug: string, previewToken: strin
 export function buildPageIndexRequest(host: string, env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>) {
   return buildStorefrontRequest('/pages', host, null, env, PAGES_REVALIDATE_SECONDS);
 }
+
+/** Query for GET /storefront/products (contract §3.8). */
+export interface ProductFeedQuery {
+  sort: 'latest' | 'bestsellers';
+  limit: number;
+  onSale?: boolean;
+}
+
+/** Revalidate window for the product feed (contract §8); product saves also revalidate the store tag. */
+export const PRODUCTS_REVALIDATE_SECONDS = 300;
+
+/**
+ * GET /storefront/products. Same cache split as config: public → tag `store:{host}` + 300 s,
+ * preview → `no-store` with the preview header forwarded.
+ */
+export function buildProductFeedRequest(
+  host: string,
+  query: ProductFeedQuery,
+  previewToken: string | null,
+  env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>,
+) {
+  const limit = Math.min(24, Math.max(1, Math.trunc(query.limit)));
+  const params = new URLSearchParams({ sort: query.sort, limit: String(limit) });
+  if (query.onSale) params.set('on_sale', '1');
+  return buildStorefrontRequest(`/products?${params.toString()}`, host, previewToken, env, PRODUCTS_REVALIDATE_SECONDS);
+}

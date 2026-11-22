@@ -49,7 +49,7 @@ const rolePill: Record<TenantRole, string> = { owner: 'bg-brand-50 text-brand-70
 // disabled), Sign-in & security 148:33899 (password → modal; SMS two-step, authenticator, backup codes
 // disabled), Your shops 148:33973, Transfer ownership 148:34025 (disabled). Sessions & My alerts hidden.
 export function AccountPage() {
-  const { user, tenants, activeTenant, logout, refreshUser, signInWithToken } = useAuth();
+  const { user, tenants, activeTenant, logout, refreshUser, startSession } = useAuth();
   const [changing, setChanging] = useState(false);
   const [saved, setSaved] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -224,7 +224,7 @@ export function AccountPage() {
       <ChangePasswordModal
         open={changing}
         onClose={() => setChanging(false)}
-        onChanged={(auth) => signInWithToken(auth, { keepTenant: true })}
+        onChanged={(auth) => startSession(auth, { keepTenant: true })}
       />
     </>
   );
@@ -242,7 +242,7 @@ function ChangePasswordModal({ open, onClose, onChanged }: { open: boolean; onCl
   const change = useMutation({
     mutationFn: (v: ChangePasswordValues) => api.auth.changePassword(v),
     onSuccess: (auth) => {
-      // New token; all other sessions were revoked. Keep the active shop.
+      // Session regenerated; all other sessions were logged out. Keep the active shop.
       onChanged(auth);
       reset();
       onClose();

@@ -19,7 +19,7 @@ describe('Invitation accept (/invite)', () => {
       'POST /invitations/tok123/accept': (init, headers) => {
         body = JSON.parse(String(init.body));
         expect(headers.Authorization).toBeUndefined();
-        return jsonResponse(201, { data: { token: 'new-user-token', user: user([tenant]), expires_at: future() } });
+        return jsonResponse(201, { data: { user: user([tenant]), expires_at: future() } });
       },
       'GET /auth/me': jsonResponse(200, { data: user([tenant]) }),
       'GET /stores': jsonResponse(200, { data: [store()] }),
@@ -33,7 +33,7 @@ describe('Invitation accept (/invite)', () => {
     await userEvent.type(screen.getByLabelText('Password'), 'secret123');
     await userEvent.type(screen.getByLabelText('Confirm password'), 'secret123');
     await userEvent.click(screen.getByRole('button', { name: 'Create account & join' }));
-    await waitFor(() => expect(session.getToken()).toBe('new-user-token'));
+    await waitFor(() => expect(session.isSignedIn()).toBe(true));
     expect(body).toEqual({ name: 'Tanvir Hasan', phone: '8801555112233', password: 'secret123', password_confirmation: 'secret123' });
     expect(await screen.findByRole('heading', { name: /, Rahim$/ })).toBeInTheDocument();
   });
@@ -44,15 +44,17 @@ describe('Invitation accept (/invite)', () => {
     expect(await screen.findByRole('button', { name: 'Sign in to accept' })).toBeInTheDocument();
   });
 
-  it('accepts with the Bearer token when already signed in', async () => {
-    session.setAuth({ token: 'tok', expires_at: future() });
+  it('accepts with the cookie session (CSRF header, no bearer) when already signed in', async () => {
+    session.start({ expires_at: future() });
     const me = { ...user(), email: 'tanvir@shop.com' };
     let auth: string | undefined;
+    let xsrf: string | undefined;
     mockApi({
       'GET /invitations/tok123': preview(true),
       'GET /auth/me': jsonResponse(200, { data: me }),
       'POST /invitations/tok123/accept': (_init, headers) => {
         auth = headers.Authorization;
+        xsrf = headers['X-XSRF-TOKEN'];
         return jsonResponse(200, { data: { id: 'T1', name: 'Mugdho', role: 'staff' } });
       },
       'GET /stores': jsonResponse(200, { data: [store()] }),
@@ -60,7 +62,8 @@ describe('Invitation accept (/invite)', () => {
     });
     renderApp(<AppRoutes />, { route: '/invite?token=tok123' });
     await userEvent.click(await screen.findByRole('button', { name: 'Join Mugdho Fashion' }));
-    await waitFor(() => expect(auth).toBe('Bearer tok'));
+    await waitFor(() => expect(xsrf).toBe('test-xsrf'));
+    expect(auth).toBeUndefined();
     expect(await screen.findByRole('heading', { name: /, Rahim$/ })).toBeInTheDocument();
   });
 

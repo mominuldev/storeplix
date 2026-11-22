@@ -6,6 +6,7 @@ use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
@@ -22,7 +23,7 @@ class ApiExceptionRenderer
         404 => 'not_found',
         405 => 'method_not_allowed',
         409 => 'conflict',
-        419 => 'token_mismatch',
+        419 => 'csrf_token_mismatch',
         422 => 'unprocessable',
         429 => 'rate_limited',
         503 => 'service_unavailable',
@@ -35,6 +36,7 @@ class ApiExceptionRenderer
         }
 
         return match (true) {
+            $e instanceof TokenMismatchException => $this->csrf(),
             $e instanceof ValidationException => $this->error(422, 'validation_failed', 'The given data was invalid.', $e->errors()),
             $e instanceof AuthenticationException => $this->error(401, 'unauthenticated', 'Unauthenticated.'),
             $e instanceof ApiException => $this->error($e->getStatusCode(), $e->errorCode, $e->getMessage(), $e->details, $e->getHeaders(), $e->retryAfter),
@@ -44,9 +46,18 @@ class ApiExceptionRenderer
         };
     }
 
+    /** Phase 4.7 (§7.2): CSRF failure on a stateful request. The SPA refreshes the cookie and retries once. */
+    private function csrf(): JsonResponse
+    {
+        return $this->error(419, 'csrf_token_mismatch', 'Your session refreshed. Please try again.');
+    }
+
     private function fromHttp(HttpExceptionInterface $e): JsonResponse
     {
         $status = $e->getStatusCode();
+        if ($status === 419) {
+            return $this->csrf();
+        }
         $message = $e->getMessage();
 
         // Never leak model class names from ModelNotFoundException ("No query results for model ...").

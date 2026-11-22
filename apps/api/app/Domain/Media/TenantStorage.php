@@ -49,6 +49,36 @@ class TenantStorage
         return str_starts_with($url, 'http') ? $url : rtrim((string) config('app.url'), '/').'/'.ltrim($url, '/');
     }
 
+    // --- Phase 4: private bulk-data files (CSV imports and exports, ADR 0009) ---
+
+    public function privateDiskName(): string
+    {
+        return (string) config('storeplix.private_disk', 'local');
+    }
+
+    public function privateDisk(): Filesystem
+    {
+        return Storage::disk($this->privateDiskName());
+    }
+
+    /** tenants/{tenant}/imports/{ulid}.csv */
+    public function importPath(string $id): string
+    {
+        return 'tenants/'.$this->context->requireId().'/imports/'.$id.'.csv';
+    }
+
+    /** tenants/{tenant}/exports/{ulid}.csv */
+    public function exportPath(string $id): string
+    {
+        return 'tenants/'.$this->context->requireId().'/exports/'.$id.'.csv';
+    }
+
+    /** True only for a path under the CURRENT tenant's prefix (a stored path of tenant B is never read under A). */
+    public function ownsPath(string $path): bool
+    {
+        return str_starts_with($path, 'tenants/'.$this->context->requireId().'/') && ! str_contains($path, '..');
+    }
+
     public function deleteAll(Media $media): void
     {
         $this->disk($media->disk)->deleteDirectory('tenants/'.$media->tenant_id.'/media/'.$media->id);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router';
 import { MobileAppBar, MobileTabBar } from './MobileNav';
-import { TrialBanner, VerifyPhoneBanner } from '../plan/Banners';
+import { PlanLimitDialog, TrialBanner, VerifyPhoneBanner } from '../plan/Banners';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -48,6 +48,7 @@ export function AppShell() {
         </main>
       </div>
       <MobileTabBar />
+      <PlanLimitDialog />
     </div>
   );
 }

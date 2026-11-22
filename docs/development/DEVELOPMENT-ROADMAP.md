@@ -69,6 +69,7 @@ Binding API/type contract: `docs/development/PHASE-2-CONTRACT.md` (tasks 2.1, 2.
 | 3.7 | SEO: metadata, sitemap, robots, JSON-LD, canonical | SF | Validators pass (Rich Results test fixtures) |
 
 ## Phase 4 — Merchant dashboard (catalog & ops UI)
+Binding API/type contract: `docs/development/PHASE-4-CONTRACT.md` (4.7 is a strictly ordered sub-step that ships last, §7.6).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 4.1 | Categories CRUD | API/WEB | Tree depth ≤ 3; isolation tests |

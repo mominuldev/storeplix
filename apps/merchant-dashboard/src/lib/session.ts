@@ -1,4 +1,4 @@
-import { createAuthSession } from '@storeplix/api-client';
+import { createSessionStore } from '@storeplix/api-client';
 
-/** Token + expires_at in sessionStorage; active tenant/store in localStorage (contract D1/D3). */
-export const session = createAuthSession({ prefix: 'storeplix.merchant' });
+/** Phase 4.7b: cookie session — only expires_at + signed-in flag (sessionStorage) and the tenant preference (localStorage). */
+export const session = createSessionStore({ prefix: 'storeplix.merchant' });

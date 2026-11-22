@@ -12,7 +12,7 @@ import { formatCountdown, otpErrorMessage, useOtpSender } from './useOtpSender';
 // Figma L2 Sign in · SMS code 57:1050: phone → send code → code entry (phone field dimmed) → "Verify and sign in".
 // The send response is identical whether or not the phone exists (no enumeration).
 export function SmsLoginForm() {
-  const { signInWithToken } = useAuth();
+  const { startSession } = useAuth();
   const otp = useOtpSender('login');
   const [rawPhone, setRawPhone] = useState('');
   const [phone, setPhone] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function SmsLoginForm() {
     setVerifying(true);
     setCodeError(null);
     try {
-      signInWithToken(await api.auth.loginWithOtp({ phone, code }));
+      startSession(await api.auth.loginWithOtp({ phone, code }));
     } catch (err) {
       setCodeError(otpErrorMessage(err));
     } finally {

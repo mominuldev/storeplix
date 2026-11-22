@@ -55,7 +55,7 @@ class OtpTest extends TestCase
 
         $this->postJson('/api/v1/auth/login/otp', ['phone' => '+8801711111111', 'code' => $code])
             ->assertOk()
-            ->assertJsonStructure(['data' => ['token', 'expires_at', 'user']])
+            ->assertJsonStructure(['data' => ['expires_at', 'user']])
             ->assertJsonPath('data.user.id', $user->id);
 
         // Single use.
@@ -147,24 +147,24 @@ class OtpTest extends TestCase
     public function test_verify_phone_flow(): void
     {
         $user = $this->userWithPhone('8801711111111', verified: false);
-        $token = $user->createToken('t')->plainTextToken;
+        $token = $user->id;
 
         $this->send('01711111111', 'verify_phone')->assertUnauthorized();
 
         // Unverified: a different number replaces it.
-        $this->withToken($token)->postJson('/api/v1/auth/otp/send', ['phone' => '01822222222', 'purpose' => 'verify_phone'])->assertStatus(202);
+        $this->withHeaders(['X-Testing-User' => $token])->postJson('/api/v1/auth/otp/send', ['phone' => '01822222222', 'purpose' => 'verify_phone'])->assertStatus(202);
         $this->assertSame('8801822222222', $user->refresh()->phone);
         $code = $this->sms()->lastCodeFor('8801822222222');
 
-        $this->withToken($token)->postJson('/api/v1/auth/phone/verify', ['code' => $code === '000000' ? '111111' : '000000'])
+        $this->withHeaders(['X-Testing-User' => $token])->postJson('/api/v1/auth/phone/verify', ['code' => $code === '000000' ? '111111' : '000000'])
             ->assertStatus(422)->assertJsonPath('error.code', 'invalid_otp');
-        $this->withToken($token)->postJson('/api/v1/auth/phone/verify', ['code' => $code])
+        $this->withHeaders(['X-Testing-User' => $token])->postJson('/api/v1/auth/phone/verify', ['code' => $code])
             ->assertOk()->assertJsonPath('data.phone', '8801822222222')
             ->assertJsonPath('data.phone_verified_at', fn ($v) => is_string($v));
 
         // Verified: another number is refused.
         $this->travel(61)->seconds();
-        $this->withToken($token)->postJson('/api/v1/auth/otp/send', ['phone' => '01933333333', 'purpose' => 'verify_phone'])
+        $this->withHeaders(['X-Testing-User' => $token])->postJson('/api/v1/auth/otp/send', ['phone' => '01933333333', 'purpose' => 'verify_phone'])
             ->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['phone']]]);
     }
 
@@ -173,9 +173,9 @@ class OtpTest extends TestCase
     {
         $this->userWithPhone('8801711111111');
         [$attacker] = $this->merchant();
-        $token = $attacker->createToken('t')->plainTextToken;
+        $token = $attacker->id;
 
-        $this->withToken($token)->postJson('/api/v1/auth/otp/send', ['phone' => '01711111111', 'purpose' => 'verify_phone'])
+        $this->withHeaders(['X-Testing-User' => $token])->postJson('/api/v1/auth/otp/send', ['phone' => '01711111111', 'purpose' => 'verify_phone'])
             ->assertStatus(422)->assertJsonPath('error.details.phone.0', 'This phone number is already registered.');
 
         // A login code for the victim is not valid for any other purpose.
@@ -189,7 +189,6 @@ class OtpTest extends TestCase
     public function test_reset_password_with_otp_revokes_tokens(): void
     {
         $user = $this->userWithPhone();
-        $user->createToken('old');
 
         $this->send('01711111111', 'reset_password');
         $code = $this->sms()->lastCodeFor('8801711111111');
@@ -199,7 +198,6 @@ class OtpTest extends TestCase
         ])->assertOk()->assertJsonPath('data.message', 'Your password has been reset.');
 
         $this->assertTrue(Hash::check('brand-new1', $user->refresh()->password));
-        $this->assertSame(0, $user->tokens()->count());
     }
 
     public function test_dev_otp_only_in_local_with_log_driver(): void
@@ -209,7 +207,8 @@ class OtpTest extends TestCase
         // phpunit: env=testing, driver=fake → absent
         $this->send('01711111111', 'login')->assertJsonMissingPath('data.dev_otp');
 
-        // production + log driver → absent
+        // production + log driver → absent. Outside "testing" CSRF is enforced: act like the browser on the SPA origin.
+        $this->withHeader('Sec-Fetch-Site', 'same-origin');
         $this->app['env'] = 'production';
         config(['sms.driver' => 'log']);
         $this->app->forgetInstance(SmsGateway::class);

@@ -11,7 +11,31 @@ const products = [
 ];
 
 /** `color` (validated #rrggbb) tints the mock: it overrides the brand tokens for this subtree only. */
-export function PhonePreview({ name, domain, color, logoUrl, caption = 'Updates as you type' }: { name: string; domain: string; color?: string; logoUrl?: string | null; caption?: string }) {
+export interface PreviewProduct {
+  name: string;
+  price: string;
+  img: string | null;
+}
+
+/** `products` replaces the sample grid (onboarding 05 lists the products added in this session). */
+export function PhonePreview({
+  name,
+  domain,
+  color,
+  logoUrl,
+  caption = 'Updates as you type',
+  products: own,
+  footer,
+}: {
+  name: string;
+  domain: string;
+  color?: string;
+  logoUrl?: string | null;
+  caption?: string;
+  products?: PreviewProduct[];
+  footer?: React.ReactNode;
+}) {
+  const list: PreviewProduct[] = own && own.length ? own : products;
   const initial = name.trim().charAt(0).toUpperCase() || 'S';
   const tint = color && /^#[0-9a-f]{6}$/i.test(color) ? ({ '--color-brand-600': color, '--color-brand-700': color } as React.CSSProperties) : undefined;
   return (
@@ -63,9 +87,13 @@ export function PhonePreview({ name, domain, color, logoUrl, caption = 'Updates 
             <span className="text-caption font-medium text-brand-600">See all</span>
           </div>
           <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-4">
-            {products.map((p) => (
-              <div key={p.name} className="flex flex-col gap-1">
-                <img src={p.img} alt="" width={119} height={138} className="h-[138px] w-full rounded-control object-cover" />
+            {list.map((p, i) => (
+              <div key={`${p.name}-${i}`} className="flex flex-col gap-1">
+                {p.img ? (
+                  <img src={p.img} alt="" width={119} height={138} className="h-[138px] w-full rounded-control object-cover" />
+                ) : (
+                  <span className="h-[138px] w-full rounded-control bg-surface-subtle" />
+                )}
                 <span className="truncate text-caption font-medium text-text-primary">{p.name}</span>
                 <span className="text-caption font-medium text-brand-700">
                   <span className="font-bangla">৳</span> {p.price}
@@ -79,6 +107,7 @@ export function PhonePreview({ name, domain, color, logoUrl, caption = 'Updates 
         <Store aria-hidden className="size-4" /> {domain}
         <ExternalLink aria-hidden className="size-3.5" />
       </span>
+      {footer}
     </aside>
   );
 }

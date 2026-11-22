@@ -105,6 +105,18 @@ export function getProjection<T extends TreeNode>(
   return { depth, parentId };
 }
 
+/**
+ * Parents `id` may move under without breaking `maxDepth` (0-based) or nesting inside itself: every node except
+ * `id` and its descendants whose depth + 1 + the subtree height of `id` ≤ `maxDepth`. `null` (top level) is
+ * always valid. Used for the Categories "Parent category" select (contract §4: limited to valid targets).
+ */
+export function validParentIds<T extends TreeNode>(nodes: T[], id: string | null, maxDepth: number): string[] {
+  const flat = flattenTree(nodes);
+  const blocked = id ? descendantIds(flat, id) : new Set<string>();
+  const height = id && flat.some((f) => f.id === id) ? subtreeHeight(flat, id) : 0;
+  return flat.filter((f) => f.id !== id && !blocked.has(f.id) && f.depth + 1 + height <= maxDepth).map((f) => f.id);
+}
+
 /** Applies a projected move and returns the rebuilt tree. */
 export function moveTreeNode<T extends TreeNode>(nodes: T[], activeId: string, overId: string, projection: { depth: number; parentId: string | null }): T[] {
   const flat = flattenTree(nodes);

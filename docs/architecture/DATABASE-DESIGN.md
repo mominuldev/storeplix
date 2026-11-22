@@ -172,6 +172,12 @@ id PK · tenant_id · store_id FK(t) · location `CHECK IN ('header','footer')` 
 id PK · tenant_id · disk varchar(16) · path varchar(255) · mime varchar(64) · size_bytes int · width, height int null ·
 alt varchar(255) null · checksum char(64) · uploaded_by char(26) · timestamps. **U(path)**. IX(tenant_id, created_at).
 
+> **Phase 4 (binding detail in PHASE-4-CONTRACT §2):** catalog tables below are refined there: triple store FKs
+> `(tenant_id, store_id, parent_id)`, `products.description` is RichTextDoc jsonb (no HTML), `tags` jsonb, options as
+> `products.options` + `product_variants.option1..3`, case-insensitive SKU unique per store, `inventories.committed`
+> (was `reserved`), ledger reasons `initial|received|correction|damaged|lost|returned|import|other`, customers without
+> password/addresses (Phase 5), new `customer_notes`, `data_imports`, `data_import_rows`, `data_exports`.
+
 ### categories [S]
 id PK · tenant_id · store_id · parent_id FK(t) categories null SET NULL · name varchar(120) · slug varchar(140) ·
 description text null · image_media_id null · position int · is_visible boolean · seo jsonb · deleted_at · timestamps.

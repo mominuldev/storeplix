@@ -96,7 +96,7 @@ class OtpController
         }
         $this->audit->log('auth.login', $user, ['method' => 'otp'], actor: $user, tenantId: false);
 
-        return $this->tokenResponse($user);
+        return $this->sessionResponse($user);
     }
 
     public function resetPassword(Request $request): JsonResponse
@@ -119,7 +119,6 @@ class OtpController
                 'password_changed_at' => now(),
                 'phone_verified_at' => $user->phone_verified_at ?? now(),
             ])->save();
-            $user->tokens()->delete();
         });
 
         $this->audit->log('auth.password_reset', $user, ['method' => 'otp'], actor: $user, tenantId: false);

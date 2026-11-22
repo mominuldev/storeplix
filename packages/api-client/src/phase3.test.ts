@@ -9,7 +9,7 @@ function setup(response: Response | (() => Response)) {
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () =>
     typeof response === 'function' ? response() : response,
   );
-  const client = createApiClient({ baseUrl: 'http://api.test', fetch: fetchMock, getToken: () => 'tok', getTenantId: () => 'T1' });
+  const client = createApiClient({ baseUrl: 'http://api.test', fetch: fetchMock, getTenantId: () => 'T1' });
   const call = (i = 0) => {
     const init = fetchMock.mock.calls[i]![1]!;
     return {

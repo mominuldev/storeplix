@@ -60,7 +60,9 @@ curl -X POST http://demo.localhost:3000/api/revalidate \
   Merchant data is rendered as text only: no merchant HTML/JS/CSS is ever executed.
 - **modern-commerce v1.0.0**: header, footer, `hero`, `featured-products` sections, matching
   Figma (file `2W1wMKN79hhcr1czQS63oN`, pages Storefront `1:9207` / Storefront – Mobile `2:6`).
-  Products are placeholders (`lib/products.ts`) until the public product API exists.
+  Hero, featured and flash-sale sections read `GET /storefront/products` (`lib/products.ts`; public: tag
+  `store:{host}` + 300 s, preview: `no-store`). A store with no active products, or a failing feed, shows
+  placeholder cards. Prices are paisa, formatted by `lib/format.ts`. Cards have no links until the PDP (Phase 5).
 - Pages read request headers, so they're rendered dynamically: `next build` never calls the API.
 
 ## Scripts

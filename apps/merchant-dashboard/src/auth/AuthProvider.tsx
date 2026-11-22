@@ -1,7 +1,7 @@
 import type { LoginInput, MeResponse, RegisterInput } from '@storeplix/api-client';
-import type { AuthToken, TenantMembership } from '@storeplix/types';
+import type { AuthSession, TenantMembership } from '@storeplix/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, use, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { session } from '../lib/session';
 
@@ -16,8 +16,8 @@ interface AuthContextValue {
   setTenant: (id: string) => void;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
-  /** Start a session from a token issued elsewhere (OTP login, invitation accept, password change). */
-  signInWithToken: (auth: AuthToken, opts?: { keepTenant?: boolean }) => void;
+  /** Adopt a session started elsewhere (OTP login, invitation accept, password change). */
+  startSession: (auth: AuthSession, opts?: { keepTenant?: boolean }) => void;
   /** Re-fetch /auth/me (after profile, phone or membership changes). */
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
@@ -36,37 +36,50 @@ function rememberDefaultTenant(): boolean {
   }
 }
 
-function startSession(auth: AuthToken, keepTenant = false) {
-  // Fresh sign-in: unless the user asked to reopen the same shop, post-login routing asks again
-  // when they belong to several shops (contract D1).
-  if (!keepTenant && !rememberDefaultTenant()) session.setTenantId(null);
-  session.setAuth(auth);
+/** One membership → select it; several → keep a valid stored choice, else let Choose a shop decide. */
+function adoptTenants(user: MeResponse) {
+  const tenants = user.tenants ?? [];
+  const stored = session.getTenantId();
+  if (!tenants.some((t) => t.id === stored)) session.setTenantId(tenants.length === 1 ? tenants[0]!.id : null);
 }
 
+/**
+ * Phase 4.7b (contract §7.3): the session is an HttpOnly same-origin cookie. Boot = GET /auth/me (200 signed in,
+ * 401 signed out); `meta.session_expires_at` drives the proactive logout timer. No token is kept in JS.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const token = useSyncExternalStore(session.subscribe, session.getToken, () => null);
+  const epoch = useSyncExternalStore(session.subscribe, session.getEpoch, () => 0);
   const tenantId = useSyncExternalStore(session.subscribe, session.getTenantId, () => null);
+  const expiresAt = useSyncExternalStore(session.subscribe, session.getExpiresAt, () => null);
+  const meKey = useMemo(() => ['auth', 'me', epoch] as const, [epoch]);
+
+  // XSRF-TOKEN cookie on boot (writes also fetch it lazily).
+  useEffect(() => {
+    void api.ensureCsrf().catch(() => undefined);
+  }, []);
 
   const me = useQuery({
-    queryKey: ['auth', 'me', token],
+    queryKey: meKey,
     queryFn: async () => {
-      const user = await api.auth.me();
-      // Persist a valid tenant before any tenant-scoped query runs (X-Tenant-Id is read from the session).
-      // One membership → select it; several → keep a valid stored choice, else let Choose a shop decide.
-      const tenants = user.tenants ?? [];
-      const stored = session.getTenantId();
-      if (!tenants.some((t) => t.id === stored)) session.setTenantId(tenants.length === 1 ? tenants[0]!.id : null);
+      const { user, session_expires_at } = await api.auth.session();
+      // Past the absolute expiry (clock skew, stale tab): treat as signed out instead of looping.
+      if (session_expires_at && Date.parse(session_expires_at) <= Date.now()) {
+        session.expire();
+        throw new Error('session_expired');
+      }
+      // Persist a valid tenant before any tenant-scoped query runs (X-Tenant-Id is read from the session store).
+      adoptTenants(user);
+      session.start({ expires_at: session_expires_at ?? session.getExpiresAt() });
       return user;
     },
-    enabled: !!token,
     retry: false,
     staleTime: 5 * 60_000,
   });
 
-  // Proactive logout when expires_at passes (contract D3).
+  // Proactive logout when the absolute expiry passes (contract D3 / §7.2).
   useEffect(() => {
-    if (!token) return;
+    if (!expiresAt) return;
     const ms = session.msUntilExpiry();
     if (ms === null) return;
     if (ms <= 0) {
@@ -75,12 +88,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const id = setTimeout(() => session.expire(), Math.min(ms, MAX_TIMEOUT));
     return () => clearTimeout(id);
-  }, [token]);
+  }, [expiresAt]);
 
-  // Drop cached tenant data whenever the session ends.
+  // Drop cached tenant data whenever a session ends (epoch bumps on clear/expire).
+  const lastEpoch = useRef(epoch);
   useEffect(() => {
-    if (!token) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'health' });
-  }, [token, queryClient]);
+    if (lastEpoch.current === epoch) return;
+    lastEpoch.current = epoch;
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'health' && q.queryKey[0] !== 'auth' });
+  }, [epoch, queryClient]);
 
   const tenants = useMemo(() => me.data?.tenants ?? [], [me.data]);
 
@@ -92,10 +108,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
-  const login = useCallback(async (input: LoginInput) => startSession(await api.auth.login(input)), []);
-  const register = useCallback(async (input: RegisterInput) => startSession(await api.auth.register(input)), []);
+  const startSession = useCallback(
+    (auth: AuthSession, opts?: { keepTenant?: boolean }) => {
+      // Fresh sign-in: unless the user asked to reopen the same shop, post-login routing asks again
+      // when they belong to several shops (contract D1).
+      if (!opts?.keepTenant && !rememberDefaultTenant()) session.setTenantId(null);
+      adoptTenants(auth.user);
+      session.start({ expires_at: auth.expires_at });
+      queryClient.setQueryData(['auth', 'me', session.getEpoch()], auth.user);
+      // The session id was regenerated on login: make sure the next write has a fresh XSRF-TOKEN.
+      void api.ensureCsrf(true).catch(() => undefined);
+    },
+    [queryClient],
+  );
 
-  const signInWithToken = useCallback((auth: AuthToken, opts?: { keepTenant?: boolean }) => startSession(auth, opts?.keepTenant), []);
+  const login = useCallback(async (input: LoginInput) => startSession(await api.auth.login(input)), [startSession]);
+  const register = useCallback(async (input: RegisterInput) => startSession(await api.auth.register(input)), [startSession]);
+
   const refetchMe = me.refetch;
   const refreshUser = useCallback(async () => {
     await refetchMe();
@@ -105,13 +134,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.auth.logout();
     } catch {
-      /* token may already be invalid — clear locally regardless */
+      /* session may already be gone — clear locally regardless */
     }
     session.clear();
+    session.consumeNotice();
     queryClient.clear();
+    // Logout rotated the CSRF token.
+    void api.ensureCsrf(true).catch(() => undefined);
   }, [queryClient]);
 
-  const status: AuthStatus = !token ? 'anonymous' : me.data ? 'authenticated' : me.isError ? 'anonymous' : 'loading';
+  const status: AuthStatus = me.data ? 'authenticated' : me.isError ? 'anonymous' : 'loading';
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -123,11 +155,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTenant,
       login,
       register,
-      signInWithToken,
+      startSession,
       refreshUser,
       logout,
     }),
-    [status, me.data, tenants, tenantId, setTenant, login, register, signInWithToken, refreshUser, logout],
+    [status, me.data, tenants, tenantId, setTenant, login, register, startSession, refreshUser, logout],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

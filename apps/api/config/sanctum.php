@@ -18,12 +18,9 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
+    // Phase 4.7 (§7.2): an exact list of SPA hosts only — never the framework defaults, so a request from a storefront
+    // host (or anything else) is never stateful. Dev: localhost:5173,localhost:5174; prod: app./admin.storeplix.com.
+    'stateful' => array_values(array_filter(array_map('trim', explode(',', (string) env('SANCTUM_STATEFUL_DOMAINS', 'localhost:5173,localhost:5174'))))),
 
     /*
     |--------------------------------------------------------------------------

@@ -67,8 +67,8 @@ export function MobileTabBar() {
       <Tab tab={tabs[1]} />
       <div className="flex flex-1 justify-center">
         <Link
-          to="/orders/new"
-          aria-label="Create order"
+          to="/products/new"
+          aria-label="Add product"
           className="-mt-4 flex size-13 items-center justify-center rounded-full bg-linear-to-b from-[#6b63ff] to-[#4d42e0] text-text-inverse shadow-elevation-1"
         >
           <Plus className="size-[26px]" aria-hidden />

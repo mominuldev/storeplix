@@ -1,6 +1,6 @@
 # ADR 0005 — Merchant authentication and roles
 
-Status: Accepted · Date: 2026-11-21 · Amended 2026-11-21 (D1 revised, D3)
+Status: Accepted · Date: 2026-11-21 · Amended 2026-11-21 (D1 revised, D3) · Amended 2026-11-22 (Phase 4 cookie sessions, permissions)
 
 ## Context
 A user may own one tenant and be staff in another. SPAs live on `app.`/`admin.` subdomains; API on `api.`.
@@ -34,3 +34,14 @@ A user may own one tenant and be staff in another. SPAs live on `app.`/`admin.` 
 ## Alternatives
 - Cookie SPA auth from day one (better XSS posture, more CORS/CSRF setup) — deferred to Phase 4.
 - OAuth2 (Passport) — unnecessary until public API (Phase 8 API keys use hashed keys, not OAuth).
+
+## Amendment 2026-11-22 — Phase 4 (PHASE-4-CONTRACT §7, P4-5, P4-14, P4-15)
+- **Cookie sessions replace Bearer tokens for both SPAs (task 4.7).** The SPA reaches the API same-origin
+  (`app.storeplix.com/api/*` and `/sanctum/*` proxied by Nginx to Laravel; Vite proxy in dev). Cookies are host-only,
+  not on `.storeplix.com`, so `{slug}.storeplix.com` storefronts never receive them: `__Host-sp_session` (HttpOnly,
+  Secure, SameSite=Lax) plus `XSRF-TOKEN` → `X-XSRF-TOKEN`. Absolute 7-day expiry (D3 kept) via session
+  `auth_expires_at`; `AuthenticateSession` logs out other sessions on password change. `X-Tenant-Id` stays a
+  header. Bearer token issuance is removed in 4.7c (no non-browser clients; Phase 8 API keys are separate).
+- **Permissions added:** `ViewCosts` (O A): staff never see cost, profit or stock value at cost. `ManageCatalog`
+  (O A): delete products, categories and customers. `BulkData` (O A): CSV imports and exports. Catalog, inventory
+  and customer CRUD stay O A S (`Operate`).

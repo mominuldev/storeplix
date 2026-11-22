@@ -112,7 +112,7 @@ class StoreApiTest extends TestCase
 
         $this->getJson('/api/v1/stores')->assertUnauthorized();
 
-        $this->withToken($user->createToken('t')->plainTextToken)->getJson('/api/v1/stores')
+        $this->withHeaders(['X-Testing-User' => $user->id])->getJson('/api/v1/stores')
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'tenant_required');
     }

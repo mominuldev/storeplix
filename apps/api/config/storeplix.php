@@ -59,6 +59,13 @@ return [
 
     'bd_divisions' => ['Barishal', 'Chattogram', 'Dhaka', 'Khulna', 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet'],
 
+    /*
+    | Phase 4: bulk data (CSV imports/exports). Private disk for import uploads and export files
+    | (tenant-prefixed via TenantStorage); merchant-bulk throttle per tenant per hour (SECURITY T24).
+    */
+    'private_disk' => env('PRIVATE_DISK', 'local'),
+    'bulk_per_hour' => (int) env('THROTTLE_MERCHANT_BULK_PER_HOUR', 10),
+
     // Phase 3: theme defaults come from resources/themes/{code}/defaults.json (ThemeRegistry).
 
 ];

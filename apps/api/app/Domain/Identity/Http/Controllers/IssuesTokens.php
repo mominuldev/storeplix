@@ -2,24 +2,43 @@
 
 namespace App\Domain\Identity\Http\Controllers;
 
+use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Http\Resources\UserResource;
 use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Http\ApiException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
-/** Builds the AuthToken payload `{data:{token, expires_at, user}}`. */
+/**
+ * Session sign-in (Phase 4.7c, §3.7): `Auth::guard('web')->login()`, `session()->regenerate()` (no fixation) and the
+ * absolute 7-day expiry marker; responds `{data: AuthSession}` = `{user, expires_at}`. No personal access tokens.
+ */
 trait IssuesTokens
 {
-    protected function tokenResponse(User $user, int $status = 200): JsonResponse
+    protected function sessionResponse(User $user, int $status = 200): JsonResponse
     {
+        $request = request();
+        if (! self::isStateful($request)) {
+            throw new ApiException(400, 'stateful_required', 'Sign in from the Storeplix app.');
+        }
+
         $expiresAt = now()->addMinutes((int) config('sanctum.expiration'));
-        $token = $user->createToken('merchant-dashboard', ['*'], $expiresAt)->plainTextToken;
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+        $request->session()->put(EnforceAbsoluteSessionExpiry::KEY, $expiresAt->getTimestamp());
 
         return new JsonResponse([
             'data' => [
-                'token' => $token,
-                'expires_at' => $expiresAt->toIso8601ZuluString(),
                 'user' => (new UserResource($user->load('tenants')))->resolve(),
+                'expires_at' => $expiresAt->toIso8601ZuluString(),
             ],
         ], $status);
+    }
+
+    /** True when Sanctum treated the request as a first-party SPA request (session + CSRF middleware ran). */
+    protected static function isStateful(Request $request): bool
+    {
+        return $request->attributes->get('sanctum') === true && $request->hasSession();
     }
 }

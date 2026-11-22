@@ -43,8 +43,12 @@ test('page: create from the dialog, publish → /pages/{slug} renders; draft is 
   const menusBefore = await snapshotMenus();
   try {
     await page.goto(`${urls.merchant}/online-store/pages`);
-    await page.getByRole('button', { name: 'New page' }).first().click();
     const dialog = page.getByRole('dialog', { name: 'New page' });
+    // A click that lands before the page list has hydrated is dropped on the slow local stack: retry once.
+    await expect(async () => {
+      if (!(await dialog.isVisible())) await page.getByRole('button', { name: 'New page' }).first().click();
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
     await dialog.getByRole('button', { name: /^Blank page/ }).click();
     await dialog.getByLabel('Page name').fill(title);
     await dialog.getByRole('button', { name: 'Create page' }).click();

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, type BrowserContext, type Page } from '@playwright/test';
+import { expect, request as pwRequest, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
 /**
  * Shared helpers for the flow specs. They talk to the real running stack (see TESTING.md §2c).
@@ -23,73 +23,299 @@ export const DEMO = {
   password: process.env.DEMO_PASSWORD ?? 'password',
 };
 
+// ---------------------------------------------------------------------------------------------
+// Auth: cookie-based Sanctum sessions only (PHASE-4-CONTRACT §7.4; Bearer was removed in 4.7c).
+// A Session is a Playwright storage-state file. Every authenticated API call goes through the merchant
+// origin (Vite proxy → Laravel), so it is stateful: session cookie + X-XSRF-TOKEN on writes.
+// Logins are SPA-style: GET /sanctum/csrf-cookie → POST /api/v1/auth/login, then the state is saved.
+// ---------------------------------------------------------------------------------------------
 export interface Session {
-  token: string;
+  /** path of the Playwright storage-state file */
+  storageState: string;
   expires_at: string;
   tenantId: string;
   storeId: string;
 }
 
+/** Anything api() can authenticate with. `null` = anonymous (direct to the API origin, never stateful). */
+export type ApiAuth = (Pick<Session, 'storageState' | 'tenantId'> & Partial<Session>) | null;
+
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export async function api(
-  s: Pick<Session, 'token' | 'tenantId'> | null,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; json: Json }> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (s) {
-    headers.Authorization = `Bearer ${s.token}`;
-    headers['X-Tenant-Id'] = s.tenantId;
-  }
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${urls.api}/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  const text = await res.text();
-  let json: Json = {};
-  try {
-    json = text ? JSON.parse(text) : {};
-  } catch {
-    json = { raw: text };
-  }
-  return { status: res.status, json };
+export interface ApiResult {
+  status: number;
+  json: Json;
+  text: string;
+  headers: Record<string, string>;
 }
 
-const AUTH_FILE = resolve(E2E_ROOT, '.auth/demo.json');
+const parse = (text: string): Json => {
+  try {
+    return text ? (JSON.parse(text) as Json) : {};
+  } catch {
+    return { raw: text };
+  }
+};
+
+const SPA_HEADERS = () => ({ Accept: 'application/json', Referer: `${urls.merchant}/` });
+const cookieContexts = new Map<string, Promise<APIRequestContext>>();
+
+/** One stateful request context per storage-state file, reused for the whole worker. */
+function cookieContext(storageState: string): Promise<APIRequestContext> {
+  let ctx = cookieContexts.get(storageState);
+  if (!ctx) {
+    ctx = pwRequest.newContext({ baseURL: urls.merchant, storageState, extraHTTPHeaders: SPA_HEADERS() });
+    cookieContexts.set(storageState, ctx);
+  }
+  return ctx;
+}
+
+/** Fresh, cookie-less SPA-origin context (for logins, registration, invitation accept). */
+export function spaContext(): Promise<APIRequestContext> {
+  return pwRequest.newContext({ baseURL: urls.merchant, extraHTTPHeaders: SPA_HEADERS() });
+}
+
+export async function xsrfToken(ctx: APIRequestContext): Promise<string | null> {
+  const c = (await ctx.storageState()).cookies.find((k) => k.name === 'XSRF-TOKEN');
+  return c ? decodeURIComponent(c.value) : null;
+}
+
+export interface CallOptions {
+  /** JSON body */
+  json?: unknown;
+  /** multipart body (file uploads). Values: string or { name, mimeType, buffer }. */
+  multipart?: Record<string, string | { name: string; mimeType: string; buffer: Buffer }>;
+  headers?: Record<string, string>;
+  /** do not send X-XSRF-TOKEN (CSRF negative tests) */
+  omitCsrf?: boolean;
+}
 
 /**
- * Demo owner session. Cached in tests/e2e/.auth (git-ignored) so a run costs one login: the API's
- * `throttle:auth` allows 10 auth calls per minute per IP, and the auth flow specs need some of those.
+ * Generic API call (JSON, multipart, text/CSV responses). `path` is relative to /api/v1 unless it starts
+ * with `/sanctum/`. Sessions go through the merchant origin; anonymous calls go to the API origin.
+ * Note: Playwright's request client never sends Sec-Fetch-Site, so Laravel's same-origin CSRF shortcut
+ * never applies here: every write needs the X-XSRF-TOKEN header, which this sends.
+ */
+export async function apiCall(s: ApiAuth, method: string, path: string, opts: CallOptions = {}): Promise<ApiResult> {
+  const fullPath = path.startsWith('/sanctum/') ? path : `/api/v1${path}`;
+  const headers: Record<string, string> = { Accept: 'application/json', ...(opts.headers ?? {}) };
+  let ctx: APIRequestContext;
+  let url: string;
+  if (s) {
+    if (s.tenantId) headers['X-Tenant-Id'] = s.tenantId;
+    ctx = await cookieContext(s.storageState);
+    url = fullPath;
+    if (!/^(GET|HEAD|OPTIONS)$/i.test(method) && !opts.omitCsrf) {
+      const t = await xsrfToken(ctx);
+      if (t) headers['X-XSRF-TOKEN'] = t;
+    }
+  } else {
+    ctx = await anonContext();
+    url = `${urls.api}${fullPath}`;
+  }
+  const res = await ctx.fetch(url, {
+    method,
+    headers,
+    ...(opts.json !== undefined ? { data: opts.json } : {}),
+    ...(opts.multipart ? { multipart: opts.multipart } : {}),
+    maxRedirects: 0,
+    failOnStatusCode: false,
+  });
+  const text = await res.text();
+  return { status: res.status(), json: parse(text), text, headers: res.headers() };
+}
+
+let anon: Promise<APIRequestContext> | null = null;
+function anonContext(): Promise<APIRequestContext> {
+  anon ??= pwRequest.newContext({ storageState: { cookies: [], origins: [] } });
+  return anon;
+}
+
+/** JSON API call (Phase 2/3 signature). */
+export async function api(s: ApiAuth, method: string, path: string, body?: unknown): Promise<{ status: number; json: Json }> {
+  const r = await apiCall(s, method, path, body === undefined ? {} : { json: body });
+  return { status: r.status, json: r.json };
+}
+
+export const DEMO_STATE_FILE = resolve(E2E_ROOT, '.auth/demo.json');
+const DEMO_META_FILE = resolve(E2E_ROOT, '.auth/demo.meta.json');
+
+/**
+ * Demo owner session. One login per run at most (`throttle:auth` = 10/min/IP): reused while /auth/me says
+ * the session has more than 1 h left.
  */
 export async function demoSession(): Promise<Session> {
-  if (existsSync(AUTH_FILE)) {
-    const cached = JSON.parse(readFileSync(AUTH_FILE, 'utf8')) as Session;
-    if (Date.parse(cached.expires_at) - Date.now() > 3_600_000) {
-      const me = await api(cached, 'GET', '/auth/me');
-      if (me.status === 200) return cached;
+  if (existsSync(DEMO_STATE_FILE) && existsSync(DEMO_META_FILE)) {
+    try {
+      const state = JSON.parse(readFileSync(DEMO_STATE_FILE, 'utf8')) as { cookies?: unknown[] };
+      const meta = JSON.parse(readFileSync(DEMO_META_FILE, 'utf8')) as Pick<Session, 'tenantId' | 'storeId'>;
+      if (Array.isArray(state.cookies)) {
+        const probe: Session = { storageState: DEMO_STATE_FILE, expires_at: '', ...meta };
+        const me = await api(probe, 'GET', '/auth/me');
+        const exp = me.json.meta?.session_expires_at as string | undefined;
+        if (me.status === 200 && exp && Date.parse(exp) - Date.now() > 3_600_000) return { ...probe, expires_at: exp };
+      }
+    } catch {
+      /* stale file: log in again */
     }
+    cookieContexts.delete(DEMO_STATE_FILE);
   }
-  const login = await api(null, 'POST', '/auth/login', DEMO);
-  expect(login.status, JSON.stringify(login.json)).toBe(200);
-  const { token, expires_at, user } = login.json.data;
-  const tenantId = user.tenants[0].id as string;
-  const stores = await api({ token, tenantId }, 'GET', '/stores');
-  const s: Session = { token, expires_at, tenantId, storeId: stores.json.data[0].id };
-  mkdirSync(dirname(AUTH_FILE), { recursive: true });
-  writeFileSync(AUTH_FILE, JSON.stringify(s));
+  return cookieLogin(DEMO.email, DEMO.password, DEMO_STATE_FILE, DEMO_META_FILE);
+}
+
+/** SPA-style login: csrf-cookie → POST /auth/login → save storage state (+ tenant/store meta). */
+export async function cookieLogin(email: string, password: string, statePath: string, metaPath?: string): Promise<Session> {
+  const ctx = await spaContext();
+  try {
+    const csrf = await ctx.get('/sanctum/csrf-cookie');
+    expect(csrf.status(), 'GET /sanctum/csrf-cookie through the merchant origin').toBe(204);
+    const login = await ctx.post('/api/v1/auth/login', {
+      data: { email, password },
+      headers: { 'X-XSRF-TOKEN': (await xsrfToken(ctx)) ?? '' },
+      failOnStatusCode: false,
+    });
+    const body = parse(await login.text());
+    expect(login.status(), JSON.stringify(body)).toBe(200);
+    return await saveSession(ctx, body, statePath, undefined, metaPath);
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+/** Saves the context's cookies as a Session (tenant from the auth body unless given). */
+async function saveSession(ctx: APIRequestContext, body: Json, statePath: string, tenantId?: string, metaPath?: string): Promise<Session> {
+  const { user, expires_at } = body.data;
+  const tid = tenantId ?? (user?.tenants?.[0]?.id as string);
+  mkdirSync(dirname(statePath), { recursive: true });
+  await ctx.storageState({ path: statePath });
+  cookieContexts.delete(statePath);
+  const partial = { storageState: statePath, expires_at, tenantId: tid };
+  const stores = await api(partial, 'GET', '/stores');
+  const s: Session = { ...partial, storeId: stores.json.data?.[0]?.id ?? '' };
+  if (metaPath) writeFileSync(metaPath, JSON.stringify({ tenantId: s.tenantId, storeId: s.storeId }));
   return s;
 }
 
-/** Signs the merchant SPA in by seeding its session storage (same keys as packages/api-client session). */
-export async function signInDashboard(context: BrowserContext, s: Session): Promise<void> {
-  await context.addInitScript(
-    ([origin, token, expiresAt, tenantId]) => {
-      if (window.location.origin !== origin) return;
-      window.sessionStorage.setItem('storeplix.merchant.token', token);
-      window.sessionStorage.setItem('storeplix.merchant.expires_at', expiresAt);
-      window.localStorage.setItem('storeplix.merchant.tenant', tenantId);
+/** POSTs an anonymous auth call the way the SPA does (csrf-cookie, same origin). Caller disposes ctx. */
+async function spaAuthPost(path: string, body: unknown): Promise<{ status: number; json: Json; ctx: APIRequestContext }> {
+  const ctx = await spaContext();
+  await ctx.get('/sanctum/csrf-cookie');
+  const res = await ctx.post(`/api/v1${path}`, { data: body, headers: { 'X-XSRF-TOKEN': (await xsrfToken(ctx)) ?? '' }, failOnStatusCode: false });
+  return { status: res.status(), json: parse(await res.text()), ctx };
+}
+
+export interface ThrowawayMember {
+  email: string;
+  session: Session;
+  /** removes the membership and deletes the user */
+  cleanup: () => Promise<void>;
+}
+
+/**
+ * Invites a throwaway user to the owner's shop with `role`, accepts through the mailed token (one
+ * `throttle:auth` call) and returns their session. Always call `cleanup()` in afterAll.
+ */
+export async function createMember(owner: Session, role: 'staff' | 'admin'): Promise<ThrowawayMember> {
+  const email = `${unique(role)}@e2e.storeplix.test`;
+  const password = 'E2eMember12345';
+  const cleanup = async () => {
+    const staff = await api(owner, 'GET', '/staff');
+    for (const m of (staff.json.data ?? []) as Array<{ id: string; email: string; kind: string }>) {
+      if (m.email !== email) continue;
+      await api(owner, 'DELETE', m.kind === 'invitation' ? `/staff/invitations/${m.id}` : `/staff/${m.id}`);
+    }
+    deleteE2eUser(email);
+  };
+  try {
+    const mark = mailMark();
+    const invite = await api(owner, 'POST', '/staff/invitations', { email, role, name: `E2E ${role}` });
+    expect(invite.status, JSON.stringify(invite.json)).toBe(201);
+    const link = await findMailLink(email, '/invite?token=', mark);
+    const token = new URL(link).searchParams.get('token')!;
+    const accepted = await spaAuthPost(`/invitations/${encodeURIComponent(token)}/accept`, {
+      name: `E2E ${role}`,
+      password,
+      password_confirmation: password,
+    });
+    try {
+      expect(accepted.status, JSON.stringify(accepted.json)).toBe(201);
+      const s = await saveSession(accepted.ctx, accepted.json, resolve(E2E_ROOT, `.auth/${email.split('@')[0]}.json`), owner.tenantId);
+      return { email, session: { ...s, storeId: owner.storeId }, cleanup };
+    } finally {
+      await accepted.ctx.dispose();
+    }
+  } catch (e) {
+    await cleanup();
+    throw e;
+  }
+}
+
+export interface ThrowawayTenant {
+  email: string;
+  session: Session;
+  slug: string;
+  /** storefront host once `activateStorefront()` ran */
+  host: string;
+  /** makes the draft store public on `{slug}.localhost` (test-only DB write through artisan tinker) */
+  activateStorefront: () => void;
+  /** deletes the tenant (cascade) and its owner user */
+  cleanup: () => void;
+}
+
+/**
+ * Registers a second merchant (own tenant) with one store, for cross-tenant checks and the "new store
+ * shows placeholders" storefront check. One `throttle:auth` call. Always call `cleanup()`.
+ */
+export async function createTenant(label = 'eve'): Promise<ThrowawayTenant> {
+  const email = `${unique(`qa-${label}-`)}@e2e.storeplix.test`;
+  const slug = unique(`qa-${label}-`).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
+  const phone = `019${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+  const reg = await spaAuthPost('/auth/register', { name: `QA ${label}`, email, phone, password: 'E2eTenant12345', password_confirmation: 'E2eTenant12345' });
+  let partial: Session;
+  try {
+    expect(reg.status, JSON.stringify(reg.json)).toBe(201);
+    partial = await saveSession(reg.ctx, reg.json, resolve(E2E_ROOT, `.auth/${email.split('@')[0]}.json`));
+  } finally {
+    await reg.ctx.dispose();
+  }
+  const created = await api(partial, 'POST', '/stores', { name: `QA ${label} shop`, slug });
+  expect(created.status, JSON.stringify(created.json)).toBe(201);
+  const session: Session = { ...partial, storeId: created.json.data.id };
+  const host = `${slug}.localhost`;
+  return {
+    email,
+    session,
+    slug,
+    host,
+    activateStorefront: () => {
+      tinker(
+        [
+          `$sid='${session.storeId}'; $h='${host}';`,
+          `$s=DB::table('stores')->where('id',$sid)->first();`,
+          `DB::table('stores')->where('id',$sid)->update(['status'=>'active','updated_at'=>now()]);`,
+          `if(!DB::table('store_domains')->where('hostname',$h)->exists()){ DB::table('store_domains')->insert(['id'=>(string) Illuminate\\Support\\Str::ulid(),'tenant_id'=>$s->tenant_id,'store_id'=>$sid,'hostname'=>$h,'type'=>'platform','status'=>'active','is_primary'=>false,'created_at'=>now(),'updated_at'=>now()]); }`,
+          `Illuminate\\Support\\Facades\\Cache::flush(); echo 'ok';`,
+        ].join(' '),
+      );
     },
-    [new URL(urls.merchant).origin, s.token, s.expires_at, s.tenantId] as const,
+    cleanup: () => deleteE2eTenant(session.tenantId, email),
+  };
+}
+
+/** Signs the merchant SPA in: adds the session cookies and the non-secret session-store hints. */
+export async function signInDashboard(context: BrowserContext, s: Session): Promise<void> {
+  const state = JSON.parse(readFileSync(s.storageState, 'utf8')) as { cookies: Parameters<BrowserContext['addCookies']>[0] };
+  await context.addCookies(state.cookies);
+  await context.addInitScript(
+    ([o, tenantId, expiresAt]) => {
+      if (window.location.origin !== o) return;
+      window.localStorage.setItem('storeplix.merchant.tenant', tenantId);
+      if (!window.sessionStorage.getItem('storeplix.merchant.signed_in')) {
+        window.sessionStorage.setItem('storeplix.merchant.signed_in', '1');
+        if (expiresAt) window.sessionStorage.setItem('storeplix.merchant.expires_at', expiresAt);
+      }
+    },
+    [new URL(urls.merchant).origin, s.tenantId, s.expires_at] as const,
   );
 }
 
@@ -161,24 +387,53 @@ async function mailpitLink(to: string, pathPrefix: string): Promise<string | nul
 }
 
 /**
- * Deletes a throwaway user created by a spec (users have no delete endpoint). Local stacks only:
- * runs `php artisan tinker` in apps/api (or `docker compose exec api` when E2E_ARTISAN=docker).
+ * Runs PHP in `php artisan tinker` (local apps/api, or `docker compose exec api` when E2E_ARTISAN=docker).
+ * Test cleanup / fixture setup only; callers validate their inputs before interpolating them.
+ */
+export function tinker(code: string): string {
+  const docker = process.env.E2E_ARTISAN === 'docker';
+  const [bin, args] = docker
+    ? ['docker', ['compose', 'exec', '-T', 'api', 'php', 'artisan', 'tinker', `--execute=${code}`]]
+    : ['php', ['artisan', 'tinker', `--execute=${code}`]];
+  return execFileSync(bin, args, { cwd: docker ? resolve(E2E_ROOT, '../..') : API_DIR, stdio: 'pipe' }).toString();
+}
+
+const E2E_EMAIL = /^[a-z0-9.+-]+@e2e\.storeplix\.test$/;
+
+/**
+ * Deletes a throwaway user created by a spec (users have no delete endpoint). Local stacks only.
  * Only addresses ending in @e2e.storeplix.test are accepted, so it can never touch real accounts.
  */
 export function deleteE2eUser(email: string): void {
-  if (!/^[a-z0-9.+-]+@e2e\.storeplix\.test$/.test(email)) throw new Error(`refusing to delete ${email}`);
+  if (!E2E_EMAIL.test(email)) throw new Error(`refusing to delete ${email}`);
   // test-only cleanup: invitations reference accepted_user_id without cascade, so remove them first.
-  const code = [
-    `$e='${email}';`,
-    `Illuminate\\Support\\Facades\\DB::table('staff_invitations')->where('email',$e)->delete();`,
-    `Illuminate\\Support\\Facades\\DB::table('password_reset_tokens')->where('email',$e)->delete();`,
-    `$u=App\\Domain\\Identity\\Models\\User::where('email',$e)->first();`,
-    `if($u){ $u->tokens()->delete(); $u->delete(); echo 'deleted'; }`,
-  ].join(' ');
-  const cmd = process.env.E2E_ARTISAN === 'docker'
-    ? ['docker', ['compose', 'exec', '-T', 'api', 'php', 'artisan', 'tinker', `--execute=${code}`]]
-    : ['php', ['artisan', 'tinker', `--execute=${code}`]];
-  execFileSync(cmd[0] as string, cmd[1] as string[], { cwd: process.env.E2E_ARTISAN === 'docker' ? resolve(E2E_ROOT, '../..') : API_DIR, stdio: 'pipe' });
+  tinker(
+    [
+      `$e='${email}';`,
+      `Illuminate\\Support\\Facades\\DB::table('staff_invitations')->where('email',$e)->delete();`,
+      `Illuminate\\Support\\Facades\\DB::table('password_reset_tokens')->where('email',$e)->delete();`,
+      `$u=App\\Domain\\Identity\\Models\\User::where('email',$e)->first();`,
+      `if($u){ if(Illuminate\\Support\\Facades\\Schema::hasTable('sessions')){ Illuminate\\Support\\Facades\\DB::table('sessions')->where('user_id',$u->id)->delete(); } if(method_exists($u,'tokens')){ $u->tokens()->delete(); } $u->delete(); echo 'deleted'; }`,
+    ].join(' '),
+  );
+}
+
+/**
+ * Deletes a throwaway tenant (FK cascade removes its store, catalog, customers, imports, media rows) plus
+ * its private/public files and its owner. Refuses unless the tenant's only owner is an @e2e address.
+ */
+export function deleteE2eTenant(tenantId: string, ownerEmail: string): void {
+  if (!E2E_EMAIL.test(ownerEmail) || !/^[0-9a-z]{26}$/i.test(tenantId)) throw new Error(`refusing to delete tenant ${tenantId}`);
+  tinker(
+    [
+      `$t='${tenantId}'; $e='${ownerEmail}'; $DB='Illuminate\\Support\\Facades\\DB';`,
+      `$owners=$DB::table('tenant_users')->join('users','users.id','=','tenant_users.user_id')->where('tenant_users.tenant_id',$t)->where('tenant_users.role','owner')->pluck('users.email')->all();`,
+      `if($owners!==[$e]){ echo 'refused'; } else {`,
+      `foreach(['public','local'] as $d){ try { Illuminate\\Support\\Facades\\Storage::disk($d)->deleteDirectory('tenants/'.$t); } catch (Throwable $x) {} }`,
+      `$DB::table('tenants')->where('id',$t)->delete(); echo 'tenant-deleted'; }`,
+    ].join(' '),
+  );
+  deleteE2eUser(ownerEmail);
 }
 
 export async function collectConsoleErrors(page: Page): Promise<string[]> {

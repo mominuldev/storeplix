@@ -2,6 +2,12 @@
 
 namespace App\Domain\Stores\Models;
 
+use App\Domain\Catalog\Models\Category;
+use App\Domain\Catalog\Models\Product;
+use App\Domain\Catalog\Models\ProductVariant;
+use App\Domain\Customers\Models\Customer;
+use App\Domain\DataTransfer\Models\DataExport;
+use App\Domain\DataTransfer\Models\DataImport;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
@@ -80,5 +86,38 @@ class Store extends Model
     public function navigation(): HasMany
     {
         return $this->hasMany(StoreNavigation::class);
+    }
+
+    // Phase 4: relations named after the route parameters so Route::scopeBindings() resolves nested ids
+    // through the store ({product} → products(), {variant} → variants(), {import} → imports() …).
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    public function customers(): HasMany
+    {
+        return $this->hasMany(Customer::class);
+    }
+
+    public function imports(): HasMany
+    {
+        return $this->hasMany(DataImport::class);
+    }
+
+    public function exports(): HasMany
+    {
+        return $this->hasMany(DataExport::class);
     }
 }

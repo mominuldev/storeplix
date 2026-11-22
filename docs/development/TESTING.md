@@ -11,6 +11,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | Feature / HTTP (PHP) | Laravel HTTP tests, `RefreshDatabase` | `apps/api/tests/Feature` | yes (sqlite) |
 | **Tenant isolation (PHP)** | Feature tests in group `tenancy` | `apps/api/tests/Feature/**` | yes, **required**, sqlite **and** Postgres |
 | Migrations | `migrate:fresh --seed`, rollback, re-migrate | — | yes (Postgres 16 service) |
+| Perf (Phase 4) | Pest group `perf`: 5 000-row product import validate + run < 120 s, parallel stock adjustments | `apps/api/tests/**` | yes, job `api-perf` (Postgres 16), fails when the group is empty |
 | Unit / component (TS) | Vitest + Testing Library | `apps/*/src/**/*.test.ts(x)`, `packages/*/src` | yes |
 | Type contracts | `tsc --noEmit` against `@storeplix/types` | all TS packages | yes |
 | Bundle secret scan | grep build output for `STOREFRONT_API_KEY` | `.next/static`, `dist/` | yes |
@@ -26,6 +27,7 @@ happy path + validation + authz + cross-tenant case), a handful of E2E smoke flo
 # API
 cd apps/api && php artisan test                      # full suite
 cd apps/api && php artisan test --group=tenancy      # tenant-isolation gate only
+cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import < 120 s, stock race (Postgres; CI job api-perf)
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -43,6 +45,7 @@ cd apps/api && php artisan test tests/Feature/Themes tests/Unit/SafeHrefTest.php
 
 # E2E (stack must be running + seeded; see docker-compose.yml header and §2c)
 cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium && pnpm test
+E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass screenshots → test-results/
 ```
 
 ## 2b. Browser testing: Playwright only (product owner rule)
@@ -66,6 +69,19 @@ cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install 
 | `phase2.settings-logo` | Settings → Store details logo upload → storefront header shows it |
 | `phase3.theme-editor` | edit hero in the editor → iframe preview updates; public unchanged until Publish; Publish → public in < 5 s |
 | `phase3.pages-nav-seo` | page create (dialog) → publish → `/pages/{slug}` (+ breadcrumb, canonical, sitemap; draft 404); main-menu item → header link; "Hide the whole shop from Google" → robots `Disallow: /` + noindex |
+| `phase4.catalog` | API: simple + variable (2 options × 6 variants), type derived, SKU unique case-insensitively, money/option rules, revision 409, variant replacement (ids kept, SKU freed), stock only via the ledger, duplicate, bulk (foreign id → nothing applied). UI: editor with 2 photos → list shows it with its cover → archive / activate / duplicate |
+| `phase4.categories` | 3-level tree, 4th level / self-nesting / too-deep move → 422, parent delete → 409, leaf delete detaches products, reorder (stale list, cycle); UI tree + side panel |
+| `phase4.inventory` | delta / set / `expected_on_hand` 409 / all-or-nothing 422 / zero delta no row / thresholds incl. untracked / 20 parallel −1s never negative; UI Adjust → Stock movements row, low badge |
+| `phase4.import-export` | template; UI upload → fix the column map → dry-run (nothing written) → error rows → error report (formula-safe) → run; same file again → all `unchanged`, no ledger rows; export formula-safe (= + - @, full-width, leading space), BOM/CRLF/quoted, round-trip columns, tampered signature refused |
+| `phase4.customers` | phone normalisation, duplicates, search (01… / 8801… / digits / email / name), revision 409, notes; UI add → search by phone → detail (WhatsApp link) → note |
+| `phase4.staff` | throwaway staff member: cost null everywhere and ignored on write, stock value at cost null; delete / bulk delete / import / export / template → 403; note delete rules; UI hides Export, Import, Cost, Delete |
+| `phase4.dashboard` | shape, `no-store`, numbers follow the data (active-only stock); UI "—" tiles, "No sales yet", Restock task, checklist |
+| `phase4.storefront` | feed: active + enabled only, exact card keys, cheapest enabled variant, on_sale, cache headers; demo home shows a new product < 5 s and drops it on archive, cards unlinked; a new store's feed 404 (draft) / `has_products:false` (live) → placeholders |
+| `phase4.onboarding05` | new throwaway shop: quick-add with sizes (variable, stock per size) + simple (Bangla digits) → `/`; checklist "Add products" done; Back / Skip |
+| `phase4.mobile` | 390×844: dashboard, products, editor, categories, import, inventory, customers, onboarding 05 have no horizontal overflow (screenshots); tab bar Products active; mobile chips |
+| `phase4.security` | adversarial §10: second tenant (Eve) on demo routes → 404, spoofed tenant → 403, demo ids in Eve payloads → 422, same SKU/slug allowed across tenants, mass assignment, price manipulation, CSV upload hardening (magic bytes, NUL, latin-1, 51 cols, 10 001-char cell, 64 KB line, 5 001 rows, 10 MB + 1 → 413), `<script>` description stays text |
+| `phase4.auth-cookie` | no token in JS storage, HttpOnly/Lax/host-only session cookie, write without CSRF → 419, storefront origin not stateful, logout → 401 + `/login`; non-stateful login 400 `stateful_required`; Bearer → 401 |
+| `phase4.visual` | (`E2E_VISUAL=1`) every Phase 4 screen at 1440 / 834 / 390 px, files named after the Figma frame they are compared with |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -74,9 +90,30 @@ How they run:
 - **Idempotent and self-cleaning.** Each spec snapshots what it changes and restores it in `finally`/`afterAll`
   (theme draft + published config, menus, SEO flag, logo, created pages, invited user). Unique names per run.
 - **Serial** (`workers: 1`): the specs share the demo store.
-- **Sign-in:** one API login per run, cached in `tests/e2e/.auth/demo.json` (git-ignored) and injected into the
-  dashboard's sessionStorage. `throttle:auth` allows 10 auth calls/min per IP and `phase2.auth-flows` uses 5, so
-  **wait ~60 s between back-to-back full runs** or the reset mail is silently throttled.
+- **Sign-in (cookie sessions only, PHASE-4-CONTRACT §7.4; Bearer was removed in 4.7c):** one login per run at most.
+  `GET /sanctum/csrf-cookie` → `POST /api/v1/auth/login` through the **merchant origin** (Vite proxy); the Playwright
+  storage state is cached in `tests/e2e/.auth/demo.json` (+ `demo.meta.json` for tenant/store ids) and reused while
+  `/auth/me` says the session has > 1 h left. Every helper call (`api()` / `apiCall()`) goes through
+  `http://localhost:5173/api/...` with that cookie jar and sends `X-XSRF-TOKEN` on writes. Playwright's request
+  client never sends `Sec-Fetch-Site`, so Laravel's same-origin CSRF shortcut never applies to helper calls; 419
+  tests therefore work from the request client. Browser specs get the cookies via `signInDashboard()`.
+  `throttle:auth` limits auth calls per IP; `phase2.auth-flows` uses 5 and `phase4.staff`, `phase4.storefront`,
+  `phase4.onboarding05`, `phase4.security` 1 each, so **wait ~60 s between back-to-back full runs**. If another
+  process changes the demo password or logs sessions out, the cached state is detected as dead and replaced.
+- **Phase 4 needs a worker on the `bulk` queue** (imports/exports): locally
+  `php artisan queue:work --queue=default,media,bulk --timeout=310` (or a second worker with `--queue=bulk`);
+  docker compose runs `queue-bulk`. Without it `phase4.import-export` / `phase4.security` time out with
+  "is a queue worker consuming the `bulk` queue?".
+- **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
+  (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the
+  tenant (FK cascade) and the user. `createMember(owner, 'staff')` invites + accepts; `cleanup()` removes both.
+- **Phase 4 records** carry a per-run tag (`E2E {run} …`, SKUs `E2E-{RUN}-…`). `Tracker.cleanup()` deletes them
+  through the API (images detached first: `product_images` keep media RESTRICT after a soft delete) and
+  `purgeRun()` hard-deletes this run's soft-deleted rows (products + variants/inventory/ledger, categories,
+  customers, imports) so the demo DB ends as it started. Audit-log rows stay.
+- **Env switches:** `E2E_VISUAL=1`, `E2E_ARTISAN=docker`, `STOREFRONT_API_KEY` (else read from `apps/api/.env`).
+- **merchant-bulk throttle:** the suite makes ~15 bulk calls per run on the demo tenant; set
+  `THROTTLE_MERCHANT_BULK_PER_HOUR=1000` in local/CI env (the e2e workflow does).
 - **Mail:** with `MAIL_MAILER=log` (local `apps/api/.env`) the specs read the link from
   `apps/api/storage/logs/laravel.log` (only the bytes appended after the action; override with `LARAVEL_LOG`).
   With docker compose (Mailpit) set `MAILPIT_URL=http://localhost:8025`.
@@ -140,6 +177,15 @@ Phase column = when the test becomes mandatory (the feature must exist first).
 | T-29 | Preview/draft leakage: draft theme/page never served to a cookie-less request after a preview render; preview responses `private, no-store` | public HTML unchanged | 3 |
 | T-30 | Framing: live pages `frame-ancestors 'none'` + `X-Frame-Options: DENY`; with `sp_preview` only the `STOREFRONT_EDITOR_ORIGINS` | headers as stated | 3 |
 | T-31 | Staff (role `staff`) on every theme/page/nav/SEO write | 403; GETs 200 | 3 |
+| T-32 | Tenant/store B's category, media, variant, customer, note, import, export ids in A's **routes** | 404 (never 403) | 4 |
+| T-33 | B's ids inside A's **payloads** (`category_ids`, `parent_id`, `images.*.media_id`, `variants.*.id`, `image_media_id`, adjustment `variant_id`, bulk `ids`) | 422 with the field path; DB triple FKs as backstop | 4 |
+| T-34 | Same SKU / slug in A and B | allowed, never revealed | 4 |
+| T-35 | Stock races: parallel adjustments on one variant | never negative; ledger rows = successful changes | 4 |
+| T-36 | CSV formula injection in export, error report and template (`= + - @` TAB CR, full-width, leading space) | cell prefixed with `'` | 4 |
+| T-37 | Malicious CSV upload: archive/binary magic, NUL, non-UTF-8, > 10 MB, > 5 000 rows, > 50 cols, > 10 000-char cell, > 64 KB line, bad headers | 413 / 422 with the §5.1 code; nothing decompressed | 4 |
+| T-38 | Staff: cost/profit/stock value at cost, delete, import, export | null / 403 | 4 |
+| T-39 | Storefront feed minimality and draft exposure | exact card keys; draft store 404; preview `private, no-store` | 4 |
+| T-40 | Cookie auth (4.7): CSRF, HttpOnly, host-only, storefront origin not stateful, logout/expiry | 419 / 401 | 4 |
 
 Non-PHP checks (CI or review):
 

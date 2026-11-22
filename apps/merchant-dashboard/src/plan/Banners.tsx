@@ -1,5 +1,8 @@
+import { isApiError } from '@storeplix/api-client';
+import { Dialog } from '@storeplix/ui';
 import { Clock, Phone } from 'lucide-react';
-import { Link } from 'react-router';
+import { useSyncExternalStore } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { can } from '../lib/permissions';
 import { planName, trialDaysLeft, useFeatures } from './useFeatures';
@@ -39,5 +42,55 @@ export function VerifyPhoneBanner() {
         Verify now
       </Link>
     </div>
+  );
+}
+
+// Phase 4 §9.2: any 402 `plan_limit_reached` opens one app-wide dialog with "Upgrade to Starter".
+let planLimitMessage: string | null = null;
+const planListeners = new Set<() => void>();
+const emitPlan = () => planListeners.forEach((l) => l());
+
+export function showPlanLimit(message: string) {
+  planLimitMessage = message;
+  emitPlan();
+}
+
+/** Opens the plan-limit dialog for a 402 `plan_limit_reached` error. Returns true when handled. */
+export function handlePlanLimit(error: unknown): boolean {
+  if (isApiError(error) && error.status === 402 && error.code === 'plan_limit_reached') {
+    showPlanLimit(error.message || 'You’ve reached your plan’s limit.');
+    return true;
+  }
+  return false;
+}
+
+export function PlanLimitDialog() {
+  const navigate = useNavigate();
+  const { activeTenant } = useAuth();
+  const message = useSyncExternalStore(
+    (l) => {
+      planListeners.add(l);
+      return () => planListeners.delete(l);
+    },
+    () => planLimitMessage,
+  );
+  const close = () => {
+    planLimitMessage = null;
+    emitPlan();
+  };
+  const billing = can.viewBilling(activeTenant?.role);
+  return (
+    <Dialog
+      open={!!message}
+      title="You’ve reached your plan’s limit"
+      description={`${message ?? ''} ${billing ? 'Upgrade to add more — nothing you already have is hidden or deleted.' : 'Ask the shop owner to upgrade the plan.'}`}
+      confirmLabel={billing ? 'Upgrade to Starter' : 'OK'}
+      cancelLabel={billing ? 'Not now' : null}
+      onCancel={close}
+      onConfirm={() => {
+        close();
+        if (billing) navigate('/settings/plan');
+      }}
+    />
   );
 }

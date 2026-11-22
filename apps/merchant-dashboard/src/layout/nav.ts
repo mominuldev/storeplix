@@ -18,6 +18,8 @@ import {
 export interface NavChild {
   label: string;
   to: string;
+  /** Hide the link unless the role passes this check (the page gates itself too). */
+  requires?: 'bulkData';
 }
 
 export interface NavEntry {
@@ -47,7 +49,17 @@ export const mainNav: NavEntry[] = [
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },
   { label: 'POS', to: '/pos', icon: Monitor },
-  { label: 'Products', to: '/products', icon: Package },
+  {
+    label: 'Products',
+    to: '/products',
+    icon: Package,
+    // Phase 4 P4-28: same child-nav pattern as Orders.
+    children: [
+      { label: 'All products', to: '/products' },
+      { label: 'Categories', to: '/products/categories' },
+      { label: 'Import', to: '/products/import', requires: 'bulkData' },
+    ],
+  },
   { label: 'Inventory', to: '/inventory', icon: Warehouse },
   { label: 'Customers', to: '/customers', icon: Users },
   { label: 'Marketing', to: '/marketing', icon: Megaphone },

@@ -14,6 +14,11 @@
 #   Merchant dashboard ......... http://localhost:5173
 #   Super admin ................ http://localhost:5174
 #   Mailpit UI ................. http://localhost:8025
+#   Prod-like SPA hosts (Phase 4.7, Nginx same-origin /api + /sanctum proxy):
+#                                http://app.localhost  /  http://admin.localhost
+#
+# Queues: `queue` works default,media (short jobs); `queue-bulk` works `bulk` (CSV import/export,
+# PHASE-4-CONTRACT §5.4: $timeout 300 s, $tries 1). REDIS_QUEUE_RETRY_AFTER must stay > 300.
 #
 # Env resolution
 #   - `${VAR:-default}` values come from the root `.env` (git-ignored). Defaults are DEV-ONLY.
@@ -42,7 +47,6 @@ x-api-env: &api-env
   REDIS_PORT: 6379
   CACHE_STORE: redis
   QUEUE_CONNECTION: redis
-  SESSION_DRIVER: redis
   MAIL_MAILER: smtp
   MAIL_HOST: mailpit
   MAIL_PORT: 1025
@@ -58,8 +62,28 @@ x-api-env: &api-env
   REVESMS_API_KEY: ${REVESMS_API_KEY:-}
   REVESMS_SECRET_KEY: ${REVESMS_SECRET_KEY:-}
   REVESMS_CALLER_ID: ${REVESMS_CALLER_ID:-}
-  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:5174
-  CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5174
+  # Phase 4.7 (PHASE-4-CONTRACT §7.2): cookie sessions for the SPAs, reached same-origin through the
+  # Vite proxy (:5173/:5174) or Nginx (app.localhost/admin.localhost). Exact list: never a storefront host.
+  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:5174,app.localhost,admin.localhost
+  # Absolute session expiry (7 days) = SANCTUM_EXPIRATION minutes.
+  SANCTUM_EXPIRATION: "10080"
+  SESSION_DRIVER: redis
+  SESSION_LIFETIME: "10080"
+  SESSION_EXPIRE_ON_CLOSE: "false"
+  SESSION_COOKIE: sp_session            # prod: __Host-sp_session
+  SESSION_DOMAIN: "null"                # host-only cookies (Laravel env() maps "null" → null)
+  SESSION_PATH: /
+  SESSION_SECURE_COOKIE: "false"        # prod: true
+  SESSION_HTTP_ONLY: "true"
+  SESSION_SAME_SITE: lax
+  # nginx is the only hop in front of php-fpm inside the compose network.
+  TRUSTED_PROXIES: "172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
+  # 4.7b+: the SPAs are same-origin (Vite proxy / Nginx), so no CORS origins (§7.2).
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS-}
+  # bulk jobs run up to 300 s: the redis reservation must outlive them or they are run twice.
+  REDIS_QUEUE_RETRY_AFTER: "360"
+  # merchant-bulk throttle (imports/exports per tenant per hour). Contract default 10; the e2e job raises it.
+  THROTTLE_MERCHANT_BULK_PER_HOUR: ${THROTTLE_MERCHANT_BULK_PER_HOUR:-10}
 
 x-api-common: &api-common
   build:
@@ -171,6 +195,22 @@ services:
       timeout: 5s
       retries: 3
 
+  # Phase 4 CSV import/export (ValidateImport, RunImport, RunExport) on their own worker so a 5 000-row
+  # import never delays mail, media or storefront revalidation. Timeout above the jobs' 300 s.
+  queue-bulk:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=bulk", "--tries=1", "--timeout=310", "--sleep=1", "--memory=512"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -233,7 +273,11 @@ services:
     command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/merchant-dashboard dev --host 0.0.0.0 --port 5173 --strictPort"]
     environment:
       <<: *node-env
-      VITE_API_URL: http://localhost:${API_PORT:-8000}
+      # 4.7b+: empty → the SPA uses relative /api + /sanctum URLs through the Vite proxy below (same origin).
+      VITE_API_URL: ${VITE_API_URL-}
+      # Dev-server proxy target for /api and /sanctum (PHASE-4-CONTRACT §7.1). php-fpm has no HTTP listener,
+      # so the target is the nginx API server inside the compose network (not api:8000).
+      VITE_API_PROXY_TARGET: http://nginx:8000
     ports:
       - "${MERCHANT_PORT:-5173}:5173"
     healthcheck:
@@ -248,7 +292,11 @@ services:
     command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/super-admin dev --host 0.0.0.0 --port 5174 --strictPort"]
     environment:
       <<: *node-env
-      VITE_API_URL: http://localhost:${API_PORT:-8000}
+      # 4.7b+: empty → the SPA uses relative /api + /sanctum URLs through the Vite proxy below (same origin).
+      VITE_API_URL: ${VITE_API_URL-}
+      # Dev-server proxy target for /api and /sanctum (PHASE-4-CONTRACT §7.1). php-fpm has no HTTP listener,
+      # so the target is the nginx API server inside the compose network (not api:8000).
+      VITE_API_PROXY_TARGET: http://nginx:8000
     ports:
       - "${ADMIN_PORT:-5174}:5174"
     healthcheck:

@@ -16,6 +16,9 @@ use App\Domain\Tenancy\Models\TenantUser;
  * | billing view (Phase 2 contract: O A)         |   ✓   |   ✓   |   –   |
  * | billing manage, delete tenant, transfer      |   ✓   |   –   |   –   |
  * | audit log                                    |   ✓   |   ✓   |   –   |
+ * | view cost / profit / stock value at cost     |   ✓   |   ✓   |   –   |  (P4-14)
+ * | delete products, categories, customers       |   ✓   |   ✓   |   –   |  (P4-14)
+ * | CSV imports and exports (bulk data)          |   ✓   |   ✓   |   –   |  (P4-14)
  */
 enum Permission: string
 {
@@ -27,6 +30,9 @@ enum Permission: string
     case ViewBilling = 'view_billing';
     case ManageBilling = 'manage_billing';
     case ViewAudit = 'view_audit';
+    case ViewCosts = 'view_costs';
+    case ManageCatalog = 'manage_catalog';
+    case BulkData = 'bulk_data';
 
     /** @return list<string> */
     public function roles(): array
