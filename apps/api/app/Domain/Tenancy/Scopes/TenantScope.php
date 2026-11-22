@@ -3,6 +3,7 @@
 namespace App\Domain\Tenancy\Scopes;
 
 use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
+use App\Domain\Tenancy\Support\PlatformDb;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -27,6 +28,6 @@ class TenantScope implements Scope
 
     public function extend(Builder $builder): void
     {
-        $builder->macro('withoutTenancy', fn (Builder $builder) => $builder->withoutGlobalScope($this));
+        $builder->macro('withoutTenancy', fn (Builder $builder) => PlatformDb::reroute($builder->withoutGlobalScope($this)));
     }
 }

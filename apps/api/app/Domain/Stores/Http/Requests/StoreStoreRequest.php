@@ -4,6 +4,9 @@ namespace App\Domain\Stores\Http\Requests;
 
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Services\StoreLimitReachedException;
+use App\Domain\Tenancy\Database\RlsSession;
+use App\Domain\Tenancy\Support\PreTenantLookup;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -43,7 +46,7 @@ class StoreStoreRequest extends FormRequest
                 'required', 'string', 'min:3', 'max:63',
                 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/',
                 Rule::notIn(config('storeplix.reserved_slugs')),
-                Rule::unique('stores', 'slug'),
+                $this->slugUniqueRule(),
             ],
             'business_categories' => ['sometimes', 'array', 'max:6'],
             'business_categories.*' => ['string', 'distinct', Rule::in(config('storeplix.business_categories'))],
@@ -51,6 +54,23 @@ class StoreStoreRequest extends FormRequest
             'currency' => ['sometimes', 'string', 'in:BDT,USD'],
             'timezone' => ['sometimes', 'string', 'timezone:all'],
         ];
+    }
+
+    /**
+     * B5 / P5B-8: slugs are unique across tenants. Under RLS, Rule::unique would only see the current tenant's
+     * rows, so the check goes through the sp_store_slug_taken() definer function (PreTenantLookup).
+     */
+    private function slugUniqueRule(): mixed
+    {
+        if (! app(RlsSession::class)->enabled()) {
+            return Rule::unique('stores', 'slug');
+        }
+
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            if (is_string($value) && app(PreTenantLookup::class)->storeSlugTaken($value)) {
+                $fail('This slug is already taken.');
+            }
+        };
     }
 
     public function messages(): array

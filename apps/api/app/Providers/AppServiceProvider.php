@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\Sanctum;
@@ -62,9 +64,23 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('merchant-bulk', fn (Request $r) => Limit::perHour((int) config('storeplix.bulk_per_hour', 10))
             ->by('merchant-bulk:'.strtolower((string) $r->header('X-Tenant-Id'))));
 
-        // Storefront traffic is proxied by the Next.js server, so limit per resolved host.
-        RateLimiter::for('storefront', fn (Request $request) => Limit::perMinute(1200)
-            ->by('storefront:'.strtolower((string) $request->header('X-Storefront-Host'))));
+        // Storefront traffic is proxied by the Next.js server (P5B-9, PHASE-5B-CONTRACT §2.10): per store host + the
+        // shopper IP the server forwards (trusted only with a valid key; IPv6 by /64) AND per store host. Without a
+        // trusted IP (ISR revalidation, server-only fetches) only the host limit applies.
+        RateLimiter::for('storefront', function (Request $request) {
+            $host = strtolower(trim((string) $request->header('X-Storefront-Host')));
+            $limits = [];
+            $client = StorefrontContext::trustedClientIp($request);
+            if ($client !== null) {
+                $limits[] = Limit::perMinute((int) config('storeplix.storefront_per_ip_per_minute', 300))
+                    ->by('sf-ip:'.$host.'|'.StorefrontContext::ipKey($client));
+            } else {
+                Log::debug('storefront.client_ip_missing', ['host' => $host]);
+            }
+            $limits[] = Limit::perMinute((int) config('storeplix.storefront_per_host_per_minute', 3000))->by('sf:'.$host);
+
+            return $limits;
+        });
     }
 
     /**

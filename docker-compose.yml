@@ -5,7 +5,7 @@
 #   cp apps/api/.env.example apps/api/.env          # Laravel app env (DB/REDIS/MAIL are overridden below)
 #   docker compose up -d --build
 #   docker compose exec api php artisan key:generate   # first run only
-#   docker compose exec api php artisan migrate --seed
+#   docker compose exec api php artisan migrate --seed --database=pgsql_owner   # migrations run as the schema owner
 #
 # URLs
 #   API (nginx -> php-fpm) ..... http://localhost:8000/api/v1/health
@@ -21,6 +21,12 @@
 # PHASE-4-CONTRACT §5.4: $timeout 300 s, $tries 1). REDIS_QUEUE_RETRY_AFTER must stay > 300.
 # `queue-notifications` works `notifications` (PHASE-5-CONTRACT P5-26: order SMS via REVE + order mail,
 # dispatched after commit; $tries 3, deduped per (order, event) through sms_messages/order_events).
+#
+# Postgres roles + RLS (PHASE-5B-CONTRACT §2, ADR 0012)
+#   infrastructure/docker/postgres/initdb/01-roles.sql runs on a FRESH pgdata volume and creates
+#   storeplix_owner (migrations, BYPASSRLS), storeplix_app (web + workers, NOBYPASSRLS) and storeplix_admin
+#   (platform jobs, BYPASSRLS). `storeplix` stays the container superuser for psql/admin only: the app never
+#   connects as it (a superuser bypasses RLS). Existing volume: see docs/development/TESTING.md §2d.
 #
 # Env resolution
 #   - `${VAR:-default}` values come from the root `.env` (git-ignored). Defaults are DEV-ONLY.
@@ -43,8 +49,15 @@ x-api-env: &api-env
   DB_HOST: postgres
   DB_PORT: 5432
   DB_DATABASE: ${POSTGRES_DB:-storeplix}
-  DB_USERNAME: ${POSTGRES_USER:-storeplix}
-  DB_PASSWORD: ${POSTGRES_PASSWORD:-storeplix}
+  # Phase 5b-1 (§2.2): the app connects as the non-owner, non-bypass role; RLS policies apply to it.
+  DB_USERNAME: storeplix_app
+  DB_PASSWORD: ${STOREPLIX_APP_PASSWORD:-storeplix_app}
+  DB_OWNER_USERNAME: storeplix_owner            # connection pgsql_owner: migrate/db:seed --database=pgsql_owner
+  DB_OWNER_PASSWORD: ${STOREPLIX_OWNER_PASSWORD:-storeplix_owner}
+  DB_ADMIN_USERNAME: storeplix_admin            # connection pgsql_admin: withoutTenancy(), console, scheduler
+  DB_ADMIN_PASSWORD: ${STOREPLIX_ADMIN_PASSWORD:-storeplix_admin}
+  # GUC syncing (app.tenant_id / app.user_id) + boot check that DB_USERNAME is not the owner or a superuser.
+  TENANCY_RLS: ${TENANCY_RLS:-true}
   REDIS_HOST: redis
   REDIS_PORT: 6379
   CACHE_STORE: redis
@@ -136,10 +149,16 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-storeplix}
       POSTGRES_USER: ${POSTGRES_USER:-storeplix}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-storeplix}
+      # Read by initdb/01-roles.sql (psql \getenv). Must match DB_*_PASSWORD in x-api-env. DEV-ONLY defaults.
+      STOREPLIX_OWNER_PASSWORD: ${STOREPLIX_OWNER_PASSWORD:-storeplix_owner}
+      STOREPLIX_APP_PASSWORD: ${STOREPLIX_APP_PASSWORD:-storeplix_app}
+      STOREPLIX_ADMIN_PASSWORD: ${STOREPLIX_ADMIN_PASSWORD:-storeplix_admin}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once on a fresh volume (PHASE-5B-CONTRACT §2.1): storeplix_owner / storeplix_app / storeplix_admin.
+      - ./infrastructure/docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

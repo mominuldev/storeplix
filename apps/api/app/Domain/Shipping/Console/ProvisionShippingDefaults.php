@@ -21,8 +21,9 @@ class ProvisionShippingDefaults extends Command
             ->when($this->option('store'), fn ($q, $slug) => $q->where('slug', $slug))
             ->orderBy('id')
             ->each(function (Store $store) use ($shipping, $context, &$created) {
+                // B10: found on the platform connection, written inside the tenant on the app connection.
                 $context->run($store->tenant_id, function () use ($store, $shipping, &$created) {
-                    if ($shipping->provisionDefaults($store)) {
+                    if ($shipping->provisionDefaults(Store::query()->findOrFail($store->id))) {
                         $created++;
                     }
                 });

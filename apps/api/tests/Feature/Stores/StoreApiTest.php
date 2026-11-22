@@ -63,7 +63,7 @@ class StoreApiTest extends TestCase
         $this->assertSame($theme->draft_config, $theme->published_config);
         $this->assertSame($tenant->id, $settings->tenant_id);
 
-        $this->assertTrue(AuditLog::query()->where('action', 'store.created')->where('subject_id', $storeId)->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'store.created')->where('subject_id', $storeId)->exists());
     }
 
     public function test_store_listing_returns_paginated_envelope(): void
@@ -154,7 +154,7 @@ class StoreApiTest extends TestCase
 
         $this->expectException(UniqueConstraintViolationException::class);
 
-        DB::table('stores')->insert([
+        $this->inTenant($tenant, fn () => DB::table('stores')->insert([
             'id' => strtolower((string) Str::ulid()),
             'tenant_id' => $tenant->id,
             'name' => 'Second',
@@ -164,7 +164,7 @@ class StoreApiTest extends TestCase
             'currency' => 'BDT',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
     }
 
     #[Group('tenancy')]
@@ -172,7 +172,7 @@ class StoreApiTest extends TestCase
     {
         [$user, $tenantA] = $this->merchant();
         [, $tenantB] = $this->merchant();
-        TenantUser::query()->create(['tenant_id' => $tenantB->id, 'user_id' => $user->id, 'role' => TenantUser::ROLE_STAFF]);
+        $this->inTenant($tenantB, fn () => TenantUser::query()->create(['tenant_id' => $tenantB->id, 'user_id' => $user->id, 'role' => TenantUser::ROLE_STAFF]));
         [, $tenantC] = $this->merchant();
 
         $a = $this->storeFor($tenantA, 'shop-a');

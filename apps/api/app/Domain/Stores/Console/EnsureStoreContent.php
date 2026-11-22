@@ -23,7 +23,8 @@ class EnsureStoreContent extends Command
 
         $count = 0;
         foreach ($query->cursor() as $store) {
-            $result = $context->run($store->tenant_id, fn () => $provisioner->ensure($store));
+            // B10: found on the platform connection, written inside the tenant on the app connection.
+            $result = $context->run($store->tenant_id, fn () => $provisioner->ensure(Store::query()->findOrFail($store->id)));
             $count++;
             $this->line(sprintf(
                 '%s: theme %s, %d page(s), %d menu(s) created',

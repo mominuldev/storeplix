@@ -57,7 +57,7 @@ class NotificationsTest extends TestCase
         $this->assertStringContainsString('SH-1001', $text);
         $this->assertStringContainsString('মোট 1,270 টাকা', $text);
         $this->assertStringContainsString('https://'.$this->host($store).'/track', $text);
-        $message = SmsMessage::query()->where('tenant_id', $tenant->id)->firstOrFail();
+        $message = $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->firstOrFail();
         $this->assertSame(['order_placed', 'order_placed.bn', 'sent', $tenant->id], [$message->purpose, $message->template, $message->status, $message->tenant_id]);
         $this->tenancy()->run($tenant, function () {
             $event = OrderEvent::query()->where('type', 'notification')->firstOrFail();
@@ -102,7 +102,7 @@ class NotificationsTest extends TestCase
         $this->tenancy()->run($tenant, fn () => Subscription::query()->update(['plan_id' => Plan::query()->where('code', Plan::FREE)->value('id'), 'status' => Subscription::ACTIVE]));
         FeatureGate::forget($tenant->id);
         $rows = array_map(fn () => ['id' => strtolower((string) Str::ulid()), 'tenant_id' => $tenant->id, 'to' => '8801700000000', 'purpose' => 'order_placed', 'template' => 'order_placed.bn', 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()], range(1, 200));
-        SmsMessage::query()->insert($rows);
+        $this->platformQuery(SmsMessage::class)->insert($rows);
         $id = $this->manual($h, $store, $this->manualBody($variant))->assertCreated()->json('data.id');
         $this->assertCount(0, $this->sms());
         $this->api($h, 'GET', "/api/v1/stores/{$store->id}/orders/{$id}")
@@ -119,7 +119,7 @@ class NotificationsTest extends TestCase
         dispatch((new SendOrderSms($id, 'order_placed'))->forTenant($tenant->id));
         dispatch((new SendOrderSms($id, 'order_placed'))->forTenant($tenant->id));
         $this->assertCount(1, $this->sms());
-        $this->assertSame(1, SmsMessage::query()->where('tenant_id', $tenant->id)->count());
+        $this->assertSame(1, $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->count());
     }
 
     /** F-L3: a provider failure is not recorded as sent and is retried; the retry sends exactly once. */
@@ -137,7 +137,7 @@ class NotificationsTest extends TestCase
         } catch (SmsSendFailed) {
         }
         $this->assertCount(0, $this->sms());
-        $this->assertSame('failed', SmsMessage::query()->where('tenant_id', $tenant->id)->value('status'));
+        $this->assertSame('failed', $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->value('status'));
         $this->tenancy()->run($tenant, fn () => $this->assertSame(0, OrderEvent::query()->where('type', 'notification')->count()));
 
         dispatch((new SendOrderSms($id, 'order_placed'))->forTenant($tenant->id)); // the retry
@@ -148,7 +148,7 @@ class NotificationsTest extends TestCase
             $this->assertCount(1, $events);
             $this->assertSame(['sent', 'SMS sent: Order received'], [$events[0]->meta['status'], $events[0]->body]);
         });
-        $this->assertSame(1, SmsMessage::query()->where('tenant_id', $tenant->id)->where('status', 'sent')->count());
+        $this->assertSame(1, $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->where('status', 'sent')->count());
     }
 
     /** F-L3: after the last try the timeline says the SMS was not sent (and nothing throws). */

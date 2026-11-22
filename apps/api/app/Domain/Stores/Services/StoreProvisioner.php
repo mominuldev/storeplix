@@ -10,6 +10,7 @@ use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Creates a store with its platform subdomain "{slug}.{PLATFORM_DOMAIN}" and default content (theme, pages, menus).
@@ -33,7 +34,8 @@ class StoreProvisioner
     public function provision(Tenant $tenant, array $data, array $extraPlatformHosts = []): Store
     {
         // Fast path for a friendly error; the UNIQUE(stores.tenant_id) constraint is the real guard.
-        if (Store::withoutTenancy()->where('tenant_id', $tenant->getKey())->exists()) {
+        // B6 (Phase 5b): a plain scoped query inside the tenant (same filter as before, visible under RLS).
+        if ($this->tenantHasStore($tenant)) {
             throw new StoreLimitReachedException;
         }
 
@@ -41,12 +43,22 @@ class StoreProvisioner
             return $this->create($tenant, $data, $extraPlatformHosts);
         } catch (UniqueConstraintViolationException $e) {
             // Lost a race with a concurrent create for the same tenant (or the same slug).
-            if (Store::withoutTenancy()->where('tenant_id', $tenant->getKey())->exists()) {
+            if ($this->tenantHasStore($tenant)) {
                 throw new StoreLimitReachedException;
+            }
+
+            // P5B-8: the global slug index (another tenant's store, invisible under RLS) → 422, never 500.
+            if (str_contains($e->getMessage(), 'slug')) {
+                throw ValidationException::withMessages(['slug' => ['This slug is already taken.']]);
             }
 
             throw $e;
         }
+    }
+
+    private function tenantHasStore(Tenant $tenant): bool
+    {
+        return $this->context->run($tenant, fn () => Store::query()->exists());
     }
 
     /**

@@ -79,7 +79,7 @@ class CrossTenantIsolationTest extends TestCase
         [$user, $tenantA] = $this->merchant();
         $tenantB = Tenant::factory()->create();
         $this->merchant(tenant: $tenantB); // someone else owns B
-        TenantUser::query()->create(['tenant_id' => $tenantB->id, 'user_id' => $user->id, 'role' => 'staff']);
+        $this->inTenant($tenantB, fn () => TenantUser::query()->create(['tenant_id' => $tenantB->id, 'user_id' => $user->id, 'role' => 'staff']));
         $this->storeFor($tenantA, 'alpha');
         $this->storeFor($tenantB, 'bravo');
 

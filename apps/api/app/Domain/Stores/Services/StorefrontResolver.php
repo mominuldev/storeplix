@@ -2,8 +2,7 @@
 
 namespace App\Domain\Stores\Services;
 
-use App\Domain\Stores\Models\Store;
-use App\Domain\Stores\Models\StoreDomain;
+use App\Domain\Tenancy\Support\PreTenantLookup;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 
 /**
@@ -17,7 +16,10 @@ class StorefrontResolver
 {
     private const MISS = '__none__';
 
-    public function __construct(private readonly CacheFactory $cache) {}
+    public function __construct(
+        private readonly CacheFactory $cache,
+        private readonly PreTenantLookup $preTenant,
+    ) {}
 
     public static function cacheKey(string $hostname): string
     {
@@ -68,22 +70,9 @@ class StorefrontResolver
 
     private function lookup(string $host): ?ResolvedStorefront
     {
-        // Platform lookup across tenants: explicit opt-out of tenant scoping.
-        $domain = StoreDomain::withoutTenancy()
-            ->where('hostname', $host)
-            ->where('status', StoreDomain::STATUS_ACTIVE)
-            ->first(['tenant_id', 'store_id']);
+        // Pre-tenant path B1: sp_resolve_host() with RLS on, an explicit scope opt-out otherwise (ids only).
+        $ids = $this->preTenant->resolveHost($host);
 
-        if ($domain === null) {
-            return null;
-        }
-
-        $storeIsServable = Store::withoutTenancy()
-            ->whereKey($domain->store_id)
-            ->where('tenant_id', $domain->tenant_id)
-            ->where('status', '!=', Store::STATUS_SUSPENDED)
-            ->exists();
-
-        return $storeIsServable ? new ResolvedStorefront($host, $domain->tenant_id, $domain->store_id) : null;
+        return $ids === null ? null : new ResolvedStorefront($host, $ids['tenant_id'], $ids['store_id']);
     }
 }

@@ -94,7 +94,7 @@ class CommerceSecurityTest extends TestCase
         $this->sf($store, 'POST', '/checkout', $this->checkoutBody(8000), $cart)->assertStatus(400)->assertJsonPath('error.code', 'idempotency_key_required');
         $this->checkout($store, $cart, $this->checkoutBody(8000), 'bad key!')->assertStatus(400);
         // the stored response is encrypted at rest (it carries the confirmation token)
-        $raw = DB::table('idempotency_keys')->value('response_body');
+        $raw = $this->platformTable('idempotency_keys')->value('response_body');
         $this->assertStringNotContainsString($first->json('data.confirmation_token'), (string) $raw);
 
         // an in-flight request with the same key → 409 in_use; once its lock is stale it's taken over
@@ -131,7 +131,7 @@ class CommerceSecurityTest extends TestCase
         $this->api($h, 'PATCH', "/api/v1/stores/{$store->id}/orders/{$id}", ['revision' => 1, 'contact' => ['phone' => '01999888777'],
             'shipping_address' => ['district_code' => 'dhaka', 'thana_code' => 'dhaka-gulshan', 'address_line' => 'Secret Lane 99']])->assertOk()
             ->assertJsonPath('data.events.0.meta', ['fields' => ['contact.phone', 'shipping_address']]);
-        $this->assertFalse(DB::table('carts')->where('token_hash', $cart)->exists());
+        $this->assertFalse($this->platformTable('carts')->where('token_hash', $cart)->exists());
         $blob = implode("\n", $logged);
         foreach ([$cart, $order['confirmation_token'], '8801711000001', '01711000001', '01999888777', 'House 12', 'Secret Lane', 'secret@example.com'] as $needle) {
             $this->assertStringNotContainsString($needle, $blob);
@@ -288,7 +288,7 @@ class CommerceSecurityTest extends TestCase
             $results = $this->parallel(10, fn (int $i) => $this->checkout($store, $carts[$i], $this->checkoutBody(16000, ['contact' => ['phone' => sprintf('0171400%04d', $i)]]))->status());
             $this->assertSame(3, count(array_filter($results, fn ($s) => $s === 201)), json_encode($results));
             $this->assertSame(3, Coupon::withoutTenancy()->where('code', 'THREE')->value('used_count'));
-            $this->assertSame(3, DB::table('coupon_redemptions')->where('status', 'active')->count());
+            $this->assertSame(3, $this->platformTable('coupon_redemptions')->where('status', 'active')->count());
         } finally {
             $this->raceCleanup();
         }

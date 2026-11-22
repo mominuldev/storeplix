@@ -30,7 +30,11 @@ trait ForksRaces
      */
     protected function parallel(int $n, callable $fn): array
     {
-        DB::commit();
+        // RLS mode (api-rls) has no wrapping test transaction (TestCase::setUpTraits): nothing to commit or reopen.
+        $transacting = DB::transactionLevel() > 0;
+        if ($transacting) {
+            DB::commit();
+        }
         $files = [];
         $pids = [];
         for ($i = 0; $i < $n; $i++) {
@@ -53,7 +57,9 @@ trait ForksRaces
         foreach ($pids as $pid) {
             pcntl_waitpid($pid, $status);
         }
-        DB::beginTransaction();
+        if ($transacting) {
+            DB::beginTransaction();
+        }
 
         $results = array_map(fn ($f) => (int) file_get_contents($f), $files);
         array_map('unlink', $files);
@@ -67,22 +73,28 @@ trait ForksRaces
         if (DB::getDriverName() !== 'pgsql') {
             return;
         }
-        // Guard: this TRUNCATEs every table. Only ever on a dedicated test database (CI: storeplix_test, storeplix_perf).
-        $database = (string) DB::connection()->getDatabaseName();
+        // With RLS on the app role has no TRUNCATE right: truncate as the schema owner (PHASE-5B-CONTRACT §2.6).
+        $rls = $this->rlsActive();
+        $db = $rls ? DB::connection((string) config('tenancy.owner_connection')) : DB::connection();
+        // Guard: this TRUNCATEs every table. Only ever on a dedicated test database (CI: storeplix_test, storeplix_perf,
+        // storeplix_rls_test).
+        $database = (string) $db->getDatabaseName();
         if (! app()->environment('testing') || ! preg_match('/_(test|testing|perf)$/', $database)) {
             throw new \RuntimeException("raceCleanup() refuses to truncate database \"{$database}\": needs APP_ENV=testing and a name ending in _test, _testing or _perf.");
         }
         while (DB::transactionLevel() > 0) {
             DB::rollBack();
         }
-        $tables = array_map(fn ($r) => '"'.$r->tablename.'"', DB::select(
+        $tables = array_map(fn ($r) => '"'.$r->tablename.'"', $db->select(
             "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename NOT IN ('migrations', 'plans')"
         ));
         if ($tables !== []) {
-            DB::statement('TRUNCATE TABLE '.implode(', ', $tables).' RESTART IDENTITY CASCADE');
+            $db->statement('TRUNCATE TABLE '.implode(', ', $tables).' RESTART IDENTITY CASCADE');
         }
         Cache::flush();
-        DB::beginTransaction();
+        if (! $rls) {
+            DB::beginTransaction();
+        }
     }
 
     /** Child process: never reuse the parent's DB / Redis sockets (interleaved replies → flakes). */

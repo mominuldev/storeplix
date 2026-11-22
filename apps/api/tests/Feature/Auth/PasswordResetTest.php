@@ -56,7 +56,7 @@ class PasswordResetTest extends TestCase
         $this->assertTrue(Hash::check('new-pass123', $user->password));
         $this->assertStringStartsWith('$argon2id$', $user->password);
         $this->assertNotNull($user->password_changed_at);
-        $this->assertTrue(AuditLog::query()->where('action', 'auth.password_reset')->whereNull('tenant_id')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'auth.password_reset')->whereNull('tenant_id')->exists());
     }
 
     public function test_reset_token_is_single_use(): void

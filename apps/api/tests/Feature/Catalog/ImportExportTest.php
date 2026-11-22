@@ -146,7 +146,7 @@ class ImportExportTest extends TestCase
         $this->assertSame(1, Category::withoutTenancy()->where('store_id', $store->id)->where('name', 'Missing')->count());
         $ledger = InventoryMovement::withoutTenancy()->where('reason', 'import')->count();
         $this->assertSame(3, $ledger);
-        $this->assertTrue(AuditLog::query()->where('action', 'import.run')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'import.run')->exists());
         Bus::assertDispatchedTimes(RevalidateStorefront::class, 1);
 
         // Same file again → unchanged rows, no new ledger rows, no new products.
@@ -301,8 +301,8 @@ class ImportExportTest extends TestCase
 
         $customers = $this->api($h, 'POST', "/api/v1/stores/{$store->id}/exports", ['type' => 'customers'])->json('data');
         $this->assertStringContainsString('"8801556120987"', $this->get($customers['download_url'])->streamedContent());
-        $this->assertTrue(AuditLog::query()->where('action', 'customer.exported')->exists());
-        $this->assertSame(3, AuditLog::query()->where('action', 'export.created')->count() + 1);
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'customer.exported')->exists());
+        $this->assertSame(3, $this->platformQuery(AuditLog::class)->where('action', 'export.created')->count() + 1);
 
         // Signed URL expires after 5 minutes; export expires after 24 h.
         $url = $this->api($h, 'GET', "/api/v1/stores/{$store->id}/exports/{$export['id']}")->json('data.download_url');

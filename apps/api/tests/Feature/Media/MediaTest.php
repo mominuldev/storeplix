@@ -152,6 +152,6 @@ class MediaTest extends TestCase
         $this->withHeaders($staffHeaders)->deleteJson("/api/v1/media/{$product}")->assertNoContent();
 
         Storage::disk('public')->assertMissing("tenants/{$tenant->id}/media/{$product}/original.png");
-        $this->assertTrue(AuditLog::query()->where('action', 'media.deleted')->where('subject_id', $product)->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'media.deleted')->where('subject_id', $product)->exists());
     }
 }

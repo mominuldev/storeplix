@@ -30,7 +30,7 @@ class StaffTest extends TestCase
 
     private function membership(User $user, Tenant $tenant): TenantUser
     {
-        return TenantUser::query()->where('tenant_id', $tenant->id)->where('user_id', $user->id)->sole();
+        return $this->platformQuery(TenantUser::class)->where('tenant_id', $tenant->id)->where('user_id', $user->id)->sole();
     }
 
     /** Invite and return the plaintext token from the queued mail. */
@@ -78,8 +78,8 @@ class StaffTest extends TestCase
             ->assertJsonPath('meta.seats_used', 1)
             ->assertJsonPath('meta.seats_limit', 5);
 
-        $this->assertTrue(AuditLog::query()->where('action', 'staff.invited')->where('tenant_id', $tenant->id)->exists());
-        $this->assertStringNotContainsString('token', json_encode(AuditLog::query()->pluck('meta')));
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'staff.invited')->where('tenant_id', $tenant->id)->exists());
+        $this->assertStringNotContainsString('token', json_encode($this->platformQuery(AuditLog::class)->pluck('meta')));
     }
 
     #[Group('tenancy')]
@@ -145,18 +145,18 @@ class StaffTest extends TestCase
             ->patchJson('/api/v1/staff/'.$this->membership($staffA, $tenant)->id, ['role' => 'admin'])
             ->assertOk()->assertJsonPath('data.role', 'admin');
 
-        $log = AuditLog::query()->where('action', 'staff.role_changed')->sole();
+        $log = $this->platformQuery(AuditLog::class)->where('action', 'staff.role_changed')->sole();
         $this->assertSame(['role' => ['from' => 'staff', 'to' => 'admin']], $log->meta['changes']);
 
         $this->flushHeaders()->withHeaders($this->tenantHeaders($staffB, $tenant))
             ->deleteJson('/api/v1/staff/'.$this->membership($staffB, $tenant)->id)
             ->assertNoContent();
-        $this->assertTrue(AuditLog::query()->where('action', 'staff.left')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'staff.left')->exists());
 
         $this->flushHeaders()->withHeaders($this->tenantHeaders($admin, $tenant))
             ->deleteJson('/api/v1/staff/'.$this->membership($staffA, $tenant)->id)
             ->assertNoContent();
-        $this->assertTrue(AuditLog::query()->where('action', 'staff.removed')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'staff.removed')->exists());
     }
 
     #[Group('tenancy')]
@@ -246,7 +246,7 @@ class StaffTest extends TestCase
         $user = User::query()->where('email', 'new@example.com')->sole();
         $this->assertNotNull($user->email_verified_at);
         $this->assertSame($owner->id, $this->membership($user, $tenant)->invited_by);
-        $this->assertTrue(AuditLog::query()->where('action', 'staff.joined')->where('tenant_id', $tenant->id)->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'staff.joined')->where('tenant_id', $tenant->id)->exists());
 
         // Single use.
         $this->getJson("/api/v1/invitations/{$token}")->assertNotFound()->assertJsonPath('error.code', 'invitation_invalid');
@@ -274,7 +274,7 @@ class StaffTest extends TestCase
             ->assertExactJson(['data' => ['id' => $tenant->id, 'name' => $tenant->name, 'role' => 'staff']]);
 
         $this->assertSame('staff', $this->membership($existing, $tenant)->role);
-        $this->assertSame(2, $existing->tenants()->count());
+        $this->assertSame(2, $this->platformQuery(TenantUser::class)->where('user_id', $existing->id)->count());
     }
 
     public function test_expired_revoked_and_resent_tokens(): void

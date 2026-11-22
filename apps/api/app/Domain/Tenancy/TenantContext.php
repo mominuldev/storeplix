@@ -2,6 +2,7 @@
 
 namespace App\Domain\Tenancy;
 
+use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
 use App\Domain\Tenancy\Models\Tenant;
 
@@ -10,6 +11,9 @@ use App\Domain\Tenancy\Models\Tenant;
  *
  * Registered as a *scoped* singleton: it is reset between requests (Octane)
  * and between queue jobs, so tenant state can never leak across units of work.
+ *
+ * Phase 5b (RLS): every change is mirrored into the Postgres GUC app.tenant_id (RlsSession), and switching to a
+ * different tenant inside an open transaction throws TenantSwitchInTransaction.
  */
 final class TenantContext
 {
@@ -21,6 +25,8 @@ final class TenantContext
 
     public function set(Tenant|string $tenant, ?string $role = null): void
     {
+        $this->rls()->assertCanSwitch($this->tenantId, $tenant instanceof Tenant ? (string) $tenant->getKey() : $tenant);
+
         if ($tenant instanceof Tenant) {
             $this->tenant = $tenant;
             $this->tenantId = (string) $tenant->getKey();
@@ -30,6 +36,7 @@ final class TenantContext
         }
 
         $this->role = $role;
+        $this->rls()->applyTenant($this->tenantId);
     }
 
     public function clear(): void
@@ -37,6 +44,7 @@ final class TenantContext
         $this->tenantId = null;
         $this->tenant = null;
         $this->role = null;
+        $this->rls()->applyTenant(null);
     }
 
     public function has(): bool
@@ -89,7 +97,16 @@ final class TenantContext
         try {
             return $callback();
         } finally {
+            $changed = $previous[0] !== $this->tenantId;
             [$this->tenantId, $this->tenant, $this->role] = $previous;
+            if ($changed) {
+                $this->rls()->applyTenant($this->tenantId);
+            }
         }
+    }
+
+    private function rls(): RlsSession
+    {
+        return app(RlsSession::class);
     }
 }

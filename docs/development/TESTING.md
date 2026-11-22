@@ -17,6 +17,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | Type contracts | `tsc --noEmit` against `@storeplix/types` | all TS packages | yes |
 | Bundle secret scan | grep build output for `STOREFRONT_API_KEY` | `.next/static`, `dist/` | yes |
 | Theme schema parity (Phase 3) | Vitest + AJV (`packages/themes`), storefront Zod (`tests/theme.test.ts`), PHP opis (`tests/Feature/Themes`) + `ThemeSchemaSyncTest` | `packages/themes/fixtures` | yes, `themes` job (also when only `packages/themes` changes) |
+| **RLS (Phase 5b-1)** | Pest group `rls` (raw-SQL probes, coverage, definer functions, GUC lifecycle) + the whole `tenancy` and `security` groups, the race tests and the checkout p95 test, all with the app connected as `storeplix_app` and `TENANCY_RLS=true` | `apps/api/tests/**` | yes, job `api-rls` (Postgres 16, roles from `01-roles.sql`, migrations as `storeplix_owner`). Fails when `rls` is empty **or anything in it skips**, when a race test or the checkout p95 test doesn't run, and when a `tenant_id` table lacks forced RLS. See §2d |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -30,9 +31,10 @@ cd apps/api && php artisan test                      # full suite
 cd apps/api && php artisan test --group=tenancy      # tenant-isolation gate only
 cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import < 120 s, stock race (Postgres; CI job api-perf)
 # Phase 5a race tests: Postgres + pcntl only (they SKIP on sqlite; sqlite passing is not evidence).
-#   docker compose up -d postgres redis
-#   DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=storeplix DB_USERNAME=storeplix DB_PASSWORD=storeplix CACHE_STORE=array \
+#   Needs a database whose name ends in _test/_testing/_perf (raceCleanup() TRUNCATEs it): see §2d for storeplix_test.
+#   DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=storeplix_test DB_USERNAME=storeplix DB_PASSWORD=storeplix CACHE_STORE=array \
 #     php artisan test --filter='::test_concurrent_checkouts_never_oversell$'   # one process per race test (see ci.yml)
+# Phase 5b-1 RLS suites (app role, TENANCY_RLS=true): see §2d.
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -144,6 +146,77 @@ How they run:
 - **Throwaway users** (`*@e2e.storeplix.test` only) are deleted with `php artisan tinker` in `apps/api`
   (`API_DIR` to override) or `docker compose exec api` when `E2E_ARTISAN=docker`. Users have no delete endpoint.
 - Typecheck: `cd tests/e2e && pnpm exec tsc -p .`.
+
+## 2d. Postgres row-level security (Phase 5b-1, PHASE-5B-CONTRACT §2, ADR 0012)
+
+sqlite proves nothing about RLS, locks or races. Use the Docker Postgres (`docker compose up -d postgres redis`), never
+the Homebrew Postgres on the dev machine (another project's).
+
+**Roles.** `infrastructure/docker/postgres/initdb/01-roles.sql` (psql script, run as a superuser) creates:
+
+| Role | Attributes | Used by (Laravel connection) |
+|---|---|---|
+| `storeplix_owner` | `NOSUPERUSER BYPASSRLS`, owns the database and every table | migrations, seeders (`pgsql_owner`, `DB_OWNER_USERNAME`) |
+| `storeplix_app` | `NOSUPERUSER NOBYPASSRLS`, owns nothing, DML only | web + queue workers (`pgsql`, default, `DB_USERNAME`) |
+| `storeplix_admin` | `NOSUPERUSER BYPASSRLS`, DML only | `withoutTenancy()`, console, scheduler, platform jobs (`pgsql_admin`, `DB_ADMIN_USERNAME`) |
+
+`storeplix` (the compose `POSTGRES_USER`) stays the container **superuser** for psql only. A superuser bypasses RLS, so
+the app must never connect as it with `TENANCY_RLS=true` (boot check). Passwords come from `psql -v owner_pw=… app_pw=…
+admin_pw=…`, else the env vars `STOREPLIX_OWNER_PASSWORD` / `STOREPLIX_APP_PASSWORD` / `STOREPLIX_ADMIN_PASSWORD`
+(compose passes them to the postgres container), else dev-only defaults equal to the role names. The script is
+idempotent and applies to the database it is connected to (ownership and default privileges are per database), so run
+it once per database.
+
+**Fresh volume.** `docker compose up -d postgres redis` runs the script automatically (mounted into
+`/docker-entrypoint-initdb.d`). The compose API containers already use `storeplix_app` and `TENANCY_RLS=true`;
+migrate with `docker compose exec api php artisan migrate --seed --database=pgsql_owner`.
+
+**Existing volume** (created before 5b-1: the script never ran and the tables belong to `storeplix`):
+```bash
+docker compose exec postgres psql -U storeplix -d storeplix -f /docker-entrypoint-initdb.d/01-roles.sql
+# Tables created earlier are owned by the superuser; the owner role can't drop or alter them. Simplest (loses local data):
+docker compose down -v && docker compose up -d postgres redis     # fresh volume, the script runs on its own
+```
+
+**Test database** (the race tests TRUNCATE, so the name must end in `_test`; `RefreshDatabase` wipes it):
+```bash
+docker compose exec postgres createdb -U storeplix storeplix_test
+docker compose exec postgres psql -U storeplix -d storeplix_test -f /docker-entrypoint-initdb.d/01-roles.sql
+```
+
+**Run the RLS suites locally** (same env and order as the CI `api-rls` job):
+```bash
+cd apps/api
+export APP_ENV=testing DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=storeplix_test \
+  DB_USERNAME=storeplix_app DB_PASSWORD=storeplix_app \
+  DB_OWNER_USERNAME=storeplix_owner DB_OWNER_PASSWORD=storeplix_owner \
+  DB_ADMIN_USERNAME=storeplix_admin DB_ADMIN_PASSWORD=storeplix_admin \
+  TENANCY_RLS=true CACHE_STORE=array QUEUE_CONNECTION=sync SESSION_DRIVER=array STOREFRONT_REVALIDATE_URL=
+php artisan migrate:fresh --seed --force --database=pgsql_owner
+php artisan test --group=rls                       # must run, never skip
+php artisan test --group=tenancy
+php artisan test --group=security --exclude-group perf --exclude-group race
+php artisan test --filter='::test_concurrent_checkouts_never_oversell$'   # each race test in its own process
+php artisan test --group=checkout-perf             # p95 < 300 ms with RLS on (§2.8)
+```
+Day-to-day `apps/api/.env` for `php artisan serve` against Docker Postgres (§2.9): `DB_CONNECTION=pgsql
+DB_USERNAME=storeplix_app DB_PASSWORD=storeplix_app DB_OWNER_USERNAME=storeplix_owner DB_OWNER_PASSWORD=storeplix_owner
+DB_ADMIN_USERNAME=storeplix_admin DB_ADMIN_PASSWORD=storeplix_admin TENANCY_RLS=true`, and migrate with
+`php artisan migrate --database=pgsql_owner`. `composer dev` on sqlite keeps `TENANCY_RLS=false`.
+
+**CI job `api-rls`** (`.github/workflows/ci.yml`, part of `ci-ok`):
+1. Postgres 16 service, database `storeplix_rls_test`, superuser `storeplix`.
+2. `01-roles.sql` piped into the service container's `psql` as the superuser (service containers can't mount files).
+   The script aborts if `storeplix_app` is a superuser, can bypass RLS or is a member of the owner/admin roles.
+3. `migrate:fresh --seed --database=pgsql_owner`, then rollback + re-migrate as the owner (policy migration reversible).
+4. Catalogue checks with psql: every table is owned by `storeplix_owner`; every table with a `tenant_id` column has RLS
+   enabled **and** forced with at least one policy.
+5. With `DB_USERNAME=storeplix_app TENANCY_RLS=true CACHE_STORE=array`: `--group=rls` (fails if empty or any test
+   skips), `--group=tenancy`, `--group=security --exclude-group perf --exclude-group race` (fail if empty), the seven race
+   tests one process each (fail on skip), `--group=checkout-perf` (fail on skip). JUnit files are uploaded as `rls-junit`.
+
+`api-postgres` and `api-perf` also run `01-roles.sql` (the policy migration grants to the roles) but keep connecting
+as the superuser: `api-postgres` proves app-level isolation with RLS bypassed.
 
 ## 3. The `tenancy` test group (required)
 

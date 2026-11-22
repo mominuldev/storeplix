@@ -85,7 +85,7 @@ class StoreSettingsTest extends TestCase
         $this->assertSame('#aabbcc', $theme->draft_config['settings']['primaryColor']);
         $this->assertSame('#aabbcc', $theme->published_config['settings']['primaryColor']);
 
-        $log = AuditLog::query()->where('action', 'store.settings_updated')->oldest('id')->first();
+        $log = $this->platformQuery(AuditLog::class)->where('action', 'store.settings_updated')->oldest('id')->first();
         $this->assertContains('contact.phone', $log->meta['changes']);
         $this->assertStringNotContainsString('01712345678', json_encode($log->meta));
         $this->assertStringNotContainsString('shop@example.com', json_encode($log->meta));

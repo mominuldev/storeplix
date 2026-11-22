@@ -50,8 +50,8 @@ class OtpTest extends TestCase
 
         // Never stored in plaintext.
         $this->assertNotSame($code, OtpCode::query()->value('code_hash'));
-        $this->assertSame('sent', SmsMessage::query()->value('status'));
-        $this->assertStringNotContainsString($code, json_encode(SmsMessage::query()->first()->toArray()));
+        $this->assertSame('sent', $this->platformQuery(SmsMessage::class)->value('status'));
+        $this->assertStringNotContainsString($code, json_encode($this->platformQuery(SmsMessage::class)->first()->toArray()));
 
         $this->postJson('/api/v1/auth/login/otp', ['phone' => '+8801711111111', 'code' => $code])
             ->assertOk()

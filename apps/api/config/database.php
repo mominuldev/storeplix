@@ -101,6 +101,39 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Phase 5b (PHASE-5B-CONTRACT §2.2): schema owner (migrations, seeders; BYPASSRLS) and the platform role
+        // (BYPASSRLS, DML only: withoutTenancy(), console, scheduler). Both default to DB_USERNAME, so with
+        // TENANCY_RLS=false all three connections may be one user.
+        'pgsql_owner' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_OWNER_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_OWNER_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('DB_OWNER_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
+        'pgsql_admin' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_ADMIN_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_ADMIN_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('DB_ADMIN_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

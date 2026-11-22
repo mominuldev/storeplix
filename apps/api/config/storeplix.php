@@ -66,6 +66,13 @@ return [
     'private_disk' => env('PRIVATE_DISK', 'local'),
     'bulk_per_hour' => (int) env('THROTTLE_MERCHANT_BULK_PER_HOUR', 10),
 
+    /*
+    | Phase 5b (P5B-9, PHASE-5B-CONTRACT §2.10): `storefront` limiter = per store host + trusted shopper IP
+    | (X-Storefront-Client-Ip with a valid key; IPv6 by /64) AND per store host. e2e raises both.
+    */
+    'storefront_per_ip_per_minute' => (int) env('THROTTLE_STOREFRONT_PER_IP', 300),
+    'storefront_per_host_per_minute' => (int) env('THROTTLE_STOREFRONT_PER_HOST', 3000),
+
     // Phase 3: theme defaults come from resources/themes/{code}/defaults.json (ThemeRegistry).
 
 ];

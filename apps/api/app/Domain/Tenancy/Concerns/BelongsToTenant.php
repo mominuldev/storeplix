@@ -6,6 +6,7 @@ use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
 use App\Domain\Tenancy\Exceptions\TenantMismatchException;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Scopes\TenantScope;
+use App\Domain\Tenancy\Support\PlatformDb;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -56,10 +57,16 @@ trait BelongsToTenant
         });
     }
 
-    /** Explicit opt-out of tenant scoping for platform/system code. Use sparingly. */
+    /**
+     * Explicit opt-out of tenant scoping for platform/system code. Use sparingly.
+     *
+     * Phase 5b (P5B-4): with RLS on, the query runs on the BYPASSRLS platform connection (PlatformDb). Call
+     * sites are allowlisted by an arch test (console, seeders, Domain/Tenancy); request paths use a SECURITY
+     * DEFINER lookup instead.
+     */
     public static function withoutTenancy(): Builder
     {
-        return static::query()->withoutGlobalScope(TenantScope::class);
+        return PlatformDb::reroute(static::query()->withoutGlobalScope(TenantScope::class));
     }
 
     public function tenant(): BelongsTo

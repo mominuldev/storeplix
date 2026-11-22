@@ -4,7 +4,10 @@ use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Http\Middleware\RequireStatefulRequest;
 use App\Domain\Shared\Http\ApiExceptionRenderer;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
+use App\Domain\Tenancy\Middleware\ResetDatabaseTenant;
 use App\Domain\Tenancy\Middleware\ResolveTenant;
+use App\Domain\Tenancy\Middleware\SetDatabaseUser;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -28,7 +31,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // Phase 4.7 (§7.2): same-origin cookie sessions for the SPAs (exact stateful domain list) with the absolute
         // 7-day session expiry. 4.7c: Bearer tokens are no longer read (AppServiceProvider) and sign-in is stateful-only.
         $middleware->statefulApi();
-        $middleware->api(append: [EnforceAbsoluteSessionExpiry::class]);
+        $middleware->api(append: [EnforceAbsoluteSessionExpiry::class, SetDatabaseUser::class]);
+
+        // Phase 5b (RLS, PHASE-5B-CONTRACT §2.5): empty app.tenant_id / app.user_id at the start of every request;
+        // app.user_id right after auth:sanctum (before ResolveTenant looks up the membership).
+        $middleware->prepend(ResetDatabaseTenant::class);
+        $middleware->appendToPriorityList(AuthenticatesRequests::class, SetDatabaseUser::class);
 
         // X-Forwarded-* from the Nginx / Vite proxy in front of the API (comma-separated IPs/CIDRs, or "*").
         $trusted = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))));

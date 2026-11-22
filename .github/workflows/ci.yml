@@ -37,6 +37,7 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - 'infrastructure/docker/postgres/**'
               - '.github/workflows/ci.yml'
             web:
               - 'apps/merchant-dashboard/**'
@@ -228,6 +229,14 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
+      # Phase 5b-1: the RLS policy migration grants to storeplix_app/storeplix_admin, so the roles must exist
+      # (PHASE-5B-CONTRACT §2.1). This job still connects as the superuser (RLS bypassed, app-level isolation).
+      - name: Create RLS roles (01-roles.sql)
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} \
+            psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" \
+              -v owner_pw=ci-owner -v app_pw=ci-app -v admin_pw=ci-admin \
+            < "$GITHUB_WORKSPACE/infrastructure/docker/postgres/initdb/01-roles.sql"
       - name: Migrate fresh + seed
         run: php artisan migrate:fresh --seed --force
       - name: Rollback is reversible
@@ -318,6 +327,14 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
+      # Phase 5b-1: the RLS policy migration grants to storeplix_app/storeplix_admin, so the roles must exist
+      # (PHASE-5B-CONTRACT §2.1). This job still connects as the superuser (RLS bypassed, app-level isolation).
+      - name: Create RLS roles (01-roles.sql)
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} \
+            psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" \
+              -v owner_pw=ci-owner -v app_pw=ci-app -v admin_pw=ci-admin \
+            < "$GITHUB_WORKSPACE/infrastructure/docker/postgres/initdb/01-roles.sql"
       - name: Migrate (pg_trgm + Phase 4 indexes)
         run: php artisan migrate:fresh --force
       - name: perf group
@@ -381,6 +398,173 @@ jobs:
           path: apps/api/build/*.xml
           if-no-files-found: ignore
 
+  # Phase 5b-1 (PHASE-5B-CONTRACT §2.6, §2.7, §2.8, §20.1; ADR 0012): the same suites with Postgres RLS ON.
+  # Roles from infrastructure/docker/postgres/initdb/01-roles.sql; migrations as storeplix_owner; the tests'
+  # default connection `pgsql` is storeplix_app (NOSUPERUSER NOBYPASSRLS, owns nothing) with TENANCY_RLS=true.
+  # Fails when the `rls` group is empty or anything in it skips, and when a race test or the checkout p95
+  # test doesn't run.
+  api-rls:
+    name: api (RLS on, app role, postgres)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          # Name must end in _test: raceCleanup() refuses to TRUNCATE anything else.
+          POSTGRES_DB: storeplix_rls_test
+          POSTGRES_USER: storeplix
+          POSTGRES_PASSWORD: storeplix
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U storeplix"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: storeplix_rls_test
+      # §2.2: pgsql (default) = app role; pgsql_owner = migrations; pgsql_admin = platform/console.
+      DB_USERNAME: storeplix_app
+      DB_PASSWORD: ci-app
+      DB_OWNER_USERNAME: storeplix_owner
+      DB_OWNER_PASSWORD: ci-owner
+      DB_ADMIN_USERNAME: storeplix_admin
+      DB_ADMIN_PASSWORD: ci-admin
+      TENANCY_RLS: 'true'
+      REDIS_HOST: 127.0.0.1
+      # array, not redis: rate-limit counters must not leak between tests (security step in api-postgres),
+      # and forked race children must not share the parent's Redis socket.
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      STOREFRONT_REVALIDATE_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip, pcntl, posix
+          ini-values: memory_limit=1G
+          coverage: none
+          tools: composer:v2
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      # Service containers can't mount files: pipe the script into the container's psql (same 16.x client),
+      # as the service superuser. The script itself aborts if storeplix_app could bypass RLS.
+      - name: Create roles (01-roles.sql, superuser)
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} \
+            psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" \
+              -v owner_pw="$DB_OWNER_PASSWORD" -v app_pw="$DB_PASSWORD" -v admin_pw="$DB_ADMIN_PASSWORD" \
+            < "$GITHUB_WORKSPACE/infrastructure/docker/postgres/initdb/01-roles.sql"
+      - name: Migrate fresh + seed (storeplix_owner)
+        run: php artisan migrate:fresh --seed --force --database=pgsql_owner
+      - name: Rollback is reversible (storeplix_owner)
+        run: |
+          php artisan migrate:rollback --force --database=pgsql_owner
+          php artisan migrate --force --database=pgsql_owner
+      # Raw catalogue checks, independent of the PHP tests: the app role owns nothing, can't bypass RLS, and
+      # every table with a tenant_id column has RLS enabled AND forced with at least one policy.
+      - name: Catalogue checks (ownership, roles, forced RLS)
+        run: |
+          q() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" -AtX -c "$1"; }
+          fail=0
+          bad=$(q "select rolname from pg_roles where rolname = 'storeplix_app' and (rolsuper or rolbypassrls)")
+          [ -n "$bad" ] && { echo "::error::storeplix_app can bypass RLS"; fail=1; }
+          owned=$(q "select string_agg(tablename, ', ') from pg_tables where schemaname = 'public' and tableowner <> 'storeplix_owner'")
+          [ -n "$owned" ] && { echo "::error::tables not owned by storeplix_owner: ${owned}"; fail=1; }
+          unforced=$(q "select string_agg(distinct c.relname, ', ') from information_schema.columns col
+                        join pg_class c on c.relname = col.table_name and c.relkind in ('r','p')
+                        join pg_namespace n on n.oid = c.relnamespace and n.nspname = col.table_schema
+                        where col.table_schema = 'public' and col.column_name = 'tenant_id'
+                          and not (c.relrowsecurity and c.relforcerowsecurity
+                                   and exists (select 1 from pg_policy p where p.polrelid = c.oid))")
+          [ -n "$unforced" ] && { echo "::error::tenant tables without forced RLS + policy: ${unforced}"; fail=1; }
+          tables=$(q "select count(distinct table_name) from information_schema.columns where table_schema = 'public' and column_name = 'tenant_id'")
+          echo "tenant tables: ${tables}"
+          [ "${tables:-0}" -lt 1 ] && { echo "::error::no tenant tables found"; fail=1; }
+          exit $fail
+      # Shared guard: runs `php artisan test <args>` with JUnit, fails on a non-zero exit, an empty run, and
+      # (when the second argument is `strict`) any skipped test.
+      - name: Test-run guard
+        run: |
+          cat > "$RUNNER_TEMP/run-group.sh" <<'SH'
+          #!/usr/bin/env bash
+          # usage: run-group.sh <label> <strict|lenient> <php artisan test args...>
+          set -u
+          label=$1; mode=$2; shift 2
+          mkdir -p build
+          xml="build/rls-${label}.xml"
+          php artisan test "$@" --log-junit "$xml"; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' "$xml" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo 0)
+          skipped=$(grep -o 'skipped="[0-9]*"' "$xml" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "${label}: tests=${ran:-0} skipped=${skipped:-0} exit=${status}"
+          if [ "${ran:-0}" -lt 1 ]; then
+            echo "::error::${label}: no tests ran with RLS on (empty group?)"; exit 1
+          fi
+          if [ "$mode" = strict ] && [ "${skipped:-0}" -gt 0 ]; then
+            echo "::error::${label}: ${skipped} test(s) skipped with RLS on; they must run on Postgres"; exit 1
+          fi
+          exit $status
+          SH
+          chmod +x "$RUNNER_TEMP/run-group.sh"
+      # §2.6 raw-SQL probes, coverage, definer functions, lifecycle. Must not be empty or skipped.
+      - name: rls group (must run, never skip)
+        run: '"$RUNNER_TEMP/run-group.sh" rls strict --group=rls'
+      - name: tenant-isolation (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" tenancy lenient --group=tenancy'
+      # Race tests commit their data, so they are excluded here and run one per process below.
+      - name: security (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" security lenient --group=security --exclude-group perf --exclude-group race'
+      # 5a race tests once more with RLS on (§2.6), same loop as api-perf: one process each, must not skip.
+      - name: race tests (RLS on, must not skip)
+        run: |
+          fail=0
+          for t in \
+            test_concurrent_checkouts_never_oversell \
+            test_mixed_carts_do_not_deadlock \
+            test_coupon_usage_limit_holds_under_parallel_checkouts \
+            test_concurrent_same_key_creates_one_order \
+            test_manual_order_plan_limit_race \
+            test_parallel_adjustments_never_go_negative \
+            test_plan_limit_race; do
+            "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
+          done
+          exit $fail
+      # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
+      - name: checkout p95 budget (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rls-junit
+          path: apps/api/build/*.xml
+          if-no-files-found: ignore
+
   web:
     name: web (typecheck, lint, test, build)
     needs: changes
@@ -425,11 +609,11 @@ jobs:
   # Single required status for branch protection.
   ci-ok:
     if: always()
-    needs: [changes, api, api-postgres, api-perf, web, themes]
+    needs: [changes, api, api-postgres, api-perf, api-rls, web, themes]
     runs-on: ubuntu-latest
     steps:
       - name: Verify job results
         run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.api-perf.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.api-perf.result }}" "${{ needs.api-rls.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
             case "$r" in success|skipped) ;; *) echo "job result: $r"; exit 1 ;; esac
           done

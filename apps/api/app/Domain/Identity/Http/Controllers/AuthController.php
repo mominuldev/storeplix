@@ -14,6 +14,7 @@ use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -30,7 +31,10 @@ class AuthController
 
     public const FORGOT_MESSAGE = 'If an account exists for that email, a reset link will be sent.';
 
-    public function __construct(private readonly AuditLogger $audit) {}
+    public function __construct(
+        private readonly AuditLogger $audit,
+        private readonly TenantContext $context,
+    ) {}
 
     /**
      * Creates the user AND their tenant (owner membership) in one transaction. TenantCreated
@@ -51,14 +55,17 @@ class AuthController
 
             $tenant = Tenant::query()->create(['name' => $data['name']]);
 
-            TenantUser::query()->create([
-                'tenant_id' => $tenant->id,
-                'user_id' => $user->id,
-                'role' => TenantUser::ROLE_OWNER,
-                'joined_at' => now(),
-            ]);
+            // B3 (Phase 5b): the owner membership and the audit row are tenant rows, written inside the new tenant.
+            $this->context->run($tenant, function () use ($tenant, $user) {
+                TenantUser::query()->create([
+                    'tenant_id' => $tenant->id,
+                    'user_id' => $user->id,
+                    'role' => TenantUser::ROLE_OWNER,
+                    'joined_at' => now(),
+                ]);
 
-            $this->audit->log('auth.registered', $user, actor: $user, tenantId: $tenant->id);
+                $this->audit->log('auth.registered', $user, actor: $user, tenantId: $tenant->id);
+            });
 
             return $user;
         });
