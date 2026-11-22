@@ -1,7 +1,7 @@
 import type { LimitKey, Plan } from '@storeplix/types';
 import { Badge, Button, Card, cn, EmptyState, Spinner } from '@storeplix/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Star } from 'lucide-react';
+import { AlertTriangle, Check, Star } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 import { api } from '../lib/api';
 import { can } from '../lib/permissions';
@@ -28,6 +28,13 @@ const featureLabel: Record<string, string> = {
   pos: 'POS',
   profit_reports: 'Profit reports',
   api_webhooks: 'API & webhooks',
+};
+
+// Figma Plan cards 65:17495 taglines.
+const planTagline: Record<string, string> = {
+  free: 'For trying Storeplix',
+  starter: 'For growing Facebook shops',
+  growth: 'For shops with a team & warehouse',
 };
 
 function limitText(plan: Plan): string[] {
@@ -60,24 +67,33 @@ export function PlanPage() {
 
   return (
     <>
+      <div className="flex flex-col gap-1">
+        <h2 className="text-heading text-text-primary">Plan & billing</h2>
+        <p className="text-body text-text-secondary">Your Storeplix subscription and this month’s usage.</p>
+      </div>
       <section aria-label="Current plan" className="flex flex-col gap-5 rounded-card border border-brand-700 bg-brand-600 p-7 shadow-elevation-1">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className="self-start rounded-full bg-brand-50 px-2 py-0.5 text-caption font-medium text-brand-700">{days !== null ? 'Free trial' : 'Current plan'}</span>
             <h2 className="text-heading-32 text-text-inverse">{sub.plan.name} plan</h2>
             <p className="text-body text-brand-100">
               {money(sub.plan.price_amount)} / {sub.plan.interval} · {limitText(sub.plan).join(', ')}
             </p>
           </div>
-          <a href="#plans" className="rounded-md border border-border-default bg-surface-card px-4 py-2 text-body font-semibold text-text-primary">
+          <a href="#plans" className="inline-flex min-h-10 shrink-0 items-center rounded-md border border-border-default bg-surface-card px-4 py-2 text-body font-semibold text-text-primary">
             Compare plans
           </a>
         </div>
         {days !== null && (
-          <p className="rounded-lg bg-brand-700 px-4 py-3 text-body font-semibold text-text-inverse">
-            {days} {days === 1 ? 'day' : 'days'} left in your {sub.plan.name} trial.{' '}
-            <span className="font-normal text-brand-100">When it ends you move to the Free plan — nothing is locked or deleted.</span>
-          </p>
+          <div className="flex items-center gap-3 rounded-lg bg-brand-700 px-4 py-3">
+            <AlertTriangle aria-hidden className="size-[18px] shrink-0 text-text-inverse" />
+            <p className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-body font-semibold text-text-inverse">
+                {days} {days === 1 ? 'day' : 'days'} left in your {sub.plan.name} trial.
+              </span>
+              <span className="text-caption text-brand-100">When it ends you move to the Free plan — nothing is locked or deleted.</span>
+            </p>
+          </div>
         )}
       </section>
 
@@ -116,10 +132,11 @@ export function PlanPage() {
                   <span className="text-body-lg font-medium text-text-primary">{p.name}</span>
                   {current ? <Badge>Current</Badge> : recommended ? <Badge tone="brand">Recommended</Badge> : null}
                 </div>
-                <p className="flex items-baseline gap-1">
+                <p className="flex items-end gap-1 whitespace-nowrap">
                   <span className="text-heading-24 text-text-primary">{money(p.price_amount)}</span>
                   <span className="text-body text-text-secondary">/ {p.interval}</span>
                 </p>
+                {planTagline[p.code] && <p className="text-body text-text-secondary">{planTagline[p.code]}</p>}
                 <ul className="flex flex-1 flex-col gap-2">
                   {[...limitText(p), ...p.features.map((f) => featureLabel[f] ?? f)].map((f) => (
                     <li key={f} className="flex items-start gap-2 text-body text-text-primary">

@@ -7,7 +7,7 @@ import { Icon } from '../components/icon';
 
 export function Breadcrumb({ items }: { items: Array<{ label: string; href?: string }> }) {
   return (
-    <nav aria-label="Breadcrumb" className="type-body-s text-ink-muted">
+    <nav aria-label="Breadcrumb" className="type-label-s text-ink-muted">
       <ol className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {items.map((item, i) => (
           <li key={`${item.label}-${i}`} className="flex min-w-0 items-center gap-2">
@@ -28,11 +28,15 @@ export function Breadcrumb({ items }: { items: Array<{ label: string; href?: str
   );
 }
 
-export function PageTitle({ title, count }: { title: string; count?: string }) {
+/** Page title + count (Figma PLP 1:10831 Display L 64 / search 1:12447 Display M 44; phones H1 36 + Body S count). */
+export function PageTitle({ title, count, size = 'l' }: { title: string; count?: string; size?: 'l' | 'm' }) {
+  const desktop = size === 'l' ? 'lg:type-display-m lg:gap-x-4 lg:text-[64px] lg:leading-[1.04] lg:tracking-[-2.5px]' : 'lg:type-display-m lg:gap-x-3';
   return (
-    <h1 className="type-display-m flex flex-wrap items-baseline gap-x-4 gap-y-1 text-ink lg:text-[64px]">
+    <h1 className={`type-h1 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-ink ${desktop}`}>
       <span className="min-w-0 break-words">{title}</span>
-      {count ? <span className="type-accent-italic-s text-ink-muted">{count}</span> : null}
+      {count ? (
+        <span className="type-body-s font-body font-normal tracking-normal text-ink-muted lg:type-accent-italic-s">{count}</span>
+      ) : null}
     </h1>
   );
 }
@@ -68,17 +72,17 @@ interface StepperProps {
 /** Figma qty stepper (pill, − value +). */
 export function QtyStepper({ value, min = 1, max, disabled, label, onChange }: StepperProps) {
   return (
-    <div role="group" aria-label={label} className="flex h-12 shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1">
+    <div role="group" aria-label={label} className="flex h-[46px] shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1">
       <button
         type="button"
         aria-label="Decrease quantity"
         disabled={disabled || value <= min}
         onClick={() => onChange(value - 1)}
-        className="flex size-10 items-center justify-center rounded-full bg-sunken text-ink disabled:opacity-40"
+        className="flex size-9 items-center justify-center rounded-full bg-sunken text-ink disabled:opacity-40"
       >
         <Icon name="minus" />
       </button>
-      <output aria-live="polite" className="type-label-m w-8 text-center text-ink">
+      <output aria-live="polite" className="type-label-m w-9 text-center text-ink">
         {value}
       </output>
       <button
@@ -86,7 +90,7 @@ export function QtyStepper({ value, min = 1, max, disabled, label, onChange }: S
         aria-label="Increase quantity"
         disabled={disabled || value >= max}
         onClick={() => onChange(value + 1)}
-        className="flex size-10 items-center justify-center rounded-full bg-sunken text-ink disabled:opacity-40"
+        className="flex size-9 items-center justify-center rounded-full bg-sunken text-ink disabled:opacity-40"
       >
         <Icon name="plus" />
       </button>
@@ -116,13 +120,13 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 
 export function FreeDeliveryBar({ threshold, remaining, currency }: { threshold: number; remaining: number; currency: string }) {
   const pct = threshold > 0 ? Math.min(100, Math.max(0, Math.round(((threshold - remaining) / threshold) * 100))) : 100;
   return (
-    <div className="flex flex-col gap-3 rounded-sf-sm bg-brand-soft px-4 py-3.5 text-brand" data-sp-free-delivery>
+    <div className="flex flex-col gap-2.5 rounded-sf-md bg-brand-soft p-4 text-brand lg:p-[18px]" data-sp-free-delivery>
       <p className="type-label-s flex items-center gap-2">
         <Icon name="truck-sm" />
         {remaining <= 0 ? 'Free delivery unlocked!' : `Add ${formatMoney(remaining, currency)} more for free delivery`}
       </p>
-      <span className="h-1.5 overflow-hidden rounded-full bg-surface" aria-hidden>
-        <span className="block h-full rounded-full bg-brand" style={{ width: `${remaining <= 0 ? 100 : pct}%` }} />
+      <span className="h-1.5 overflow-hidden rounded-[3px] bg-surface" aria-hidden>
+        <span className="block h-full rounded-[3px] bg-brand" style={{ width: `${remaining <= 0 ? 100 : pct}%` }} />
       </span>
     </div>
   );
@@ -135,3 +139,17 @@ export function deliveryDays(min: number | null, max: number | null): string {
 }
 
 export const PAYMENT_METHOD_LABELS = { cod: 'Cash on delivery', bkash: 'bKash', sslcommerz: 'Card' } as const;
+
+/** Empty / no-results block (States pattern, Figma 148:34032 "No results"): icon disc, title, hint, action. */
+export function EmptyState({ icon = 'search', title, children, action }: { icon?: 'search' | 'bag' | 'tag'; title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-sf-sm border border-line-subtle bg-surface px-6 py-12 text-center" data-sp-empty>
+      <span className="flex size-12 items-center justify-center rounded-full bg-sunken text-ink-muted" aria-hidden>
+        <Icon name={icon} size={20} />
+      </span>
+      <h2 className="type-h3 text-ink">{title}</h2>
+      {children ? <p className="type-body-s max-w-[420px] text-ink-secondary">{children}</p> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}

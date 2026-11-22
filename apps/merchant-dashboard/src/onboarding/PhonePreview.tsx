@@ -26,6 +26,7 @@ export function PhonePreview({
   caption = 'Updates as you type',
   products: own,
   footer,
+  bare = false,
 }: {
   name: string;
   domain: string;
@@ -34,13 +35,19 @@ export function PhonePreview({
   caption?: string;
   products?: PreviewProduct[];
   footer?: React.ReactNode;
+  /** `bare` = phone only, no pane background/head/link pill (08 You're live 52:986 right column). */
+  bare?: boolean;
 }) {
   const list: PreviewProduct[] = own && own.length ? own : products;
   const initial = name.trim().charAt(0).toUpperCase() || 'S';
   const tint = color && /^#[0-9a-f]{6}$/i.test(color) ? ({ '--color-brand-600': color, '--color-brand-700': color } as React.CSSProperties) : undefined;
   return (
-    <aside aria-label="Live preview" style={tint} className="hidden w-[420px] shrink-0 flex-col items-center gap-5 bg-brand-50 px-10 py-8 xl:flex">
-      <div className="flex w-full items-center justify-between">
+    <aside
+      aria-label="Live preview"
+      style={tint}
+      className={bare ? 'hidden w-[300px] shrink-0 flex-col items-center gap-3 pt-2 xl:flex' : 'hidden w-[420px] shrink-0 flex-col items-center gap-5 bg-brand-50 px-10 py-8 xl:flex'}
+    >
+      <div className={bare ? 'hidden' : 'flex w-full items-center justify-between'}>
         <span className="flex items-center gap-2 text-caption font-medium text-brand-700">
           <span className="size-2 rounded-full bg-success" /> Live preview
         </span>
@@ -74,10 +81,10 @@ export function PhonePreview({
               <img src={images.silkSaree} alt="" width={78} height={96} className="h-24 w-[78px] rounded-control object-cover" />
             </div>
           </div>
-          <div className="flex gap-1.5 px-4 text-caption">
-            <span className="rounded-full bg-brand-600 px-2.5 py-[5px] text-text-inverse">All</span>
+          <div className="flex shrink-0 gap-1.5 overflow-hidden px-4 text-caption whitespace-nowrap">
+            <span className="shrink-0 rounded-full bg-brand-600 px-2.5 py-[5px] text-text-inverse">All</span>
             {['Saree', 'Three-piece', 'Panjabi'].map((c) => (
-              <span key={c} className="rounded-full border border-border-default bg-surface-card px-2.5 py-[5px] text-text-secondary">
+              <span key={c} className="shrink-0 rounded-full border border-border-default bg-surface-card px-2.5 py-[5px] text-text-secondary">
                 {c}
               </span>
             ))}
@@ -103,7 +110,7 @@ export function PhonePreview({
           </div>
         </div>
       </div>
-      <span className="flex items-center gap-2 rounded-full border border-border-default bg-surface-card px-3.5 py-2 text-body font-medium text-text-primary">
+      <span className={bare ? 'hidden' : 'flex items-center gap-2 rounded-full border border-border-default bg-surface-card px-3.5 py-2 text-body font-medium text-text-primary'}>
         <Store aria-hidden className="size-4" /> {domain}
         <ExternalLink aria-hidden className="size-3.5" />
       </span>

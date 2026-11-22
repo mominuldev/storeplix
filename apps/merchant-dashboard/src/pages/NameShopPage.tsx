@@ -3,7 +3,7 @@ import { isApiError } from '@storeplix/api-client';
 import { Button, Card, Chip, Input, ProgressBar } from '@storeplix/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
@@ -19,7 +19,18 @@ import { fetchTenantStore, storeKey } from '../stores/useTenantStore';
 // Figma Merchant Onboarding · 03 Name your shop 48:7869 (desktop: rail · form · live preview) / M3 53:885.
 // Sends POST /stores. Bangla name is edited in Settings; sales channels have no API field, so that
 // Figma card is not shown. Country/currency default to Bangladesh/BDT. 409 store_limit_reached → dashboard.
+const DESKTOP = '(min-width: 1024px)';
+const subscribeDesktop = (cb: () => void) => {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {};
+  const mq = window.matchMedia(DESKTOP);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+};
+/** lg+ — M3 53:885 shows the link field without the "https://" prefix. False when matchMedia is unavailable (tests). */
+const useDesktop = () => useSyncExternalStore(subscribeDesktop, () => (typeof window !== 'undefined' && !!window.matchMedia ? window.matchMedia(DESKTOP).matches : false), () => false);
+
 export function NameShopPage() {
+  const desktop = useDesktop();
   const { tenantId, logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -99,15 +110,15 @@ export function NameShopPage() {
         <form onSubmit={onSubmit} noValidate className="flex w-full max-w-[620px] flex-1 flex-col gap-5 px-5 pt-3 pb-28 lg:gap-7 lg:px-0 lg:pt-2 lg:pb-12">
           <div className="flex flex-col gap-1.5 lg:gap-2">
             <h1 className="text-heading-24 text-text-primary lg:text-heading-32">Name your shop</h1>
-            <p className="text-body text-text-secondary lg:text-body-lg">
-              This is what customers see on your page, receipts and SMS. You can change it any time.
-            </p>
+            <p className="text-body text-text-secondary lg:hidden">Customers see this on your page, receipts and SMS.</p>
+            <p className="hidden text-body-lg text-text-secondary lg:block">This is what customers see on your page, receipts and SMS. You can change it any time.</p>
             <p lang="bn" className="hidden font-bangla text-body-lg leading-[26px] text-text-muted lg:block">
               আপনার দোকানের নাম বাংলা বা ইংরেজিতে লিখুন
             </p>
           </div>
           {formError && <FormAlert>{formError}</FormAlert>}
 
+          <div className="flex flex-col gap-5">
           <Card className="flex flex-col gap-5 border-0 bg-transparent p-0 shadow-none lg:border lg:bg-surface-card lg:p-6 lg:shadow-elevation-1">
             <h2 className="hidden text-body-lg font-medium text-text-primary lg:block">Shop details</h2>
             <Input label="Shop name" placeholder="Mugdho Fashion" autoComplete="organization" error={errors.name?.message} {...nameField} />
@@ -115,7 +126,8 @@ export function NameShopPage() {
               label="Your shop link"
               fieldClassName="min-h-12 lg:min-h-11"
               className="text-body-lg font-medium"
-              leading={<span className="hidden font-normal text-text-muted lg:inline">https://</span>}
+              leading={desktop ? <span className="font-normal text-text-muted">https://</span> : undefined}
+              leadingDivider={false}
               trailing={<span className="text-body-lg text-text-muted">.storeplix.com</span>}
               hint="You can connect your own domain later."
               error={errors.slug?.message}
@@ -152,6 +164,7 @@ export function NameShopPage() {
               )}
             />
           </Card>
+          </div>
 
           {/* M3 mini preview */}
           <div className="flex items-center gap-3 rounded-[14px] bg-brand-50 p-3.5 lg:hidden">

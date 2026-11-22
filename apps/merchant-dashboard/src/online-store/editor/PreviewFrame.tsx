@@ -2,6 +2,7 @@ import type { PreviewToEditorMessage } from '@storeplix/types';
 import { Button, Spinner } from '@storeplix/ui';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { storeDomain, useTenantStore } from '../../stores/useTenantStore';
 import { embedUrl, usePreviewToken } from '../hooks';
 import { postToPreview, previewOriginOf, readPreviewMessage } from './bridge';
 import type { Device } from './editorReducer';
@@ -45,6 +46,8 @@ export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function Previ
   const origin = previewOriginOf(src);
   const width = DEVICE_WIDTH[device];
   const scale = size.w ? Math.min(1, (size.w - 32) / width) : 1;
+  const store = useTenantStore().data;
+  const domain = store ? storeDomain(store) : '';
 
   useEffect(() => onScale?.(scale), [scale, onScale]);
 
@@ -117,6 +120,13 @@ export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function Previ
       ) : (
         <div className="relative shrink-0 origin-top" style={{ width, height: size.h ? (size.h - 24) / scale : 900, transform: `scale(${scale})` }}>
           <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-elevation-1">
+            {/* Figma 2045:48516 browser bar, in 1440-px site units (37 px on screen at the 55 % editor zoom). */}
+            <div aria-hidden className="flex h-[68px] shrink-0 items-center gap-[9px] bg-surface-subtle px-[21px]">
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="size-[15px] shrink-0 rounded-full bg-border-strong" />
+              ))}
+              <span className="min-w-0 flex-1 truncate rounded-full bg-surface-card px-[15px] py-[6px] text-[18px] leading-6 text-text-secondary">{domain}</span>
+            </div>
             <iframe
               key={`${src}#${attempt}`}
               ref={iframeRef}

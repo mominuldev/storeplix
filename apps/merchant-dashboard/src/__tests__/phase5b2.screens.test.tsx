@@ -243,10 +243,10 @@ describe('Order detail payments (33:3676, 144:46081)', () => {
     expect(headerOf(refund, 'Idempotency-Key')).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancel order' }));
-    const cancel = await screen.findByRole('dialog', { name: 'Cancel MU-1042?' });
-    expect(within(cancel).queryByRole('option', { name: 'Not paid in time' })).not.toBeInTheDocument();
+    const cancel = await screen.findByRole('dialog', { name: 'Cancel order MU-1042?' });
+    expect(within(cancel).queryByRole('radio', { name: 'Not paid in time' })).not.toBeInTheDocument();
     expect(within(cancel).getByLabelText('Refund ৳ 70 to bKash')).toBeChecked();
-    await userEvent.selectOptions(within(cancel).getByLabelText('Reason'), 'customer_request');
+    await userEvent.click(within(cancel).getByRole('radio', { name: 'Customer asked to cancel' }));
     await userEvent.click(within(cancel).getByRole('button', { name: 'Cancel order' }));
     await waitFor(() => expect(byMethod(fetchMock, '/stores/S1/orders/O1/cancel', 'POST')).toHaveLength(1));
     expect(bodyOf(byMethod(fetchMock, '/stores/S1/orders/O1/cancel', 'POST')[0]!)).toMatchObject({ reason: 'customer_request', refund_to_gateway: true });

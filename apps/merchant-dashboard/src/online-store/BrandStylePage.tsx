@@ -1,13 +1,13 @@
 import { isApiError } from '@storeplix/api-client';
 import type { StoreTheme, ThemeGlobalSettings } from '@storeplix/types';
-import { Badge, Button, cn, contrastRatio, Dialog, DraftBar, DraftBarGhostButton, SegmentedControl, Spinner } from '@storeplix/ui';
+import { Button, cn, contrastRatio, Dialog, DraftBar, DraftBarGhostButton, SegmentedControl, Spinner } from '@storeplix/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ShoppingCart } from 'lucide-react';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { Lock, ShoppingCart } from 'lucide-react';
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { settingsKey } from '../settings/schema';
 import { useBrandUpload } from '../settings/useBrandUpload';
-import { useTenantStore } from '../stores/useTenantStore';
+import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 import { ConflictDialog, ErrorState, LoadingState, OnlineStoreHeader, Panel, ReadOnlyBanner } from './components/Shell';
 import { MediaPicker } from './components/MediaPicker';
 import { toast } from './components/Toast';
@@ -15,10 +15,15 @@ import { summarizeChanges } from './editor/changes';
 import { editorReducer, initEditor } from './editor/editorReducer';
 import { osKeys, useActiveTheme, useCanEditStore } from './hooks';
 import { getThemeDefinition } from './theme-package';
+import kurti from '../assets/onboarding/preview-kids-kurti.png';
+import jamdani from '../assets/onboarding/preview-jamdani-3piece.png';
+import panjabi from '../assets/onboarding/preview-cotton-panjabi.png';
+import silk from '../assets/onboarding/preview-silk-saree.png';
 
 // Figma V3 Brand style 2035:46054 (Main 2035:46056). Colours, fonts and corners are theme draft (PUT draft,
 // Publish = publish). Logo, favicon and share image are store-level and save immediately (contract P3-7).
-// The preview card's "Live / New" toggle is not built (shows "New" only).
+// The preview card's Live / New toggle switches between the published and draft settings; Desktop / Phone
+// switches the static mock's frame.
 
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -128,7 +133,7 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
   const accentLow = contrastRatio(s.secondaryColor, s.backgroundColor) < 4.5;
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex flex-col gap-6 lg:gap-7">
       <OnlineStoreHeader title="Brand style" description="Logo, colours, fonts and shapes — set once, used by every page and theme." />
       {!canEdit && <ReadOnlyBanner />}
 
@@ -161,7 +166,7 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
                           <span className="size-2.5 rounded-full" style={{ backgroundColor: p.secondaryColor }} />
                         </span>
                       </span>
-                      <span className={cn('pl-1 text-caption', active ? 'font-semibold text-text-primary' : 'font-medium text-text-secondary')}>{p.name}</span>
+                      <span className={cn('pl-1 text-caption', active ? 'font-semibold text-text-primary' : 'text-text-secondary')}>{p.name}</span>
                     </button>
                   </li>
                 );
@@ -170,14 +175,14 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
           </Panel>
 
           <Panel title="Colours" description="We check every pair so text stays readable on phones in sunlight.">
-            <ul className="flex flex-col divide-y divide-border-default">
+            <ul className="flex flex-col gap-4">
               {colours.map((c) => {
                 const value = s[c.key];
                 const ratio = c.key === 'backgroundColor' ? null : contrastRatio(value, s.backgroundColor);
                 const label = ratio ? contrastLabel(ratio) : null;
                 return (
-                  <li key={c.key} className="flex flex-wrap items-center gap-3 py-3 first:pt-0">
-                    <label className="relative size-9 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border-default" style={{ backgroundColor: value }}>
+                  <li key={c.key} className="flex flex-wrap items-center gap-3 pt-3 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border-default">
+                    <label className="relative size-9 shrink-0 cursor-pointer overflow-hidden rounded-control border border-border-default" style={{ backgroundColor: value }}>
                       <span className="sr-only">{c.label} colour picker</span>
                       <input
                         type="color"
@@ -192,16 +197,16 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
                       <span className="text-caption text-text-muted">{c.hint}</span>
                     </div>
                     <HexInput label={`${c.label} colour`} value={value} disabled={!canEdit} onChange={(v) => setGlobal(c.key, v)} />
-                    {label ? <Badge tone={label.tone}>{label.text}</Badge> : <Badge>—</Badge>}
+                    <ContrastPill tone={label?.tone ?? 'neutral'}>{label?.text ?? '—'}</ContrastPill>
                   </li>
                 );
               })}
             </ul>
             {accentLow && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-warning-bg px-3 py-2.5">
-                <p className="min-w-0 flex-1 text-caption text-text-primary">Accent text is hard to read on this background. We’ll use it for badges only, with dark text on top.</p>
+              <div className="flex flex-wrap items-center gap-2 rounded-control bg-warning-bg px-3 py-2.5 text-[12px] leading-[17px]">
+                <p className="min-w-0 flex-1 text-text-primary">Accent text is hard to read on this background. We’ll use it for badges only, with dark text on top.</p>
                 {canEdit && (
-                  <button type="button" className="text-caption font-semibold text-warning hover:underline" onClick={() => setGlobal('secondaryColor', readableInk(s.secondaryColor, s.backgroundColor))}>
+                  <button type="button" className="font-semibold text-warning hover:underline" onClick={() => setGlobal('secondaryColor', readableInk(s.secondaryColor, s.backgroundColor))}>
                     Fix for me
                   </button>
                 )}
@@ -210,7 +215,7 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
           </Panel>
 
           <Panel title="Fonts" description="Pairs chosen to look right in English and বাংলা together.">
-            <ul className="grid gap-2.5 sm:grid-cols-2">
+            <ul className="grid gap-2.5 sm:grid-cols-3">
               {def?.pairings.map((p) => {
                 const active = pairing?.id === p.id;
                 return (
@@ -221,15 +226,16 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
                       disabled={!canEdit}
                       onClick={() => dispatch({ type: 'applyPairing', pairing: p })}
                       className={cn(
-                        'flex w-full flex-col gap-1.5 rounded-lg p-4 text-left outline-none focus-visible:shadow-focus disabled:cursor-not-allowed',
+                        'flex h-full w-full flex-col gap-1.5 rounded-lg p-4 text-left whitespace-nowrap outline-none focus-visible:shadow-focus disabled:cursor-not-allowed',
                         active ? 'bg-brand-50 shadow-[inset_0_0_0_2px_var(--color-brand-600)]' : 'shadow-[inset_0_0_0_1px_var(--color-border-default)]',
                       )}
                     >
-                      <span className="text-[22px] leading-7 font-semibold text-text-primary">
-                        Aa <span className="font-bangla">অআ</span>
+                      <span className="flex items-baseline gap-2 leading-7 text-text-primary">
+                        <span className="text-[22px] font-semibold">Aa</span>
+                        <span className="font-bangla text-[20px] font-semibold">অআ</span>
                       </span>
-                      <span className="text-body font-semibold text-text-primary">{p.name}</span>
-                      <span className="text-caption text-text-muted">{p.hint}</span>
+                      <span className="text-[13px] leading-[18px] font-semibold text-text-primary">{p.name}</span>
+                      <span className="truncate text-[11px] leading-4 text-text-muted">{p.hint}</span>
                     </button>
                   </li>
                 );
@@ -256,7 +262,7 @@ function BrandStyleEditor({ theme }: { theme: StoreTheme }) {
           />
         </div>
 
-        <StylePreview settings={s} storeName={store.name} changed={changes.groups} />
+        <StylePreview draft={s} live={theme.published_config?.settings ?? s} storeName={store.name} domain={storeDomain(store)} changed={changes.groups} />
       </div>
 
       {canEdit && (dirty || changes.groups.length > 0) && (
@@ -320,8 +326,8 @@ function HexInput({ label, value, onChange, disabled }: { label: string; value: 
         }
       }}
       className={cn(
-        'h-8 w-[88px] rounded-md border bg-surface-card px-2.5 text-[13px] font-medium text-text-primary uppercase outline-none focus:border-brand-600 disabled:bg-surface-subtle',
-        valid ? 'border-border-default' : 'border-danger',
+        'h-8 w-[82px] rounded-md border bg-surface-card px-2.5 text-[13px] leading-[18px] font-medium text-text-primary uppercase outline-none focus:border-brand-600 disabled:bg-surface-subtle',
+        valid ? 'border-border-strong' : 'border-danger',
       )}
     />
   );
@@ -346,16 +352,16 @@ function LogoAndIcons({ storeId, canEdit }: { storeId: string; canEdit: boolean 
 
   const tile = (kind: 'logo' | 'favicon' | 'share', label: string, hint: string, src: string | null | undefined, onReplace: () => void, busy: boolean, error?: string | null) => (
     <li className="flex flex-col gap-2.5 rounded-lg bg-surface-subtle p-3">
-      <div className="flex h-16 items-center justify-center overflow-hidden rounded-md bg-surface-card">
+      <div className="flex h-16 items-center justify-center overflow-hidden rounded-md border border-border-default bg-surface-card">
         {busy ? <Spinner size="sm" label="Uploading" /> : src ? <img src={src} alt="" className={cn('max-h-full', kind === 'share' ? 'h-full w-full object-cover' : 'max-w-[80%] object-contain')} /> : <span className="text-caption text-text-muted">None yet</span>}
       </div>
-      <div className="flex items-end justify-between gap-2">
-        <div className="flex flex-col">
-          <span className="text-[13px] font-medium text-text-primary">{label}</span>
-          <span className="text-[11px] text-text-muted">{hint}</span>
+      <div className="flex items-center justify-between gap-2 whitespace-nowrap">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-[13px] leading-[18px] font-medium text-text-primary">{label}</span>
+          <span className="truncate text-[11px] leading-4 text-text-muted">{hint}</span>
         </div>
         {canEdit && (
-          <button type="button" onClick={onReplace} className="text-caption font-medium text-brand-600 hover:underline">
+          <button type="button" onClick={onReplace} className="text-caption font-semibold text-brand-600 hover:underline">
             {src ? 'Replace' : 'Add'}
           </button>
         )}
@@ -421,54 +427,123 @@ function LogoAndIcons({ storeId, canEdit }: { storeId: string; canEdit: boolean 
   );
 }
 
-/** Static preview card (Store preview 2035:46923) tinted with the draft colours. */
-function StylePreview({ settings: s, storeName, changed }: { settings: ThemeGlobalSettings; storeName: string; changed: string[] }) {
-  const radius = s.cornerStyle === 'square' ? 0 : s.cornerStyle === 'pill' ? 999 : 8;
+/** Figma 2035:46856 contrast pill: 11/16 semibold, px 8 py 2. */
+function ContrastPill({ tone, children }: { tone: 'success' | 'warning' | 'neutral'; children: ReactNode }) {
+  const tones = { success: 'bg-success-bg text-success', warning: 'bg-warning-bg text-warning', neutral: 'bg-surface-subtle text-text-muted' } as const;
+  return <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] leading-4 font-semibold whitespace-nowrap', tones[tone])}>{children}</span>;
+}
+
+const previewProducts = [
+  { name: 'Jamdani 3-Piece', price: '৳1,650', img: jamdani },
+  { name: 'Silk Saree', price: '৳4,200', img: silk },
+  { name: 'Cotton Panjabi', price: '৳1,250', img: panjabi },
+  { name: 'Kids Kurti', price: '৳690', img: kurti },
+];
+
+/** Static preview card (Store preview 2035:46923) tinted with the draft (New) or published (Live) colours. */
+function StylePreview({ draft, live, storeName, domain, changed }: { draft: ThemeGlobalSettings; live: ThemeGlobalSettings; storeName: string; domain: string; changed: string[] }) {
+  const [version, setVersion] = useState<'live' | 'new'>('new');
+  const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
+  const s = version === 'live' ? live : draft;
+  const radius = s.cornerStyle === 'square' ? 0 : s.cornerStyle === 'pill' ? 999 : 6;
+  const phone = device === 'phone';
   return (
     <aside aria-label="Preview" className="flex flex-col gap-3 lg:sticky lg:top-6 lg:self-start">
-      <div className="flex flex-col">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-text-primary">Preview</h2>
-        <p className="text-caption text-text-muted">Your home page with these choices</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <h2 className="text-[15px] leading-[22px] font-semibold text-text-primary">Preview</h2>
+          <p className="text-caption text-text-muted">Your real home page with these choices</p>
+        </div>
+        <SegmentedControl
+          size="sm"
+          aria-label="Preview version"
+          value={version}
+          onChange={setVersion}
+          options={[
+            { value: 'live', label: 'Live' },
+            { value: 'new', label: 'New' },
+          ]}
+        />
+        <SegmentedControl
+          size="sm"
+          aria-label="Preview device"
+          value={device}
+          onChange={setDevice}
+          options={[
+            { value: 'desktop', label: 'Desktop' },
+            { value: 'phone', label: 'Phone' },
+          ]}
+        />
       </div>
-      <div className="rounded-card bg-brand-100 p-4 sm:p-6">
-        <div className="overflow-hidden rounded-lg border border-border-default shadow-elevation-1" style={{ backgroundColor: s.backgroundColor, color: s.textColor }}>
-          <div className="flex items-center gap-2 border-b border-border-default px-4 py-2.5">
-            <span className="flex size-5 items-center justify-center rounded-sm text-[11px] font-bold text-text-inverse" style={{ backgroundColor: s.primaryColor }}>
+      <div className="flex flex-col items-center gap-3.5 rounded-[20px] bg-[linear-gradient(160deg,var(--color-brand-50)_0%,var(--color-brand-100)_100%)] px-4 pt-6 pb-6 sm:px-6">
+        <div
+          className={cn('w-full overflow-hidden border border-border-default shadow-elevation-1', phone ? 'max-w-[240px] rounded-[20px]' : 'rounded-[10px]')}
+          style={{ backgroundColor: s.backgroundColor, color: s.textColor }}
+        >
+          <div className="flex items-center gap-[7px] bg-surface-subtle px-3 py-2">
+            {!phone && (
+              <span aria-hidden className="flex gap-1.5">
+                <span className="size-[7px] rounded-full bg-border-strong" />
+                <span className="size-[7px] rounded-full bg-border-strong" />
+                <span className="size-[7px] rounded-full bg-border-strong" />
+              </span>
+            )}
+            <span className="flex min-w-0 items-center gap-1 rounded-md bg-surface-card px-2.5 py-[3px] text-[11px] leading-4 text-text-secondary">
+              <Lock aria-hidden className="size-2.5 shrink-0" />
+              <span className="truncate">{domain}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-medium text-text-inverse" style={{ backgroundColor: s.primaryColor }}>
               {storeName.charAt(0).toUpperCase()}
             </span>
-            <span className="flex-1 truncate text-body font-semibold" style={{ fontFamily: s.headingFontFamily }}>
+            <span className="min-w-0 flex-1 truncate text-[13px] leading-5 font-semibold" style={{ fontFamily: s.headingFontFamily }}>
               {storeName}
             </span>
-            <span className="hidden gap-3 text-caption opacity-70 sm:flex">
-              <span>New in</span>
-              <span>Sarees</span>
-              <span>Panjabi</span>
-            </span>
-            <ShoppingCart aria-hidden className="size-4" />
-          </div>
-          <div className="flex flex-col gap-2 px-4 py-5" style={{ fontFamily: s.fontFamily }}>
-            <span className="text-[11px] font-semibold tracking-wide uppercase" style={{ color: s.primaryColor }}>
-              Eid collection 2026
-            </span>
-            <span className="text-heading" style={{ fontFamily: s.headingFontFamily }}>
-              Jamdani, Katan & more
-            </span>
-            <span className="text-caption opacity-80">Cash on delivery all over Bangladesh</span>
-            <span className="flex items-center gap-2 pt-1">
-              <span className="px-3 py-1.5 text-caption font-medium text-text-inverse" style={{ backgroundColor: s.primaryColor, borderRadius: radius }}>
-                Shop now
+            {!phone && (
+              <span className="flex gap-3.5 text-[11px] leading-4 opacity-70">
+                <span>New in</span>
+                <span>Sarees</span>
+                <span>Three-piece</span>
+                <span>Panjabi</span>
               </span>
-              <span className="px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: s.secondaryColor, borderRadius: radius, color: contrastRatio(s.textColor, s.secondaryColor) >= 3 ? s.textColor : s.backgroundColor }}>
-                −20%
-              </span>
-            </span>
+            )}
+            <ShoppingCart aria-hidden className="size-4 shrink-0" />
           </div>
+          <div className={cn('flex', phone ? 'flex-col-reverse' : 'h-[131px]')} style={{ backgroundColor: `${s.primaryColor}14` }}>
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 px-5 py-3" style={{ fontFamily: s.fontFamily }}>
+              <span className="text-[11px] leading-4 font-medium uppercase" style={{ color: s.primaryColor }}>
+                Eid collection 2026
+              </span>
+              <span className="text-[17px] leading-7 font-semibold whitespace-nowrap" style={{ fontFamily: s.headingFontFamily }}>
+                Jamdani, Katan & more
+              </span>
+              <span className="text-[11px] leading-4 opacity-80">Cash on delivery all over Bangladesh</span>
+              <span className="flex items-center gap-2 pt-0.5">
+                <span className="px-3 py-1.5 text-[11px] leading-4 font-medium text-text-inverse" style={{ backgroundColor: s.primaryColor, borderRadius: radius }}>
+                  Shop now
+                </span>
+              </span>
+            </div>
+            <img src={silk} alt="" className={cn('object-cover', phone ? 'h-28 w-full' : 'h-full w-[47%]')} />
+          </div>
+          <ul className={cn('grid gap-2.5 px-4 py-3', phone ? 'grid-cols-2' : 'grid-cols-4')}>
+            {previewProducts.slice(0, phone ? 2 : 4).map((p) => (
+              <li key={p.name} className="flex min-w-0 flex-col gap-1">
+                <img src={p.img} alt="" className="aspect-[101/91] w-full object-cover" style={{ borderRadius: Math.min(radius, 6) }} />
+                <span className="truncate text-[11px] leading-4">{p.name}</span>
+                <span className="text-[11px] leading-4 font-medium" style={{ color: s.primaryColor }}>
+                  {p.price}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-        {changed.length > 0 && (
-          <p className="mt-3 flex flex-wrap items-center justify-center gap-1.5 text-caption text-text-secondary">
+        {version === 'new' && changed.length > 0 && (
+          <p className="flex flex-wrap items-center justify-center gap-1.5 text-caption font-medium text-text-secondary">
             Changed:
             {changed.map((g) => (
-              <span key={g} className="rounded-full bg-surface-card px-2 py-0.5 text-[11px] font-medium text-text-primary capitalize">
+              <span key={g} className="rounded-full bg-surface-card px-2 py-0.5 text-[11px] leading-4 font-medium text-text-primary capitalize">
                 {g}
               </span>
             ))}

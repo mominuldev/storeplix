@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { AddressInput, EditItemsReason, EditOrderItemsInput, MediaRef, Order, OrderItemsQuote, Product, ShippingQuote } from '@storeplix/types';
-import { Badge, Button, cn, Input, MoneyInput, Select, Toggle } from '@storeplix/ui';
+import { Badge, Button, buttonVariants, cn, Input, MoneyInput, Select, Toggle } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Minus, Plus, Trash2, Truck } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -247,22 +247,23 @@ function EditForm({ order, hint, setHint }: { order: Order; hint: ShippingQuote 
 
   return (
     <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
           <h1 className="text-heading-24 text-text-primary">Edit order {order.number}</h1>
-          <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
-            <Link to="/orders" className="text-brand-600">
+          <nav aria-label="Breadcrumb" className="text-body text-text-secondary">
+            <Link to="/orders" className="hover:text-text-primary">
               Orders
-            </Link>{' '}
-            ›{' '}
-            <Link to={`/orders/${order.id}`} className="text-brand-600">
+            </Link>
+            <span aria-hidden className="mx-1.5">›</span>
+            <Link to={`/orders/${order.id}`} className="hover:text-text-primary">
               {order.number}
-            </Link>{' '}
-            › Edit · {order.contact.name} · placed {dateTime(order.placed_at)}
+            </Link>
+            <span aria-hidden className="mx-1.5">›</span>
+            Edit · {order.contact.name} · placed {dateTime(order.placed_at)}
           </nav>
         </div>
-        <div className="flex gap-2">
-          <Link to={`/orders/${order.id}`} className="inline-flex h-10 items-center rounded-control border border-border-default px-4 text-body font-medium text-text-primary">
+        <div className="flex gap-3">
+          <Link to={`/orders/${order.id}`} className={buttonVariants({ variant: 'secondary' })}>
             Discard
           </Link>
           <Button loading={save.isPending} onClick={submit}>

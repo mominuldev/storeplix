@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { moneyToInput, parseMoney } from '../lib/money';
 import { Input, type InputProps } from './Input';
 
-// Product editor 60:9381 price fields — "৳ 3,450": Input with a ৳ leading adornment. `value` is paisa;
+// Product editor 60:9381 price fields — "৳ 3,450": Input with a ৳ leading adornment and no divider (Figma 50:734). `value` is paisa;
 // `onChange` receives paisa, `null` (empty) or `NaN` (not a valid amount; schemas turn that into a message).
-export interface MoneyInputProps extends Omit<InputProps, 'value' | 'onChange' | 'type' | 'leading' | 'defaultValue'> {
+export interface MoneyInputProps extends Omit<InputProps, 'value' | 'onChange' | 'type' | 'leading' | 'leadingDivider' | 'defaultValue'> {
   value: number | null | undefined;
   onChange: (paisa: number | null) => void;
 }
@@ -28,6 +28,7 @@ export function MoneyInput({ value, onChange, onBlur, fieldClassName, ...props }
       autoComplete="off"
       value={text}
       leading={<span className="font-bangla text-body text-text-muted">৳</span>}
+      leadingDivider={false}
       fieldClassName={fieldClassName}
       onChange={(e) => {
         const next = e.target.value;

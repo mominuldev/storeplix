@@ -1,31 +1,36 @@
 import { cn } from '@storeplix/ui';
 import { Bell, ChevronDown, House, Menu, Package, Plus, Search, ShoppingBag } from 'lucide-react';
-import { Link, NavLink } from 'react-router';
+import { Link, NavLink, useLocation } from 'react-router';
 import { useDashboard } from '../catalog/queries';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 // Figma Merchant Admin – Mobile · Today app bar 31:4300 (60h): shop avatar, name + domain, search, bell.
 export function MobileAppBar() {
   const store = useTenantStore().data;
+  const { pathname } = useLocation();
+  // More 32:6541 has its own "More" app bar (rendered by MorePage).
+  if (pathname === '/more') return null;
   return (
-    <header className="sticky top-0 z-20 flex h-15 items-center gap-3 border-b border-border-default bg-surface-card px-4 lg:hidden">
+    <header className="sticky top-0 z-20 flex h-15 items-center gap-3 bg-surface-card px-4 lg:hidden">
       <Link to="/more" className="flex min-w-0 flex-1 items-center gap-3" aria-label="Switch shop">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-accent-100 text-body font-semibold text-warning">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-body-lg font-medium text-accent-500">
           {(store?.name ?? '?').charAt(0).toUpperCase()}
         </span>
         <span className="flex min-w-0 flex-col">
-          <span className="flex items-center gap-1 truncate text-body font-semibold text-text-primary">
+          <span className="flex items-center gap-1 truncate text-body-lg font-medium text-text-primary">
             {store?.name ?? 'Store Plix'} <ChevronDown className="size-4 text-text-muted" aria-hidden />
           </span>
           {store && <span className="truncate text-caption text-text-muted">{storeDomain(store)}</span>}
         </span>
       </Link>
-      <button type="button" aria-label="Search" className="flex size-11 items-center justify-center text-text-primary">
-        <Search className="size-[22px]" aria-hidden />
-      </button>
-      <button type="button" aria-label="Notifications" className="flex size-11 items-center justify-center text-text-primary">
-        <Bell className="size-[22px]" aria-hidden />
-      </button>
+      <span className="flex gap-2">
+        <button type="button" aria-label="Search" className="flex size-11 items-center justify-center rounded-full border border-border-default bg-surface-card text-text-primary">
+          <Search className="size-[22px]" aria-hidden />
+        </button>
+        <button type="button" aria-label="Notifications" className="flex size-11 items-center justify-center rounded-full border border-border-default bg-surface-card text-text-primary">
+          <Bell className="size-[22px]" aria-hidden />
+        </button>
+      </span>
     </header>
   );
 }
@@ -45,7 +50,7 @@ function Tab({ tab, badge }: { tab: (typeof tabs)[number]; badge?: number }) {
       end={tab.end}
       className={({ isActive }) =>
         cn(
-          'flex min-h-13 flex-1 flex-col items-center justify-center gap-0.5 text-caption',
+          'flex min-h-13 flex-1 flex-col items-center justify-center gap-1 text-caption',
           isActive ? 'font-medium text-brand-600' : 'text-text-secondary',
         )
       }
@@ -53,7 +58,7 @@ function Tab({ tab, badge }: { tab: (typeof tabs)[number]; badge?: number }) {
       <span className="relative">
         <Icon className="size-6" aria-hidden />
         {!!badge && (
-          <span className="absolute -top-1.5 -right-2.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] leading-none font-semibold text-text-inverse">
+          <span className="absolute -top-[7px] left-3.5 flex items-center justify-center rounded-[9px] border-2 border-surface-card bg-danger px-[5px] py-px text-caption font-medium text-text-inverse">
             {badge > 99 ? '99+' : badge}
           </span>
         )}
@@ -72,15 +77,15 @@ export function MobileTabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-20 flex items-end border-t border-border-default bg-surface-card px-2 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 flex items-center border-t border-border-default bg-surface-card px-2 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden"
     >
       <Tab tab={tabs[0]} />
       <Tab tab={tabs[1]} badge={pending} />
-      <div className="flex flex-1 justify-center">
+      <div className="flex min-h-13 flex-1 items-center justify-center">
         <Link
           to="/products/new"
           aria-label="Add product"
-          className="-mt-4 flex size-13 items-center justify-center rounded-full bg-linear-to-b from-[#6b63ff] to-[#4d42e0] text-text-inverse shadow-elevation-1"
+          className="flex size-13 items-center justify-center rounded-full bg-linear-to-r from-[#6b63ff] to-[#4d42e0] text-text-inverse shadow-[0_6px_7px_color-mix(in_srgb,var(--color-brand-600)_32%,transparent)]"
         >
           <Plus className="size-[26px]" aria-hidden />
         </Link>

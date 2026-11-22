@@ -2,7 +2,8 @@ import { isApiError } from '@storeplix/api-client';
 import type { AddressInput, PickupLocation, PickupLocationInput, ShippingSettings, ShippingZoneInput } from '@storeplix/types';
 import { Badge, Button, Checkbox, Dialog, Input, MoneyInput, Spinner, Toggle } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, MapPin, Plug, Plus, Trash2 } from 'lucide-react';
+import { Link } from 'react-router';
 import { useState } from 'react';
 import { formatBdt } from '../catalog/format';
 import { useStoreScope } from '../catalog/scope';
@@ -17,7 +18,7 @@ import { api } from '../lib/api';
 import { normalizeBdPhone } from '../lib/phone';
 import { FormAlert } from '../onboarding/AuthShell';
 import { toast } from '../online-store/components/Toast';
-import { SettingsCard } from './SettingsLayout';
+import { SettingsCard, SettingsToggleRow } from './SettingsLayout';
 
 // Figma Settings → Shipping & delivery 60:14364, Edit zone 66:17755. Contract §9: zones table (fallback row
 // "Everywhere else", not deletable), zone drawer with the area picker, Free delivery card, Pickup addresses.
@@ -71,9 +72,17 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
 
   return (
     <>
-      <div className="flex flex-col gap-1">
-        <h2 className="text-heading text-text-primary">Shipping & delivery</h2>
-        <p className="text-body text-text-secondary">Delivery charges your customers see at checkout.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h2 className="text-heading text-text-primary">Shipping & delivery</h2>
+          <p className="text-body text-text-secondary">Delivery charges your customers see at checkout, and which courier ships each zone.</p>
+        </div>
+        <Link
+          to="/integrations"
+          className="inline-flex min-h-10 items-center justify-center self-start rounded-md border border-border-default bg-surface-card px-4 py-2 text-body font-medium text-text-primary outline-none hover:bg-surface-subtle focus-visible:shadow-focus"
+        >
+          Manage couriers ↗
+        </Link>
       </div>
       {error && <FormAlert>{error}</FormAlert>}
       {!configured && (
@@ -87,48 +96,53 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
         </div>
       )}
 
-      <SettingsCard title="Delivery zones" description="Customers get the charge of their area at checkout. It’s added to the order total and collected with cash on delivery.">
-        {editable && (
-          <Button size="sm" variant="secondary" className="self-start" leftIcon={<Plus aria-hidden className="size-4" />} onClick={() => setEditing({ index: null })} disabled={zones.length >= 30}>
-            Add zone
-          </Button>
-        )}
+      <SettingsCard
+        title="Delivery zones"
+        description="Customers pick a zone at checkout. Charges are added to the order total and collected with COD."
+        action={
+          editable && (
+            <Button size="sm" variant="secondary" leftIcon={<Plus aria-hidden className="size-4" />} onClick={() => setEditing({ index: null })} disabled={zones.length >= 30}>
+              Add zone
+            </Button>
+          )
+        }
+      >
         <div role="table" aria-label="Delivery zones" className="overflow-hidden rounded-lg border border-border-default">
-          <div role="row" className="hidden gap-3 bg-surface-subtle px-4 py-2.5 text-caption font-medium text-text-muted uppercase md:flex">
+          <div role="row" className="hidden gap-4 bg-surface-subtle px-4 py-2.5 text-caption font-medium text-text-muted uppercase md:flex">
             <span role="columnheader" className="flex-1">
               Zone
             </span>
             <span role="columnheader" className="w-20">
               Charge
             </span>
-            <span role="columnheader" className="w-28">
+            <span role="columnheader" className="w-25">
               Delivery time
             </span>
             <span role="columnheader" className="w-14">
               Active
             </span>
-            <span role="columnheader" className="w-20">
+            <span role="columnheader" className="w-[4.5rem]">
               <span className="sr-only">Actions</span>
             </span>
           </div>
           {zones.map((z, i) => (
-            <div key={z.id ?? `new-${i}`} role="row" className="flex flex-wrap items-center gap-3 border-t border-border-default px-4 py-3 first:border-t-0 md:flex-nowrap">
-              <span role="cell" className="flex min-w-0 flex-1 items-center gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-brand-50 text-brand-600">
-                  <MapPin aria-hidden className="size-4" />
+            <div key={z.id ?? `new-${i}`} role="row" className="flex flex-wrap items-center gap-4 border-t border-border-default px-4 py-3.5 first:border-t-0 md:flex-nowrap">
+              <span role="cell" className="flex min-w-0 flex-1 basis-full items-center gap-2 md:basis-auto">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600">
+                  <MapPin aria-hidden className="size-[18px]" />
                 </span>
-                <span className="flex min-w-0 flex-col">
+                <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="flex items-center gap-2 text-body font-semibold text-text-primary">
                     {z.name}
                     {z.kind === 'fallback' && <Badge>Everywhere else</Badge>}
                   </span>
-                  <span className="truncate text-caption text-text-muted">{areaSummary(z, geo.index)}</span>
+                  <span className="truncate text-caption text-text-secondary">{areaSummary(z, geo.index)}</span>
                 </span>
               </span>
-              <span role="cell" className="w-20 text-body font-semibold text-text-primary">
+              <span role="cell" className="pl-11 text-body font-semibold text-text-primary md:w-20 md:pl-0">
                 {z.charge_amount === 0 ? 'Free' : formatBdt(z.charge_amount)}
               </span>
-              <span role="cell" className="w-28 text-body text-text-secondary">
+              <span role="cell" className="flex-1 text-body text-text-secondary md:w-25 md:flex-none">
                 {daysRange(z.min_days, z.max_days)}
               </span>
               <span role="cell" className="w-14">
@@ -139,7 +153,7 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
                   onChange={(on) => commit(zones.map((x, j) => (j === i ? { ...x, is_active: on } : x)))}
                 />
               </span>
-              <span role="cell" className="flex w-20 justify-end gap-1">
+              <span role="cell" className="flex w-[4.5rem] justify-end gap-1">
                 {editable && z.kind !== 'fallback' && (
                   <button type="button" aria-label={`Delete ${z.name}`} onClick={() => setRemoving(i)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:text-danger">
                     <Trash2 aria-hidden className="size-4" />
@@ -154,19 +168,15 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
             </div>
           ))}
         </div>
-        <p className="flex items-center gap-1.5 text-caption text-text-muted">
-          <AlertTriangle aria-hidden className="size-3.5" /> Areas not covered by any zone fall back to {zones.find((z) => z.kind === 'fallback')?.name ?? 'Outside Dhaka'}, so no order is ever blocked at checkout.
+        <p className="flex items-center gap-2 text-caption text-text-secondary">
+          <AlertTriangle aria-hidden className="size-4 shrink-0 text-info" /> Areas not covered by any zone fall back to {zones.find((z) => z.kind === 'fallback')?.name ?? 'Outside Dhaka'}, so no order is ever blocked at checkout.
         </p>
       </SettingsCard>
 
       <SettingsCard title="Free delivery" description="Nudge bigger orders. Shown on the cart as a progress bar.">
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex flex-col">
-            <span className="text-body font-medium text-text-primary">Offer free delivery above an order value</span>
-            <span className="text-caption text-text-muted">Delivery becomes ৳ 0 in every zone when the cart, after discounts, reaches this amount.</span>
-          </span>
+        <SettingsToggleRow title="Offer free delivery above an order value" description="Delivery charge becomes ৳ 0 when the cart total reaches the threshold.">
           <Toggle label="Offer free delivery" checked={freeOn} disabled={!editable} onChange={setFreeOn} />
-        </div>
+        </SettingsToggleRow>
         {freeOn && (
           <>
             <MoneyInput
@@ -179,7 +189,7 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
               containerClassName="sm:max-w-xs"
             />
             {!freeInvalid && freeAmount !== null && (
-              <div className="flex flex-col gap-2 rounded-lg bg-brand-50 p-3">
+              <div className="flex flex-col gap-2 rounded-lg bg-brand-50 px-4 py-3">
                 <span className="text-caption font-medium text-brand-600">Customer sees at checkout</span>
                 <span className="text-body text-text-primary">Add {formatBdt(Math.min(45_000, freeAmount))} more for free delivery</span>
                 <span className="h-1.5 rounded-full bg-brand-100">
@@ -197,6 +207,22 @@ function ShippingForm({ data }: { data: ShippingSettings }) {
       </SettingsCard>
 
       <PickupCard pickups={data.pickup_locations} editable={editable} />
+
+      <section aria-label="Courier accounts" className="flex flex-wrap items-center gap-4 rounded-card border border-border-default bg-surface-card px-5 py-4 shadow-elevation-1 md:min-h-25 md:flex-nowrap">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface-subtle text-text-secondary">
+          <Plug aria-hidden className="size-5" />
+        </span>
+        <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5 text-body">
+          <span className="font-semibold text-text-primary">Courier accounts</span>
+          <span className="text-text-secondary">Connect Steadfast, Pathao or RedX to book parcels from your orders. API keys and rates live in Integrations.</span>
+        </div>
+        <Link
+          to="/integrations"
+          className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-border-default bg-surface-card px-3 py-1 text-body font-medium text-text-primary outline-none hover:bg-surface-subtle focus-visible:shadow-focus"
+        >
+          Manage in Integrations
+        </Link>
+      </section>
 
       {editing && (
         <ZoneDrawer
@@ -240,25 +266,30 @@ function PickupCard({ pickups, editable }: { pickups: PickupLocation[]; editable
     onError: (e) => toast(errorMessage(e), 'error'),
   });
   return (
-    <SettingsCard title="Pickup addresses" description="Where couriers collect parcels.">
-      {editable && (
-        <Button size="sm" variant="secondary" className="self-start" leftIcon={<Plus aria-hidden className="size-4" />} disabled={pickups.length >= 10} onClick={() => setEditing('new')}>
-          Add address
-        </Button>
-      )}
+    <SettingsCard
+      title="Pickup addresses"
+      description="Where couriers collect parcels."
+      action={
+        editable && (
+          <Button size="sm" variant="secondary" leftIcon={<Plus aria-hidden className="size-4" />} disabled={pickups.length >= 10} onClick={() => setEditing('new')}>
+            Add address
+          </Button>
+        )
+      }
+    >
       {pickups.length === 0 ? (
         <p className="text-body text-text-muted">No pickup address yet.</p>
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2">
+        <ul className="grid gap-4 md:grid-cols-2">
           {pickups.map((p) => (
-            <li key={p.id} className={p.is_default ? 'flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-brand-50 p-4' : 'flex flex-col gap-1.5 rounded-lg border border-border-default p-4'}>
+            <li key={p.id} className={p.is_default ? 'flex flex-col gap-2.5 rounded-lg border border-brand-100 bg-brand-50 p-4' : 'flex flex-col gap-2.5 rounded-lg border border-border-default bg-surface-card p-4'}>
               <div className="flex items-center gap-2">
-                <MapPin aria-hidden className="size-4 text-brand-600" />
+                <MapPin aria-hidden className={p.is_default ? 'size-[18px] shrink-0 text-brand-600' : 'size-[18px] shrink-0 text-text-muted'} />
                 <span className="flex-1 truncate text-body font-semibold text-text-primary">{p.name}</span>
                 {p.is_default && <Badge tone="brand">Default</Badge>}
               </div>
               <span className="text-body text-text-secondary">{[p.address_line, p.thana, p.district].filter(Boolean).join(', ')}</span>
-              {(p.contact_name || p.contact_phone) && <span className="text-caption text-text-muted">{[p.contact_name, localPhone(p.contact_phone)].filter(Boolean).join(' · ')}</span>}
+              {(p.contact_name || p.contact_phone) && <span className="text-caption text-text-secondary">{[p.contact_name, localPhone(p.contact_phone)].filter(Boolean).join(' · ')}</span>}
               {editable && (
                 <div className="flex gap-3 pt-1 text-caption font-medium">
                   <button type="button" className="text-brand-600" onClick={() => setEditing(p)}>

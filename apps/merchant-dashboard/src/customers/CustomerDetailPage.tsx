@@ -83,7 +83,7 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
 
   return (
     <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <Avatar name={customer.name} size="lg" className="bg-accent-100 text-accent-500" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
@@ -110,23 +110,23 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
               WhatsApp
             </a>
           )}
-          {customer.phone && (
-            <Link to={`/orders/new?phone=0${customer.phone.slice(3)}`} className={buttonVariants({ variant: 'secondary' })}>
-              Create order
-            </Link>
-          )}
           <Button variant="secondary" onClick={() => setEditing(true)}>
             Edit
           </Button>
           {scope.canManageCatalog && (
-            <Button variant="danger" leftIcon={<Trash2 aria-hidden className="size-4" />} onClick={() => setDeleting(true)}>
+            <Button variant="danger" onClick={() => setDeleting(true)}>
               Delete
             </Button>
+          )}
+          {customer.phone && (
+            <Link to={`/orders/new?phone=0${customer.phone.slice(3)}`} className={buttonVariants()}>
+              + Create order
+            </Link>
           )}
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+      <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
         <div className="flex flex-col gap-5">
           <Panel
             title="Contact"
@@ -182,7 +182,7 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
           </Panel>
 
           <Panel title="Tags">
-            <TagInput label="Customer tags" value={customer.tags} disabled={tags.isPending} onChange={(next) => tags.mutate(next)} placeholder="+ Add tag" />
+            <TagInput label="Customer tags" value={customer.tags} disabled={tags.isPending} onChange={(next) => tags.mutate(next)} placeholder="+ Add tag" variant="inline" />
           </Panel>
 
           <Panel title="Notes" description="Only your team can see these">
@@ -213,11 +213,11 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
               <textarea
                 aria-label="Add a note"
                 placeholder="Add a note…"
-                rows={2}
+                rows={1}
                 maxLength={1000}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="rounded-md border border-border-default px-3 py-2 text-body outline-none focus:border-brand-600"
+                className="min-h-[38px] resize-none rounded-control border border-border-default px-3 py-[9px] text-body outline-none placeholder:text-text-muted focus:border-brand-600"
               />
               {note.trim() && (
                 <Button type="submit" size="sm" className="self-end" loading={addNote.isPending}>
@@ -230,15 +230,20 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
 
         <div className="flex min-w-0 flex-col gap-5">
           <section aria-label="Order stats" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile icon={<CreditCard />} label="Total spent" value={formatBdt(customer.total_spent_amount)} hint="in this shop" />
+            <KpiTile icon={<CreditCard />} label="Total spent" value={formatBdt(customer.total_spent_amount)} hint={`Since ${monthYear(customer.created_at)}`} />
             <KpiTile
               icon={<ShoppingCart />}
               label="Avg order"
               value={customer.delivered_orders_count > 0 ? formatBdt(Math.round(customer.total_spent_amount / customer.delivered_orders_count)) : '—'}
               hint="per delivered order"
             />
-            <KpiTile icon={<Truck />} label="Delivered" value={`${formatCount(customer.delivered_orders_count)} / ${formatCount(customer.orders_count)}`} hint="orders delivered" />
-            <KpiTile icon={<RefreshCw />} label="Returns" value={formatCount(customer.returned_orders_count)} hint="came back undelivered" />
+            <KpiTile
+              icon={<Truck />}
+              label="Delivered"
+              value={`${formatCount(customer.delivered_orders_count)} of ${formatCount(customer.orders_count)}`}
+              hint={customer.orders_count > 0 ? `${Math.round((customer.delivered_orders_count / customer.orders_count) * 100)}% in your shop` : 'No orders yet'}
+            />
+            <KpiTile icon={<RefreshCw />} label="Returns" value={formatCount(customer.returned_orders_count)} hint={`${formatCount(customer.returned_orders_count)} ${customer.returned_orders_count === 1 ? 'parcel' : 'parcels'} came back`} />
           </section>
           <CustomerOrders customerId={customer.id} />
         </div>
@@ -271,7 +276,7 @@ function CustomerOrders({ customerId }: { customerId: string }) {
   const orders = useOrders({ customer_id: customerId, per_page: 10 });
   const rows = orders.data?.data ?? [];
   return (
-    <Panel title="Orders" description="In this shop">
+    <Panel title="Orders" description={orders.data ? `${formatCount(orders.data.meta.total)} ${orders.data.meta.total === 1 ? 'order' : 'orders'} · in this shop` : 'In this shop'}>
       {orders.isPending ? (
         <p className="text-body text-text-muted">Loading orders…</p>
       ) : orders.isError ? (
@@ -291,7 +296,7 @@ function CustomerOrders({ customerId }: { customerId: string }) {
             {rows.map((o) => (
               <tr key={o.id} className="cursor-pointer border-t border-border-default hover:bg-surface-subtle" onClick={() => navigate(`/orders/${o.id}`)}>
                 <td className="py-2.5">
-                  <Link to={`/orders/${o.id}`} className="font-semibold text-text-primary" onClick={(e) => e.stopPropagation()}>
+                  <Link to={`/orders/${o.id}`} className="font-medium text-brand-600" onClick={(e) => e.stopPropagation()}>
                     {o.number}
                   </Link>
                   <span className="block text-caption text-text-muted">

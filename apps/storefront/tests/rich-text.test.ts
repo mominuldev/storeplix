@@ -101,7 +101,7 @@ describe('PageBlocks renderer', () => {
     ]);
     expect(blocks.map((b) => b.type)).toEqual(['heading', 'rich_text', 'image', 'image', 'button', 'callout', 'table']);
     const html = renderToStaticMarkup(createElement(PageBlocks, { blocks, media }));
-    expect(html).toContain('<h2 class="type-h2 text-ink">Delivery &lt;b&gt;</h2>');
+    expect(html).toMatch(/<h2 id="section-[A-Za-z0-9_-]+" class="type-h2[^"]*">Delivery &lt;b&gt;<\/h2>/);
     expect(html).toContain('Body');
     expect(html).toContain('Cap');
     expect(html.match(/<figure/g)).toHaveLength(1); // unresolved media → block omitted

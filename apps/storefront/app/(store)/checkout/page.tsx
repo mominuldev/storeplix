@@ -5,14 +5,12 @@ import { getCommerceContext } from '@/lib/commerce-context';
 import { NOINDEX_ROBOTS } from '@/lib/seo';
 import { checkoutMethods } from '@/lib/payments';
 import { CheckoutForm } from '@/themes/modern-commerce/commerce/checkout-form';
-import { PageTitle } from '@/themes/modern-commerce/commerce/ui';
+import { EmptyState, PageTitle } from '@/themes/modern-commerce/commerce/ui';
 import { ButtonLink } from '@/themes/modern-commerce/components/button';
 import { ProductImage } from '@/themes/modern-commerce/components/product-image';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Checkout', robots: NOINDEX_ROBOTS };
-
-const STEPS = ['Bag', 'Delivery', 'Payment', 'Confirm'];
 
 /** `/checkout` — Figma desktop 1:11591, mobile 1:11690 / 32:5087. COD + online methods (PHASE-5B-CONTRACT §11). */
 export default async function CheckoutPage() {
@@ -25,11 +23,10 @@ export default async function CheckoutPage() {
   if (!r?.ok || r.data.cart.lines.length === 0 || !r.data.cart.can_checkout || r.data.cart.lines.some((l) => l.issue)) {
     const empty = !r?.ok || r.data.cart.lines.length === 0;
     return (
-      <div className="flex flex-col items-start gap-6 px-4 pt-10 pb-20 lg:px-20 lg:pt-14 lg:pb-28">
+      <div className="flex flex-col items-start gap-6 px-4 pt-8 pb-20 lg:px-20 lg:pt-12 lg:pb-28">
         <PageTitle title="Checkout" />
-        <div className="flex w-full flex-col items-start gap-4 rounded-sf-sm bg-sunken p-8" data-sp-checkout-blocked>
-          <h2 className="type-h2 text-ink">{empty ? 'Your bag is empty' : 'Some items in your bag need attention'}</h2>
-          <ButtonLink href={empty ? '/' : '/cart'}>{empty ? 'Continue shopping' : 'Back to your bag'}</ButtonLink>
+        <div className="w-full" data-sp-checkout-blocked>
+          <EmptyState icon="bag" title={empty ? 'Your bag is empty' : 'Some items in your bag need attention'} action={<ButtonLink href={empty ? '/' : '/cart'}>{empty ? 'Continue shopping' : 'Back to your bag'}</ButtonLink>} />
         </div>
       </div>
     );
@@ -39,20 +36,7 @@ export default async function CheckoutPage() {
   const notLive = store.config.store.status !== 'active' ? "Your shop isn't live yet. Orders open after you go live." : null;
 
   return (
-    <div className="flex flex-col gap-8 px-4 pt-8 pb-20 lg:px-20 lg:pt-12 lg:pb-28">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <PageTitle title="Checkout" />
-        {/* Decorative progress (Figma stepper); one page in 5a. */}
-        <ol aria-hidden className="type-label-s flex flex-wrap items-center gap-2 text-ink-muted">
-          {STEPS.map((s, i) => (
-            <li key={s} className="flex items-center gap-2">
-              {i > 0 ? <span className="h-px w-6 bg-line" /> : null}
-              <span className={`flex size-6 items-center justify-center rounded-full ${i <= 1 ? 'bg-brand text-on-brand' : 'border border-line'}`}>{i + 1}</span>
-              <span className={i === 1 ? 'text-ink' : ''}>{s}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
+    <div className="bg-sunken px-4 pt-6 pb-20 lg:px-20 lg:pt-10 lg:pb-24">
       <CheckoutForm
         geo={geo}
         idempotencyKey={crypto.randomUUID()}

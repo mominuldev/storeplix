@@ -14,15 +14,16 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
     <aside
       aria-label="Main navigation"
       className={cn(
-        'sticky top-0 hidden h-dvh shrink-0 flex-col gap-4 overflow-y-auto border-r border-border-default bg-surface-card p-4 lg:flex',
+        'sticky top-0 hidden h-dvh shrink-0 flex-col overflow-y-auto border-r border-border-default bg-surface-card p-4 lg:flex',
         collapsed ? 'w-sidebar-collapsed' : 'w-sidebar',
       )}
     >
-      <div className={cn('pl-2', collapsed && 'flex justify-center pl-0')}>
+      {/* Figma 10:601: Logo frame 48 (logo 32 + 16) · switcher 52 · 4 spacer · 40px nav rows, no gaps. */}
+      <div className={cn('h-12 shrink-0 pl-2', collapsed && 'flex justify-center pl-0')}>
         {collapsed ? <Logo variant="symbol" height={32} /> : <Logo height={32} />}
       </div>
       <TenantSwitcher collapsed={collapsed} />
-      <nav className="flex flex-col gap-0.5">
+      <nav className="mt-1 flex flex-col">
         {mainNav.map((item) => (
           <SidebarEntry key={item.to} item={item} collapsed={collapsed} />
         ))}
@@ -64,7 +65,7 @@ function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean 
         <NavItem icon={<Icon />} label={item.label} count={<Chevron className="!size-4" aria-hidden />} className="[&>span:last-child]:bg-transparent [&>span:last-child]:px-0" />
       </button>
       {expanded && (
-        <ul className="mt-0.5 flex flex-col gap-0.5">
+        <ul className="flex flex-col">
           {children!.map((child) => (
             <li key={child.to}>
               {/* Figma SubNavItem 8:264 — h 32, pl 40, pr 12, radius 8 */}

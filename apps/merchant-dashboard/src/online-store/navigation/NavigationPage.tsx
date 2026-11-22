@@ -1,8 +1,8 @@
 import { isApiError } from '@storeplix/api-client';
 import type { NavigationHandle, NavigationMenu, NavItem, NavLink, NavLinkStatus, StorePageSummary } from '@storeplix/types';
-import { Badge, Button, cn, DraftBar, DraftBarGhostButton, gripProps, Input, Modal, Select, SortableTree } from '@storeplix/ui';
+import { Badge, Button, cn, DraftBar, DraftBarGhostButton, gripProps, Input, Modal, SegmentedControl, Select, SortableTree } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CornerDownRight, CornerLeftUp, GripVertical, Link2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, CornerDownRight, CornerLeftUp, GripVertical, Link2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { useTenantStore } from '../../stores/useTenantStore';
@@ -41,6 +41,7 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
   const [drafts, setDrafts] = useState<Partial<Record<NavigationHandle, NavItem[]>>>({});
   const [editing, setEditing] = useState<NavItem | 'new' | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
   const menu = menus.find((m) => m.handle === handle) ?? menus[0]!;
   const serverItems = toNavItems(menu.items);
   const items = drafts[handle] ?? serverItems;
@@ -72,13 +73,13 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
   const changeCount = dirty ? Math.max(1, Math.abs(total - countItems(serverItems)) || 1) : 0;
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex flex-col gap-6 lg:gap-7">
       <OnlineStoreHeader title="Navigation" description="The menus in your header and footer. Changes show in the preview as you type." />
       {!canEdit && <ReadOnlyBanner />}
 
-      <div className="grid gap-6 lg:grid-cols-[232px_minmax(0,1fr)_minmax(0,360px)]">
-        <nav aria-label="Menus" className="flex flex-col gap-2.5">
-          <span className="text-[11px] leading-4 font-semibold tracking-[0.66px] text-text-muted uppercase">Menus</span>
+      <div className="grid items-start gap-5 lg:grid-cols-[232px_minmax(0,1fr)_minmax(0,360px)]">
+        <nav aria-label="Menus" className="flex flex-col gap-2">
+          <span className="text-[11px] leading-4 font-semibold tracking-[0.88px] text-text-muted uppercase">Menus</span>
           {menus.map((m) => {
             const active = m.handle === handle;
             const count = countItems(drafts[m.handle] ?? toNavItems(m.items));
@@ -89,8 +90,10 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
                 aria-current={active ? 'true' : undefined}
                 onClick={() => setHandle(m.handle)}
                 className={cn(
-                  'flex flex-col rounded-lg border bg-surface-card px-4 py-3 text-left outline-none focus-visible:shadow-focus',
-                  active ? 'border-brand-600 shadow-[0_0_0_0.5px_var(--color-brand-600)]' : 'border-border-default hover:border-border-strong',
+                  'flex flex-col gap-0.5 rounded-lg px-3.5 py-3 text-left whitespace-nowrap outline-none focus-visible:shadow-focus',
+                  active
+                    ? 'bg-surface-card shadow-[inset_0_0_0_1.5px_var(--color-brand-600),var(--shadow-elevation-1)]'
+                    : 'bg-surface-canvas shadow-[inset_0_0_0_1px_var(--color-border-default)] hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]',
                 )}
               >
                 <span className="text-body font-semibold text-text-primary">
@@ -105,7 +108,10 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
           })}
         </nav>
 
-        <Panel title={menu.title} description={`${menuMeta[handle]} on every page · drag to reorder, drag right onto a link to nest`}>
+        <Panel
+          title={<span className="text-[18px] leading-[26px] tracking-[-0.09px]">{menu.title}</span>}
+          description={<span className="text-caption text-text-muted">{`${menuMeta[handle]} on every page · drag to reorder, drag right onto a link to nest`}</span>}
+        >
           {items.length === 0 && <p className="text-body text-text-secondary">This menu is empty. Add your first link below.</p>}
           <SortableTree<NavItem>
             label={`${menu.title} links`}
@@ -118,16 +124,24 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
               const status = statusFor(item.link, pages, resolved.get(item.id));
               const index = items.findIndex((i) => i.id === item.id);
               return (
-                <div className={cn('flex items-center gap-2 rounded-lg bg-surface-subtle py-2.5 pr-2 pl-2', status !== 'ok' && 'shadow-[inset_0_0_0_1px_var(--color-warning)]')}>
+                <div
+                  className={cn(
+                    'group flex items-center gap-2.5 rounded-control bg-surface-subtle p-2.5 focus-within:bg-brand-50 focus-within:shadow-[inset_0_0_0_1.5px_var(--color-brand-600)]',
+                    status !== 'ok' && 'shadow-[inset_0_0_0_1px_var(--color-warning)]',
+                  )}
+                >
                   {canEdit && (
-                    <button type="button" aria-label={`Reorder ${item.label}`} {...gripProps(h)} className="flex size-6 cursor-grab touch-none items-center justify-center text-text-muted">
+                    <button type="button" aria-label={`Reorder ${item.label}`} {...gripProps(h)} className="flex size-4 shrink-0 cursor-grab touch-none items-center justify-center text-text-muted">
                       <GripVertical aria-hidden className="size-4" />
                     </button>
                   )}
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-body-lg text-text-primary">{item.label}</span>
+                    <span className="flex items-center gap-1.5 truncate text-body font-medium text-text-primary">
+                      {item.label}
+                      {item.children?.length ? <ChevronDown aria-hidden className="size-3.5 shrink-0 text-text-muted" /> : null}
+                    </span>
                     <span className="flex items-center gap-1 truncate text-caption text-text-muted">
-                      <Link2 aria-hidden className="size-3 shrink-0" />
+                      <Link2 aria-hidden className="size-[11px] shrink-0" />
                       {describeLink(item.link, item.link.type === 'page' ? pageTitle(item.link.page_id) : null)}
                     </span>
                     {item.link.type === 'collection' && <span className="text-[11px] text-text-muted">Collections arrive with products</span>}
@@ -138,7 +152,7 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
                     </Badge>
                   )}
                   {canEdit && (
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 gap-0.5 lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100">
                       {flat.depth === 1 ? (
                         <IconBtn label={`Move ${item.label} out`} onClick={() => setItems(unnest(items, item.id))}>
                           <CornerLeftUp />
@@ -164,24 +178,24 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
             }}
           />
           {canEdit && (
-            <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border-strong p-4">
+            <div className="flex flex-col gap-2.5 rounded-lg border border-dashed border-border-strong p-3.5">
               <button
                 type="button"
                 disabled={items.length >= NAV_LIMITS.top || total >= NAV_LIMITS.total}
                 onClick={() => setEditing('new')}
-                className="flex items-center gap-2 self-start text-body-lg font-medium text-brand-600 disabled:opacity-50"
+                className="flex items-center gap-1.5 self-start text-body font-semibold text-brand-600 disabled:opacity-50"
               >
                 <Plus aria-hidden className="size-4" /> Add a link
               </button>
               {suggestions.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
+                <div className="flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
                   Suggested:
                   {suggestions.map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => setItems([...items, newNavItem(items, p.title.slice(0, 40), { type: 'page', page_id: p.id })])}
-                      className="rounded-full border border-border-default bg-surface-card px-2.5 py-1 text-caption text-text-primary hover:border-brand-500"
+                      className="rounded-full border border-border-default bg-surface-card px-2.5 py-1 text-caption font-medium text-text-secondary hover:border-brand-500"
                     >
                       + {p.title}
                     </button>
@@ -193,9 +207,24 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
         </Panel>
 
         <aside aria-label="Live preview" className="flex flex-col gap-3">
-          <h2 className="text-body-lg font-semibold text-text-primary">Live preview</h2>
-          <MenuPreview handle={handle} items={items} storeName={store.name} />
-          <Panel title="Keep it to 5–7 links" description="On phones, more than 7 links pushes Track order out of sight — the link buyers use most after ordering." />
+          <div className="flex items-center gap-2">
+            <h2 className="min-w-0 flex-1 text-[13px] leading-[18px] font-semibold text-text-primary">Live preview</h2>
+            <SegmentedControl
+              size="sm"
+              aria-label="Preview device"
+              value={device}
+              onChange={setDevice}
+              options={[
+                { value: 'desktop', label: 'Desktop' },
+                { value: 'phone', label: 'Phone' },
+              ]}
+            />
+          </div>
+          <MenuPreview handle={handle} items={items} storeName={store.name} phone={device === 'phone'} />
+          <section className="flex flex-col gap-3 rounded-card border border-border-default bg-surface-card p-4 shadow-elevation-1">
+            <h3 className="text-[13px] leading-[18px] font-semibold text-text-primary">Keep it to 5–7 links</h3>
+            <p className="text-[12px] leading-[17px] text-text-muted">On phones, more than 7 links pushes Track order out of sight — the link buyers use most after ordering.</p>
+          </section>
         </aside>
       </div>
 
@@ -245,7 +274,7 @@ function IconBtn({ label, onClick, children, danger }: { label: string; onClick:
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={cn('flex size-7 items-center justify-center rounded-md bg-surface-card shadow-elevation-1 outline-none focus-visible:shadow-focus [&_svg]:size-3.5', danger ? 'text-danger' : 'text-text-secondary')}
+      className={cn('flex size-7 items-center justify-center rounded-sm bg-surface-card outline-none focus-visible:shadow-focus [&_svg]:size-3.5', danger ? 'text-danger' : 'text-text-primary')}
     >
       {children}
     </button>
@@ -337,30 +366,40 @@ function LinkDialog({ item, pages, onClose, onSave }: { item: NavItem | null; pa
   );
 }
 
-function MenuPreview({ handle, items, storeName }: { handle: NavigationHandle; items: NavItem[]; storeName: string }) {
+/** Figma 2037:47406: brand gradient stage, 12 px browser card with a 22 px bar and the live menu. */
+function MenuPreview({ handle, items, storeName, phone }: { handle: NavigationHandle; items: NavItem[]; storeName: string; phone: boolean }) {
   const withChildren = items.find((i) => i.children?.length);
   return (
-    <div className="rounded-card bg-brand-100 p-4">
-      <div className="overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-elevation-1">
+    <div className="flex flex-col items-center gap-3 rounded-[20px] bg-gradient-to-b from-brand-50 to-brand-100 px-4 py-5">
+      <div className={cn('w-full overflow-hidden rounded-lg bg-surface-card shadow-[0_8px_24px_0_rgb(26_26_77/0.12)]', phone && 'max-w-[200px]')}>
+        <div aria-hidden className="flex h-[22px] items-center gap-[3px] bg-surface-subtle px-2.5">
+          <span className="size-[5px] rounded-full bg-border-strong" />
+          <span className="size-[5px] rounded-full bg-border-strong" />
+          <span className="size-[5px] rounded-full bg-border-strong" />
+        </div>
         {handle === 'main' ? (
           <>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-default px-3 py-2.5 text-[11px] text-text-secondary">
-              <span className="flex items-center gap-1.5 text-caption font-semibold text-text-primary">
-                <span className="size-3 rounded-sm bg-brand-600" />
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-default px-3 py-2 text-[9px] leading-3 font-medium text-text-secondary">
+              <span className="mr-2 flex items-center gap-1 text-[10px] leading-[13px] font-semibold text-text-primary">
+                <span className="size-3.5 rounded-[3px] bg-brand-600" />
                 {storeName}
               </span>
-              {items.map((i) => (
-                <span key={i.id} className={cn(i.id === withChildren?.id && 'rounded-full bg-brand-50 px-1.5 text-brand-700')}>
-                  {i.label}
-                  {i.children?.length ? ' ▾' : ''}
-                </span>
-              ))}
+              {!phone &&
+                items.map((i) => (
+                  <span key={i.id} className={cn('px-1.5 py-1', i.id === withChildren?.id && 'rounded-full bg-brand-50 font-semibold text-brand-700')}>
+                    {i.label}
+                    {i.children?.length ? ' ▾' : ''}
+                  </span>
+                ))}
             </div>
-            <div className="relative h-36 bg-surface-subtle">
-              {withChildren && (
-                <ul className="absolute top-2 left-1/3 flex w-32 flex-col gap-1 rounded-md bg-surface-card p-2 text-[11px] text-text-secondary shadow-elevation-1">
+            <div className="relative h-[178px] p-3">
+              <div className="size-full rounded-md bg-surface-subtle" />
+              {!phone && withChildren && (
+                <ul className="absolute top-0 left-1/4 flex w-32 flex-col gap-1 rounded-md border border-border-default bg-surface-card p-2 text-[10px] leading-[13px] text-text-secondary shadow-[0_6px_14px_0_rgb(26_26_77/0.14)]">
                   {withChildren.children!.map((c) => (
-                    <li key={c.id}>{c.label}</li>
+                    <li key={c.id} className="px-1.5 py-1">
+                      {c.label}
+                    </li>
                   ))}
                 </ul>
               )}

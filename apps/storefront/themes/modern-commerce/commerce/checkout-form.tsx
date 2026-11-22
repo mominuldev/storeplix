@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import type { BdGeo, GatewayProvider, PaymentMethod, ShippingQuote } from '@storeplix/types';
@@ -8,7 +9,7 @@ import { advanceRequired, GATEWAYS, METHOD_HINT, METHOD_LABEL } from '@/lib/paym
 import { districtsOf, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
 import { formatMoney } from '@/lib/format';
 import { Icon } from '../components/icon';
-import { deliveryDays, Notice } from './ui';
+import { deliveryDays, Notice, PageTitle } from './ui';
 import { isNextRedirect } from './payment-client';
 
 export interface CheckoutSummary {
@@ -37,7 +38,17 @@ type Values = Record<'name' | 'phone' | 'email' | 'division_code' | 'district_co
 const EMPTY: Values = { name: '', phone: '', email: '', division_code: '', district_code: '', thana_code: '', area: '', address_line: '', landmark: '', label: 'home', customer_note: '' };
 
 const inputCls =
-  'type-body-m h-[52px] w-full min-w-0 rounded-sf-xs border bg-surface px-4 text-ink outline-none focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
+  'type-body-m h-[52px] w-full min-w-0 rounded-sf-md border bg-surface px-4 text-ink outline-none placeholder:text-ink-muted focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
+
+/** Figma Select Field (1:9718): native select, custom caret (Icon/CaretDown 18). */
+function SelectBox({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative">
+      {children}
+      <Icon name="caret-down" size={18} className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-ink" />
+    </div>
+  );
+}
 
 function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
@@ -64,26 +75,56 @@ const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: '
 function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string }) {
   return (
     <label
-      className={`flex cursor-pointer items-center gap-4 rounded-sf-xs px-4 py-4 ${checked ? 'border-2 border-brand bg-brand-soft' : 'border border-line-subtle bg-surface hover:border-line'}`}
+      className={`flex cursor-pointer items-center gap-3.5 rounded-sf-md p-4 ${checked ? 'border-2 border-brand bg-brand-soft' : 'border border-line bg-surface hover:border-ink'}`}
       data-sp-method={value}
     >
       <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} className="sr-only" />
-      <span aria-hidden className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${checked ? 'border-brand' : 'border-ink'}`}>
-        {checked ? <span className="size-2.5 rounded-full bg-brand" /> : null}
+      <span aria-hidden className={`flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 ${checked ? 'border-brand bg-surface' : 'border-ink'}`}>
+        {checked ? <span className="size-3 rounded-full bg-brand" /> : null}
       </span>
-      <Icon name={icon} className={icon === 'wallet' ? 'text-ink' : 'text-brand'} />
-      <span className="flex min-w-0 flex-1 flex-col">
+      <Icon name={icon} size={24} className={icon === 'wallet' ? 'text-ink' : 'text-brand'} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="type-label-m text-ink">{title}</span>
-        <span className="type-body-s text-ink-secondary">{hint}</span>
+        <span className="type-body-s text-ink-muted">{hint}</span>
       </span>
-      {aside ? <span className="type-label-s shrink-0 text-ink">{aside}</span> : null}
+      {aside ? <span className="type-label-m shrink-0 text-right text-ink">{aside}</span> : null}
     </label>
+  );
+}
+
+const STEPS = ['Bag', 'Delivery', 'Payment', 'Confirm'];
+
+/**
+ * Title + steps at the top of the form column (Figma 1:11591: the summary starts level with the title;
+ * Checkout Steps 1:11594 is decorative, one page in 5a). Phones (1:11690) show a single step line.
+ */
+function CheckoutHeading() {
+  return (
+    <div className="flex flex-col-reverse gap-6">
+      <div className="max-lg:sr-only">
+        <PageTitle title="Checkout" count="— takes about a minute" size="m" />
+      </div>
+      <p aria-hidden className="type-label-s -mx-4 -mt-6 border-b border-line px-4 py-3 text-ink-muted lg:hidden">
+        Step 2 of 4 · Delivery &amp; payment
+      </p>
+      <ol aria-hidden className="type-label-m hidden flex-wrap items-center gap-3 text-ink-muted lg:flex">
+        {STEPS.map((step, i) => (
+          <li key={step} className="flex items-center gap-3">
+            {i > 0 ? <span className="h-px w-6 bg-line" /> : null}
+            <span className={`type-label-s flex size-7 items-center justify-center rounded-full ${i <= 1 ? 'bg-brand text-on-brand' : 'border border-line bg-surface'}`}>
+              {i === 0 ? <Icon name="check" size={14} /> : i + 1}
+            </span>
+            <span className={i <= 1 ? 'text-ink' : ''}>{step}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={`step-${n}`} className="flex flex-col gap-5 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-7">
+    <section aria-labelledby={`step-${n}`} className="flex flex-col gap-3.5 rounded-sf-md border border-line bg-surface p-4.5 lg:gap-[18px] lg:p-7">
       <h2 id={`step-${n}`} className="type-h3 flex items-center gap-3 text-ink">
         <span aria-hidden className="type-label-s flex size-7 items-center justify-center rounded-full bg-brand text-on-brand">
           {n}
@@ -209,11 +250,12 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
       <input type="hidden" name="idempotency_key" value={state.idempotencyKey} readOnly />
       <div className="flex min-w-0 flex-1 flex-col gap-5">
+        <CheckoutHeading />
         {notLiveMessage ? <Notice tone="error">{notLiveMessage}</Notice> : null}
         {state.message && state.status !== 'invalid' ? <Notice tone="error">{state.message}</Notice> : null}
 
         <Step n={1} title="Contact">
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-3.5 md:grid-cols-2 md:gap-x-4 lg:gap-y-[18px]">
             <Field id="name" label="Full name" error={errors.name}>
               <input id="name" name="name" autoComplete="name" value={values.name} onChange={set('name')} aria-invalid={Boolean(errors.name)} aria-describedby={describedBy('name')} className={`${inputCls} border-line`} />
             </Field>
@@ -240,9 +282,10 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
 
         <Step n={2} title="Delivery address">
           {!geo ? <Notice tone="error">We couldn’t load delivery areas. Refresh the page to try again.</Notice> : null}
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-3.5 md:grid-cols-2 md:gap-x-4 lg:gap-y-[18px]">
             <Field id="division_code" label="Division">
-              <select id="division_code" value={values.division_code} onChange={set('division_code')} className={`${inputCls} border-line`}>
+              <SelectBox>
+              <select id="division_code" value={values.division_code} onChange={set('division_code')} className={`${inputCls} appearance-none border-line pr-11`}>
                 <option value="">Choose division</option>
                 {divisions.map((d) => (
                   <option key={d.code} value={d.code}>
@@ -250,9 +293,11 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                   </option>
                 ))}
               </select>
+              </SelectBox>
             </Field>
             <Field id="district_code" label="District" error={errors.district_code}>
-              <select id="district_code" value={values.district_code} onChange={set('district_code')} disabled={!values.division_code} aria-invalid={Boolean(errors.district_code)} aria-describedby={describedBy('district_code')} className={`${inputCls} border-line disabled:opacity-60`}>
+              <SelectBox>
+              <select id="district_code" value={values.district_code} onChange={set('district_code')} disabled={!values.division_code} aria-invalid={Boolean(errors.district_code)} aria-describedby={describedBy('district_code')} className={`${inputCls} appearance-none border-line pr-11 disabled:opacity-60`}>
                 <option value="">Choose district</option>
                 {districts.map((d) => (
                   <option key={d.code} value={d.code}>
@@ -260,9 +305,11 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                   </option>
                 ))}
               </select>
+              </SelectBox>
             </Field>
             <Field id="thana_code" label="Upazila / Thana" error={errors.thana_code}>
-              <select id="thana_code" value={values.thana_code} onChange={set('thana_code')} disabled={!values.district_code} aria-invalid={Boolean(errors.thana_code)} aria-describedby={describedBy('thana_code')} className={`${inputCls} border-line disabled:opacity-60`}>
+              <SelectBox>
+              <select id="thana_code" value={values.thana_code} onChange={set('thana_code')} disabled={!values.district_code} aria-invalid={Boolean(errors.thana_code)} aria-describedby={describedBy('thana_code')} className={`${inputCls} appearance-none border-line pr-11 disabled:opacity-60`}>
                 <option value="">Choose upazila / thana</option>
                 {thanas.map((t) => (
                   <option key={t.code} value={t.code}>
@@ -270,6 +317,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                   </option>
                 ))}
               </select>
+              </SelectBox>
             </Field>
             <Field id="area" label="Area (optional)" error={errors.area}>
               <input id="area" value={values.area} onChange={set('area')} maxLength={120} placeholder="e.g. Road 7A area" aria-invalid={Boolean(errors.area)} className={`${inputCls} border-line`} />
@@ -281,7 +329,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           <Field id="landmark" label="Landmark (optional)" hint="A landmark helps the rider find you first time" error={errors.landmark}>
             <input id="landmark" value={values.landmark} onChange={set('landmark')} maxLength={160} aria-invalid={Boolean(errors.landmark)} className={`${inputCls} border-line`} />
           </Field>
-          <div role="radiogroup" aria-label="Address type" className="flex gap-2">
+          <div role="radiogroup" aria-label="Address type" className="flex items-center gap-2">
             {(['home', 'office'] as const).map((l) => (
               <button
                 key={l}
@@ -289,7 +337,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                 role="radio"
                 aria-checked={values.label === l}
                 onClick={() => setValues((v) => ({ ...v, label: l }))}
-                className={`type-label-s h-9 rounded-full border px-4 capitalize ${values.label === l ? 'border-inverse bg-inverse text-paper' : 'border-line bg-surface text-ink'}`}
+                className={`type-label-s rounded-full px-4 py-2 capitalize ${values.label === l ? 'bg-inverse text-paper' : 'border border-line bg-surface text-ink'}`}
               >
                 {l}
               </button>
@@ -299,14 +347,14 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
 
         <Step n={3} title="Delivery">
           {quote.data ? (
-            <div className="flex items-center gap-4 rounded-sf-xs border-2 border-brand bg-brand-soft px-4 py-4" data-sp-zone>
-              <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-brand">
-                <span className="size-2.5 rounded-full bg-brand" />
+            <div className="flex items-center gap-3.5 rounded-sf-md border-2 border-brand bg-brand-soft p-4" data-sp-zone>
+              <span aria-hidden className="flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 border-brand bg-surface">
+                <span className="size-3 rounded-full bg-brand" />
               </span>
-              <Icon name="truck-sm" className="text-brand" />
-              <span className="flex min-w-0 flex-1 flex-col">
+              <Icon name="truck-sm" size={24} className="text-brand" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="type-label-m text-ink">{quote.data.zone_name}</span>
-                <span className="type-body-s text-ink-secondary">{deliveryDays(quote.data.min_days, quote.data.max_days)}</span>
+                <span className="type-body-s text-ink-muted">{deliveryDays(quote.data.min_days, quote.data.max_days)}</span>
               </span>
               <span className="type-label-m text-ink">{shipping === 0 ? 'Free' : formatMoney(shipping ?? 0, c)}</span>
             </div>
@@ -322,7 +370,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
         </Step>
 
         <Step n={4} title="Payment">
-          <div role="radiogroup" aria-label="Payment method" className="flex flex-col gap-3">
+          <div role="radiogroup" aria-label="Payment method" className="flex flex-col gap-[18px]">
             {paymentMethods.map((m) => (
               <RadioCard
                 key={m}
@@ -358,13 +406,13 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           ) : null}
           {advanceBlocked ? <Notice tone="error">This shop needs the delivery charge paid in advance, but online payment isn&apos;t available right now. Contact the shop to order.</Notice> : null}
           {online ? (
-            <p className="type-body-s flex items-center gap-2 rounded-sf-xs bg-sky-soft px-4 py-3 text-ink">
-              <Icon name="lock" className="text-brand" />
+            <p className="type-body-s flex items-start gap-2.5 rounded-sf-sm bg-sky-tint p-3.5 text-ink-secondary">
+              <Icon name="lock" className="mt-px text-brand" />
               {method === 'bkash' ? "You'll approve the payment in bKash, then come back here." : "You'll pay on the secure SSLCommerz page, then come back here."} Your order is held for 30 minutes.
             </p>
           ) : (
-            <p className="type-body-s flex items-center gap-2 rounded-sf-xs bg-sky-soft px-4 py-3 text-ink">
-              <Icon name="phone" className="text-brand" />
+            <p className="type-body-s flex items-start gap-2.5 rounded-sf-sm bg-sky-tint p-3.5 text-ink-secondary">
+              <Icon name="phone" size={18} className="mt-px text-brand" />
               For some cash orders our team calls to confirm before dispatch — it only takes a minute.
             </p>
           )}
@@ -374,30 +422,36 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           <label htmlFor="customer_note" className="type-label-s text-ink">
             Order note (optional)
           </label>
-          <textarea id="customer_note" rows={3} maxLength={500} value={values.customer_note} onChange={set('customer_note')} aria-invalid={Boolean(errors.customer_note)} className="type-body-m w-full rounded-sf-xs border border-line bg-surface p-4 text-ink outline-none focus:border-2 focus:border-brand" />
+          <textarea id="customer_note" rows={3} maxLength={500} value={values.customer_note} onChange={set('customer_note')} aria-invalid={Boolean(errors.customer_note)} className="type-body-m w-full rounded-sf-md border border-line bg-surface p-4 text-ink outline-none focus:border-2 focus:border-brand" />
           {errors.customer_note ? <p className="type-body-s text-sale">{errors.customer_note}</p> : null}
         </div>
       </div>
 
-      <aside aria-labelledby="your-order" className="flex flex-col gap-5 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:sticky lg:top-6 lg:w-[440px] lg:shrink-0 lg:p-7">
-        <h2 id="your-order" className="type-h3 text-ink">
-          Your order
-        </h2>
+      <aside aria-labelledby="your-order" className="flex flex-col gap-4 rounded-sf-md border border-line bg-surface p-5 lg:sticky lg:top-6 lg:w-[440px] lg:shrink-0 lg:p-7">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 id="your-order" className="type-h3 text-ink">
+            Your order
+          </h2>
+          <Link href="/cart" className="type-label-s text-brand hover:underline">
+            Edit bag
+          </Link>
+        </div>
         <ul className="flex flex-col gap-4">
           {summary.lines.map((l) => (
             <li key={l.id} className="flex items-center gap-3">
-              <span className="relative size-14 shrink-0 overflow-hidden rounded-sf-xs bg-sunken">{l.image}</span>
-              <span className="flex min-w-0 flex-1 flex-col">
+              <span className="relative h-16 w-14 shrink-0 overflow-hidden rounded-sf-xs bg-sunken">{l.image}</span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="type-label-s truncate text-ink">{l.name}</span>
                 <span className="type-body-s text-ink-muted">
                   {l.variant ? `${l.variant} · ` : ''}Qty {l.quantity}
                 </span>
               </span>
-              <span className="type-label-s text-ink">{formatMoney(l.amount, c)}</span>
+              <span className="type-label-m text-ink">{formatMoney(l.amount, c)}</span>
             </li>
           ))}
         </ul>
-        <dl className="type-body-m flex flex-col gap-3 border-t border-line-subtle pt-5 text-ink-secondary">
+        <hr className="border-line" />
+        <dl className="type-body-m flex flex-col gap-4 text-ink-secondary">
           <div className="flex justify-between gap-4">
             <dt>Items ({summary.itemsCount})</dt>
             <dd className="text-ink">{formatMoney(summary.subtotal, c)}</dd>
@@ -413,7 +467,8 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
             <dd className={shipping === 0 ? 'text-brand' : 'text-ink'}>{shipping === null ? 'Choose your area' : shipping === 0 ? 'Free' : formatMoney(shipping, c)}</dd>
           </div>
         </dl>
-        <div className="flex items-end justify-between gap-4 border-t border-line-subtle pt-5">
+        <hr className="border-line" />
+        <div className="flex items-baseline justify-between gap-4">
           <p className="type-label-m text-ink">{online ? 'Total to pay now' : advance ? 'Total' : 'Total to pay on delivery'}</p>
           <p className="type-price-l text-ink" data-sp-total>
             {total === null ? '—' : formatMoney(total, c)}

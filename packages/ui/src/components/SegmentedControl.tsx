@@ -16,7 +16,8 @@ export interface SegmentedControlProps<T extends string> {
   options: SegmentedOption<T>[];
   'aria-label': string;
   className?: string;
-  /** `sm` = Online store V3 compact track (Figma 2045:48344): p 3, radius 10, 13px labels. */
+  /** `sm` = Online store V3 compact track (Figma 2045:48344, Themes filter 2032:45752): p 3, gap 2, radius 10,
+   *  tabs px 14 py 6 with 13/18 labels. */
   size?: 'md' | 'sm';
   disabled?: boolean;
 }
@@ -41,7 +42,7 @@ export function SegmentedControl<T extends string>({ value, onChange, options, c
             onClick={() => onChange(o.value)}
             className={cn(
               'flex flex-1 items-center justify-center gap-1.5 outline-none focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-60',
-              sm ? 'rounded-md px-3 py-[5px] text-[13px] leading-[18px] whitespace-nowrap' : 'rounded-[9px] py-[9px] text-body',
+              sm ? 'rounded-md px-3.5 py-1.5 text-[13px] leading-[18px] whitespace-nowrap' : 'rounded-[9px] py-[9px] text-body',
               active ? 'bg-surface-card font-semibold text-text-primary shadow-elevation-1' : 'font-medium text-text-secondary',
             )}
           >

@@ -94,29 +94,31 @@ export default async function ProductPage({ params }: Props) {
           {primary.name}
         </Link>
       ) : null}
-      <h1 className="type-display-m break-words text-ink">{product.name}</h1>
+      <h1 className="type-h1 break-words text-ink lg:type-display-m">{product.name}</h1>
     </div>
   );
 
   const details = (
     <div className="flex flex-col gap-6">
       <DeliveryBox commerce={config.commerce} currency={product.currency} />
-      <div className="border-t border-line-subtle">
+      <div>
         {product.description ? (
-          <details open className="group border-b border-line-subtle py-4">
+          <details open className="group border-b border-line py-[18px]">
             <summary className="type-label-m flex cursor-pointer list-none items-center justify-between text-ink">
               Description
-              <Icon name="plus" className="transition group-open:rotate-45" />
+              <Icon name="plus" size={18} className="group-open:hidden" />
+              <Icon name="minus" size={18} className="hidden group-open:inline-block" />
             </summary>
-            <div className="type-body-m pt-3 text-ink-secondary">
+            <div className="type-body-s pt-3 text-ink-secondary">
               <RichText doc={product.description} />
             </div>
           </details>
         ) : null}
-        <details className="group border-b border-line-subtle py-4">
+        <details className="group border-b border-line py-[18px]">
           <summary className="type-label-m flex cursor-pointer list-none items-center justify-between text-ink">
             Delivery &amp; returns
-            <Icon name="plus" className="transition group-open:rotate-45" />
+            <Icon name="plus" size={18} className="group-open:hidden" />
+            <Icon name="minus" size={18} className="hidden group-open:inline-block" />
           </summary>
           <div className="type-body-s flex flex-col gap-2 pt-3 text-ink-secondary">
             <p>Delivery charge is set by your area at checkout. Pay in cash when your parcel arrives.</p>
@@ -134,7 +136,7 @@ export default async function ProductPage({ params }: Props) {
           </div>
         </details>
       </div>
-      <div className="flex flex-wrap items-center gap-6">
+      <div className="flex flex-wrap items-center gap-5">
         {waLink ? (
           <a href={waLink} target="_blank" rel="noopener noreferrer" className="type-label-s flex items-center gap-2 text-brand hover:underline">
             <Icon name="whatsapp" />
@@ -147,10 +149,12 @@ export default async function ProductPage({ params }: Props) {
   );
 
   return (
-    <div className="flex flex-col gap-16 px-4 pt-6 pb-16 lg:gap-24 lg:px-20 lg:pt-8 lg:pb-24">
+    <div className="flex flex-col gap-16 px-4 pt-2 pb-16 lg:gap-24 lg:px-20 lg:pt-6 lg:pb-24">
       {mode === 'live' && !product.is_preview_only ? <JsonLd data={productJsonLd(product, origin, inStock, richTextPlain(product.description, 500))} /> : null}
-      <div className="flex flex-col gap-6 lg:gap-8">
-        <Breadcrumb items={[{ label: 'Home', href: '/' }, ...(primary ? [{ label: primary.name, href: `/c/${primary.slug}` }] : []), { label: product.name }]} />
+      <div className="flex flex-col gap-6">
+        <div className="hidden lg:block">
+          <Breadcrumb items={[{ label: 'Home', href: '/' }, ...(primary ? [{ label: primary.name, href: `/c/${primary.slug}` }] : []), { label: product.name }]} />
+        </div>
         <ProductView
           slug={product.slug}
           name={product.name}

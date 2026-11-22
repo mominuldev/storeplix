@@ -33,8 +33,8 @@ export function AuthShell({ pitch, topLeft, topRight, mobile, mobileFooter, show
         </div>
 
         {mobile.variant === 'hero' ? (
-          <header className="flex flex-col gap-3.5 bg-[linear-gradient(151.3deg,#5b53ff_0%,#453ddb_71.4%)] px-6 pt-5 pb-11 text-text-inverse lg:hidden">
-            <Logo tone="white" height={32} />
+          <header className="flex flex-col gap-3.5 bg-[linear-gradient(151.3deg,#5b53ff_0%,#453ddb_71.4%)] px-6 pt-5 pb-7 text-text-inverse lg:hidden">
+            <Logo tone="inverse" height={32} />
             <h1 className="text-heading-24">{mobile.title}</h1>
             <p lang="bn" className="font-bangla text-body opacity-85">
               {mobile.bangla}
@@ -59,7 +59,7 @@ export function AuthShell({ pitch, topLeft, topRight, mobile, mobileFooter, show
             className={cn(
               'flex flex-col',
               mobile.variant === 'hero' &&
-                '-mt-6 gap-4 rounded-[20px] bg-surface-card px-[22px] py-5 shadow-elevation-1 lg:mt-0 lg:gap-0 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none',
+                'gap-4 rounded-[20px] bg-surface-card px-5 py-[22px] shadow-elevation-1 lg:gap-0 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none',
             )}
           >
             {children}

@@ -15,6 +15,9 @@ import { PreviewStoreButton } from '../stores/PreviewStoreButton';
 import { storeDomain, storeKey, useTenantStore } from '../stores/useTenantStore';
 import { CURRENCIES, DIVISIONS, sectionLabel, settingsKey, settingsSchema, timezones, toFormValues, toPatch, type SettingsValues } from './schema';
 import { SettingsCard } from './SettingsLayout';
+import facebookIcon from './assets/facebook.svg';
+import instagramIcon from './assets/instagram.svg';
+import youtubeIcon from './assets/youtube.svg';
 import { useBrandUpload } from './useBrandUpload';
 
 
@@ -208,9 +211,15 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
         </SettingsCard>
 
         <SettingsCard title="Social links" description="Shown in your store footer and on order confirmation pages." className="gap-4">
-          <Input label="Facebook page" type="url" placeholder="https://facebook.com/yourpage" error={errors.social?.facebook?.message} {...register('social.facebook')} />
-          <Input label="Instagram" type="url" placeholder="https://instagram.com/yourshop" error={errors.social?.instagram?.message} {...register('social.instagram')} />
-          <Input label="YouTube" type="url" placeholder="https://youtube.com/@yourshop" error={errors.social?.youtube?.message} {...register('social.youtube')} />
+          <SocialRow icon={facebookIcon}>
+            <Input label="Facebook page" type="url" placeholder="https://facebook.com/yourpage" error={errors.social?.facebook?.message} {...register('social.facebook')} />
+          </SocialRow>
+          <SocialRow icon={instagramIcon}>
+            <Input label="Instagram" type="url" placeholder="https://instagram.com/yourshop" error={errors.social?.instagram?.message} {...register('social.instagram')} />
+          </SocialRow>
+          <SocialRow icon={youtubeIcon}>
+            <Input label="YouTube" type="url" placeholder="https://youtube.com/@yourshop" error={errors.social?.youtube?.message} {...register('social.youtube')} />
+          </SocialRow>
         </SettingsCard>
 
         <SettingsCard title="Business address" description="Used on invoices and as your default return address.">
@@ -303,5 +312,17 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
         </div>
       )}
     </form>
+  );
+}
+
+// Figma Social links 73:22338: 44 px surface-subtle tile (radius 12) with the 20 px brand mark, bottom-aligned with the field.
+function SocialRow({ icon, children }: { icon: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-end gap-3">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-surface-subtle">
+        <img src={icon} alt="" width={20} height={20} className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
   );
 }

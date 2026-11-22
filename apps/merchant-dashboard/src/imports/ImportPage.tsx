@@ -9,10 +9,9 @@ import { formatBdt, formatCount, plural } from '../catalog/format';
 import { useInvalidate } from '../catalog/queries';
 import { keys, useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage, LoadingRows, NoResults, StateCard } from '../catalog/states';
-import { FilterSelect } from '../catalog/ui';
+import { CatalogPanel as Panel, FilterSelect } from '../catalog/ui';
 import { saveFile } from '../catalog/download';
 import { api } from '../lib/api';
-import { Panel } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { columnMapErrors, fieldLabels, pollInterval, wizardStep, type ColumnMap } from './fields';
 

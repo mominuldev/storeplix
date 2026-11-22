@@ -2,7 +2,7 @@ import { isApiError } from '@storeplix/api-client';
 import type { ThemeCatalogEntry } from '@storeplix/types';
 import { Badge, Button, cn, ColorSwatch, ProgressBar, Spinner } from '@storeplix/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, Upload } from 'lucide-react';
+import { Check, ChevronLeft } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../lib/api';
@@ -85,8 +85,8 @@ export function PickThemePage() {
               <ChevronLeft aria-hidden className="size-[18px]" />
             </button>
             <span className="text-body font-semibold text-text-primary">Step 4 of 7</span>
-            <button type="button" onClick={() => navigate('/')} className="text-caption font-medium text-brand-600">
-              Skip
+            <button type="button" onClick={() => navigate('/')} className="text-body font-medium text-brand-600">
+              Save & exit
             </button>
           </div>
           <ProgressBar value={4 / 7} label="Setup progress" className="h-1 rounded-[2px]" />
@@ -99,6 +99,7 @@ export function PickThemePage() {
           </div>
           {error && <FormAlert>{error}</FormAlert>}
 
+          <div className="flex flex-col gap-5">
           {catalog.isPending ? (
             <div className="flex h-48 items-center justify-center">
               <Spinner label="Loading themes" />
@@ -122,18 +123,18 @@ export function PickThemePage() {
                       onClick={() => setPicked(t.code)}
                       className={cn(
                         'flex h-full w-full flex-col gap-3 rounded-card bg-surface-card p-2.5 text-left outline-none focus-visible:shadow-focus disabled:cursor-not-allowed',
-                        on ? 'shadow-[inset_0_0_0_2px_var(--color-brand-600)]' : 'shadow-[inset_0_0_0_1px_var(--color-border-default)]',
+                        on ? 'border-2 border-brand-600' : 'border border-border-default',
                       )}
                     >
-                      <span className={cn('block aspect-[352/236] overflow-hidden rounded-lg bg-surface-subtle', !ok && 'opacity-60')}>{thumb && <img src={thumb} alt="" className="size-full object-cover" />}</span>
-                      <span className="flex items-end justify-between gap-2 px-1 pb-1">
-                        <span className="flex min-w-0 flex-col">
-                          <span className="text-body-lg font-semibold text-text-primary">{t.name}</span>
+                      <span className={cn('block h-[150px] w-full overflow-hidden rounded-control bg-surface-subtle lg:h-[184px]', !ok && 'opacity-60')}>{thumb && <img src={thumb} alt="" className="size-full object-cover" />}</span>
+                      <span className="flex items-center justify-between gap-2 px-1">
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="text-body font-semibold text-text-primary">{t.name}</span>
                           <span className="truncate text-caption text-text-secondary">{t.description}</span>
                         </span>
                         {on ? (
-                          <span className="flex shrink-0 items-center gap-1 rounded-full bg-brand-600 px-2.5 py-1 text-caption font-medium text-text-inverse">
-                            <Check aria-hidden className="size-3.5" /> Selected
+                          <span className="flex shrink-0 items-center gap-1 rounded-full bg-brand-600 px-2 py-1 text-caption font-medium text-text-inverse">
+                            <Check aria-hidden className="size-3" /> Selected
                           </span>
                         ) : !ok ? (
                           <Badge className="shrink-0">Coming soon</Badge>
@@ -146,7 +147,7 @@ export function PickThemePage() {
             </ul>
           )}
 
-          <section aria-labelledby="make-it-yours" className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1 lg:p-6">
+          <section aria-labelledby="make-it-yours" className="flex flex-col gap-5 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1 lg:p-6">
             <div className="flex flex-col gap-1">
               <h2 id="make-it-yours" className="text-body-lg font-medium text-text-primary">
                 Make it yours
@@ -166,7 +167,7 @@ export function PickThemePage() {
                   }}
                 />
               ))}
-              <label className="flex h-10 items-center gap-2 rounded-md border border-border-default px-3">
+              <label className="flex h-[38px] items-center gap-2 rounded-md border border-border-default px-3">
                 <span className="text-caption text-text-muted">Custom</span>
                 <input
                   aria-label="Custom colour hex"
@@ -177,19 +178,19 @@ export function PickThemePage() {
                     setHex(v);
                     if (HEX.test(v.toLowerCase())) setColor(v.toLowerCase());
                   }}
-                  className="w-20 bg-transparent text-body font-medium text-text-primary uppercase outline-none"
+                  className="w-[62px] bg-transparent text-body font-medium text-text-primary uppercase outline-none"
                 />
               </label>
             </div>
-            <div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed border-border-strong bg-surface-subtle p-4">
-              <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-heading text-text-inverse" style={{ backgroundColor: color }}>
+            <div className="flex flex-wrap items-center gap-3.5 rounded-lg border border-dashed border-border-strong bg-surface-subtle p-4">
+              <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full text-heading text-text-inverse" style={{ backgroundColor: color }}>
                 {logo ? <img src={logo.url} alt="Your logo" className="size-full object-cover" /> : store.name.charAt(0).toUpperCase()}
               </span>
-              <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="text-body font-semibold text-text-primary">Upload your logo</span>
                 <span className="text-caption text-text-secondary">{logoUpload.error ?? 'No logo yet? We made this one from your shop name. PNG, JPG or WebP, square, max 2 MB.'}</span>
               </div>
-              <Button size="sm" variant="secondary" leftIcon={<Upload aria-hidden className="size-3.5" />} loading={logoUpload.progress !== null || logoUpload.processing} onClick={() => fileRef.current?.click()}>
+              <Button size="sm" variant="secondary" loading={logoUpload.progress !== null || logoUpload.processing} onClick={() => fileRef.current?.click()}>
                 {logo ? 'Replace' : 'Upload'}
               </Button>
               <input
@@ -208,11 +209,12 @@ export function PickThemePage() {
               />
             </div>
           </section>
+          </div>
 
           <div className="fixed inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-border-default bg-surface-card px-5 pt-4 pb-[max(16px,env(safe-area-inset-bottom))] lg:static lg:border-0 lg:bg-transparent lg:p-0">
-            <Button variant="ghost" className="hidden lg:inline-flex" leftIcon={<ChevronLeft aria-hidden className="size-4" />} onClick={() => navigate(-1)}>
-              Back
-            </Button>
+            <button type="button" className="hidden items-center gap-1 text-body font-medium text-text-secondary hover:text-text-primary lg:inline-flex" onClick={() => navigate(-1)}>
+              <ChevronLeft aria-hidden className="size-4" /> Back
+            </button>
             <Button className="w-full lg:w-auto" loading={submitting} disabled={!selected || !canEdit} onClick={() => void submit()}>
               {selected ? `Use ${selected.name} theme` : 'Pick a theme'}
             </Button>

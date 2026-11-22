@@ -73,7 +73,7 @@ export function RetryPayment({ retry, cod, idempotencyKey, tone = 'light' }: { r
             type="button"
             disabled={busy}
             onClick={() => run((k) => payOrder({ method: retry, idempotencyKey: k }))}
-            className={`${btn} ${tone === 'brand' ? 'bg-surface text-[#0e1a33] hover:bg-sunken' : 'bg-brand text-on-brand hover:brightness-110'}`}
+            className={`${btn} ${tone === 'brand' ? 'tone-dark bg-surface hover:bg-sunken' : 'bg-brand text-on-brand hover:brightness-110'}`}
           >
             {busy ? 'One moment…' : `Try again with ${retry === 'bkash' ? 'bKash' : 'card or mobile banking'}`}
             <Icon name="arrow-right-sm" />

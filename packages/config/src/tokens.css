@@ -48,6 +48,9 @@
   --color-info: #2563eb;
   --color-info-bg: #e3ecfd;
 
+  /* ---- Color · third-party brand (Figma Customer card 33:4099 WhatsApp button) ---- */
+  --color-whatsapp: #25d366;
+
   /* ---- Typography (Inter) — text-display, text-heading, text-body-lg, text-body, text-caption ---- */
   --text-display: 40px;
   --text-display--line-height: 48px;
@@ -77,11 +80,13 @@
   --radius-lg: 12px; /* search box, menus */
   --radius-control: 10px; /* select field, store switcher, icon buttons (Components 39:4614, 5:15) */
   --radius-card: 16px; /* cards and sheets */
+  --radius-dialog: 20px; /* Online store V3 dialogs (2046:49298) */
   --radius-full: 999px; /* pills, avatars, toggles */
 
   /* ---- Elevation ---- */
   --shadow-elevation-1: 0 1px 3px 0 #1a1f1a14, 0 4px 12px 0 #1a1f1a0f;
   --shadow-focus: 0 0 0 4px rgb(91 83 255 / 0.14); /* 4px brand/600 @ 14% */
+  --shadow-dialog: 0 24px 60px 0 rgb(0 0 0 / 0.22); /* Online store V3 dialogs (2046:49298, 2053:51939) */
 
   /* ---- Layout (Foundations · Layout specs) ---- */
   --spacing-sidebar: 256px;

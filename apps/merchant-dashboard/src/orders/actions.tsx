@@ -1,8 +1,8 @@
 import { isApiError } from '@storeplix/api-client';
 import type { CancelReason, CourierProvider, GatewayProvider, Order, RefundMethod, ReturnReason, ReturnType, ShipOrderInput } from '@storeplix/types';
-import { Button, Checkbox, Dialog, Input, MoneyInput, SegmentedControl, Select } from '@storeplix/ui';
+import { Button, Checkbox, cn, Dialog, Input, MoneyInput, SegmentedControl, Select, Toggle } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { formatBdt } from '../catalog/format';
@@ -90,33 +90,58 @@ export function CancelOrderDialog({
     <Dialog
       open={open}
       tone="danger"
-      title={`Cancel ${order.number}?`}
+      size="lg"
+      className="max-w-[560px]"
+      icon={<TriangleAlert />}
+      title={`Cancel order ${order.number}?`}
       description="The items go back to stock and any coupon use is released."
       confirmLabel="Cancel order"
       cancelLabel="Keep order"
       loading={cancel.isPending}
       confirmDisabled={!reason}
+      footerStart={<span className="text-caption text-text-muted">You can’t undo this.</span>}
       onCancel={onClose}
       onConfirm={() => cancel.mutate()}
     >
       <div className="flex flex-col gap-4">
-        <Select id="cancel-reason" label="Reason" value={reason} onChange={(e) => setReason(e.target.value as CancelReason)}>
-          <option value="">Choose a reason</option>
-          {MERCHANT_CANCEL_REASONS.map((r) => (
-            <option key={r} value={r}>
-              {cancelReasonLabels[r]}
-            </option>
-          ))}
-        </Select>
-        <Textarea id="cancel-note" label="Note (optional)" value={note} onChange={setNote} max={500} placeholder="No answer 3 times" />
-        <Checkbox label="Send SMS to customer" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
-        {onlineRefund && (
-          <Checkbox
-            label={`Refund ${formatBdt(onlineRefund.amount)} to ${onlineRefund.provider ? gatewayMeta[onlineRefund.provider].short : 'the gateway'}`}
-            checked={refundOnline}
-            onChange={(e) => setRefundOnline(e.target.checked)}
-          />
-        )}
+        <div className="flex flex-col gap-2.5">
+          <span id="cancel-reason-label" className="text-body font-medium text-text-primary">
+            Why are you cancelling?
+          </span>
+          <div role="radiogroup" aria-labelledby="cancel-reason-label" className="grid gap-2 sm:grid-cols-2">
+            {MERCHANT_CANCEL_REASONS.map((r) => {
+              const on = reason === r;
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setReason(r)}
+                  className={cn(
+                    'flex items-center gap-3 rounded-control text-left text-body font-medium text-text-primary outline-none focus-visible:shadow-focus',
+                    on ? 'border-2 border-brand-600 bg-brand-50 px-[15px] py-[11px]' : 'border border-border-default bg-surface-card px-4 py-3 hover:bg-surface-subtle',
+                  )}
+                >
+                  <span aria-hidden className={cn('size-5 shrink-0 rounded-full bg-surface-card', on ? 'border-[6px] border-brand-600' : 'border-[1.5px] border-border-strong')} />
+                  {cancelReasonLabels[r]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <Input id="cancel-note" label="Note for your team (optional)" value={note} maxLength={500} placeholder="No answer 3 times" onChange={(e) => setNote(e.target.value)} />
+        <ul className="flex flex-col divide-y divide-border-default rounded-lg border border-border-default">
+          <SwitchRow label="Send SMS to customer" hint={`“Your order ${order.number} has been cancelled.”`} checked={notify} onChange={setNotify} />
+          {onlineRefund && (
+            <SwitchRow
+              label={`Refund ${formatBdt(onlineRefund.amount)} to ${onlineRefund.provider ? gatewayMeta[onlineRefund.provider].short : 'the gateway'}`}
+              hint="Goes back through the same gateway."
+              checked={refundOnline}
+              onChange={setRefundOnline}
+            />
+          )}
+        </ul>
         {error && (
           <p role="alert" className="text-caption text-danger">
             {error}
@@ -124,6 +149,19 @@ export function CancelOrderDialog({
         )}
       </div>
     </Dialog>
+  );
+}
+
+/** Toggle row in the Cancel dialog (41:9687): Body/14 Medium label + Caption hint, switch on the right. */
+function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-body font-medium text-text-primary">{label}</span>
+        {hint && <span className="text-caption text-text-secondary">{hint}</span>}
+      </span>
+      <Toggle label={label} checked={checked} onChange={onChange} />
+    </li>
   );
 }
 

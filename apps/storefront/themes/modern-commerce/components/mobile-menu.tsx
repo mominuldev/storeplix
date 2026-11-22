@@ -4,6 +4,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { StorefrontNavItem } from '@storeplix/types';
 import { Icon } from './icon';
 
+/** Window event that opens the drawer (fired by the phone tab bar's "Categories" item). */
+export const OPEN_MENU_EVENT = 'sp:open-menu';
+
 /** Same external-link rule as NavLink (kept local: client components must stay dependency-light). */
 const external = (href: string) => /^https?:\/\//i.test(href);
 
@@ -45,6 +48,12 @@ export function MobileMenu({
     if (open && !d.open) d.showModal();
     if (!open && d.open) d.close();
   }, [open]);
+
+  useEffect(() => {
+    const openMenu = () => setOpen(true);
+    window.addEventListener(OPEN_MENU_EVENT, openMenu);
+    return () => window.removeEventListener(OPEN_MENU_EVENT, openMenu);
+  }, []);
 
   const close = () => setOpen(false);
 

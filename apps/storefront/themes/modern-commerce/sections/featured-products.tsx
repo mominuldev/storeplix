@@ -13,9 +13,10 @@ export async function FeaturedProductsSection({ id, settings: s, ctx }: SectionP
   if (products.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-8 px-4 lg:gap-10 lg:px-20">
+    <div className="flex flex-col gap-5 px-4 md:gap-8 md:px-10 lg:gap-10 lg:px-20">
       <SectionHeader id={`${id}-title`} eyebrow={s.eyebrow} title={s.title} linkLabel={s.linkLabel} linkHref={s.linkHref ?? undefined} />
-      <div className="grid grid-cols-2 gap-x-3 gap-y-8 lg:grid-cols-4 lg:gap-6">
+      {/* Phone 1:10414 2-col (24/12 gaps), tablet 1:10568 one row of 3, desktop 4 across. */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-6 md:grid-cols-3 md:gap-4 lg:grid-cols-4 lg:gap-6 md:max-lg:[&>*:nth-child(n+4)]:hidden">
         {products.map((p) => (
           <ProductCard key={p.id} product={p} />
         ))}

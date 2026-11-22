@@ -116,7 +116,7 @@ export function LoginPage() {
             className="flex flex-col gap-4 lg:gap-7"
           >
             {formError && <FormAlert>{formError}</FormAlert>}
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 lg:gap-7">
               <Input
                 label="Email"
                 type="email"
@@ -127,7 +127,7 @@ export function LoginPage() {
                 error={errors.email?.message}
                 {...register("email")}
               />
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-4 lg:gap-1.5">
                 <Input
                   label="Password"
                   type={showPassword ? "text" : "password"}

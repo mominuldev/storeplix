@@ -1,14 +1,14 @@
 import type { OrderChannel, OrderListFilters, OrderStatus, OrderSummary, PaymentStatus } from '@storeplix/types';
-import { Button, buttonVariants, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { Avatar, Button, buttonVariants, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { ChevronDown, Plus, Printer, ShoppingBag, Truck } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, Package, Phone, Printer, ShoppingBag, Truck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatBdt } from '../catalog/format';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage, LoadingRows, NoResults } from '../catalog/states';
-import { Cell2, FilterSelect, SearchBox, useDebounced } from '../catalog/ui';
-import { customerLine, daysAgoIso, nextStep, orderChannelLabels, orderTabs, timeAgo } from '../commerce/format';
+import { Cell2, FilterSelect, SearchBox, useDebounced, useIsMobile } from '../catalog/ui';
+import { customerLine, daysAgoIso, localPhone, nextStep, orderChannelLabels, orderTabs, timeAgo } from '../commerce/format';
 import { useCommerceInvalidate, useGeoIndex, useOrders } from '../commerce/queries';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
@@ -42,6 +42,7 @@ const PRINTED = [
 
 export function OrdersPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const scope = useStoreScope();
   const invalidate = useCommerceInvalidate();
   const geo = useGeoIndex();
@@ -111,11 +112,12 @@ export function OrdersPage() {
     {
       key: 'order',
       header: 'Order',
-      width: 150,
+      width: 96,
       mobileLabel: false,
       cell: (o) => (
-        <Link to={`/orders/${o.id}`} onClick={(e) => e.stopPropagation()} className="block min-w-0">
-          <Cell2 top={o.number} bottom={`${timeAgo(o.placed_at)} · ${orderChannelLabels[o.channel]}`} />
+        <Link to={`/orders/${o.id}`} onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-body font-semibold text-text-primary">{o.number}</span>
+          <span className="text-caption text-text-muted">{`${timeAgo(o.placed_at)} · ${orderChannelLabels[o.channel]}`}</span>
         </Link>
       ),
     },
@@ -124,7 +126,7 @@ export function OrdersPage() {
     {
       key: 'total',
       header: 'Total · Due',
-      width: 120,
+      width: 104,
       cell: (o) => (
         <Cell2
           top={formatBdt(o.total_amount)}
@@ -133,11 +135,11 @@ export function OrdersPage() {
         />
       ),
     },
-    { key: 'status', header: 'Status', width: 130, cell: (o) => <OrderStatusBadge status={o.status} /> },
+    { key: 'status', header: 'Status', width: 110, cell: (o) => <OrderStatusBadge status={o.status} /> },
     {
       key: 'next',
       header: 'Next step',
-      width: 140,
+      width: 120,
       align: 'end',
       mobileLabel: false,
       cell: (o) => {
@@ -165,22 +167,71 @@ export function OrdersPage() {
   const filtered = !!(debounced || payment || channel || district || printedParam || tab !== 'all');
   const counts = meta?.counts;
 
+  const listState =
+    list.isPending ? (
+      <LoadingRows label="Loading orders" />
+    ) : list.isError ? (
+      <ErrorBlock error={list.error} onRetry={() => void list.refetch()} />
+    ) : rows.length === 0 ? (
+      filtered ? (
+        <NoResults
+          title={debounced ? `No orders match “${debounced}”` : 'No orders here'}
+          description="Try another status, filter or date range."
+          onClear={() => {
+            setQ('');
+            setParams(new URLSearchParams(), { replace: true });
+          }}
+          clearLabel="Clear filters"
+        />
+      ) : (
+        <EmptyOrders />
+      )
+    ) : undefined;
+  const pagination = meta && meta.total > 0 && <Pagination page={meta.current_page} perPage={meta.per_page} total={meta.total} lastPage={meta.last_page} noun="orders" onPage={(p) => set({ page: String(p) })} />;
+
   return (
     <>
+      <div className="flex flex-col gap-4">
       <PageHeader
         title="Orders"
         subtitle="Confirm, ship and collect. Each order shows its next step."
         actions={
           <>
-            <Link to="/orders/print" className={buttonVariants({ variant: 'secondary' })}>
-              <Printer aria-hidden className="size-4" /> Invoices & labels
+            <Link to="/orders/print" className={cn(buttonVariants({ variant: 'secondary' }), 'max-md:hidden')}>
+              Invoices & labels
             </Link>
-            <Link to="/orders/new" className={buttonVariants()}>
-              <Plus aria-hidden className="size-4" /> Create order
+            <Link to="/orders/new" className={cn(buttonVariants(), 'max-md:hidden')}>
+              Create order
             </Link>
           </>
         }
       />
+      {isMobile ? (
+        <div role="tablist" aria-label="Order status" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          {orderTabs.map((t) => {
+            const active = t.value === tab;
+            const n = counts ? counts[t.value] : undefined;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => set({ status: t.value === 'all' ? null : t.value })}
+                className={cn(
+                  'flex h-10 shrink-0 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 text-body font-medium whitespace-nowrap outline-none focus-visible:shadow-focus',
+                  active ? 'bg-brand-600 text-text-inverse' : 'border border-border-default bg-surface-card text-text-primary',
+                )}
+              >
+                {t.label}
+                {n !== undefined && (
+                  <span className={cn('rounded-full px-[7px] py-px text-caption font-medium', active ? 'bg-surface-card/20 text-text-inverse' : 'bg-surface-subtle text-text-secondary')}>{n}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
       <Tabs
         aria-label="Order status"
         value={tab}
@@ -188,61 +239,74 @@ export function OrdersPage() {
         className="overflow-x-auto"
         items={orderTabs.map((t) => ({ value: t.value, label: t.label, count: counts ? counts[t.value] : undefined }))}
       />
+      )}
+      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+        <SearchBox
+          value={q}
+          onChange={(v) => {
+            setQ(v);
+            set({ q: v });
+          }}
+          placeholder="Order no, name or phone"
+          label="Search orders"
+          className="h-12 w-full rounded-lg border border-border-strong bg-surface-card md:h-9 md:w-[280px] md:rounded-md md:border-border-default md:[&>svg]:size-4"
+        />
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 md:contents">
+        <FilterSelect label="Payment" value={payment} onChange={(e) => set({ payment: e.target.value })}>
+          <option value="">Payment</option>
+          {(Object.keys(paymentStatusMeta) as PaymentStatus[]).map((p) => (
+            <option key={p} value={p}>
+              {paymentStatusMeta[p].label}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Source" value={channel} onChange={(e) => set({ channel: e.target.value })}>
+          <option value="">Source</option>
+          {(Object.keys(orderChannelLabels) as OrderChannel[]).map((c) => (
+            <option key={c} value={c}>
+              {orderChannelLabels[c]}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="District" value={district} onChange={(e) => set({ district: e.target.value })} className="max-w-44">
+          <option value="">District</option>
+          {geo.index.districts.map((d) => (
+            <option key={d.code} value={d.code}>
+              {d.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Printed" value={printedParam?.value ?? ''} onChange={(e) => set({ printed: e.target.value })}>
+          <option value="">Printed</option>
+          {PRINTED.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Date range" value={range} onChange={(e) => set({ range: e.target.value === '30' ? null : e.target.value })}>
+          {RANGES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </FilterSelect>
+        </div>
+      </div>
+      {isMobile ? (
+        <MobileOrderList
+          rows={rows}
+          state={listState}
+          footer={pagination}
+          busyId={quick.isPending ? quick.variables?.target.id : undefined}
+          onOpen={(o) => navigate(`/orders/${o.id}`)}
+          onNext={runNext}
+        />
+      ) : (
       <DataTable
         label="Orders"
-        toolbar={
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
-            <SearchBox
-              value={q}
-              onChange={(v) => {
-                setQ(v);
-                set({ q: v });
-              }}
-              placeholder="Order no, name or phone"
-              label="Search orders"
-              className="w-full sm:max-w-[270px]"
-            />
-            <FilterSelect label="Payment" value={payment} onChange={(e) => set({ payment: e.target.value })}>
-              <option value="">Payment</option>
-              {(Object.keys(paymentStatusMeta) as PaymentStatus[]).map((p) => (
-                <option key={p} value={p}>
-                  {paymentStatusMeta[p].label}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Source" value={channel} onChange={(e) => set({ channel: e.target.value })}>
-              <option value="">Source</option>
-              {(Object.keys(orderChannelLabels) as OrderChannel[]).map((c) => (
-                <option key={c} value={c}>
-                  {orderChannelLabels[c]}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="District" value={district} onChange={(e) => set({ district: e.target.value })} className="max-w-44">
-              <option value="">District</option>
-              {geo.index.districts.map((d) => (
-                <option key={d.code} value={d.code}>
-                  {d.name}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Printed" value={printedParam?.value ?? ''} onChange={(e) => set({ printed: e.target.value })}>
-              <option value="">Printed</option>
-              {PRINTED.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Date range" value={range} onChange={(e) => set({ range: e.target.value === '30' ? null : e.target.value })}>
-              {RANGES.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </FilterSelect>
-          </div>
-        }
+        columnGap={16}
+        headTone="canvas"
         columns={columns}
         rows={rows}
         getRowId={(o) => o.id}
@@ -275,29 +339,11 @@ export function OrdersPage() {
           </>
         }
         onRowClick={(o) => navigate(`/orders/${o.id}`)}
-        state={
-          list.isPending ? (
-            <LoadingRows label="Loading orders" />
-          ) : list.isError ? (
-            <ErrorBlock error={list.error} onRetry={() => void list.refetch()} />
-          ) : rows.length === 0 ? (
-            filtered ? (
-              <NoResults
-                title={debounced ? `No orders match “${debounced}”` : 'No orders here'}
-                description="Try another status, filter or date range."
-                onClear={() => {
-                  setQ('');
-                  setParams(new URLSearchParams(), { replace: true });
-                }}
-                clearLabel="Clear filters"
-              />
-            ) : (
-              <EmptyOrders />
-            )
-          ) : undefined
-        }
-        footer={meta && meta.total > 0 && <Pagination page={meta.current_page} perPage={meta.per_page} total={meta.total} lastPage={meta.last_page} noun="orders" onPage={(p) => set({ page: String(p) })} />}
+        state={listState}
+        footer={pagination}
       />
+      )}
+      </div>
       {bulkBook && (
         <BulkBookDialog
           orders={bulkBook}
@@ -307,6 +353,116 @@ export function OrdersPage() {
       )}
       {shipping && <ShipOrderDialog open order={{ id: shipping.id, number: shipping.number, customerId: shipping.customer.id }} onClose={() => setShipping(null)} />}
     </>
+  );
+}
+
+/** Mobile Orders 31:4886 — OrderCard 30:3171 grouped by day. */
+function MobileOrderList({
+  rows,
+  state,
+  footer,
+  busyId,
+  onOpen,
+  onNext,
+}: {
+  rows: OrderSummary[];
+  state: ReactNode;
+  footer: ReactNode;
+  busyId: string | undefined;
+  onOpen: (o: OrderSummary) => void;
+  onNext: (o: OrderSummary) => void;
+}) {
+  if (state) return <section aria-label="Orders" className="overflow-hidden rounded-card border border-border-default bg-surface-card shadow-elevation-1">{state}</section>;
+  const groups: { label: string; orders: OrderSummary[] }[] = [];
+  for (const o of rows) {
+    const label = dayLabel(o.placed_at);
+    const g = groups.at(-1);
+    if (g && g.label === label) g.orders.push(o);
+    else groups.push({ label, orders: [o] });
+  }
+  return (
+    <section aria-label="Orders" className="flex flex-col gap-4">
+      {groups.map((g) => (
+        <div key={g.label} className="flex flex-col gap-4">
+          <div className="flex items-center justify-between text-body text-text-secondary">
+            <span className="font-semibold">
+              {g.label} · {g.orders.length} {g.orders.length === 1 ? 'order' : 'orders'}
+            </span>
+            <span className="font-medium">Total {formatBdt(g.orders.reduce((n, o) => n + o.total_amount, 0))}</span>
+          </div>
+          {g.orders.map((o) => (
+            <OrderCard key={o.id} order={o} busy={busyId === o.id} onOpen={() => onOpen(o)} onNext={() => onNext(o)} />
+          ))}
+        </div>
+      ))}
+      {footer && <div className="overflow-hidden rounded-card border border-border-default bg-surface-card">{footer}</div>}
+    </section>
+  );
+}
+
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+/** OrderCard 30:3171: customer, number · time, total + due, phone and items, status badge, one next-step button. */
+function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; busy: boolean; onOpen: () => void; onNext: () => void }) {
+  const step = nextStep(o.status);
+  const time = new Date(o.placed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return (
+    <article
+      aria-label={o.number}
+      onClick={onOpen}
+      className="flex cursor-pointer flex-col gap-3.5 rounded-card border border-border-default bg-surface-card p-4 shadow-elevation-1"
+    >
+      <div className="flex items-center gap-3">
+        <Avatar name={o.customer.name} className="size-10 bg-brand-50 text-body font-semibold text-brand-600" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <Link to={`/orders/${o.id}`} onClick={(e) => e.stopPropagation()} className="truncate text-body-lg font-medium text-text-primary">
+            {o.customer.name}
+          </Link>
+          <span className="truncate text-caption text-text-muted">
+            {o.number} · {time}
+          </span>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <span className="text-body-lg font-semibold text-text-primary">{formatBdt(o.total_amount)}</span>
+          <span className={cn('text-caption', o.due_amount === 0 && o.payment_status === 'paid' ? 'text-success' : 'text-text-muted')}>
+            {o.due_amount > 0 ? `${formatBdt(o.due_amount)} due` : paymentStatusMeta[o.payment_status].label}
+          </span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5 rounded-lg bg-surface-subtle px-3 py-2.5 text-body text-text-secondary">
+        <span className="flex items-center gap-1.5">
+          <Phone aria-hidden className="size-4 shrink-0" /> {localPhone(o.customer.phone)}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Package aria-hidden className="size-4 shrink-0" /> {o.items_count} {o.items_count === 1 ? 'item' : 'items'}
+          {o.district ? ` · ${o.district}` : ''}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <OrderStatusBadge status={o.status} />
+        {step && (
+          <Button
+            variant={o.status === 'pending' ? 'primary' : 'secondary'}
+            className="h-11"
+            loading={busy}
+            aria-label={`${step.label} ${o.number}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNext();
+            }}
+          >
+            {step.label}
+          </Button>
+        )}
+      </div>
+    </article>
   );
 }
 

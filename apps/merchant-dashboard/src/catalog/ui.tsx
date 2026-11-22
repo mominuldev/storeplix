@@ -59,11 +59,11 @@ export function ProductStatusBadge({ status }: { status: ProductStatus }) {
   );
 }
 
-/** Toolbar search (60:11452): surface-subtle, h 38, radius md, 18px search icon. */
+/** Toolbar search (60:11452): surface-subtle, h 38, radius md, 24px icon/search (stroke 2, text-muted). */
 export function SearchBox({ value, onChange, placeholder, label, className }: { value: string; onChange: (v: string) => void; placeholder: string; label: string; className?: string }) {
   return (
     <label className={cn('flex h-[38px] min-w-0 items-center gap-2 rounded-md bg-surface-subtle px-3 focus-within:shadow-focus', className)}>
-      <Search aria-hidden className="size-[18px] shrink-0 text-text-muted" />
+      <Search aria-hidden className="size-6 shrink-0 text-text-muted" />
       <input
         type="search"
         aria-label={label}
@@ -110,3 +110,50 @@ export function Cell2({ top, bottom, topClass, bottomClass }: { top: ReactNode; 
 /** Icon button 39:9458 — 32px square, card + border-default, 16px icon. */
 export const iconButton =
   'flex size-8 shrink-0 items-center justify-center rounded-md border border-border-default bg-surface-card text-text-primary outline-none hover:bg-surface-subtle focus-visible:shadow-focus [&_svg]:size-4';
+
+/**
+ * Catalog form card (Product editor 61:13088 / right rail 62:12901, Import 60:10177): card + border-default + Elevation/1,
+ * radius 16, gap 16, padding 24 (20 with `compact`, right-rail cards). Header: Body/16 Medium title, Caption muted description
+ * (2px gap), actions on the right.
+ */
+export function CatalogPanel({
+  title,
+  description,
+  actions,
+  children,
+  className,
+  compact = false,
+}: {
+  title?: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <section className={cn('flex flex-col gap-4 rounded-card border border-border-default bg-surface-card shadow-elevation-1', compact ? 'p-5' : 'p-4 sm:p-6', className)}>
+      {(title || actions) && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {title && <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>}
+            {description && <p className="text-caption text-text-muted">{description}</p>}
+          </div>
+          {actions}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/** StatTile 3:81 (Inventory 11:812): card px 20 py 16, gap 6 — Body/14 secondary label, Heading/24 value, Caption muted hint. */
+export function StatTile({ label, value, hint, className }: { label: ReactNode; value: ReactNode; hint?: ReactNode; className?: string }) {
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-1.5 rounded-card border border-border-default bg-surface-card px-5 py-4 shadow-elevation-1', className)}>
+      <span className="truncate text-body text-text-secondary">{label}</span>
+      <span className="truncate text-heading-24 text-text-primary">{value}</span>
+      {hint && <span className="truncate text-caption text-text-muted">{hint}</span>}
+    </div>
+  );
+}

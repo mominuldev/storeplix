@@ -81,7 +81,7 @@ export function Header({ store, settings, contact, menu }: HeaderProps) {
     <header className={header.sticky ? 'sticky top-0 z-40' : undefined}>
       {announcement.enabled && announcement.text ? (
         <div className="type-label-s bg-inverse text-paper">
-          <div className="flex items-center justify-center gap-1.5 px-4 py-2 lg:justify-between lg:px-20 lg:py-2.5">
+          <div className="flex items-center justify-center gap-1.5 px-4 py-2 md:px-10 md:py-2.5 lg:justify-between lg:px-20">
             <p className="hidden items-center gap-2 lg:flex">
               {tel ? (
                 <a href={tel} className="flex items-center gap-2 hover:underline">
@@ -93,8 +93,8 @@ export function Header({ store, settings, contact, menu }: HeaderProps) {
                 <span>{contact.support_hours}</span>
               ) : null}
             </p>
-            <p className="flex items-center gap-1.5 text-center lg:gap-2">
-              <Icon name="sparkle" className="text-accent max-lg:size-3.5" />
+            <p className="flex items-center gap-1.5 text-center md:gap-2">
+              <Icon name="sparkle" className="text-accent max-md:size-3.5" />
               {announcement.href ? (
                 <NavLink href={announcement.href} className="hover:underline">
                   {announcement.text}
@@ -112,10 +112,10 @@ export function Header({ store, settings, contact, menu }: HeaderProps) {
         </div>
       ) : null}
 
-      <div className="border-b border-line-subtle bg-canvas">
-        <div className="flex flex-col gap-3 px-4 pt-3 pb-4 lg:flex-row lg:items-center lg:gap-10 lg:px-20 lg:py-5">
+      <div className="bg-canvas md:border-b md:border-line-subtle">
+        <div className="flex flex-col gap-3 px-4 pt-3 pb-4 md:gap-4 md:px-10 md:py-4 lg:flex-row lg:items-center lg:gap-10 lg:px-20 lg:py-5">
           <div className="flex items-center justify-between gap-2 lg:contents">
-            <div className="flex items-center gap-1 lg:contents">
+            <div className="flex items-center gap-1 md:gap-2 lg:contents">
               <MobileMenu
                 storeName={store.name}
                 items={menu.items}
@@ -123,10 +123,10 @@ export function Header({ store, settings, contact, menu }: HeaderProps) {
                 whatsappHref={wa}
               />
               <Link href="/" className="shrink-0" aria-label={`${store.name} home`}>
-                <span className="lg:hidden">
+                <span className="md:hidden">
                   <StoreLogo store={store} size="sm" />
                 </span>
-                <span className="hidden lg:inline">
+                <span className="hidden md:inline">
                   <StoreLogo store={store} />
                 </span>
               </Link>
@@ -141,6 +141,17 @@ export function Header({ store, settings, contact, menu }: HeaderProps) {
           ) : (
             <span className="hidden lg:block lg:flex-1" />
           )}
+
+          {menu.items.length > 0 ? (
+            /* Tablet 1:10799: top-level links in one scrolling row under the search. */
+            <nav aria-label={menu.title} className="-mx-10 hidden gap-6 overflow-x-auto px-10 md:flex lg:hidden [scrollbar-width:none]">
+              {menu.items.map((item) => (
+                <NavLink key={item.id} href={item.href} className="type-label-m shrink-0 whitespace-nowrap text-ink hover:text-brand">
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+          ) : null}
 
           <div className="hidden shrink-0 items-center gap-2 lg:flex">
             {/* Account and wishlist are deferred (PHASE-5-CONTRACT §11): hidden, never faked. */}

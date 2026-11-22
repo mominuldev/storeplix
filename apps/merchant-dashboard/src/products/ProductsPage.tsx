@@ -1,7 +1,7 @@
 import type { ProductBulkAction, ProductListFilters, ProductSort, ProductStatus, ProductSummary } from '@storeplix/types';
-import { Badge, Button, buttonVariants, Card, DataTable, Dialog, KpiTile, Menu, Pagination, Select, StockBadge, Tabs, Toggle, type DataTableColumn } from '@storeplix/ui';
+import { Badge, Button, buttonVariants, Card, cn, DataTable, Dialog, KpiTile, Menu, Pagination, Select, StockBadge, Tabs, Toggle, type DataTableColumn } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, MinusCircle, Plug, MoreHorizontal, Package, Pencil, PenLine, Plus, Upload } from 'lucide-react';
+import { AlertTriangle, Minus, Plug, MoreHorizontal, Package, PenLine, Plus, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { PageHeader } from '../layout/PageHeader';
@@ -195,7 +195,7 @@ export function ProductsPage() {
       cell: (p) => (
         <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           <Link to={`/products/${p.id}`} aria-label={`Edit ${p.name}`} className={iconButton}>
-            <Pencil aria-hidden />
+            <PenLine aria-hidden className="text-text-secondary" />
           </Link>
           <Menu
             label={`More actions for ${p.name}`}
@@ -339,11 +339,11 @@ export function ProductsPage() {
         ]}
       />
       <section aria-label="Product summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile icon={<Package />} label="Active products" value={formatCount(meta?.summary.active_products ?? 0)} hint={`on your shop · ${plural(meta?.summary.active_variants ?? 0, 'variant')}`} />
-        <KpiTile icon={<AlertTriangle />} label="Low stock" value={formatCount(meta?.summary.low_stock_variants ?? 0)} hint="variants with 5 or fewer left" />
-        <KpiTile icon={<MinusCircle />} label="Out of stock" value={formatCount(meta?.summary.out_of_stock_variants ?? 0)} hint="shown as “Sold out” to buyers" />
+        <KpiTile icon={<Package strokeWidth={3} />} label="Active products" value={formatCount(meta?.summary.active_products ?? 0)} hint={`on your shop · ${plural(meta?.summary.active_variants ?? 0, 'variant')}`} />
+        <KpiTile icon={<AlertTriangle strokeWidth={3} />} label="Low stock" value={formatCount(meta?.summary.low_stock_variants ?? 0)} hint="variants with 5 or fewer left" />
+        <KpiTile icon={<Minus strokeWidth={3} />} label="Out of stock" value={formatCount(meta?.summary.out_of_stock_variants ?? 0)} hint="shown as “Sold out” to buyers" />
         <KpiTile
-          icon={<Package />}
+          icon={<Package strokeWidth={3} />}
           label="Products on your plan"
           value={meta ? (meta.plan.limit === null ? formatCount(meta.plan.used) : `${formatCount(meta.plan.used)} of ${formatCount(meta.plan.limit)}`) : '—'}
           hint={meta?.plan.limit === null ? 'Unlimited on your plan' : <Link to="/settings/plan" className="text-brand-600 hover:text-brand-700">See plans</Link>}
@@ -515,11 +515,11 @@ function MobileProducts({
             {summary && summary.low_stock_variants > 0 ? ` · ${formatCount(summary.low_stock_variants)} running low` : ''}
           </p>
         </div>
-        <Link to="/products/new" aria-label="Add product" className={iconButton + ' size-11 rounded-full'}>
+        <Link to="/products/new" aria-label="Add product" className={cn(iconButton, 'size-11 rounded-full [&_svg]:size-[22px]')}>
           <Plus aria-hidden />
         </Link>
       </div>
-      <SearchBox value={q} onChange={onQ} placeholder="Search product name or SKU" label="Search products" className="h-12 rounded-lg border border-border-default bg-surface-card" />
+      <SearchBox value={q} onChange={onQ} placeholder="Search product name or SKU" label="Search products" className="h-12 rounded-lg border border-border-default bg-surface-card px-[15px] gap-2.5 [&>svg]:size-5" />
       <div role="tablist" aria-label="Filter products" className="-mx-4 flex gap-2 overflow-x-auto px-4">
         {chips.map((c) => (
           <button
@@ -530,27 +530,27 @@ function MobileProducts({
             onClick={() => onChip(c.value)}
             className={
               chip === c.value
-                ? 'flex shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-3.5 py-2 text-body font-medium text-text-inverse'
-                : 'flex shrink-0 items-center gap-1.5 rounded-full border border-border-default bg-surface-card px-3.5 py-2 text-body font-medium text-text-primary'
+                ? 'flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-3.5 text-body font-medium text-text-inverse'
+                : 'flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-border-default bg-surface-card px-3.5 text-body font-medium text-text-primary'
             }
           >
             {c.label}
-            {c.count !== undefined && <span className={chip === c.value ? 'rounded-full bg-text-inverse/20 px-1.5 text-caption' : 'rounded-full bg-surface-subtle px-1.5 text-caption text-text-secondary'}>{c.count}</span>}
+            {c.count !== undefined && <span className={chip === c.value ? 'rounded-full bg-text-inverse/20 px-[7px] py-px text-caption' : 'rounded-full bg-surface-subtle px-[7px] py-px text-caption text-text-secondary'}>{c.count}</span>}
           </button>
         ))}
       </div>
       {state ? (
         <StateCard>{state}</StateCard>
       ) : (
-        <ul aria-label="Products" className="flex flex-col gap-2.5">
+        <ul aria-label="Products" className="flex flex-col gap-4">
           {rows.map((p) => {
             const s = stockLine(p);
             const status = stockStatusOf(p);
             return (
-              <li key={p.id} className="flex items-center gap-3 rounded-card border border-border-default bg-surface-card p-2.5 shadow-elevation-1">
+              <li key={p.id} className="flex h-24 items-center gap-3 rounded-card border border-border-default bg-surface-card p-3 shadow-elevation-1">
                 <Link to={`/products/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                  <Thumb src={p.image?.url} size={64} />
-                  <span className="flex min-w-0 flex-col gap-0.5">
+                  <Thumb src={p.image?.url} size={72} className="rounded-lg" />
+                  <span className="flex min-w-0 flex-col gap-1">
                     <span className="truncate text-body font-semibold text-text-primary">{p.name}</span>
                     <span className="truncate text-caption text-text-secondary">
                       {plural(p.variants_count, 'variant')} · {p.stock.tracked ? s.top : 'Not tracked'}

@@ -9,13 +9,13 @@ export function DeliveryBox({ commerce, currency }: { commerce: StorefrontCommer
   const cod = commerce.payment_methods.includes('cod');
   if (commerce.delivery.length === 0 && !cod) return null;
   return (
-    <div className="flex flex-col gap-4 rounded-sf-sm bg-sunken p-5" data-sp-delivery-box>
+    <div className="flex flex-col gap-3.5 rounded-sf-md bg-sunken p-4 lg:gap-4 lg:p-5" data-sp-delivery-box>
       {commerce.delivery.length > 0 ? (
-        <div className="flex gap-3">
-          <Icon name="truck-sm" className="mt-0.5 text-brand" />
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className="type-label-m text-ink">Delivery</p>
-            <ul className="type-body-s flex flex-col gap-0.5 text-ink-secondary">
+        <div className="flex gap-3 lg:gap-3.5">
+          <Icon name="truck-sm" size={22} className="text-brand" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p className="type-label-s text-ink lg:type-label-m">Delivery</p>
+            <ul className="type-body-s flex flex-col gap-0.5 text-ink-muted">
               {commerce.delivery.map((z) => (
                 <li key={z.name}>
                   {z.name} {z.charge_amount === 0 ? 'Free' : formatMoney(z.charge_amount, currency)} · {deliveryDays(z.min_days, z.max_days)}
@@ -27,11 +27,11 @@ export function DeliveryBox({ commerce, currency }: { commerce: StorefrontCommer
         </div>
       ) : null}
       {cod ? (
-        <div className="flex gap-3">
-          <Icon name="wallet" className="mt-0.5 text-brand" />
+        <div className="flex gap-3 lg:gap-3.5">
+          <Icon name="wallet" size={22} className="text-brand" />
           <div className="flex flex-col gap-0.5">
-            <p className="type-label-m text-ink">Cash on delivery available</p>
-            <p className="type-body-s text-ink-secondary">Pay in cash when the parcel arrives</p>
+            <p className="type-label-s text-ink lg:type-label-m">Cash on delivery available</p>
+            <p className="type-body-s text-ink-muted">Pay in cash when the parcel arrives</p>
           </div>
         </div>
       ) : null}

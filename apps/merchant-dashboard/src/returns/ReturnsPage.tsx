@@ -129,45 +129,43 @@ export function ReturnsPage() {
         className="overflow-x-auto"
         items={returnTabs.map((t) => ({ value: t.value, label: t.label, count: meta ? meta.counts[t.value] : undefined }))}
       />
-      <div className={returnId ? 'grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start' : undefined}>
+      <div className={returnId ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start' : undefined}>
         {returnId && (
           <div className="lg:order-2">
             <ReturnPanel id={returnId} onClose={() => navigate(`/returns${search}`)} />
           </div>
         )}
+        <div className="flex min-w-0 flex-col gap-4 lg:order-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchBox
+              value={q}
+              onChange={(v) => {
+                setQ(v);
+                set({ q: v });
+              }}
+              placeholder="Return id, order or phone"
+              label="Search returns"
+              className="h-[38px] w-full border border-border-default bg-surface-card sm:max-w-[260px] [&>svg]:size-4"
+            />
+            <FilterSelect label="Reason" value={reason} onChange={(e) => set({ reason: e.target.value })}>
+              <option value="">Any reason</option>
+              {(Object.keys(returnReasonLabels) as ReturnReason[]).map((r) => (
+                <option key={r} value={r}>
+                  {returnReasonLabels[r]}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Courier" value={courier} onChange={(e) => set({ courier: e.target.value })}>
+              <option value="">Any courier</option>
+              {(Object.keys(courierLabels) as (CourierProvider | 'manual')[]).map((c) => (
+                <option key={c} value={c}>
+                  {courierLabels[c]}
+                </option>
+              ))}
+            </FilterSelect>
+          </div>
         <DataTable
           label="Returns"
-          className="lg:order-1"
-          toolbar={
-            <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
-              <SearchBox
-                value={q}
-                onChange={(v) => {
-                  setQ(v);
-                  set({ q: v });
-                }}
-                placeholder="Return id, order or phone"
-                label="Search returns"
-                className="w-full sm:max-w-[260px]"
-              />
-              <FilterSelect label="Reason" value={reason} onChange={(e) => set({ reason: e.target.value })}>
-                <option value="">Any reason</option>
-                {(Object.keys(returnReasonLabels) as ReturnReason[]).map((r) => (
-                  <option key={r} value={r}>
-                    {returnReasonLabels[r]}
-                  </option>
-                ))}
-              </FilterSelect>
-              <FilterSelect label="Courier" value={courier} onChange={(e) => set({ courier: e.target.value })}>
-                <option value="">Any courier</option>
-                {(Object.keys(courierLabels) as (CourierProvider | 'manual')[]).map((c) => (
-                  <option key={c} value={c}>
-                    {courierLabels[c]}
-                  </option>
-                ))}
-              </FilterSelect>
-            </div>
-          }
           columns={columns}
           rows={rows}
           getRowId={(r) => r.id}
@@ -199,6 +197,7 @@ export function ReturnsPage() {
           }
           footer={meta && meta.total > 0 && <Pagination page={meta.current_page} perPage={meta.per_page} total={meta.total} lastPage={meta.last_page} noun="returns" onPage={(p) => set({ page: String(p) })} />}
         />
+        </div>
       </div>
     </>
   );

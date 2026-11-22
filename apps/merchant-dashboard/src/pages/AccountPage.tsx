@@ -25,10 +25,10 @@ const profileSchema = z.object({
 });
 type ProfileValues = z.infer<typeof profileSchema>;
 
-function Card({ title, description, children, className }: { title: string; description?: string; children: React.ReactNode; className?: string }) {
+function Card({ title, description, children, className, hideTitle = false }: { title: string; description?: string; children: React.ReactNode; className?: string; hideTitle?: boolean }) {
   return (
-    <section aria-label={title} className={cn('flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-6 shadow-elevation-1', className)}>
-      <div className="flex flex-col gap-1">
+    <section aria-label={title} className={cn('flex flex-col gap-3 rounded-card border border-border-default bg-surface-card p-6 shadow-elevation-1', className)}>
+      <div className={cn('flex flex-col gap-1', hideTitle && 'sr-only')}>
         <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
         {description && <p className="text-body text-text-secondary">{description}</p>}
       </div>
@@ -108,7 +108,8 @@ export function AccountPage() {
       />
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <Card title="Profile">
+          {/* Figma 148:33851: no visible card title — the profile head opens the card. */}
+          <Card title="Profile" hideTitle>
             <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
               <div className="flex items-center gap-4">
                 <Avatar name={user?.name} size="lg" />
@@ -143,18 +144,18 @@ export function AccountPage() {
                   {...register('phone')}
                 />
                 <Input label="Email" type="email" autoComplete="email" error={errors.email?.message} {...register('email')} />
-                {emailChanged ? (
+                {/* Figma field order: Email · Language / Number style · Time zone. */}
+                {emailChanged && (
                   <Input label="Current password" type="password" autoComplete="current-password" hint="Needed to change your email" error={errors.current_password?.message} {...register('current_password')} />
-                ) : (
-                  <Select label="Time zone" disabled hint="Coming soon">
-                    <option>Asia/Dhaka (GMT+6)</option>
-                  </Select>
                 )}
                 <Select label="Language" disabled hint="Coming soon">
                   <option>English</option>
                 </Select>
                 <Select label="Number style" disabled hint="Coming soon">
                   <option>English digits (1, 2, 3)</option>
+                </Select>
+                <Select label="Time zone" disabled hint="Coming soon">
+                  <option>Asia/Dhaka (GMT+6)</option>
                 </Select>
               </div>
               <div className="flex justify-end">

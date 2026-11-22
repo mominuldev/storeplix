@@ -42,7 +42,7 @@ export function SettingsLayout() {
         <nav aria-label="Settings" className="shrink-0 rounded-card border border-border-default bg-surface-card p-3 shadow-elevation-1 lg:w-60">
           {settingsNav.map((g, gi) => (
             <div key={g.heading} className="flex flex-col gap-0.5">
-              <h2 className={cn('px-3 pb-1.5 text-caption font-medium tracking-wide text-text-muted uppercase', gi === 0 ? 'pt-1' : 'pt-4')}>{g.heading}</h2>
+              <h2 className={cn('px-3 pb-1.5 text-caption font-medium text-text-muted uppercase', gi === 0 ? 'pt-1' : 'pt-4')}>{g.heading}</h2>
               {g.items.map(({ label, to, icon: Icon, external }) => (
                 <NavLink
                   key={to}
@@ -70,15 +70,50 @@ export function SettingsLayout() {
   );
 }
 
-export function SettingsCard({ title, description, children, className }: { title: string; description?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function SettingsCard({
+  title,
+  badge,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  /** Tag next to the title (Figma "Title row", gap 8). */
+  badge?: React.ReactNode;
+  description?: React.ReactNode;
+  /** Right-aligned header action (Figma "Card header": title column + sm secondary button, gap 12). */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <section className={cn('flex flex-col gap-5 rounded-card border border-border-default bg-surface-card p-6 shadow-elevation-1', className)} aria-label={title}>
-      <div className="flex flex-col gap-1">
-        <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
-        {description && <p className="text-body text-text-secondary">{description}</p>}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
+            {badge}
+          </div>
+          {description && <p className="text-body text-text-secondary">{description}</p>}
+        </div>
+        {action && <div className="shrink-0 self-start sm:self-auto">{action}</div>}
       </div>
       {children}
     </section>
+  );
+}
+
+/** Figma "Settings / Toggle row": 14/20 medium title + 14/20 secondary description, toggle on the right, gap 16. */
+export function SettingsToggleRow({ title, description, children }: { title: React.ReactNode; description?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-body font-medium text-text-primary">{title}</span>
+        {description && <span className="text-body text-text-secondary">{description}</span>}
+      </div>
+      {children}
+    </div>
   );
 }
 

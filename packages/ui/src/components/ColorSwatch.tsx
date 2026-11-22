@@ -2,8 +2,8 @@ import { Check } from 'lucide-react';
 import type { ButtonHTMLAttributes } from 'react';
 import { cn } from '../lib/cn';
 
-// Figma Onboarding 04 "Make it yours" 48:8119 / V3 Design tab colours 2050:49660 — round swatch,
-// selected = 2px brand-600 ring with a 3px card gap and a white check. `color` is data (merchant/theme value),
+// Figma Onboarding 04 "Make it yours" 48:8119 (lg) / V3 Design tab colours 2050:49660 (sm, md) — round swatch;
+// sm/md selected = 2px brand-600 ring with a 3px card gap and a white check. `color` is data (merchant/theme value),
 // applied as an inline style; only `#rrggbb` reaches the DOM.
 export interface ColorSwatchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'color'> {
   color: string;
@@ -31,6 +31,37 @@ export function contrastRatio(a: string, b: string): number {
 export function ColorSwatch({ color, label, selected = false, size = 'lg', className, ...props }: ColorSwatchProps) {
   const safe = HEX.test(color) ? color : '#ffffff';
   const darkCheck = luminance(safe) > 0.6;
+  // Very light colours get a hairline so they don't vanish on the card (not drawn in Figma; derived).
+  const hairline = luminance(safe) > 0.85;
+  const check = selected && <Check aria-hidden strokeWidth={3} className={cn('size-4', darkCheck ? 'text-text-primary' : 'text-text-inverse')} />;
+
+  if (size === 'lg') {
+    // Figma Swatches 48:8283 — 40px box; unselected = 36px disc inset 2px; selected = 2px brand-600 ring
+    // around a 30px disc with a 16px check.
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={selected}
+        title={label}
+        className={cn(
+          'relative inline-flex size-10 shrink-0 items-center justify-center rounded-full outline-none transition-shadow focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50',
+          selected && 'border-2 border-brand-600',
+          className,
+        )}
+        {...props}
+      >
+        <span
+          aria-hidden
+          className={cn('flex items-center justify-center rounded-full', selected ? 'size-[30px]' : 'size-9', hairline && 'border border-border-default')}
+          style={{ backgroundColor: safe }}
+        >
+          {check}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -46,7 +77,7 @@ export function ColorSwatch({ color, label, selected = false, size = 'lg', class
       style={{ backgroundColor: safe }}
       {...props}
     >
-      {selected && <Check aria-hidden strokeWidth={3} className={cn('size-4', darkCheck ? 'text-text-primary' : 'text-text-inverse')} />}
+      {check}
     </button>
   );
 }

@@ -17,6 +17,9 @@ export interface DialogProps {
   /** Submit this form id instead of calling onConfirm directly (Enter submits; onConfirm is not called). */
   formId?: string;
   size?: ModalProps['size'];
+  icon?: ModalProps['icon'];
+  iconClassName?: ModalProps['iconClassName'];
+  className?: string;
   footerStart?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -34,6 +37,9 @@ export function Dialog({
   confirmDisabled = false,
   formId,
   size = 'sm',
+  icon,
+  iconClassName,
+  className,
   footerStart,
   onConfirm,
   onCancel,
@@ -45,6 +51,9 @@ export function Dialog({
       title={title}
       description={description}
       size={size}
+      icon={icon}
+      iconClassName={iconClassName}
+      className={className}
       footerStart={footerStart}
       footer={
         <>

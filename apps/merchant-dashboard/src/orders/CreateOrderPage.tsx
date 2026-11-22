@@ -2,7 +2,7 @@ import { isApiError } from '@storeplix/api-client';
 import type { AddressInput, ManualOrderInput, MediaRef, OrderChannel, OrderQuote, Product, ProductSummary } from '@storeplix/types';
 import { Button, Checkbox, Chip, cn, Input, MoneyInput, Select } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Minus, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatBdt, formatCount } from '../catalog/format';
@@ -130,14 +130,15 @@ export function CreateOrderPage() {
 
   return (
     <>
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-body font-medium text-text-secondary">
+        <Link to="/orders" className="text-brand-600 hover:text-brand-700">
+          Orders
+        </Link>
+        <ChevronRight aria-hidden className="size-3.5 text-text-muted" />
+        <span>Create order</span>
+      </nav>
       <div className="flex flex-col gap-1.5">
-        <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
-          <Link to="/orders" className="text-brand-600">
-            Orders
-          </Link>{' '}
-          › Create order
-        </nav>
-        <h1 className="text-heading-24 text-text-primary">Create order</h1>
+        <h1 className="text-heading-32 text-text-primary">Create order</h1>
         <p className="text-body text-text-secondary">Take an order from a chat, call or walk-in. Start with the phone number.</p>
       </div>
       {formError && <FormAlert>{formError}</FormAlert>}
@@ -194,7 +195,7 @@ export function CreateOrderPage() {
               placeholder="Please call before delivery"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="rounded-md border border-border-default px-3 py-2 text-body outline-none focus:border-brand-600"
+              className="rounded-md border border-border-default px-3 py-2.5 text-body outline-none placeholder:text-text-muted focus:border-brand-600"
             />
           </Card>
         </div>
@@ -242,12 +243,12 @@ export function CreateOrderPage() {
               </p>
             </dl>
           </Card>
-          <Card title="Payment">
-            <label className="flex items-center gap-3 rounded-lg border border-brand-600 bg-brand-50 p-3">
+          <Card title="How will the buyer pay?" label="Payment">
+            <label className="flex items-center gap-3 rounded-lg border-2 border-brand-600 bg-brand-50 px-3.5 py-3">
               <input type="radio" checked readOnly className="accent-brand-600" />
-              <span className="flex flex-col">
-                <span className="text-body font-semibold text-text-primary">Cash on delivery</span>
-                <span className="text-caption text-text-muted">The buyer pays at the door</span>
+              <span className="flex flex-col gap-0.5">
+                <span className="text-body font-medium text-text-primary">Cash on delivery</span>
+                <span className="text-caption text-text-secondary">The buyer pays at the door</span>
               </span>
             </label>
             <p className="text-caption text-text-muted">Advance and payment links are coming soon.</p>

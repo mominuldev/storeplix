@@ -1,6 +1,6 @@
 import type { InventoryItem, InventoryListFilters, StockMovement, StockMovementReason } from '@storeplix/types';
-import { Button, cn, DataTable, Dialog, KpiTile, Pagination, StockBadge, Tabs, type DataTableColumn } from '@storeplix/ui';
-import { AlertTriangle, ArrowRight, Boxes, Clock, Minus, Plus, RefreshCw, Upload, Wallet } from 'lucide-react';
+import { Button, cn, DataTable, Dialog, Pagination, StockBadge, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { AlertTriangle, ArrowRight, Minus, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { PageHeader } from '../layout/PageHeader';
@@ -8,7 +8,7 @@ import { dateTime, formatBdt, formatCount, plural, shortDate } from '../catalog/
 import { useCategories, useInventory, useMovements } from '../catalog/queries';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, LoadingRows, NoResults, StateCard } from '../catalog/states';
-import { Cell2, FilterSelect, SearchBox, Thumb, useDebounced } from '../catalog/ui';
+import { Cell2, FilterSelect, SearchBox, StatTile, Thumb, useDebounced } from '../catalog/ui';
 import { AdjustDialog, reasonLabels } from './AdjustDialog';
 
 // Figma Inventory 11:589 (Main 11:743). Contract §9.1: tabs Stock levels + Stock movements only; Transfer stock,
@@ -171,21 +171,21 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
     <>
       <section aria-label="Stock summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {canViewCosts ? (
-          <KpiTile icon={<Wallet />} label="Stock value (cost)" value={formatBdt(summary?.stock_value_cost_amount ?? null)} hint={`Selling value ${formatBdt(summary?.stock_value_price_amount ?? 0)}`} />
+          <StatTile label="Stock value (cost)" value={formatBdt(summary?.stock_value_cost_amount ?? null)} hint={`Selling value ${formatBdt(summary?.stock_value_price_amount ?? 0)}`} />
         ) : (
-          <KpiTile icon={<Wallet />} label="Selling value" value={formatBdt(summary?.stock_value_price_amount ?? null)} hint="At current prices" />
+          <StatTile label="Selling value" value={formatBdt(summary?.stock_value_price_amount ?? null)} hint="At current prices" />
         )}
-        <KpiTile icon={<Boxes />} label="Units on hand" value={formatCount(summary?.units_on_hand ?? 0)} hint={`${plural(summary?.products_count ?? 0, 'product')} · ${plural(summary?.variants_count ?? 0, 'variant')}`} />
-        <KpiTile icon={<Clock />} label="Held for orders" value={formatCount(summary?.committed_units ?? 0)} hint="Starts with orders" />
-        <KpiTile icon={<AlertTriangle />} label="Low or out of stock" value={`${formatCount(summary?.low_stock_variants ?? 0)} · ${formatCount(summary?.out_of_stock_variants ?? 0)}`} hint="low · out" />
+        <StatTile label="Units on hand" value={formatCount(summary?.units_on_hand ?? 0)} hint={`${plural(summary?.products_count ?? 0, 'product')} · ${plural(summary?.variants_count ?? 0, 'variant')}`} />
+        <StatTile label="Held for orders" value={formatCount(summary?.committed_units ?? 0)} hint="Starts with orders" />
+        <StatTile label="Low or out of stock" value={`${formatCount(summary?.low_stock_variants ?? 0)} · ${formatCount(summary?.out_of_stock_variants ?? 0)}`} hint="low · out" />
       </section>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         <DataTable
           className="min-w-0"
           label="Stock levels"
           toolbar={
             <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
-              <SearchBox value={q} onChange={(v) => { setQ(v); set({ q: v }); }} placeholder="Product, SKU or barcode" label="Search stock" className="min-w-[200px] flex-1" />
+              <SearchBox value={q} onChange={(v) => { setQ(v); set({ q: v }); }} placeholder="Product, SKU or barcode" label="Search stock" className="h-9 w-full sm:w-[230px] [&>svg]:size-4" />
               <FilterSelect label="Stock status" value={stock.join(',')} onChange={(e) => set({ stock: e.target.value })}>
                 <option value="">All stock</option>
                 <option value="low,out">Low or out</option>
@@ -225,11 +225,11 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
           ) : (latest.data?.data.length ?? 0) === 0 ? (
             <p className="text-body text-text-muted">No stock changes yet.</p>
           ) : (
-            <ul className="flex flex-col gap-3.5">
+            <ul className="flex flex-col gap-1">
               {latest.data!.data.map((m) => (
-                <li key={m.id} className="flex items-center gap-3">
+                <li key={m.id} className="flex items-center gap-3 py-[9px]">
                   <MovementIcon m={m} />
-                  <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 flex-1 flex-col gap-px">
                     <span className="truncate text-body font-medium text-text-primary">
                       {movementReasonLabel[m.reason]} · {m.product.name}
                     </span>

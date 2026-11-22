@@ -72,8 +72,8 @@ describe('Order detail', () => {
     expect(screen.getByText('Due on delivery ৳ 1,770')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel order' }));
     const dialog = await screen.findByRole('dialog');
-    await userEvent.selectOptions(within(dialog).getByLabelText('Reason'), 'unreachable');
-    await userEvent.type(within(dialog).getByLabelText('Note (optional)'), 'No answer 3 times');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Couldn’t reach the customer' }));
+    await userEvent.type(within(dialog).getByLabelText('Note for your team (optional)'), 'No answer 3 times');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel order' }));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/orders/O1/cancel')).toHaveLength(1));
     expect(bodyOf(callsTo(fetchMock, '/stores/S1/orders/O1/cancel')[0]!)).toEqual({ reason: 'unreachable', note: 'No answer 3 times', notify_customer: true });
@@ -222,7 +222,7 @@ describe('Coupons', () => {
     const table = await screen.findByRole('table', { name: 'Coupons' }, SLOW);
     expect(await within(table).findByText('WINTER15')).toBeInTheDocument();
     expect(within(table).getByText('15% off · up to ৳ 300')).toBeInTheDocument();
-    expect(within(table).getByText('12 / 300')).toBeInTheDocument();
+    expect(within(table).getByText('12 / 300 used')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Create coupon/ })).toBeNull();
   });
 
@@ -312,7 +312,7 @@ describe('Onboarding 06 → 07 → publish → 08', () => {
     ]);
     expect(put.free_delivery_over_amount).toBeNull();
 
-    expect(await screen.findByRole('heading', { name: 'Get paid' }, SLOW)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'How you’ll get paid' }, SLOW)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
     const blockers = await screen.findByRole('alert', { name: 'Before you go live' });
     expect(within(blockers).getByRole('link', { name: /Add a phone number customers can call/ })).toHaveAttribute('href', '/settings/store');
