@@ -21,7 +21,7 @@
   agents' activity). The 7 test orders made by the SF and WEB agents before this review are still there; §6.2
   proposes their cleanup (not run).
 
-**Verdict: NO-SHIP, until the Postgres race job has run green.** That is a gate, not a defect: no Critical or High
+**Verdict (superseded by the ship gate below: PASS): NO-SHIP, until the Postgres race job has run green.** That is a gate, not a defect: no Critical or High
 findings, 3 Medium, 7 Low.
 
 - Every §10 control I attacked held on the live stack: tampering, idempotency, cross-store carts, foreign ids, key
@@ -174,6 +174,25 @@ Re-run: typecheck 0 errors; lint 0 errors / 37 warnings; vitest 800 (dashboard 2
 api-client 74, ui 39, super-admin 6, config 1); Pest 384 (376 passed, 8 skipped: Postgres only); pint clean.
 New gap to log for 5b: the `storefront` throttle is 1 200/min per store host. The planned per-shopper-IP limit was never
 built, so one client can use up a store's budget.
+
+### Ship gate: CI on Postgres (2026-11-22): **PASS → ship**
+
+Run https://github.com/mominuldev/storeplix/actions/runs/44996870079 (`fb1ac91`). All jobs are green: web,
+api sqlite, themes, api postgres (migrate + seed, rollback, tenancy, security) and api perf.
+- **Race tests on Postgres, all pass.** No oversell (20 parallel checkouts on stock 5), mixed carts don't
+  deadlock, the coupon usage limit holds, the same Idempotency-Key gives one order, and the plan-limit race and
+  Phase 4 parallel adjustments hold. Criterion §15.2 passes.
+- **Checkout p95:** 40.3 ms (p50 34.7 ms) for a 10-line cart with a coupon, against the 300 ms budget.
+- **Earlier runs were green without testing anything.** The `changes` path filter skipped every API job, so the
+  Postgres jobs ran for real for the first time here. That exposed and fixed:
+  - test secrets overridden by CI's sentinel env (`phpunit.xml` now forces them; latent since Phase 3);
+  - `ShippingService::createPickup` using FOR UPDATE with `count()`, a **production bug on Postgres** (it now
+    locks the store row);
+  - the inventory-reason migration's `down()` failing with order data (it now maps the reasons);
+  - the security step's Redis cache leaking rate limits across tests (that step now uses an array cache);
+  - the Phase 4 price-CHECK test probing an empty table;
+  - the `raceCleanup()` guard missing the `_perf` database.
+- **Not run:** the e2e workflow (manual dispatch only). The Playwright suite was run locally (§1).
 
 ## 5. Not verified live, and why
 
