@@ -249,6 +249,9 @@ jobs:
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
+          # Per-test in-memory cache, as locally: the job's Redis cache is never reset between tests, so
+          # rate-limit counters piled up and later tests got 429. The race tests (shared Redis) run in api-perf.
+          CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
   # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
