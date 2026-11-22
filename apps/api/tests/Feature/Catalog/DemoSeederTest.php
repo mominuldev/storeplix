@@ -26,8 +26,12 @@ class DemoSeederTest extends TestCase
     public function test_demo_catalog_is_seeded_idempotently(): void
     {
         Storage::fake('public');
-        $this->seed(DatabaseSeeder::class);
-        $this->seed(DatabaseSeeder::class);
+        // Seeders run as the schema owner (`db:seed --database=pgsql_owner`), never as the RLS app role.
+        foreach ([1, 2] as $run) {
+            $this->rlsActive()
+                ? $this->artisan('db:seed', ['--class' => DatabaseSeeder::class, '--database' => (string) config('tenancy.owner_connection'), '--force' => true])->assertSuccessful()
+                : $this->seed(DatabaseSeeder::class);
+        }
 
         $this->assertSame(3, Category::withoutTenancy()->count());
         $this->assertSame(8, Product::withoutTenancy()->where('status', 'active')->count());

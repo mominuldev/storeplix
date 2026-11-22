@@ -142,7 +142,7 @@ class CourierAccountsTest extends TestCase
         $this->assertTrue($account->webhookSecretMatches($secret));
         $this->assertArrayNotHasKey('credentials', $account->toArray());
         $this->assertArrayNotHasKey('webhook_secret_encrypted', $account->toArray());
-        $audit = $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.connected')->firstOrFail());
+        $audit = $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.connected')->firstOrFail());
         $this->assertSame(['kind' => 'courier', 'provider' => 'steadfast', 'mode' => 'live', 'replaced' => false], $audit->meta);
 
         // Reconnect (new credentials): the secret stays, nothing is shown again; the list never shows secrets.
@@ -231,7 +231,7 @@ class CourierAccountsTest extends TestCase
         $this->api($h, 'PATCH', $this->url($store, '/pathao'), ['revision' => 1, 'settings' => ['default_weight_grams' => 900]])
             ->assertStatus(409)->assertJsonPath('error.code', 'revision_conflict');
         $this->api($h, 'PATCH', $this->url($store, '/redx'), ['revision' => 1])->assertNotFound();
-        $audit = $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.updated')->latest('id')->firstOrFail());
+        $audit = $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.updated')->latest('id')->firstOrFail());
         $this->assertSame('pathao', $audit->meta['provider']);
         $this->assertContains('is_default', $audit->meta['changed']);
 
@@ -301,7 +301,7 @@ class CourierAccountsTest extends TestCase
         $this->assertSame([], $fresh->credentials);
         $this->assertNull($fresh->webhook_secret_hash);
         $this->api($h, 'DELETE', $this->url($store, '/steadfast'))->assertNotFound();
-        $this->assertSame(1, $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.disconnected')->count()));
+        $this->assertSame(1, $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.disconnected')->count()));
     }
 
     public function test_areas_are_cached_and_suggested_and_pickup_stores_listed(): void

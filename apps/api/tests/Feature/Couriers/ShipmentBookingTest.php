@@ -152,7 +152,7 @@ class ShipmentBookingTest extends TestCase
         $this->inTenant($tenant, function () use ($id) {
             $s = Shipment::query()->where('order_id', $id)->firstOrFail();
             $this->assertTrue($s->cod_overridden);
-            $log = AuditLog::query()->where('action', 'shipment.cod_overridden')->firstOrFail();
+            $log = $this->platformQuery(AuditLog::class)->where('action', 'shipment.cod_overridden')->firstOrFail();
             $this->assertSame($s->id, $log->subject_id);
         });
         // Staff books with the default COD (= due).

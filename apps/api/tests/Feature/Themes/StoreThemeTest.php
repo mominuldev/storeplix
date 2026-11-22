@@ -113,10 +113,10 @@ class StoreThemeTest extends TestCase
             ->assertJsonPath('data.has_unpublished_changes', false);
         Queue::assertNotPushed(RevalidateStorefront::class);
 
-        $actions = AuditLog::query()->where('subject_type', 'store_theme')->pluck('action')->all();
+        $actions = $this->platformQuery(AuditLog::class)->where('subject_type', 'store_theme')->pluck('action')->all();
         $this->assertContains('theme.published', $actions);
         $this->assertContains('theme.discarded', $actions);
-        $this->assertSame(['code' => 'modern-commerce', 'revision' => 2], AuditLog::query()->where('action', 'theme.published')->first()->meta);
+        $this->assertSame(['code' => 'modern-commerce', 'revision' => 2], $this->platformQuery(AuditLog::class)->where('action', 'theme.published')->first()->meta);
     }
 
     public function test_discard_without_published_copy_and_publish_of_inactive_theme_are_409(): void
@@ -156,7 +156,7 @@ class StoreThemeTest extends TestCase
             ->assertJsonPath('data.code', 'modern-commerce');
         $this->assertNotNull(StoreTheme::withoutTenancy()->where('store_id', $store->id)->value('applied_at'));
         Queue::assertPushed(RevalidateStorefront::class);
-        $this->assertTrue(AuditLog::query()->where('action', 'theme.applied')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'theme.applied')->exists());
     }
 
     public function test_apply_of_a_new_theme_carries_brand_settings_over(): void

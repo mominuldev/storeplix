@@ -20,7 +20,17 @@ export const GEO = {
 };
 
 export const randomPhone = () => `017${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-export const randomIp = () => `198.51.100.${1 + Math.floor(Math.random() * 250)}`;
+/**
+ * A fresh shopper IP per call (OPEN-QUESTIONS Q66). The old pick of 1 in 250 random addresses collided inside one
+ * minute often enough to trip the per-IP checkout limiter (10/min) in unrelated specs. Now: benchmark range
+ * 198.18.0.0/15 (131 072 addresses), a random start per process, then sequential, so a run never reuses an address
+ * and parallel runs almost never meet.
+ */
+let ipCursor = Math.floor(Math.random() * 131_072);
+export const randomIp = () => {
+  const n = ipCursor++ % 131_072;
+  return `198.${18 + (n >> 16)}.${(n >> 8) & 255}.${n & 255}`;
+};
 
 export interface SfOptions {
   json?: unknown;

@@ -11,7 +11,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Tests\Support\CommerceFixtures;
 use Tests\TestCase;
 
@@ -51,7 +50,7 @@ class GoLiveDashboardTest extends TestCase
         Carbon::setTestNow('2026-11-22 08:00:00');
         $this->api($h, 'POST', "/api/v1/stores/{$store->id}/publish")->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.id', $store->id);
         Bus::assertDispatched(RevalidateStorefront::class);
-        $this->assertTrue(DB::table('audit_logs')->where('action', 'store.published')->exists());
+        $this->assertTrue($this->platformTable('audit_logs')->where('action', 'store.published')->exists());
         $this->api($h, 'GET', "/api/v1/stores/{$store->id}/launch-checklist")->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.published_at', '2026-11-22T08:00:00Z')->assertJsonPath('data.can_publish', true);
         Carbon::setTestNow('2026-11-23 08:00:00');

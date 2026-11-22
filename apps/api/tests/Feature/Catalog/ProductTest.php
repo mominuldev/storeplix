@@ -49,7 +49,7 @@ class ProductTest extends TestCase
         $this->assertNotNull($variable['published_at']);
         $this->assertSame(345000, $variable['price_min_amount']);
         $this->assertSame(6, InventoryMovement::withoutTenancy()->where('reason', 'initial')->whereIn('variant_id', array_column($variable['variants'], 'id'))->count());
-        $this->assertTrue(AuditLog::query()->where('action', 'product.created')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'product.created')->exists());
     }
 
     public function test_option_rules(): void
@@ -181,7 +181,7 @@ class ProductTest extends TestCase
         $this->api($h, 'PATCH', $url, ['revision' => 2, 'status' => 'draft'])->assertOk();
         $this->travel(5)->minutes();
         $this->api($h, 'PATCH', $url, ['revision' => 3, 'status' => 'active'])->assertOk()->assertJsonPath('data.published_at', $first);
-        $this->assertSame(3, AuditLog::query()->where('action', 'product.status_changed')->count());
+        $this->assertSame(3, $this->platformQuery(AuditLog::class)->where('action', 'product.status_changed')->count());
     }
 
     public function test_revalidation_only_when_active_or_was_active(): void
@@ -238,7 +238,7 @@ class ProductTest extends TestCase
         $this->api($h, 'GET', "{$list}/{$b['id']}")->assertJsonPath('data.categories.0.id', $cat)->assertJsonPath('data.revision', 3);
         $this->api($h, 'POST', $bulk, ['action' => 'delete', 'ids' => [$b['id']]])->assertOk();
         $this->api($h, 'GET', "{$list}/{$b['id']}")->assertNotFound();
-        $this->assertSame(['action' => 'delete', 'count' => 1], AuditLog::query()->where('action', 'product.bulk_updated')->latest('id')->first()->meta);
+        $this->assertSame(['action' => 'delete', 'count' => 1], $this->platformQuery(AuditLog::class)->where('action', 'product.bulk_updated')->latest('id')->first()->meta);
     }
 
     public function test_plan_limit_402_on_free(): void

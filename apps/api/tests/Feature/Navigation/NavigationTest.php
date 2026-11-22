@@ -77,7 +77,7 @@ class NavigationTest extends TestCase
             ->assertJsonPath('data.items.2.href', 'http://blog.example.com/a?b=c')
             ->assertJsonPath('data.items.3.href', '/track-order');
         Queue::assertPushed(RevalidateStorefront::class);
-        $this->assertSame(['handle' => 'main'], AuditLog::query()->where('action', 'navigation.updated')->first()->meta);
+        $this->assertSame(['handle' => 'main'], $this->platformQuery(AuditLog::class)->where('action', 'navigation.updated')->first()->meta);
 
         // Stale revision → 409; unknown handle → 404.
         $this->withHeaders($headers)->putJson("/api/v1/stores/{$store->id}/navigation/main", ['items' => [], 'revision' => 1])

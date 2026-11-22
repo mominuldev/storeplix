@@ -24,7 +24,7 @@ class AccountTest extends TestCase
             ->assertJsonPath('data.phone', '8801812345678')
             ->assertJsonPath('data.phone_verified_at', null);
 
-        $log = AuditLog::query()->where('action', 'account.profile_updated')->sole();
+        $log = $this->platformQuery(AuditLog::class)->where('action', 'account.profile_updated')->sole();
         $this->assertNull($log->tenant_id);
         $this->assertEqualsCanonicalizing(['name', 'phone'], $log->meta['changes']);
     }

@@ -146,8 +146,8 @@ own QA gate (`docs/reviews/phase-5b-*-qa.md`). Status on 2026-11-22:
 2. **CI not yet run on GitHub** for the edited `e2e.yml` (fake-driver env, migrations as `pgsql_owner`), the
    `api-documents` job and the RLS-on race loops; compose `queue-webhooks` / `queue-documents` / `scheduler` only
    checked with `docker compose config`.
-3. **QA open items needing a call** (OPEN-QUESTIONS Q66, Q67): the e2e per-IP storefront limiter flake, and the full
-   API suite failing in older Phase 2–4 tests when run as the app role with RLS on.
+3. ~~QA open items (OPEN-QUESTIONS Q66, Q67)~~: resolved 2026-11-22 (unique e2e shopper IPs; full API suite green as
+   the app role with RLS on).
 4. **WEB gaps found by ARCH** (small): courier detail built as a dialog without the event log, recent shipments
    and "This month" (FIGMA-INDEX Phase 5b); QA 5b-4/5 L-1 (Edit items name truncation at 390 px). Fixed since: the
    dashboard "Book N parcels" / "N delivery problems" tasks, the percent-advance preview (floors like the API), and

@@ -116,7 +116,7 @@ class PaymentGatewaysTest extends TestCase
         $this->assertSame(self::BKASH, $account->credentials);
         $this->assertSame(32, strlen($account->route_key));
         $this->assertArrayNotHasKey('credentials', $account->toArray());
-        $audit = $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.connected')->firstOrFail());
+        $audit = $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.connected')->firstOrFail());
         $this->assertSame(['kind' => 'payment_gateway', 'provider' => 'bkash', 'mode' => 'sandbox', 'replaced' => false], $audit->meta);
         foreach (self::BKASH as $secret) {
             $this->assertStringNotContainsString($secret, json_encode($audit->toArray()));
@@ -171,7 +171,7 @@ class PaymentGatewaysTest extends TestCase
         $this->connect($h, $store, 'bkash', ['app_key' => 'second-key-abcd'] + self::BKASH)->assertOk()
             ->assertJsonPath('data.credentials_hint', '••••abcd')->assertJsonPath('data.revision', 2);
         $this->assertSame(1, $this->inTenant($tenant, fn () => PaymentGatewayAccount::query()->count()));
-        $metas = $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.connected')->get()->pluck('meta.replaced')->all());
+        $metas = $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.connected')->get()->pluck('meta.replaced')->all());
         $this->assertEqualsCanonicalizing([false, true], $metas);
     }
 
@@ -292,7 +292,7 @@ class PaymentGatewaysTest extends TestCase
         $row = $this->api($h, 'GET', $this->url($store))->json('data.0');
         $this->assertSame(['disconnected', false, false, null, null], [$row['status'], $row['enabled'], $row['is_default'], $row['credentials_hint'], $row['verified_at']]);
         $this->assertSame([], $this->inTenant($tenant, fn () => PaymentGatewayAccount::query()->firstOrFail()->credentials));
-        $this->assertSame(1, $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.disconnected')->count()));
+        $this->assertSame(1, $this->inTenant($tenant, fn () => $this->platformQuery(AuditLog::class)->where('action', 'integration.disconnected')->count()));
         $this->api($h, 'DELETE', $this->url($store, '/bkash'))->assertNotFound();
         $this->api($h, 'PATCH', $this->url($store, '/bkash'), ['revision' => 3, 'enabled' => true])->assertStatus(422)->assertJsonPath('error.code', 'gateway_not_connected');
         $this->connect($h, $store)->assertOk()->assertJsonPath('data.status', 'connected'); // reconnect keeps the route key

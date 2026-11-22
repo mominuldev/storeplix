@@ -71,7 +71,7 @@ class PaymentSecurityTest extends TestCase
         $this->assertSame(['failed', 'amount_mismatch'], [$payment->status, $payment->failure_code]);
         $order = $this->orderRow($tenant, $r->json('data.order.number'));
         $this->assertSame(['pending_payment', 0], [$order->status, $order->paid_amount]);
-        $this->inTenant($tenant, fn () => $this->assertSame(1, AuditLog::query()->where('action', 'payment.mismatch')->count()));
+        $this->inTenant($tenant, fn () => $this->assertSame(1, $this->platformQuery(AuditLog::class)->where('action', 'payment.mismatch')->count()));
         Mail::assertSent(PaymentAlertMail::class, fn (PaymentAlertMail $m) => $m->kind === 'mismatch');
     }
 
