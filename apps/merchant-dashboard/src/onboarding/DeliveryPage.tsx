@@ -1,7 +1,7 @@
-import type { AddressInput, ShippingZoneInput } from '@storeplix/types';
-import { Badge, Button, cn, MoneyInput, Toggle } from '@storeplix/ui';
+import type { AddressInput, CourierProvider, ShippingZoneInput } from '@storeplix/types';
+import { Badge, Button, cn, MoneyInput, ProviderLogo, Toggle } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { House, Plus, Truck } from 'lucide-react';
+import { Check, House, Plus, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { formatBdt } from '../catalog/format';
@@ -13,6 +13,10 @@ import { AddressFields } from '../commerce/AddressFields';
 import { daysRange } from '../commerce/format';
 import { useCommerceInvalidate, useGeoIndex, useShipping } from '../commerce/queries';
 import { ZoneDrawer } from '../commerce/shipping';
+import { CourierDialog } from '../couriers/CourierDialog';
+import { courierConnected, courierMeta, COURIERS, couriersByProvider } from '../couriers/couriers';
+import { useCouriers } from '../couriers/queries';
+import { PlanLimitDialog } from '../plan/Banners';
 import { DEFAULT_FREE_DELIVERY, defaultZones, settingsToInputs, shippingErrorMessage } from '../commerce/zones';
 import { api } from '../lib/api';
 import { LoadingState } from '../online-store/components/Shell';
@@ -21,7 +25,8 @@ import { OnboardingCard, OnboardingFrame } from './OnboardingFrame';
 
 // Figma Merchant Onboarding · 06 Delivery & charges 50:604 (connect card 45:8086). Contract §9: pickup address →
 // default pickup location; Inside / Outside Dhaka cards prefilled ৳ 70 / ৳ 130; free delivery toggle; "+ Add a zone";
-// courier cards disabled ("Coming soon", 5b); checkout preview. Continue → PUT /shipping + pickup → 07.
+// courier cards (5b-3: Connect opens the courier dialog; Connected state with ✓ badge, 45:8086); checkout preview.
+// Continue → PUT /shipping + pickup → 07. Card copy per §10 default: no "COD settled in 48 h" claim.
 
 export function DeliveryPage() {
   const shipping = useShipping();
@@ -31,12 +36,6 @@ export function DeliveryPage() {
   if (shipping.isError) return <ErrorBlock error={shipping.error} onRetry={() => void shipping.refetch()} />;
   return <DeliveryForm />;
 }
-
-const COURIERS = [
-  { name: 'Steadfast Courier', hint: 'Nationwide · COD paid to you in 1–2 days' },
-  { name: 'Pathao Courier', hint: 'Fast inside Dhaka · same-day delivery available' },
-  { name: 'RedX', hint: '64 districts · free pickup from your door' },
-];
 
 function DeliveryForm() {
   const navigate = useNavigate();
@@ -58,6 +57,9 @@ function DeliveryForm() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
+  const couriers = useCouriers();
+  const courierAccounts = couriersByProvider(couriers.data);
+  const [courier, setCourier] = useState<CourierProvider | null>(null);
 
   const setCharge = (i: number, v: number | null) => setZones((zs) => zs.map((z, j) => (j === i ? { ...z, charge_amount: v ?? Number.NaN } : z)));
 
@@ -213,23 +215,40 @@ function DeliveryForm() {
       </OnboardingCard>
 
       <OnboardingCard title="Connect a courier" description="Book pickups and track parcels without leaving Store Plix. Uses your own merchant account.">
-        <ul className="flex flex-col gap-3">
-          {COURIERS.map((c) => (
-            <li key={c.name} className="flex items-center gap-3 rounded-lg border border-border-default p-3 opacity-70">
-              <span className="flex size-10 items-center justify-center rounded-control bg-surface-subtle text-text-secondary">
-                <Truck aria-hidden className="size-5" />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-body font-semibold text-text-primary">{c.name}</span>
-                <span className="text-caption text-text-muted">{c.hint}</span>
-              </span>
-              <Badge>Coming soon</Badge>
-              <Button size="sm" variant="secondary" disabled aria-label={`Connect ${c.name} (coming soon)`}>
-                Connect
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {couriers.isError ? (
+          <ErrorBlock title="We couldn’t load couriers" error={couriers.error} onRetry={() => void couriers.refetch()} />
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {COURIERS.map((p) => {
+              const meta = courierMeta[p];
+              const connected = courierConnected(courierAccounts[p]);
+              return (
+                <li key={p} aria-label={meta.name} className={cn('flex items-center gap-3 rounded-lg border p-3', connected ? 'border-success' : 'border-border-default')}>
+                  <ProviderLogo provider={p} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-body font-semibold text-text-primary">{meta.name}</span>
+                    <span className="text-caption text-text-muted">{meta.onboardingHint}</span>
+                  </span>
+                  {connected ? (
+                    scope.canManageIntegrations ? (
+                      <button type="button" onClick={() => setCourier(p)} aria-label={`Manage ${meta.name}`} className="shrink-0 rounded-full outline-none focus-visible:shadow-focus">
+                        <ConnectedBadge />
+                      </button>
+                    ) : (
+                      <ConnectedBadge />
+                    )
+                  ) : (
+                    scope.canManageIntegrations && (
+                      <Button size="sm" variant="secondary" disabled={couriers.isPending} onClick={() => setCourier(p)} aria-label={`Connect ${meta.name}`}>
+                        Connect
+                      </Button>
+                    )
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <div className="flex items-center justify-between gap-3 text-caption text-text-muted">
           <span>No courier account yet? You can still take orders and deliver yourself.</span>
           <button type="button" className="shrink-0 font-medium text-brand-600" onClick={submit}>
@@ -238,6 +257,8 @@ function DeliveryForm() {
         </div>
       </OnboardingCard>
 
+      {courier && <CourierDialog provider={courier} account={courierAccounts[courier]} onClose={() => setCourier(null)} />}
+      <PlanLimitDialog />
       {adding && (
         <ZoneDrawer
           open
@@ -251,6 +272,14 @@ function DeliveryForm() {
         />
       )}
     </OnboardingFrame>
+  );
+}
+
+function ConnectedBadge() {
+  return (
+    <Badge tone="success" className="shrink-0 gap-1">
+      <Check aria-hidden className="size-3.5" /> Connected
+    </Badge>
   );
 }
 

@@ -45,8 +45,8 @@ export function eventToEntry(e: OrderEvent): TimelineEntry {
     case 'coupon_released':
       return { ...base, icon: <Tag />, tone: 'neutral', title: 'Coupon use released', detail: e.body };
     case 'items_edited': {
-      // 5b P5B-62: meta.lines = [{ product_name, variant_title?, from, to }]; no prices.
-      const lines = Array.isArray(meta.lines) ? (meta.lines as { product_name?: string; from?: number; to?: number }[]) : [];
+      // 5b P5B-62: meta.changes = [{ product_name, variant_title, from, to }] as the API writes it (OrderItemEditor); no prices.
+      const lines = Array.isArray(meta.changes) ? (meta.changes as { product_name?: string; from?: number; to?: number }[]) : [];
       const detail = lines.map((l) => `${l.product_name ?? 'Item'} ${l.from ?? 0} → ${l.to ?? 0}`).join(' · ');
       return { ...base, icon: <PencilLine />, tone: 'brand', title: `${actorName(e)} changed the items`, detail: [detail || null, e.body].filter(Boolean).join(' — ') || null };
     }

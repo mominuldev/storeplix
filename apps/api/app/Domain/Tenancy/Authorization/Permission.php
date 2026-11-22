@@ -20,6 +20,7 @@ use App\Domain\Tenancy\Models\TenantUser;
  * | delete products, categories, customers       |   ✓   |   ✓   |   –   |  (P4-14)
  * | coupons (write)                              |   ✓   |   ✓   |   –   |  (P5-21)
  * | CSV imports and exports (bulk data)          |   ✓   |   ✓   |   –   |  (P4-14)
+ * | payment gateways, couriers (write)           |   ✓   |   ✓   |   –   |  (P5B-10)
  */
 enum Permission: string
 {
@@ -35,6 +36,7 @@ enum Permission: string
     case ManageCatalog = 'manage_catalog';
     case BulkData = 'bulk_data';
     case ManageMarketing = 'manage_marketing';
+    case ManageIntegrations = 'manage_integrations';
 
     /** @return list<string> */
     public function roles(): array

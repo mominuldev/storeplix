@@ -274,13 +274,13 @@ describe('Settings', () => {
     expect(screen.getByRole('switch', { name: 'Inside Dhaka active' })).toBeDisabled();
   });
 
-  it('payments: COD is the only active control', async () => {
+  it('payments: COD toggles; advance stays off without a usable gateway (5b-2)', async () => {
     const fetchMock = signedIn('owner', { 'GET /stores/S1/settings': settingsWithCommerce(), 'PATCH /stores/S1/settings': settingsWithCommerce({ checkout: { cod_enabled: false, cod_advance: 'none' } }) });
     renderApp(<AppRoutes />, { route: '/settings/payments' });
     await userEvent.click(await screen.findByRole('switch', { name: 'Cash on delivery' }, SLOW));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/settings').filter((c) => c[1].method === 'PATCH')).toHaveLength(1));
     expect(bodyOf(callsTo(fetchMock, '/stores/S1/settings').find((c) => c[1].method === 'PATCH')!)).toEqual({ checkout: { cod_enabled: false } });
-    expect(screen.getAllByText('Coming soon')).toHaveLength(2);
+    expect(screen.getByRole('switch', { name: 'Advance delivery charge' })).toBeDisabled();
   });
 });
 
@@ -301,7 +301,8 @@ describe('Onboarding 06 → 07 → publish → 08', () => {
     });
     renderApp(<AppRoutes />, { route: '/onboarding/delivery' });
     expect(await screen.findByRole('heading', { name: 'Delivery & charges' }, SLOW)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Connect .* \(coming soon\)/ })[0]).toBeDisabled();
+    // 5b-3: courier cards are live (couriers.screens.test covers the dialog); the unmocked list shows its error block.
+    expect(screen.queryByRole('button', { name: /coming soon/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/shipping').filter((c) => c[1].method === 'PUT')).toHaveLength(1));
     const put = bodyOf(callsTo(fetchMock, '/stores/S1/shipping').find((c) => c[1].method === 'PUT')!);
@@ -329,7 +330,8 @@ describe('Dashboard and customers', () => {
           setup: { has_products: true },
           orders: {
             this_month: { count: 38, sales_amount: 4_250_000, delivered_count: 30, returned_count: 3, cancelled_count: 2, delivery_success_rate: 0.909 },
-            waiting: { pending: 4, confirmed: 2, ready_to_ship: 1 },
+            waiting: { pending: 4, confirmed: 2, ready_to_ship: 1, pending_payment: 0, to_book: 0 },
+            shipments: { problems: 0 },
             best_sellers: [{ product_id: 'P1', name: 'Cotton Panjabi', image: null, units: 12 }],
             plan: { used: 38, limit: 50 },
           },
@@ -352,9 +354,9 @@ describe('Dashboard and customers', () => {
     expect(within(nav).getByRole('link', { name: 'Create order' })).toBeInTheDocument();
     expect(within(nav).queryByText('Unfinished orders')).toBeNull();
     expect(within(nav).queryByText('Fake order guard')).toBeNull();
-    // 5b-4/5b-5: Returns and Invoices & labels are real; Shipments waits for couriers (5b-3).
+    // 5b-3/5b-4/5b-5: Returns, Shipments and Invoices & labels are real.
     expect(within(nav).getByRole('link', { name: 'Returns' })).toHaveAttribute('href', '/returns');
     expect(within(nav).getByRole('link', { name: 'Invoices & labels' })).toHaveAttribute('href', '/orders/print');
-    expect(within(nav).queryByText('Shipments')).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Shipments' })).toHaveAttribute('href', '/shipments');
   });
 });

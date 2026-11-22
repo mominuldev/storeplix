@@ -7,6 +7,7 @@ use App\Domain\Orders\Http\OrderController;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Shipment;
 use App\Domain\Orders\OrderPresenter;
+use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Returns\Models\ReturnRequest;
 use App\Domain\Returns\ReturnPresenter;
 use App\Domain\Returns\ReturnService;
@@ -168,7 +169,7 @@ class ReturnController
         return new JsonResponse(['data' => [
             'return' => ReturnPresenter::full(ReturnRequest::query()->whereKey($return->id)->firstOrFail()),
             'order' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->role()),
-            'payment_link' => null,
+            'payment_link' => $this->returns->lastLink !== null ? PaymentPresenter::link($this->returns->lastLink->load('creator'), $store->load('primaryDomain')) : null,
         ]], 201);
     }
 

@@ -1,7 +1,7 @@
 import type { OrderChannel, OrderListFilters, OrderStatus, OrderSummary, PaymentStatus } from '@storeplix/types';
 import { Button, buttonVariants, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { ChevronDown, Plus, Printer, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Plus, Printer, ShoppingBag, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatBdt } from '../catalog/format';
@@ -15,12 +15,13 @@ import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
 import { documentKindLabels, documentKinds } from '../documents/labels';
 import { usePrintJob } from '../documents/usePrintJob';
+import { BulkBookDialog } from '../shipments/BulkBookDialog';
 import { ShipOrderDialog } from './actions';
 import { useQuickTransition } from './transitions';
 
 // Figma Orders 7:276 (mobile Orders 31:4886, OrderCard 30:3171). Contract §9: status tabs with counts, search,
 // Payment / Source / District / date filters, Next step button, bulk Confirm / Mark packed. Not built (§11): Risk
-// column and filter, Courier problems tab, Quick chips (advance), Book courier, Export. 5b-4: bulk Print (documents)
+// column and filter, Courier problems tab, Quick chips (advance), Export. 5b-3: bulk "Book courier" (39:18808). 5b-4: bulk Print (documents)
 // and the Printed filter (`filter[printed]` / `filter[not_printed]`).
 
 const RANGES = [
@@ -57,6 +58,7 @@ export function OrdersPage() {
   const print = usePrintJob();
   const [selected, setSelected] = useState<string[]>([]);
   const [shipping, setShipping] = useState<OrderSummary | null>(null);
+  const [bulkBook, setBulkBook] = useState<OrderSummary[] | null>(null);
 
   // Day-granular so the query key stays stable within a session.
   const placedFrom = range === 'all' ? undefined : daysAgoIso(Number(range)).slice(0, 10);
@@ -261,6 +263,9 @@ export function OrdersPage() {
               }
               entries={documentKinds.map((k) => ({ key: k, label: documentKindLabels[k].noun(selected.length), onSelect: () => print.start(k, selected) }))}
             />
+            <Button size="sm" variant="secondary" onClick={() => setBulkBook(rows.filter((o) => selected.includes(o.id)))}>
+              <Truck aria-hidden className="size-4" /> Book courier
+            </Button>
             <Button size="sm" variant="secondary" loading={bulk.isPending && bulk.variables === 'ready'} onClick={() => bulk.mutate('ready')}>
               Mark packed
             </Button>
@@ -293,6 +298,13 @@ export function OrdersPage() {
         }
         footer={meta && meta.total > 0 && <Pagination page={meta.current_page} perPage={meta.per_page} total={meta.total} lastPage={meta.last_page} noun="orders" onPage={(p) => set({ page: String(p) })} />}
       />
+      {bulkBook && (
+        <BulkBookDialog
+          orders={bulkBook}
+          onClose={() => setBulkBook(null)}
+          onDone={() => setSelected([])}
+        />
+      )}
       {shipping && <ShipOrderDialog open order={{ id: shipping.id, number: shipping.number, customerId: shipping.customer.id }} onClose={() => setShipping(null)} />}
     </>
   );

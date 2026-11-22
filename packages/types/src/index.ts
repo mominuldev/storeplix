@@ -778,7 +778,12 @@ export interface StorefrontOrderTracking {
   shipping: { district: string; thana: string };
   lines: StorefrontOrderLine[]; total_amount: number; due_amount: number; currency: string;
   timeline: { status: OrderStatus; at: string }[];
-  shipment: { carrier_name: string | null; tracking_code: string | null; tracking_url: string | null } | null;
+  shipment: {
+    carrier_name: string | null; tracking_code: string | null; tracking_url: string | null;
+    /** 5b-3 (§11): courier status and times only, never rider data, location or courier text */
+    status: ShipmentStatus | null; status_at: string | null; checked_at: string | null;
+    events: { status: ShipmentStatus; at: string }[];
+  } | null;
 }
 
 // ---------- Orders (merchant) ----------
@@ -865,6 +870,8 @@ export interface OrderListFilters {
   sort?: '-placed_at' | 'placed_at' | '-total'; page?: number; per_page?: number;
   /** 5b */
   printed?: 'invoice' | 'label'; not_printed?: 'invoice' | 'label';
+  /** 5b-3: `filter[has_shipment]=0|1` (active courier or manual shipment) */
+  has_shipment?: boolean;
 }
 export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus, number> }
 export interface ManualOrderInput extends Omit<CheckoutInput, 'expected_total_amount' | 'payment_method'> {
@@ -903,7 +910,10 @@ export interface OrderDashboard {
     count: number; sales_amount: number; delivered_count: number; returned_count: number;
     cancelled_count: number; delivery_success_rate: number | null;   // 0..1
   };
-  waiting: { pending: number; confirmed: number; ready_to_ship: number };
+  waiting: { pending: number; confirmed: number; ready_to_ship: number; /** 5b-2: orders awaiting online payment */ pending_payment: number;
+    /** 5b-3: confirmed / ready_to_ship orders with no active courier shipment */ to_book: number };
+  /** 5b-3: active shipments the courier flagged */
+  shipments: { problems: number };
   best_sellers: { product_id: string; name: string; image: MediaRef | null; units: number }[];
   plan: { used: number; limit: number | null };
 }

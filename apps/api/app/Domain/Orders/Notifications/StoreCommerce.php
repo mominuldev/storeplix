@@ -10,7 +10,7 @@ use App\Domain\Stores\Models\StoreSetting;
 /** StoreCommerceSettings (§6) read model. */
 final class StoreCommerce
 {
-    public const SMS_DEFAULTS = ['order_placed' => true, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true];
+    public const SMS_DEFAULTS = ['order_placed' => true, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true, 'payment_link' => true];
 
     /** @return array<string, mixed> */
     public static function present(Store $store, StoreSetting $settings): array
@@ -32,7 +32,8 @@ final class StoreCommerce
             'notifications' => [
                 'new_order_email' => (bool) ($settings->notify_new_order_email ?? true),
                 'sms_language' => $settings->sms_language === 'en' ? 'en' : 'bn',
-                'customer_sms' => array_map('boolval', array_intersect_key($toggles + self::SMS_DEFAULTS, self::SMS_DEFAULTS)),
+                // Key order of SMS_DEFAULTS on every database (Postgres jsonb reorders keys).
+                'customer_sms' => array_map(fn (string $event) => (bool) ($toggles[$event] ?? self::SMS_DEFAULTS[$event]), array_combine(array_keys(self::SMS_DEFAULTS), array_keys(self::SMS_DEFAULTS))),
             ],
         ];
     }

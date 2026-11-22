@@ -41,6 +41,7 @@ class StorefrontOrderController
             ...OrderController::contactRules(),
             ...AddressValidator::rules('shipping_address'),
             'payment_method' => ['required', 'string', 'max:24'],
+            'advance_gateway' => ['sometimes', 'nullable', 'string', 'max:24'],
             'customer_note' => ['sometimes', 'nullable', 'string', 'max:500'],
             'accepts_marketing' => ['sometimes', 'boolean'],
             'expected_total_amount' => ['required', 'integer:strict', 'min:0'],
@@ -50,6 +51,7 @@ class StorefrontOrderController
             'contact' => OrderController::contact($input['contact']),
             'address' => $this->addresses->snapshot($input['shipping_address']),
             'payment_method' => $input['payment_method'],
+            'advance_gateway' => $input['advance_gateway'] ?? null,
             'customer_note' => AddressValidator::clean($input['customer_note'] ?? null),
             'accepts_marketing' => (bool) ($input['accepts_marketing'] ?? false),
             'expected_total' => $input['expected_total_amount'],
@@ -61,20 +63,26 @@ class StorefrontOrderController
         return new JsonResponse(['data' => [
             'order' => OrderPresenter::storefront($result['order']->refresh()),
             'confirmation_token' => $result['token'],
+            'payment' => $result['payment'],
         ]], 201, self::NO_STORE);
     }
 
     public function confirmation(Request $request): JsonResponse
     {
         $ctx = StorefrontContext::from($request)->requireVisible();
-        $token = (string) $request->header(self::ORDER_TOKEN_HEADER, '');
-        $order = $token === '' || strlen($token) > 64 ? null : Order::query()->where('store_id', $ctx->store->id)
-            ->where('confirmation_token_hash', hash('sha256', $token))->where('confirmation_expires_at', '>', now())->first();
-        if ($order === null) {
-            throw new ApiException(404, 'not_found', 'Resource not found.');
-        }
+        $order = self::orderByToken($request, $ctx->store->id);
 
         return new JsonResponse(['data' => OrderPresenter::storefront($order)], 200, self::NO_STORE);
+    }
+
+    /** The order behind X-Order-Token (thank-you page cookie `sp_order`), else 404. */
+    public static function orderByToken(Request $request, string $storeId): Order
+    {
+        $token = (string) $request->header(self::ORDER_TOKEN_HEADER, '');
+        $order = $token === '' || strlen($token) > 64 ? null : Order::query()->where('store_id', $storeId)
+            ->where('confirmation_token_hash', hash('sha256', $token))->where('confirmation_expires_at', '>', now())->first();
+
+        return $order ?? throw new ApiException(404, 'not_found', 'Resource not found.');
     }
 
     /** Number (with or without prefix, any case) + phone; any mismatch is the same 404 as an unknown number (S8). */

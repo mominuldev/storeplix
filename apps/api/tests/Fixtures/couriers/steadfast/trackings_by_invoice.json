@@ -1,0 +1,8 @@
+{
+  "_source": "docs",
+  "_doc": "https://documenter.getpostman.com/view/26211192/2sAYJ1mhpk",
+  "_note": "VERIFY against sandbox: trackings_by_invoice is documented only by name",
+  "status": 200,
+  "delivery_status": "in_review",
+  "consignment": {"consignment_id": 1424107, "invoice": "01JDXK0000000000000000SHIP", "tracking_code": "15BAEB8A", "status": "in_review"}
+}

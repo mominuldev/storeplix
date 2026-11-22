@@ -17,6 +17,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
@@ -101,7 +102,8 @@ class MediaController
         }
 
         try {
-            $media->delete();
+            // Own transaction (a savepoint when nested) so a Postgres FK error doesn't abort an outer transaction.
+            DB::transaction(fn () => $media->delete());
         } catch (QueryException $e) {
             // FK RESTRICT (store_settings / store_pages) → same 409.
             throw new ApiException(409, 'media_in_use', 'This image is used in your shop. Replace it first.');

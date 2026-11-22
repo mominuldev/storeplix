@@ -10,6 +10,7 @@ use App\Domain\Customers\Http\Controllers\CustomerController;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Models\Shipment;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\Models\Tenant;
@@ -84,7 +85,7 @@ class DashboardController
             ->where($column, '>=', $since)->when($status, fn ($q) => $q->where('status', $status))->count();
         $delivered = $count('delivered_at', Order::DELIVERED);
         $returned = $count('returned_at', Order::RETURNED);
-        $waiting = Order::query()->where('store_id', $store->id)->whereIn('status', [Order::PENDING, Order::CONFIRMED, Order::READY_TO_SHIP])
+        $waiting = Order::query()->where('store_id', $store->id)->whereIn('status', [Order::PENDING_PAYMENT, Order::PENDING, Order::CONFIRMED, Order::READY_TO_SHIP])
             ->groupBy('status')->selectRaw('status, count(*) as aggregate')->pluck('aggregate', 'status');
 
         $best = DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
@@ -110,6 +111,17 @@ class DashboardController
                 'pending' => (int) ($waiting[Order::PENDING] ?? 0),
                 'confirmed' => (int) ($waiting[Order::CONFIRMED] ?? 0),
                 'ready_to_ship' => (int) ($waiting[Order::READY_TO_SHIP] ?? 0),
+                // 5b-2: unpaid online orders inside their 30-minute hold
+                'pending_payment' => (int) ($waiting[Order::PENDING_PAYMENT] ?? 0),
+                // 5b-3: confirmed / ready_to_ship orders with no active shipment ("Needs you today")
+                'to_book' => Order::query()->where('store_id', $store->id)->whereIn('status', [Order::CONFIRMED, Order::READY_TO_SHIP])
+                    ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('shipments')->whereColumn('shipments.order_id', 'orders.id')
+                        ->whereNotIn('shipments.status', ['cancelled', 'booking_failed']))->count(),
+            ],
+            // 5b-3: active shipments the courier flagged (delivery_failed, on_hold, returning, unknown)
+            'shipments' => [
+                'problems' => Shipment::query()->where('store_id', $store->id)->whereNotNull('problem')
+                    ->whereNotIn('status', Shipment::FINAL_STATUSES)->count(),
             ],
             'best_sellers' => $best->map(fn ($row) => [
                 'product_id' => $row->product_id,

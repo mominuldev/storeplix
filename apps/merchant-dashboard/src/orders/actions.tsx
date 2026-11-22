@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
-import type { CancelReason, Order, RefundMethod, ReturnReason, ReturnType, ShipOrderInput } from '@storeplix/types';
-import { Checkbox, Dialog, Input, MoneyInput, SegmentedControl, Select } from '@storeplix/ui';
+import type { CancelReason, CourierProvider, GatewayProvider, Order, RefundMethod, ReturnReason, ReturnType, ShipOrderInput } from '@storeplix/types';
+import { Button, Checkbox, Dialog, Input, MoneyInput, SegmentedControl, Select } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -12,7 +12,10 @@ import { cancelReasonLabels, newIdempotencyKey, refundMethodLabels } from '../co
 import { useCommerceInvalidate } from '../commerce/queries';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
+import { gatewayMeta } from '../payments/gateways';
 import { returnReasonLabels } from '../returns/labels';
+import { connectedCouriers, courierName } from '../shipments/labels';
+import { useCourierAccounts } from '../shipments/queries';
 import { handleOrderError, refundAmountError, type Target } from './transitions';
 
 // Order dialogs (PHASE-5 §4): Cancel 41:9687, Ship (no frame; cancel layout), Return, Refund (O A).
@@ -36,18 +39,43 @@ function Textarea({ id, label, value, onChange, max, placeholder }: { id: string
   );
 }
 
-/** Cancel 41:9687: reason select (6), note, "Send SMS to customer" (default from the store toggle). */
-export function CancelOrderDialog({ order, open, onClose, smsDefault = true }: { order: Target; open: boolean; onClose: () => void; smsDefault?: boolean }) {
+/** Merchant-chosen reasons; `payment_timeout` / `payment_link_expired` are set by the system only (P5B-14, P5B-22). */
+const MERCHANT_CANCEL_REASONS = (Object.keys(cancelReasonLabels) as CancelReason[]).filter((r) => r !== 'payment_timeout' && r !== 'payment_link_expired');
+
+/**
+ * Cancel 41:9687: reason select (6), note, "Send SMS to customer" (default from the store toggle). 5b P5B-25: when
+ * the order was paid online, "Refund ৳N to {gateway}" (default on) → `refund_to_gateway`.
+ */
+export function CancelOrderDialog({
+  order,
+  open,
+  onClose,
+  smsDefault = true,
+  onlineRefund,
+}: {
+  order: Target;
+  open: boolean;
+  onClose: () => void;
+  smsDefault?: boolean;
+  onlineRefund?: { amount: number; provider: GatewayProvider | null };
+}) {
   const { storeId } = useStoreScope();
   const invalidate = useCommerceInvalidate();
   const [reason, setReason] = useState<CancelReason | ''>('');
   const [note, setNote] = useState('');
   const [notify, setNotify] = useState(smsDefault);
+  const [refundOnline, setRefundOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const cancel = useMutation({
-    mutationFn: () => api.orders.cancel(storeId!, order.id, { reason: reason as CancelReason, note: note.trim() || null, notify_customer: notify }),
+    mutationFn: () =>
+      api.orders.cancel(storeId!, order.id, {
+        reason: reason as CancelReason,
+        note: note.trim() || null,
+        notify_customer: notify,
+        ...(onlineRefund ? { refund_to_gateway: refundOnline } : {}),
+      }),
     onSuccess: async () => {
-      toast(`${order.number} cancelled. Stock released.`);
+      toast(onlineRefund && refundOnline ? `${order.number} cancelled. Stock released and the refund is on its way.` : `${order.number} cancelled. Stock released.`);
       onClose();
       await invalidate.afterOrderChange(order.id, order.customerId);
     },
@@ -74,7 +102,7 @@ export function CancelOrderDialog({ order, open, onClose, smsDefault = true }: {
       <div className="flex flex-col gap-4">
         <Select id="cancel-reason" label="Reason" value={reason} onChange={(e) => setReason(e.target.value as CancelReason)}>
           <option value="">Choose a reason</option>
-          {(Object.keys(cancelReasonLabels) as CancelReason[]).map((r) => (
+          {MERCHANT_CANCEL_REASONS.map((r) => (
             <option key={r} value={r}>
               {cancelReasonLabels[r]}
             </option>
@@ -82,6 +110,13 @@ export function CancelOrderDialog({ order, open, onClose, smsDefault = true }: {
         </Select>
         <Textarea id="cancel-note" label="Note (optional)" value={note} onChange={setNote} max={500} placeholder="No answer 3 times" />
         <Checkbox label="Send SMS to customer" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+        {onlineRefund && (
+          <Checkbox
+            label={`Refund ${formatBdt(onlineRefund.amount)} to ${onlineRefund.provider ? gatewayMeta[onlineRefund.provider].short : 'the gateway'}`}
+            checked={refundOnline}
+            onChange={(e) => setRefundOnline(e.target.checked)}
+          />
+        )}
         {error && (
           <p role="alert" className="text-caption text-danger">
             {error}
@@ -95,8 +130,23 @@ export function CancelOrderDialog({ order, open, onClose, smsDefault = true }: {
 const COURIERS = ['Steadfast', 'Pathao', 'RedX', 'Sundarban', 'Other'];
 
 /** Ship (manual shipment, §4): courier name with suggestions, tracking code, tracking link (https), SMS toggle. */
-export function ShipOrderDialog({ order, open, onClose, smsDefault = true }: { order: Target; open: boolean; onClose: () => void; smsDefault?: boolean }) {
+export function ShipOrderDialog({
+  order,
+  open,
+  onClose,
+  smsDefault = true,
+  onBookCourier,
+}: {
+  order: Target;
+  open: boolean;
+  onClose: () => void;
+  smsDefault?: boolean;
+  /** P5B-42: "Book with {courier}" when a courier is connected (closes this dialog, opens the booking dialog). */
+  onBookCourier?: (provider: CourierProvider) => void;
+}) {
   const { storeId } = useStoreScope();
+  const couriers = useCourierAccounts(!!onBookCourier);
+  const connected = onBookCourier ? connectedCouriers(couriers.data) : [];
   const invalidate = useCommerceInvalidate();
   const [v, setV] = useState<ShipOrderInput>({ carrier_name: '', tracking_code: '', tracking_url: '', notify_customer: smsDefault });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -126,7 +176,7 @@ export function ShipOrderDialog({ order, open, onClose, smsDefault = true }: { o
     <Dialog
       open={open}
       title={`Ship ${order.number}`}
-      description="Add the courier details so you and your customer can track the parcel. Booking couriers from Store Plix is coming soon."
+      description={connected.length > 0 ? 'Book it with your courier, or add the details of another courier by hand.' : 'Add the courier details so you and your customer can track the parcel.'}
       confirmLabel="Mark shipped"
       loading={ship.isPending}
       confirmDisabled={!urlOk}
@@ -134,6 +184,27 @@ export function ShipOrderDialog({ order, open, onClose, smsDefault = true }: { o
       onConfirm={() => ship.mutate()}
     >
       <div className="flex flex-col gap-4">
+        {connected.length > 0 && onBookCourier && (
+          <div className="flex flex-col gap-2 rounded-lg bg-brand-50 p-3.5">
+            <span className="text-caption text-text-secondary">Connected couriers book the parcel and track it for you</span>
+            <div className="flex flex-wrap gap-2">
+              {connected.map((a) => (
+                <Button
+                  key={a.provider}
+                  size="sm"
+                  variant={a.is_default ? 'primary' : 'secondary'}
+                  onClick={() => {
+                    onClose();
+                    onBookCourier(a.provider);
+                  }}
+                >
+                  Book with {courierName[a.provider]}
+                </Button>
+              ))}
+            </div>
+            <span className="text-caption text-text-muted">Or ship it yourself:</span>
+          </div>
+        )}
         <Input
           id="ship-carrier"
           label="Courier"
@@ -273,7 +344,9 @@ export function RefundDialog({ order, open, onClose }: { order: Order; open: boo
       <div className="flex flex-col gap-4">
         <MoneyInput id="refund-amount" label="Amount" value={amount} onChange={setAmount} error={amount !== null ? (amountError ?? undefined) : undefined} />
         <Select id="refund-method" label="Paid back by" value={method} onChange={(e) => setMethod(e.target.value as RefundMethod)}>
-          {(Object.keys(refundMethodLabels) as RefundMethod[]).map((m) => (
+          {(Object.keys(refundMethodLabels) as RefundMethod[])
+            .filter((m) => m !== 'gateway')
+            .map((m) => (
             <option key={m} value={m}>
               {refundMethodLabels[m]}
             </option>

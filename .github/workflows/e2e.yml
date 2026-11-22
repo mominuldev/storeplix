@@ -23,10 +23,19 @@ jobs:
           cp infrastructure/docker/.env.example .env
           # The e2e suite makes ~15 bulk calls per run on the demo tenant (merchant-bulk = 10/h by default).
           echo 'THROTTLE_MERCHANT_BULK_PER_HOUR=1000' >> .env
+          # Phase 5b fake drivers (PHASE-5B-CONTRACT §13 QA, §17.7): no real gateway or courier is ever called from CI.
+          # The fake hosted page lives on the API (PUBLIC_API_URL); documents are stored as HTML (no PDF assertions).
+          {
+            echo 'PAYMENTS_FAKE=true'
+            echo 'COURIERS_FAKE=true'
+            echo "INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32)"
+            echo 'PUBLIC_API_URL=http://localhost:8000'
+            echo 'DOCUMENTS_DRIVER=html'
+          } >> .env
           cp apps/api/.env.example apps/api/.env
           docker compose up -d --build --wait
           docker compose exec -T api php artisan key:generate --force
-          docker compose exec -T api php artisan migrate --seed --force
+          docker compose exec -T api php artisan migrate --seed --force --database=pgsql_owner
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -42,6 +51,10 @@ jobs:
           # Phase 5 specs call the storefront API server-to-server; inside compose the API gets the
           # compose-level key (infrastructure/docker/.env.example), not the one in apps/api/.env.
           STOREFRONT_API_KEY: dev-storefront-key-change-me
+          # 5b-2 specs open the fake gateway page on the API origin and check the payment-result pages.
+          PAYMENTS_FAKE: 'true'
+          # 5b-3 specs book on FakeCourier and move parcels with the testing-only fake-advance endpoint.
+          COURIERS_FAKE: 'true'
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()

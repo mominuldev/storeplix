@@ -1,0 +1,8 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "City successfully fetched.",
+  "type": "success",
+  "code": 200,
+  "data": {"data": [{"city_id": 1, "city_name": "Dhaka"}, {"city_id": 2, "city_name": "Chittagong"}]}
+}

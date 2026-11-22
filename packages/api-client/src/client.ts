@@ -123,6 +123,17 @@ import type {
   ExchangeOrderInput,
   OrderItemsQuote,
   PaymentLink,
+  ConnectGatewayInput,
+  CreatePaymentLinkInput,
+  GatewayProvider,
+  GatewayTestPayment,
+  PaymentGatewayAccount,
+  UpdateGatewayInput,
+  ConnectCourierInput,
+  CourierAccount,
+  CourierArea,
+  CourierProvider,
+  UpdateCourierInput,
   ReceiveReturnInput,
   RestockInput,
   ReturnEvent,
@@ -130,10 +141,17 @@ import type {
   ReturnRequest,
   ReturnSummary,
   StoreDocument,
+  BookShipmentInput,
+  Shipment,
+  ShipmentBatch,
+  ShipmentDetail,
+  ShipmentListFilters,
+  ShipmentListMeta,
+  ShipmentSummary,
 } from '@storeplix/types';
 import { ApiError, isErrorEnvelope } from './errors';
-import type { MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, type ReturnListFilters } from './queries';
+import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -499,6 +517,16 @@ export function createApiClient(options: ApiClientOptions) {
     counts: { open: 0, requested: 0, approved: 0, received: 0, refunded: 0, exchanged: 0, rejected: 0, closed: 0 },
     kpis: { open: 0, return_rate_30d: null, money_lost_amount: 0, restocked_units_month: 0 },
   });
+  const emptyShipmentMeta = (): ShipmentListMeta => ({
+    ...emptyPage(),
+    counts: { all: 0, steadfast: 0, pathao: 0, redx: 0, manual: 0 },
+    kpis: {
+      in_transit: 0, out_for_delivery_today: 0, delivered_7d: 0, delivery_rate_7d: null,
+      problems: { total: 0, delivery_failed: 0, on_hold: 0, returning: 0 },
+      cod_held: { total_amount: 0, by_provider: [] },
+    },
+    last_synced_at: null,
+  });
   const store = (storeId: string) => `/stores/${enc(storeId)}`;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -830,13 +858,16 @@ export function createApiClient(options: ApiClientOptions) {
       deliver: (storeId: string, id: string) => request<Order>(`${store(storeId)}/orders/${enc(id)}/deliver`, { method: 'POST' }),
       return: (storeId: string, id: string, input: ReturnOrderInput) =>
         request<Order>(`${store(storeId)}/orders/${enc(id)}/return`, { method: 'POST', body: input }),
-      /** Staff on a paid order → 403. */
+      /** Staff on a paid order → 403. 5b: `refund_to_gateway` (default true when paid online, P5B-25). */
       cancel: (storeId: string, id: string, input: CancelOrderInput) =>
         request<Order>(`${store(storeId)}/orders/${enc(id)}/cancel`, { method: 'POST', body: input }),
       bulk: (storeId: string, input: OrderBulkInput) => request<OrderBulkResult>(`${store(storeId)}/orders/bulk`, { method: 'POST', body: input }),
       addNote: (storeId: string, id: string, body: string) =>
         request<OrderEvent>(`${store(storeId)}/orders/${enc(id)}/notes`, { method: 'POST', body: { body } }),
-      /** O A only; 422 `refund_exceeds_paid`. */
+      /**
+       * O A only; 422 `refund_exceeds_paid`. 5b: `method: 'gateway'` + `payment_id` refunds through the gateway (201
+       * `Payment`, `pending` until the provider confirms); 422 `gateway_refund_rejected`, 502 `provider_unavailable`.
+       */
       refund: (storeId: string, id: string, input: RefundInput, idempotencyKey: string) =>
         request<Payment>(`${store(storeId)}/orders/${enc(id)}/refunds`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
       /** 5b §4.9 (P5B-61): same math as `editItems`, no writes. */
@@ -853,6 +884,62 @@ export function createApiClient(options: ApiClientOptions) {
       /** 5b P5B-63: delivered orders; 409 `return_not_allowed`. */
       createReturn: (storeId: string, id: string, input: CreateReturnInput) =>
         request<ReturnRequest>(`${store(storeId)}/orders/${enc(id)}/returns`, { method: 'POST', body: input }),
+    },
+
+    /**
+     * Phase 5b §4.1 payment gateways. Reads O A S; writes O A (`ManageIntegrations`). Secrets are write-only: the
+     * response carries `credentials_hint` only. `connect` = PUT (API checks the credentials first; 422
+     * `credentials_invalid`, 502 `provider_unavailable`); `disconnect` → 409 `gateway_busy` with pending money.
+     */
+    paymentGateways: {
+      list: (storeId: string) => request<PaymentGatewayAccount[]>(`${store(storeId)}/payment-gateways`),
+      connect: (storeId: string, provider: GatewayProvider, input: ConnectGatewayInput) =>
+        request<PaymentGatewayAccount>(`${store(storeId)}/payment-gateways/${enc(provider)}`, { method: 'PUT', body: input }),
+      /** `enabled` (checkout method) and `is_default`; 409 `revision_conflict`, 422 `gateway_not_connected`. */
+      update: (storeId: string, provider: GatewayProvider, input: UpdateGatewayInput) =>
+        request<PaymentGatewayAccount>(`${store(storeId)}/payment-gateways/${enc(provider)}`, { method: 'PATCH', body: input }),
+      /** ৳ 10 sandbox / ৳ 1 live; open `redirect_url` in a new tab, then poll `list` for `verified_at`. */
+      testPayment: (storeId: string, provider: GatewayProvider, idempotencyKey: string) =>
+        request<GatewayTestPayment>(`${store(storeId)}/payment-gateways/${enc(provider)}/test-payment`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+      disconnect: (storeId: string, provider: GatewayProvider) => request<void>(`${store(storeId)}/payment-gateways/${enc(provider)}`, { method: 'DELETE' }),
+    },
+
+    /**
+     * Phase 5b §4.6 couriers (WEB-1). Reads O A S; writes O A (`ManageIntegrations`). `list` returns all three providers
+     * (`not_connected` when absent). `connect` = PUT: 402 `plan_limit_reached` (courier_connections), 422
+     * `credentials_invalid`, 502 `provider_unavailable`; the webhook secret comes back once in `meta.webhook_secret`.
+     * `update` = PATCH with `revision` (409 `revision_conflict`); `disconnect` → 409 `courier_busy` with active parcels.
+     */
+    couriers: {
+      list: (storeId: string) => request<CourierAccount[]>(`${store(storeId)}/couriers`),
+      connect: async (storeId: string, provider: CourierProvider, input: ConnectCourierInput): Promise<CourierConnectResult> => {
+        const envelope = await requestEnvelope<CourierAccount>(`${store(storeId)}/couriers/${enc(provider)}`, { method: 'PUT', body: input });
+        const secret = (envelope?.meta as { webhook_secret?: string | null } | undefined)?.webhook_secret;
+        return { account: envelope!.data, webhook_secret: secret ?? null };
+      },
+      update: (storeId: string, provider: CourierProvider, input: UpdateCourierInput) =>
+        request<CourierAccount>(`${store(storeId)}/couriers/${enc(provider)}`, { method: 'PATCH', body: input }),
+      test: (storeId: string, provider: CourierProvider) => request<CourierTestResult>(`${store(storeId)}/couriers/${enc(provider)}/test`, { method: 'POST' }),
+      rotateWebhookSecret: (storeId: string, provider: CourierProvider) =>
+        request<CourierWebhookSecret>(`${store(storeId)}/couriers/${enc(provider)}/webhook-secret`, { method: 'POST' }),
+      disconnect: (storeId: string, provider: CourierProvider) => request<void>(`${store(storeId)}/couriers/${enc(provider)}`, { method: 'DELETE' }),
+      areas: async (storeId: string, provider: CourierProvider, query: CourierAreaQuery): Promise<CourierAreaList> => {
+        const envelope = await requestEnvelope<CourierArea[]>(`${store(storeId)}/couriers/${enc(provider)}/areas`, { query: { ...query } });
+        const suggested = (envelope?.meta as { suggested?: CourierAreaList['suggested'] } | undefined)?.suggested;
+        return { data: envelope?.data ?? [], suggested: suggested ?? null };
+      },
+      pickupStores: (storeId: string, provider: CourierProvider) => request<CourierPickupStore[]>(`${store(storeId)}/couriers/${enc(provider)}/pickup-stores`),
+    },
+
+    /** Phase 5b §4.4 payment links ("Ask for an advance", P5B-22). O A S. One active link per order (409 `payment_link_active`). */
+    paymentLinks: {
+      list: (storeId: string, orderId: string) => request<PaymentLink[]>(`${store(storeId)}/orders/${enc(orderId)}/payment-links`),
+      create: (storeId: string, orderId: string, input: CreatePaymentLinkInput, idempotencyKey: string) =>
+        request<PaymentLink>(`${store(storeId)}/orders/${enc(orderId)}/payment-links`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      /** SMS again; 3 per link per hour (429). */
+      resend: (storeId: string, orderId: string, linkId: string) =>
+        request<PaymentLink>(`${store(storeId)}/orders/${enc(orderId)}/payment-links/${enc(linkId)}/resend`, { method: 'POST' }),
+      cancel: (storeId: string, orderId: string, linkId: string) => request<void>(`${store(storeId)}/orders/${enc(orderId)}/payment-links/${enc(linkId)}`, { method: 'DELETE' }),
     },
 
     /** Phase 5b §4.9 returns and exchanges. Transitions return the updated `ReturnRequest`; invalid → 409. */
@@ -876,6 +963,32 @@ export function createApiClient(options: ApiClientOptions) {
           headers: { 'Idempotency-Key': idempotencyKey },
         }),
       addNote: (storeId: string, id: string, body: string) => request<ReturnEvent>(`${store(storeId)}/returns/${enc(id)}/notes`, { method: 'POST', body: { body } }),
+    },
+
+    /**
+     * Phase 5b §4.7 shipments (O A S `Operate`). `book`: Idempotency-Key required; 201 `Shipment` (`booked`, or `booking`
+     * on a courier timeout); 409 `shipment_booked`; 422 `courier_rejected`, `gateway_not_connected`; 403 when staff send
+     * `cod_amount`; 502 `provider_unavailable`. `bulk`: 202 `ShipmentBatch`, poll `batch`; 402 `feature_not_in_plan`.
+     * `cancel` → 409 `courier_cancel_unsupported` when the courier has no cancel API: cancel in the courier panel, then
+     * `markCancelled`. `sync` is throttled 1/min per store (429).
+     */
+    shipments: {
+      book: (storeId: string, orderId: string, input: BookShipmentInput, idempotencyKey: string) =>
+        request<Shipment>(`${store(storeId)}/orders/${enc(orderId)}/shipments`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      bulk: (storeId: string, input: { provider: CourierProvider; order_ids: string[] }) =>
+        request<ShipmentBatch>(`${store(storeId)}/shipments/bulk`, { method: 'POST', body: input }),
+      batch: (storeId: string, id: string, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<ShipmentBatch>(`${store(storeId)}/shipment-batches/${enc(id)}`, { signal: opts?.signal }),
+      list: (storeId: string, filters: ShipmentListFilters = {}) =>
+        listOf<ShipmentSummary, ShipmentListMeta>(`${store(storeId)}/shipments`, shipmentListQuery(filters), emptyShipmentMeta()),
+      get: (storeId: string, id: string) => request<ShipmentDetail>(`${store(storeId)}/shipments/${enc(id)}`),
+      /** Throttle 6/min per shipment (429); 502 `provider_unavailable`. */
+      refresh: (storeId: string, id: string) => request<ShipmentDetail>(`${store(storeId)}/shipments/${enc(id)}/refresh`, { method: 'POST' }),
+      sync: (storeId: string) => request<{ queued: number }>(`${store(storeId)}/shipments/sync`, { method: 'POST' }),
+      cancel: (storeId: string, id: string, input: { reason?: string | null } = {}) =>
+        request<Shipment>(`${store(storeId)}/shipments/${enc(id)}/cancel`, { method: 'POST', body: input }),
+      markCancelled: (storeId: string, id: string, input: { note?: string | null } = {}) =>
+        request<Shipment>(`${store(storeId)}/shipments/${enc(id)}/mark-cancelled`, { method: 'POST', body: input }),
     },
 
     /** Phase 5b §4.8 documents. Generation is queued: create → poll `get` until `ready` → open `download_url` (5-min signed). */

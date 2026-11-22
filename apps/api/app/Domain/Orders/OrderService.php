@@ -14,6 +14,7 @@ use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Models\Shipment;
 use App\Domain\Orders\Notifications\OrderNotifier;
+use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Returns\ReturnService;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
@@ -48,6 +49,10 @@ class OrderService
         $from = null;
         $order = $this->transition($order, Order::CONFIRMED, $user, function (Order $o) use (&$from) {
             $from = $o->status;
+            if ($from === Order::PENDING_PAYMENT) {
+                // P5B-14: only a verified payment confirms an unpaid online order (PaymentService, actor system).
+                throw new ApiException(409, 'invalid_state_transition', 'This order is waiting for the online payment. It confirms itself once the payment is verified.');
+            }
             $o->confirmed_at ??= now();
         });
         if ($from === Order::PENDING) {
@@ -67,6 +72,7 @@ class OrderService
     {
         $carrier = $input['carrier_name'] ?? null;
         $order = $this->transition($order, Order::SHIPPED, $user, function (Order $o) use ($input, $user) {
+            OrderItemEditor::assertNotBooked($o); // 5b-3: a booked courier parcel ships through courier events
             $now = now();
             $shipment = new Shipment;
             $shipment->store_id = $o->store_id;
@@ -232,31 +238,7 @@ class OrderService
             if ($paid && ! Permission::ManageRefunds->grantedTo($role)) {
                 throw new ApiException(403, 'forbidden', 'Only owners and managers can cancel paid orders.');
             }
-            $lines = [];
-            foreach (OrderItem::query()->where('order_id', $o->id)->get() as $item) {
-                if ($item->tracked && $item->variant_id !== null) {
-                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity];
-                }
-            }
-            $this->inventory->release($o->store_id, $lines);
-
-            $redemption = CouponRedemption::query()->where('order_id', $o->id)->where('status', CouponRedemption::ACTIVE)->first();
-            if ($redemption !== null) {
-                Coupon::query()->whereKey($redemption->coupon_id)->lockForUpdate()->first();
-                $redemption->status = CouponRedemption::RELEASED;
-                $redemption->save();
-                Coupon::query()->whereKey($redemption->coupon_id)->where('used_count', '>', 0)->update(['used_count' => DB::raw('used_count - 1')]);
-                OrderTimeline::record($o, 'coupon_released', $user, null, ['code' => $o->coupon_code]);
-            }
-
-            $now = now();
-            Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
-                ->update(['status' => 'cancelled', 'updated_at' => $now]);
-            if ($o->customer_id !== null) {
-                Customer::withTrashed()->whereKey($o->customer_id)->where('orders_count', '>', 0)->update(['orders_count' => DB::raw('orders_count - 1')]);
-            }
-            $o->cancel_reason = $reason;
-            $o->cancelled_at = $now;
+            $this->cancelEffects($o, $reason, $user);
         }, $note, ['reason' => $reason]);
 
         if ($paid) {
@@ -265,6 +247,68 @@ class OrderService
         $this->notifier->sms($order, 'order_cancelled', $notify);
 
         return $order;
+    }
+
+    /**
+     * System cancel for an unpaid hold or an unpaid payment link (P5B-21 `payment_timeout`, P5B-22
+     * `payment_link_expired`): actor system, no role check, no SMS. `$guard` runs under the order row lock (lock order
+     * order → payments → …) and decides: false = leave the order as it is (its own writes still commit). Returns the
+     * cancelled order, or null when the guard declined.
+     *
+     * @param  callable(Order): bool  $guard
+     */
+    public function systemCancel(Order $order, string $reason, callable $guard): ?Order
+    {
+        return DB::transaction(function () use ($order, $reason, $guard) {
+            /** @var Order $o */
+            $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if (! $guard($o) || ! OrderStateMachine::can($o->status, Order::CANCELLED) || $o->paid_amount > 0) {
+                return null;
+            }
+            $from = $o->status;
+            $this->cancelEffects($o, $reason, null);
+            $o->status = Order::CANCELLED;
+            $o->revision++;
+            $o->save();
+            OrderTimeline::record($o, 'status_changed', null, null, ['reason' => $reason], $from, Order::CANCELLED);
+
+            return $o;
+        });
+    }
+
+    /** Cancel side effects under the order lock: stock, coupon, open charges and links, customer counter. */
+    private function cancelEffects(Order $o, string $reason, ?User $user): void
+    {
+        $lines = [];
+        foreach (OrderItem::query()->where('order_id', $o->id)->get() as $item) {
+            if ($item->tracked && $item->variant_id !== null) {
+                $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity];
+            }
+        }
+        $this->inventory->release($o->store_id, $lines);
+
+        $redemption = CouponRedemption::query()->where('order_id', $o->id)->where('status', CouponRedemption::ACTIVE)->first();
+        if ($redemption !== null) {
+            Coupon::query()->whereKey($redemption->coupon_id)->lockForUpdate()->first();
+            $redemption->status = CouponRedemption::RELEASED;
+            $redemption->save();
+            Coupon::query()->whereKey($redemption->coupon_id)->where('used_count', '>', 0)->update(['used_count' => DB::raw('used_count - 1')]);
+            OrderTimeline::record($o, 'coupon_released', $user, null, ['code' => $o->coupon_code]);
+        }
+
+        $now = now();
+        Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
+            ->update(['status' => 'cancelled', 'updated_at' => $now]);
+        // 5b-2: an open online attempt and an active payment link die with the order (a late payment is refunded).
+        Payment::query()->where('order_id', $o->id)->whereIn('provider', Payment::ONLINE_PROVIDERS)->where('type', 'charge')->where('status', 'pending')
+            ->update(['status' => 'cancelled', 'failure_code' => $reason === 'payment_timeout' ? 'expired' : 'order_cancelled', 'updated_at' => $now]);
+        PaymentLink::query()->where('order_id', $o->id)->where('status', PaymentLink::ACTIVE)
+            ->update(['status' => PaymentLink::CANCELLED, 'cancelled_at' => $now, 'updated_at' => $now]);
+        if ($o->customer_id !== null) {
+            Customer::withTrashed()->whereKey($o->customer_id)->where('orders_count', '>', 0)->update(['orders_count' => DB::raw('orders_count - 1')]);
+        }
+        $o->cancel_reason = $reason;
+        $o->cancelled_at = $now;
     }
 
     /**

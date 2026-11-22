@@ -5,11 +5,16 @@ namespace App\Domain\Orders;
 use App\Domain\Cart\Console\PruneCarts;
 use App\Domain\Geo\BdGeo;
 use App\Domain\Orders\Console\ExpireConfirmationTokens;
+use App\Domain\Payments\Console\ExpirePaymentLinks;
+use App\Domain\Payments\Console\ExpirePayments;
+use App\Domain\Payments\Console\ReconcilePayments;
+use App\Domain\Payments\Console\SyncRefundStatus;
 use App\Domain\Shared\Console\PruneIdempotencyKeys;
 use App\Domain\Shared\Idempotency\IdempotencyGuard;
 use App\Domain\Shared\Support\Phone;
 use App\Domain\Shipping\Console\ProvisionShippingDefaults;
 use App\Domain\Stores\Services\StorefrontContext;
+use App\Domain\Webhooks\Console\PruneWebhookEvents;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
@@ -27,7 +32,9 @@ class CommerceServiceProvider extends ServiceProvider
     public function boot(Router $router): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([ProvisionShippingDefaults::class, PruneCarts::class, PruneIdempotencyKeys::class, ExpireConfirmationTokens::class]);
+            $this->commands([ProvisionShippingDefaults::class, PruneCarts::class, PruneIdempotencyKeys::class, ExpireConfirmationTokens::class,
+                // 5b-2 payments (PHASE-5B §3 schedules)
+                ExpirePayments::class, ReconcilePayments::class, SyncRefundStatus::class, ExpirePaymentLinks::class, PruneWebhookEvents::class]);
         }
 
         $router->aliasMiddleware('idempotent', IdempotencyGuard::class);
@@ -50,6 +57,16 @@ class CommerceServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('order-track', fn (Request $r) => Limit::perMinute(10)->by('order-track:'.$host($r).'|'.$ip($r)));
+
+        // 5b-2 (P5B-23, S28): payment-link pages, 20/min per store host + shopper IP.
+        RateLimiter::for('pay-link', fn (Request $r) => Limit::perMinute(20)->by('pay-link:'.$host($r).'|'.StorefrontContext::ipKey($ip($r))));
+        // 5b-2/5b-3 provider webhooks: per route key and per sender IP.
+        RateLimiter::for('webhooks', fn (Request $r) => [
+            Limit::perMinute(600)->by('webhooks-key:'.(string) $r->route('routeKey')),
+            Limit::perMinute(300)->by('webhooks-ip:'.$r->ip()),
+        ]);
+        // Gateway browser returns (signed URLs) per IP.
+        RateLimiter::for('payment-returns', fn (Request $r) => Limit::perMinute(60)->by('payment-returns:'.$r->ip()));
 
         RateLimiter::for('geo', fn (Request $r) => Limit::perMinute(60)->by('geo:'.$r->ip()));
     }

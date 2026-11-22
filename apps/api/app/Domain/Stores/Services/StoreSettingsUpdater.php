@@ -98,7 +98,7 @@ class StoreSettingsUpdater
 
         // Phase 5 §3.5: checkout / numbering / notification settings.
         foreach ([
-            'checkout.cod_enabled' => 'cod_enabled', 'notifications.new_order_email' => 'notify_new_order_email', 'notifications.sms_language' => 'sms_language',
+            'checkout.cod_enabled' => 'cod_enabled', 'checkout.cod_advance' => 'cod_advance', 'notifications.new_order_email' => 'notify_new_order_email', 'notifications.sms_language' => 'sms_language',
             // Phase 5b (P5B-56)
             'tax.display' => 'tax_display', 'tax.rate_bps' => 'tax_rate_bps', 'tax.bin' => 'tax_bin', 'invoice.footer' => 'invoice_footer',
         ] as $key => $column) {

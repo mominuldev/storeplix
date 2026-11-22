@@ -1,0 +1,8 @@
+{
+  "_source": "docs",
+  "_doc": "RedX OpenAPI v1.0.0-beta mirrored on apis.io (VERIFY against sandbox)",
+  "areas": [
+    {"id": 1, "name": "Dhanmondi", "post_code": 1209, "division_name": "Dhaka", "zone_id": 1},
+    {"id": 2, "name": "Mirpur", "post_code": 1216, "division_name": "Dhaka", "zone_id": 1}
+  ]
+}

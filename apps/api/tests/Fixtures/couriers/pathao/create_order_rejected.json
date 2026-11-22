@@ -1,0 +1,10 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "Please fix the given errors",
+  "type": "error",
+  "code": 422,
+  "errors": {
+    "recipient_zone": ["The selected recipient zone is invalid."]
+  }
+}

@@ -139,13 +139,15 @@ class UpdateStoreSettingsRequest extends FormRequest
             'region.timezone' => ['sometimes', 'string', 'timezone:all'],
 
             // Phase 5 §3.5: checkout, order numbering and notifications.
-            'checkout' => ['sometimes', 'array:cod_enabled'],
+            'checkout' => ['sometimes', 'array:cod_enabled,cod_advance'],
             'checkout.cod_enabled' => ['sometimes', 'boolean:strict'],
+            // 5b-2 (P5B-13): require the delivery charge online before a COD order.
+            'checkout.cod_advance' => ['sometimes', 'string', 'in:none,delivery_charge'],
             'order_prefix' => ['sometimes', 'string', 'regex:/^[A-Z]{1,6}$/'],
             'notifications' => ['sometimes', 'array:new_order_email,sms_language,customer_sms'],
             'notifications.new_order_email' => ['sometimes', 'boolean:strict'],
             'notifications.sms_language' => ['sometimes', 'string', 'in:bn,en'],
-            'notifications.customer_sms' => ['sometimes', 'array:order_placed,order_confirmed,order_shipped,order_cancelled,order_updated'],
+            'notifications.customer_sms' => ['sometimes', 'array:order_placed,order_confirmed,order_shipped,order_cancelled,order_updated,payment_link'],
             'notifications.customer_sms.*' => ['boolean:strict'],
             // Phase 5b (P5B-56, Figma 60:16858): VAT display + BIN and the invoice footer. Display only: totals and
             // tax_amount never change.

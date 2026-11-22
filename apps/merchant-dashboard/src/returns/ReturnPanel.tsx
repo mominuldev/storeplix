@@ -1,5 +1,5 @@
 import { isApiError } from '@storeplix/api-client';
-import type { Order, RefundMethod, ReturnRequest } from '@storeplix/types';
+import type { GatewayProvider, Order, RefundMethod, ReturnRequest } from '@storeplix/types';
 import { Badge, Button, Checkbox, Dialog, Input, MoneyInput, ReturnStatusBadge, ReturnTypeBadge, Select, Timeline, Toggle } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { ArrowRight, Minus, Plus, X } from 'lucide-react';
@@ -13,6 +13,8 @@ import { localPhone, newIdempotencyKey, refundMethodLabels, timeAgo } from '../c
 import { useOrder } from '../commerce/queries';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
+import { gatewayMeta, LINK_EXPIRY, linkGateways, type LinkExpiry } from '../payments/gateways';
+import { usePaymentGateways } from '../payments/queries';
 import { handlePlanLimit } from '../plan/Banners';
 import { refundAmountError } from '../orders/transitions';
 import { returnReasonLabels } from './labels';
@@ -21,8 +23,8 @@ import { returnEventToEntry } from './timeline';
 
 // Return detail panel 146:32329 (P5B-63–67). Actions come from `allowed_transitions`: Approve (optional free-text
 // pickup tracking code) / Reject → Mark received (3 checks + per-line restock) → Refund (O A, refunds endpoint with
-// `return_id`) or Create exchange order → Close. Not built (§14): customer photo, courier return pickup booking,
-// sending a payment link with the exchange (5b-2).
+// `return_id`) or Create exchange order (5b-2: optional payment link for the difference) → Close. Not built (§14):
+// customer photo, courier return pickup booking.
 
 export function ReturnPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const query = useReturn(id);
@@ -473,10 +475,23 @@ function ExchangeDialog({ ret, onClose }: { ret: ReturnRequest; onClose: () => v
   const [error, setError] = useState<string | null>(null);
   const diff = ret.price_difference_amount ?? 0;
   const blocked = diff < 0 && !scope.canManageRefunds;
+  // P5B-67: ask for the difference with a payment link (connected + enabled gateway only).
+  const gateways = linkGateways(usePaymentGateways().data);
+  const [sendLink, setSendLink] = useState(false);
+  const [linkProvider, setLinkProvider] = useState<GatewayProvider | ''>('');
+  const [linkExpiry, setLinkExpiry] = useState<LinkExpiry>(120);
+  const provider = linkProvider || gateways[0]?.provider || '';
+  const withLink = diff > 0 && sendLink && !!provider;
   const create = useMutation({
-    mutationFn: () => api.returns.exchangeOrder(scope.storeId!, ret.id, { shipping_amount_override: overriding ? override : null, send_payment_link: null }, key),
+    mutationFn: () =>
+      api.returns.exchangeOrder(
+        scope.storeId!,
+        ret.id,
+        { shipping_amount_override: overriding ? override : null, send_payment_link: withLink ? { provider: provider as GatewayProvider, expires_in_minutes: linkExpiry } : null },
+        key,
+      ),
     onSuccess: async (r) => {
-      toast(`Exchange order ${r.order.number} created.`);
+      toast(r.payment_link ? `Exchange order ${r.order.number} created and the payment link sent.` : `Exchange order ${r.order.number} created.`);
       onClose();
       await invalidate(ret);
       navigate(`/orders/${r.order.id}`);
@@ -503,7 +518,32 @@ function ExchangeDialog({ ret, onClose }: { ret: ReturnRequest; onClose: () => v
         </p>
         <Checkbox label="Set the delivery charge by hand" checked={overriding} onChange={(e) => setOverriding(e.target.checked)} />
         {overriding && <MoneyInput id="exchange-shipping" label="Delivery charge" value={override} onChange={setOverride} />}
-        <p className="text-caption text-text-muted">Sending a payment link for the difference is coming soon.</p>
+        {diff > 0 &&
+          (gateways.length ? (
+            <div className="flex flex-col gap-3 rounded-md border border-border-default p-3">
+              <Checkbox label={`Send a payment link for ${formatBdt(diff)}`} checked={sendLink} onChange={(e) => setSendLink(e.target.checked)} />
+              {sendLink && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select id="exchange-link-gateway" label="Collect with" value={provider} onChange={(e) => setLinkProvider(e.target.value as GatewayProvider)}>
+                    {gateways.map((g) => (
+                      <option key={g.provider} value={g.provider}>
+                        {gatewayMeta[g.provider].name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select id="exchange-link-expiry" label="Link expires in" value={String(linkExpiry)} onChange={(e) => setLinkExpiry(Number(e.target.value) as LinkExpiry)}>
+                    {LINK_EXPIRY.map((x) => (
+                      <option key={x.minutes} value={x.minutes}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-caption text-text-muted">Connect bKash or SSLCommerz in Integrations to ask for the difference with a payment link.</p>
+          ))}
         {blocked && <p className="text-caption text-danger">Only owners and managers can create an exchange that needs a refund.</p>}
         {error && (
           <p role="alert" className="text-caption text-danger">

@@ -24,6 +24,8 @@ export const can = {
   manageRefunds: (role: TenantRole | undefined) => has(ROLE_CAN.manage_refunds, role),
   /** Phase 5a P5-21: shipping, checkout, notifications, publish (O A). */
   manageSettings: (role: TenantRole | undefined) => has(ROLE_CAN.manage_settings, role),
+  /** Phase 5b P5B-10: connect/disconnect gateways and couriers (O A). */
+  manageIntegrations: (role: TenantRole | undefined) => has(ROLE_CAN.manage_integrations, role),
   manageStaff: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   editSettings: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   viewBilling: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',

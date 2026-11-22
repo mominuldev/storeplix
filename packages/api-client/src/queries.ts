@@ -9,6 +9,7 @@ import type {
   ReturnStatus,
   ReturnType,
   CourierProvider,
+  ShipmentListFilters,
   StockMovementFilters,
 } from '@storeplix/types';
 
@@ -79,6 +80,8 @@ export function orderListQuery(f: OrderListFilters = {}): Query {
     // 5b §4.8: "Not printed · Printed today" on the print page.
     'filter[printed]': f.printed || undefined,
     'filter[not_printed]': f.not_printed || undefined,
+    // 5b-3: "Book parcels" loads orders without an active shipment.
+    'filter[has_shipment]': f.has_shipment === undefined ? undefined : f.has_shipment ? '1' : '0',
     q: text(f.q),
     sort: f.sort,
     page: f.page,
@@ -104,6 +107,20 @@ export function returnListQuery(f: ReturnListFilters = {}): Query {
     'filter[type]': list(f.type),
     'filter[reason]': list(f.reason),
     'filter[provider]': list(f.provider),
+    q: text(f.q),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** Phase 5b §4.7 `GET /shipments`: status takes ShipmentStatus values or the groups problems, active, final. */
+export function shipmentListQuery(f: ShipmentListFilters = {}): Query {
+  return {
+    'filter[provider]': list(f.provider),
+    'filter[status]': list(f.status),
+    'filter[booked_at][gte]': f.booked_from || undefined,
+    'filter[booked_at][lte]': f.booked_to || undefined,
     q: text(f.q),
     sort: f.sort,
     page: f.page,

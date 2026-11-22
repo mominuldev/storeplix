@@ -21,6 +21,18 @@
 # PHASE-4-CONTRACT §5.4: $timeout 300 s, $tries 1). REDIS_QUEUE_RETRY_AFTER must stay > 300.
 # `queue-notifications` works `notifications` (PHASE-5-CONTRACT P5-26: order SMS via REVE + order mail,
 # dispatched after commit; $tries 3, deduped per (order, event) through sms_messages/order_events).
+# `queue-documents` works `documents` (PHASE-5B-CONTRACT §17.2, P5B-53: invoice/label PDFs through the
+# `gotenberg` service; job $timeout 120 s, $tries 2). Gotenberg has no published port: only the API reaches it.
+# `queue-webhooks` works `webhooks` (PHASE-5B-CONTRACT §17.3: IPN verification and courier webhook events
+# (Steadfast/Pathao/RedX, P5B-37), --tries=5 --backoff=10,60,300). `queue-bulk` also books shipment batches (P5B-40).
+# `scheduler` runs `schedule:work` (payments:expire / reconcile / refund-status, prunes; 5b-2; couriers:sync every
+# 15 min and couriers:reconcile-bookings every 2 min, 5b-3).
+#
+# Payments (5b-2): PAYMENTS_FAKE=true (default here, DEV-ONLY) serves the fake hosted page
+# http://localhost:8000/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
+# Sandbox runs: PAYMENTS_FAKE=false, PUBLIC_API_URL=<https tunnel>, credentials entered in the dashboard.
+# Couriers (5b-3): COURIERS_FAKE=true (default here, DEV-ONLY) binds FakeCourier for Steadfast/Pathao/RedX and the
+# testing-only fake-advance endpoint; set COURIERS_FAKE=false with real test-account credentials for certification.
 #
 # Postgres roles + RLS (PHASE-5B-CONTRACT §2, ADR 0012)
 #   infrastructure/docker/postgres/initdb/01-roles.sql runs on a FRESH pgdata volume and creates
@@ -99,6 +111,24 @@ x-api-env: &api-env
   REDIS_QUEUE_RETRY_AFTER: "360"
   # merchant-bulk throttle (imports/exports per tenant per hour). Contract default 10; the e2e job raises it.
   THROTTLE_MERCHANT_BULK_PER_HOUR: ${THROTTLE_MERCHANT_BULK_PER_HOUR:-10}
+  # Phase 5b-4 documents (ADR 0014): PDFs through the internal Gotenberg service. `html` stores the rendered
+  # HTML instead (P5B-57; the e2e job uses it). Basic-auth credentials must match the gotenberg service below.
+  DOCUMENTS_DRIVER: ${DOCUMENTS_DRIVER:-gotenberg}
+  GOTENBERG_URL: http://gotenberg:3000
+  GOTENBERG_USERNAME: ${GOTENBERG_USERNAME:-storeplix}
+  GOTENBERG_PASSWORD: ${GOTENBERG_PASSWORD:-dev-gotenberg-change-me}
+  # Phase 5b-2 payments (PHASE-5B-CONTRACT §15, P5B-10, P5B-29). DEV-ONLY values.
+  # PAYMENTS_FAKE binds FakeGateway for bKash + SSLCommerz and registers /api/v1/dev/fake-gateway/{payment};
+  # the API refuses to boot with it in production. INTEGRATION_CREDENTIALS_KEY encrypts merchant gateway/courier
+  # credentials (separate from APP_KEY): 32 random bytes, base64 (`openssl rand -base64 32`); prod uses the secret manager.
+  PAYMENTS_FAKE: ${PAYMENTS_FAKE:-true}
+  # Phase 5b-3 couriers (§15): binds FakeCourier for all three providers (+ `couriers:fake-advance` and the
+  # testing-only fake-advance endpoint). DEV-ONLY: the API refuses it in production, like PAYMENTS_FAKE.
+  COURIERS_FAKE: ${COURIERS_FAKE:-true}
+  INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:-base64:97PbbDQ+sQ8MRru928hXvVNBBCs+bsxiMkiVbd3d0pc=}
+  INTEGRATION_CREDENTIALS_PREVIOUS_KEYS: ${INTEGRATION_CREDENTIALS_PREVIOUS_KEYS:-}
+  # Base of the signed payment return URLs and the webhook URLs shown to merchants. Sandbox work: the tunnel URL.
+  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
 
 x-api-common: &api-common
   build:
@@ -216,7 +246,8 @@ services:
       timeout: 5s
       retries: 3
 
-  # Phase 4 CSV import/export (ValidateImport, RunImport, RunExport) on their own worker so a 5 000-row
+  # Phase 4 CSV import/export (ValidateImport, RunImport, RunExport) and 5b-3 shipment batches (P5B-40, up to 500
+  # parcels per batch) on their own worker so a 5 000-row
   # import never delays mail, media or storefront revalidation. Timeout above the jobs' 300 s.
   queue-bulk:
     <<: *api-common
@@ -248,6 +279,73 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # Phase 5b-4 documents (PHASE-5B-CONTRACT §17.2): one worker on `documents`, above the job's 120 s timeout.
+  queue-documents:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=documents", "--tries=2", "--timeout=150", "--sleep=1", "--memory=512"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 5b-2/5b-3 webhooks (PHASE-5B-CONTRACT §17.3, P5B-19, P5B-37): IPN verification jobs (SSLCommerz Validation
+  # API, bKash Query) and courier webhook events (re-queried from the courier before money effects) on their own worker with provider-friendly backoff, so a slow gateway never delays checkout jobs.
+  queue-webhooks:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=webhooks", "--tries=5", "--backoff=10,60,300", "--timeout=60", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Laravel scheduler (routes/console.php). Phase 5b-2 adds payments:expire (1 min, P5B-21), payments:reconcile
+  # (5 min, P5B-19) and payments:refund-status (10 min, P5B-24); without it unpaid holds never expire and a lost
+  # IPN is never reconciled. Platform discovery runs on pgsql_admin, per-tenant work is dispatched as jobs.
+  scheduler:
+    <<: *api-common
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'schedule:work' >/dev/null || ps aux | grep -q '[s]chedule:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # HTML → PDF (ADR 0014). Exact tag + digest, >= 14 days old at pinning (9.1.0, released 2026-11-06).
+  # Internal only: no `ports:`. Chromium gets index.html + font files and no network access to anything else.
+  gotenberg:
+    image: gotenberg/gotenberg:9.1.0@sha256:150c1dec38ccb51905f6bd29442706668f2442fb5d290d9eb234708dc054dd1a
+    command: ["gotenberg", "--api-enable-basic-auth", "--api-timeout=120s"]
+    environment:
+      GOTENBERG_API_BASIC_AUTH_USERNAME: ${GOTENBERG_USERNAME:-storeplix}
+      GOTENBERG_API_BASIC_AUTH_PASSWORD: ${GOTENBERG_PASSWORD:-dev-gotenberg-change-me}
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27-alpine

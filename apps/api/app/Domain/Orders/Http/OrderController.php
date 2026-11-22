@@ -10,6 +10,7 @@ use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\OrderPlacementService;
 use App\Domain\Orders\OrderPresenter;
 use App\Domain\Orders\OrderService;
+use App\Domain\Payments\PaymentService;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Idempotency\IdempotencyGuard;
 use App\Domain\Shared\Support\Phone;
@@ -39,7 +40,8 @@ class OrderController
         Gate::authorize('view', $store);
         $list = fn (array $values) => 'regex:/^('.implode('|', $values).')(,('.implode('|', $values).'))*$/';
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed'],
+            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed,has_shipment'],
+            'filter.has_shipment' => ['sometimes', 'string', 'in:0,1'],
             'filter.printed' => ['sometimes', 'string', 'in:invoice,label'],
             'filter.not_printed' => ['sometimes', 'string', 'in:invoice,label'],
             'filter.status' => ['sometimes', 'string', $list(Order::STATUSES)],
@@ -67,6 +69,12 @@ class OrderController
         }
         if (isset($filter['not_printed'])) {
             $query->whereNull($filter['not_printed'].'_printed_at');
+        }
+        // 5b-3: orders with (1) / without (0) an active shipment (not cancelled / booking_failed).
+        if (isset($filter['has_shipment'])) {
+            $active = fn ($q) => $q->selectRaw('1')->from('shipments')->whereColumn('shipments.order_id', 'orders.id')
+                ->whereNotIn('shipments.status', ['cancelled', 'booking_failed']);
+            $filter['has_shipment'] === '1' ? $query->whereExists($active) : $query->whereNotExists($active);
         }
         match ($input['sort'] ?? '-placed_at') {
             'placed_at' => $query->orderBy('placed_at')->orderBy('id'),
@@ -291,8 +299,14 @@ class OrderController
             'reason' => ['required', 'string', Rule::in(Order::CANCEL_REASONS)],
             'note' => ['sometimes', 'nullable', 'string', 'max:500'],
             'notify_customer' => ['sometimes', 'boolean'],
+            'refund_to_gateway' => ['sometimes', 'boolean'],
         ]);
         $order = $this->orders->cancel($order, $input['reason'], AddressValidator::clean($input['note'] ?? null), $input['notify_customer'] ?? null, $request->user(), $this->context->role());
+        // P5B-25: the cancel commits first; then the online payments go back through their gateway (default on).
+        if (($input['refund_to_gateway'] ?? true) && $order->paid_amount - $order->refunded_amount > 0) {
+            app(PaymentService::class)->refundCancelledOrder($order, $request->user());
+            $order->refresh();
+        }
 
         return $this->one($order);
     }
@@ -337,16 +351,19 @@ class OrderController
         }
         $input = $request->validate([
             'amount' => ['required', 'integer:strict', 'min:1', 'max:1000000000000'],
-            'method' => ['required', 'string', Rule::in(Payment::REFUND_METHODS)],
+            'method' => ['required', 'string', Rule::in([...Payment::REFUND_METHODS, Payment::METHOD_GATEWAY])],
             'reference' => ['sometimes', 'nullable', 'string', 'max:64'],
             'note' => ['sometimes', 'nullable', 'string', 'max:255'],
             'return_id' => ['sometimes', 'nullable', 'string', 'max:26'],
+            'payment_id' => ['required_if:method,gateway', 'nullable', 'string', 'max:26'],
         ]);
         $input['reference'] = AddressValidator::clean($input['reference'] ?? null);
         $input['note'] = AddressValidator::clean($input['note'] ?? null);
-        $payment = $this->orders->refund($order, $input, $request->header(IdempotencyGuard::HEADER), $request->user());
+        $payment = $input['method'] === Payment::METHOD_GATEWAY
+            ? app(PaymentService::class)->refund($order, $input, $request->header(IdempotencyGuard::HEADER), $request->user())
+            : $this->orders->refund($order, $input, $request->header(IdempotencyGuard::HEADER), $request->user());
 
-        return new JsonResponse(['data' => OrderPresenter::payment($payment->load('actor'))], 201);
+        return new JsonResponse(['data' => OrderPresenter::payment($payment->load('actor'), $this->context->role())], 201);
     }
 
     /** @return array<string, list<mixed>> */

@@ -1,0 +1,7 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "The user credentials were incorrect.",
+  "type": "error",
+  "code": 401
+}

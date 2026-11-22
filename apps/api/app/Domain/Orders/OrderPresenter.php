@@ -3,6 +3,7 @@
 namespace App\Domain\Orders;
 
 use App\Domain\Catalog\Models\ProductVariant;
+use App\Domain\Couriers\ShipmentPresenter;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Media\Http\Resources\MediaPresenter;
@@ -13,7 +14,10 @@ use App\Domain\Orders\Models\OrderEvent;
 use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Models\Shipment;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Shared\Http\UserRef;
+use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
 
 /** Order payloads (@storeplix/types): merchant OrderSummary / Order / OrderQuote lines, storefront order and tracking. */
@@ -113,7 +117,7 @@ final class OrderPresenter
             'customer_note' => $order->customer_note,
             'items' => $items->map(fn (OrderItem $item) => self::item($item, $media, $variants[$item->variant_id] ?? null, $costs))->values()->all(),
             'events' => $events->map(fn (OrderEvent $e) => self::event($e))->all(),
-            'payments' => $order->payments->map(fn (Payment $p) => self::payment($p))->values()->all(),
+            'payments' => $order->payments->map(fn (Payment $p) => self::payment($p, $role))->values()->all(),
             'shipment' => $order->shipment ? self::shipment($order->shipment) : null,
             'subtotal_amount' => $order->subtotal_amount,
             'discount_amount' => $order->discount_amount,
@@ -135,9 +139,9 @@ final class OrderPresenter
             ],
             'revision' => $order->revision,
             'created_by' => UserRef::of($order->createdBy),
-            // 5b (payment_links: 5b-2)
+            // 5b
             'shipments' => $order->shipments()->get()->map(fn (Shipment $sh) => self::shipment($sh))->values()->all(),
-            'payment_links' => [],
+            'payment_links' => self::paymentLinks($order),
             'payment_expires_at' => UserRef::iso($order->payment_expires_at),
             'source_order_id' => $order->source_order_id,
         ];
@@ -230,8 +234,20 @@ final class OrderPresenter
         ];
     }
 
-    /** @return array<string, mixed> */
-    public static function payment(Payment $payment): array
+    /** @return list<array<string, mixed>> PaymentLink[] (newest first) */
+    public static function paymentLinks(Order $order): array
+    {
+        $links = PaymentLink::query()->where('order_id', $order->id)->with('creator')->orderByDesc('created_at')->orderByDesc('id')->get();
+        if ($links->isEmpty()) {
+            return [];
+        }
+        $store = Store::query()->with('primaryDomain')->findOrFail($order->store_id);
+
+        return $links->map(fn (PaymentLink $l) => PaymentPresenter::link($l, $store))->values()->all();
+    }
+
+    /** @return array<string, mixed> Payment */
+    public static function payment(Payment $payment, ?string $role = null): array
     {
         return [
             'id' => $payment->id,
@@ -245,26 +261,23 @@ final class OrderPresenter
             'note' => $payment->note,
             'actor' => UserRef::of($payment->actor),
             'created_at' => UserRef::iso($payment->created_at),
+            // 5b
+            'purpose' => $payment->purpose ?? Payment::PURPOSE_ORDER,
+            'provider_trx_id' => $payment->provider_trx_id,
+            'refunded_amount' => (int) ($payment->refunded_amount ?? 0),
+            'expires_at' => UserRef::iso($payment->expires_at),
+            'failure_code' => $payment->failure_code,
+            'payment_link_id' => $payment->payment_link_id,
             'return_request_id' => $payment->return_request_id ?? null,
+            'can_refund' => $payment->type === Payment::TYPE_CHARGE && $payment->isOnline() && $payment->status === Payment::STATUS_SUCCEEDED
+                && Permission::ManageRefunds->grantedTo($role) && (int) $payment->amount - (int) $payment->refunded_amount > 0,
         ];
     }
 
-    /** @return array<string, mixed> */
+    /** @return array<string, mixed> Shipment (5a fields + 5b courier fields; 5b-3 ShipmentPresenter) */
     public static function shipment(Shipment $shipment): array
     {
-        return [
-            'id' => $shipment->id,
-            'provider' => $shipment->provider,
-            'carrier_name' => $shipment->carrier_name,
-            'tracking_code' => $shipment->tracking_code,
-            'tracking_url' => $shipment->tracking_url,
-            'status' => $shipment->status,
-            'consignment_id' => $shipment->getAttribute('consignment_id'),
-            'cod_amount' => $shipment->cod_amount,
-            'shipped_at' => UserRef::iso($shipment->shipped_at),
-            'delivered_at' => UserRef::iso($shipment->delivered_at),
-            'returned_at' => UserRef::iso($shipment->returned_at),
-        ];
+        return ShipmentPresenter::shipment($shipment);
     }
 
     /** @param array<string, mixed> $a @return array<string, mixed> Address */
@@ -326,6 +339,9 @@ final class OrderPresenter
             'due_amount' => $order->dueAmount(),
             'currency' => $order->currency,
             'delivery' => ['zone_name' => $order->shipping_zone_name, 'min_days' => $order->delivery_min_days, 'max_days' => $order->delivery_max_days],
+            // 5b
+            'payment' => PaymentPresenter::storefrontState($order),
+            'paid_amount' => $order->paid_amount,
         ];
     }
 
@@ -337,7 +353,9 @@ final class OrderPresenter
         foreach ($events as $event) {
             $timeline[] = ['status' => $event->to_status, 'at' => UserRef::iso($event->created_at)];
         }
-        $shipment = Shipment::query()->where('order_id', $order->id)->where('status', '<>', 'cancelled')->first();
+        // The active shipment: newest, not cancelled / booking_failed (PHASE-5B §4.7).
+        $shipment = Shipment::query()->where('order_id', $order->id)->whereNotIn('status', ['cancelled', 'booking_failed'])
+            ->orderByDesc('created_at')->orderByDesc('id')->first();
 
         return [
             'number' => $order->number,
@@ -353,7 +371,7 @@ final class OrderPresenter
                 'carrier_name' => $shipment->carrier_name,
                 'tracking_code' => $shipment->tracking_code,
                 'tracking_url' => $shipment->tracking_url,
-            ] : null,
+            ] + ShipmentPresenter::tracking($shipment) : null,
         ];
     }
 }

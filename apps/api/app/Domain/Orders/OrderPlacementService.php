@@ -18,6 +18,7 @@ use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Notifications\OrderNotifier;
+use App\Domain\Payments\PaymentService;
 use App\Domain\Pricing\CartPricer;
 use App\Domain\Pricing\LineLoader;
 use App\Domain\Shared\Http\ApiException;
@@ -44,6 +45,9 @@ use Illuminate\Validation\ValidationException;
  */
 class OrderPlacementService
 {
+    /** The pending online charge placeLocked() created (checkout only). */
+    private ?Payment $lastCharge = null;
+
     public function __construct(
         private readonly InventoryService $inventory,
         private readonly CouponValidator $coupons,
@@ -55,20 +59,38 @@ class OrderPlacementService
     ) {}
 
     /**
-     * Storefront checkout. Returns the order and the raw confirmation token (stored hashed).
+     * Storefront checkout. Returns the order, the raw confirmation token (stored hashed) and, for online payments
+     * and required advances (P5B-13/14/15), the PaymentInitiation: the order commits first (`pending_payment`,
+     * 30-min hold, one pending charge), then the gateway is called OUTSIDE the transaction.
      *
      * @param  array<string, mixed>  $input
-     * @return array{order: Order, token: string}
+     * @return array{order: Order, token: string, payment: array<string, mixed>|null}
      */
     public function checkout(Store $store, string $cartToken, array $input): array
     {
         if ($store->status !== Store::STATUS_ACTIVE) {
             throw new ApiException(409, 'store_not_live', "Your shop isn't live yet. Orders open after you go live.");
         }
-        $this->assertPaymentMethod($store, $input['payment_method'] ?? null);
+        $payments = app(PaymentService::class); // resolved lazily: PaymentService → OrderService → ReturnService → this
+        $method = $input['payment_method'] ?? null;
+        $online = null;
+        $advance = null;
+        if ($method === 'cod') {
+            $this->assertPaymentMethod($store, 'cod');
+            // P5B-13: the advance gateway matters only when the shop requires it (checked against the shipping below).
+            if (($input['advance_gateway'] ?? null) !== null) {
+                $advance = $payments->usableAccount($store->id, (string) $input['advance_gateway'])
+                    ?? throw PaymentService::methodUnavailable('advance_gateway', 'This payment method isn’t available.');
+            }
+        } else {
+            $online = $payments->usableAccount($store->id, is_string($method) ? $method : null)
+                ?? throw PaymentService::methodUnavailable('payment_method', 'This payment method isn’t available for this shop.');
+        }
         $token = CartService::newToken();
 
-        $order = DB::transaction(function () use ($store, $cartToken, $input, $token) {
+        $charge = null;
+        $this->lastCharge = null;
+        $order = DB::transaction(function () use ($store, $cartToken, $input, $token, $online, $advance, &$charge) {
             $cart = $this->carts->require($store, $cartToken, lock: true);
             $items = DB::table('cart_items')->where('cart_id', $cart->id)->orderBy('created_at')->orderBy('id')->get(['id', 'variant_id', 'quantity']);
             if ($items->isEmpty()) {
@@ -84,7 +106,11 @@ class OrderPlacementService
                 'source' => 'storefront',
                 'channel' => 'website',
                 'confirmation_token' => $token,
+                'online_account' => $online,
+                'advance_account' => $advance,
             ], [Product::ACTIVE]);
+            $charge = $this->lastCharge;
+            $this->lastCharge = null;
 
             $cart->status = Cart::CONVERTED;
             $cart->converted_order_id = $order->id;
@@ -94,9 +120,13 @@ class OrderPlacementService
             return $order;
         });
 
+        if ($order->status === Order::PENDING_PAYMENT && $charge !== null) {
+            // P5B-14: the shopper SMS and the merchant email wait until the order leaves pending_payment.
+            return ['order' => $order, 'token' => $token, 'payment' => $payments->initiate($charge)];
+        }
         $this->notifier->placed($order, null);
 
-        return ['order' => $order, 'token' => $token];
+        return ['order' => $order, 'token' => $token, 'payment' => null];
     }
 
     /**
@@ -319,9 +349,22 @@ class OrderPlacementService
         $order->store_id = $store->id;
         $order->sequence = $sequence;
         $order->number = self::prefix($store, $settings).'-'.$sequence;
-        $order->status = Order::PENDING;
+        // 5b-2: online payment of the total, or the delivery charge in advance on a COD order (P5B-13/14).
+        $online = $total > 0 ? ($input['online_account'] ?? null) : null;
+        $advanceAmount = 0;
+        if ($storefront && $online === null && $total > 0 && PaymentService::advanceRequired($settings, $shipping['shipping'])) {
+            if (($input['advance_account'] ?? null) === null) {
+                throw new ApiException(422, 'advance_required', 'Pay the delivery charge online to place this order.', [
+                    'advance_gateway' => ['Choose how to pay the delivery charge.'],
+                ]);
+            }
+            $advanceAmount = $shipping['shipping'];
+        }
+        $hold = $online !== null || $advanceAmount > 0;
+
+        $order->status = $hold ? Order::PENDING_PAYMENT : Order::PENDING;
         $order->payment_status = $total === 0 ? 'paid' : 'unpaid';
-        $order->payment_method = 'cod';
+        $order->payment_method = $online?->provider ?? 'cod';
         $order->created_via = $storefront ? 'storefront' : 'dashboard';
         $order->channel = $input['channel'];
         $order->customer_id = $customer->id;
@@ -353,6 +396,7 @@ class OrderPlacementService
             $order->confirmation_expires_at = $now->copy()->addDay();
         }
         $order->placed_at = $now;
+        $order->payment_expires_at = $hold ? $now->copy()->addMinutes((int) config('payments.hold_minutes', 30)) : null;
         $order->created_by = $storefront ? null : $user?->getKey();
         $order->ip = $input['ip'] ?? null;
         $order->user_agent = isset($input['user_agent']) ? Str::limit((string) $input['user_agent'], 252, '...') : null;
@@ -392,16 +436,24 @@ class OrderPlacementService
         if ($override !== null) {
             $meta += ['shipping_overridden' => true, 'computed_shipping_amount' => $computedShipping, 'shipping_amount' => $override];
         }
-        OrderTimeline::record($order, 'placed', $storefront ? null : $user, null, $meta, null, Order::PENDING, $storefront ? 'customer' : null);
+        OrderTimeline::record($order, 'placed', $storefront ? null : $user, null, $meta, null, $order->status, $storefront ? 'customer' : null);
 
-        if ($total > 0) {
+        if ($hold) {
+            $payments = app(PaymentService::class);
+            $charge = $online !== null
+                ? $payments->newCharge($order, $online, Payment::PURPOSE_ORDER, $total, $order->payment_expires_at)
+                : $payments->newCharge($order, $input['advance_account'], Payment::PURPOSE_ADVANCE, $advanceAmount, $order->payment_expires_at);
+            $this->lastCharge = $charge;
+        }
+
+        if ($total - $advanceAmount > 0 && $online === null) {
             $payment = new Payment;
             $payment->store_id = $store->id;
             $payment->order_id = $order->id;
             $payment->provider = 'cod';
             $payment->type = 'charge';
             $payment->status = 'pending';
-            $payment->amount = $total;
+            $payment->amount = $total - $advanceAmount;
             $payment->currency = $order->currency;
             $payment->save();
         }

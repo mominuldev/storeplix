@@ -19,3 +19,14 @@ Schedule::command('orders:expire-confirmation-tokens')->daily();
 
 // Phase 5b-4: generated invoices / labels live 24 h.
 Schedule::command('documents:prune')->hourly();
+
+// Phase 5b-2: online payments (PHASE-5B §3; discovery on the platform connection, one tenant job each).
+Schedule::command('payments:expire')->everyMinute()->withoutOverlapping();
+Schedule::command('payment-links:expire')->everyMinute()->withoutOverlapping();
+Schedule::command('payments:reconcile')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('payments:refund-status')->everyTenMinutes()->withoutOverlapping();
+Schedule::command('webhooks:prune')->daily();
+
+// Phase 5b-3: couriers (P5B-38 poll every 15 min, P5B-33 unknown booking outcomes every 2 min).
+Schedule::command('couriers:sync')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('couriers:reconcile-bookings')->everyTwoMinutes()->withoutOverlapping();

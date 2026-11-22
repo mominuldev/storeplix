@@ -1,0 +1,5 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "events": ["order.created", "order.updated", "order.pickup-requested", "order.assigned-for-pickup", "order.picked", "order.pickup-failed", "order.pickup-cancelled", "order.at-the-sorting-hub", "order.in-transit", "order.received-at-last-mile-hub", "order.assigned-for-delivery", "order.delivered", "order.partial-delivery", "order.returned", "order.delivery-failed", "order.on-hold", "order.paid", "order.paid-return", "order.exchanged", "order.return-id-created", "order.return-in-transit", "order.returned-to-merchant"]
+}

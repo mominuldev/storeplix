@@ -370,7 +370,10 @@ jobs:
             test_concurrent_same_key_creates_one_order \
             test_manual_order_plan_limit_race \
             test_parallel_adjustments_never_go_negative \
-            test_plan_limit_race; do
+            test_plan_limit_race \
+            test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
+            test_concurrent_ipn_and_return_apply_the_payment_once \
+            test_concurrent_bookings_create_one_shipment; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -564,7 +567,10 @@ jobs:
             test_concurrent_same_key_creates_one_order \
             test_manual_order_plan_limit_race \
             test_parallel_adjustments_never_go_negative \
-            test_plan_limit_race; do
+            test_plan_limit_race \
+            test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
+            test_concurrent_ipn_and_return_apply_the_payment_once \
+            test_concurrent_bookings_create_one_shipment; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
@@ -619,14 +625,89 @@ jobs:
           fi
           echo "no storefront secret in client bundles"
 
+  # PHASE-5B-CONTRACT §7 / §13 / §17.7: the `documents` group against a REAL Gotenberg (same pinned image and
+  # basic auth as docker-compose.yml): Bangla font embedded (pdffonts), text round-trip (pdftotext), every kind ×
+  # language a PDF with the expected pages, the queued job stores a PDF, 100 labels < 20 s. sqlite is enough
+  # here (documents isolation with RLS on runs in api-rls). Fails when the group is empty or anything skips.
+  api-documents:
+    name: api (documents, real Gotenberg)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: testing
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      STOREFRONT_REVALIDATE_URL: ''
+      GOTENBERG_URL: http://127.0.0.1:3000
+      GOTENBERG_USERNAME: ci
+      GOTENBERG_PASSWORD: ci-gotenberg
+    steps:
+      - uses: actions/checkout@v4
+      # Service containers can't override the command, and basic auth needs --api-enable-basic-auth.
+      - name: Start Gotenberg (pinned, basic auth)
+        working-directory: .
+        run: |
+          image=$(awk '/^  gotenberg:/{f=1} f && /image:/{print $2; exit}' docker-compose.yml)
+          [ -n "$image" ] || { echo "::error::gotenberg image not found in docker-compose.yml"; exit 1; }
+          echo "image: $image"
+          docker run -d --name gotenberg -p 127.0.0.1:3000:3000 --memory=1g \
+            -e GOTENBERG_API_BASIC_AUTH_USERNAME="$GOTENBERG_USERNAME" \
+            -e GOTENBERG_API_BASIC_AUTH_PASSWORD="$GOTENBERG_PASSWORD" \
+            "$image" gotenberg --api-enable-basic-auth --api-timeout=120s
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3000/health >/dev/null && break; sleep 2; done
+          curl -sf http://127.0.0.1:3000/health
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3000/forms/chromium/convert/html)
+          [ "$code" = 401 ] || { echo "::error::Gotenberg accepted a request without basic auth (${code})"; exit 1; }
+      - name: poppler-utils (pdffonts, pdftotext, pdfinfo)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, bcmath, zip, gd
+          ini-values: memory_limit=1G
+          coverage: none
+          tools: composer:v2
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: documents group (real Gotenberg, must not skip)
+        run: |
+          mkdir -p build
+          php artisan test --group=documents --log-junit build/documents.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/documents.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          skipped=$(grep -o 'skipped="[0-9]*"' build/documents.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "documents: tests=${ran} skipped=${skipped} exit=${status}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'documents'"; exit 1; }
+          [ "${skipped:-0}" -eq 0 ] || { echo "::error::${skipped} documents test(s) skipped: Gotenberg or poppler missing"; exit 1; }
+          exit $status
+      - if: failure()
+        name: Gotenberg logs
+        run: docker logs gotenberg 2>&1 | tail -100
+
   # Single required status for branch protection.
   ci-ok:
     if: always()
-    needs: [changes, api, api-postgres, api-perf, api-rls, web, themes]
+    needs: [changes, api, api-postgres, api-perf, api-rls, api-documents, web, themes]
     runs-on: ubuntu-latest
     steps:
       - name: Verify job results
         run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.api-perf.result }}" "${{ needs.api-rls.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.api.result }}" "${{ needs.api-postgres.result }}" "${{ needs.api-perf.result }}" "${{ needs.api-rls.result }}" "${{ needs.api-documents.result }}" "${{ needs.web.result }}" "${{ needs.themes.result }}"; do
             case "$r" in success|skipped) ;; *) echo "job result: $r"; exit 1 ;; esac
           done

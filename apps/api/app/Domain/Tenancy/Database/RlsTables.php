@@ -18,7 +18,7 @@ final class RlsTables
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -29,6 +29,10 @@ final class RlsTables
         'idempotency_keys',
         // 5b-5 order changes, 5b-4 documents (RLS enabled in their own migrations)
         'return_requests', 'return_items', 'return_events', 'document_templates', 'documents',
+        // 5b-2 payments
+        'payment_gateway_accounts', 'payment_links', 'webhook_events',
+        // 5b-3 couriers
+        'courier_accounts', 'shipment_events', 'courier_area_mappings', 'shipment_batches',
     ];
 
     /** @var list<string> platform tables: no tenant_id, no RLS */

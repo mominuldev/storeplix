@@ -1,0 +1,15 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "Order info",
+  "type": "success",
+  "code": 200,
+  "data": {
+    "consignment_id": "DL121224VS8TTJ",
+    "merchant_order_id": "01JDXK0000000000000000SHIP",
+    "order_status": "Delivered",
+    "order_status_slug": "Delivered",
+    "updated_at": "2026-11-23 15:20:00",
+    "invoice_id": null
+  }
+}

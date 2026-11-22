@@ -18,6 +18,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | Bundle secret scan | grep build output for `STOREFRONT_API_KEY` | `.next/static`, `dist/` | yes |
 | Theme schema parity (Phase 3) | Vitest + AJV (`packages/themes`), storefront Zod (`tests/theme.test.ts`), PHP opis (`tests/Feature/Themes`) + `ThemeSchemaSyncTest` | `packages/themes/fixtures` | yes, `themes` job (also when only `packages/themes` changes) |
 | **RLS (Phase 5b-1)** | Pest group `rls` (raw-SQL probes, coverage, definer functions, GUC lifecycle) + the whole `tenancy` and `security` groups, the race tests and the checkout p95 test, all with the app connected as `storeplix_app` and `TENANCY_RLS=true` | `apps/api/tests/**` | yes, job `api-rls` (Postgres 16, roles from `01-roles.sql`, migrations as `storeplix_owner`). Fails when `rls` is empty **or anything in it skips**, when a race test or the checkout p95 test doesn't run, and when a `tenant_id` table lacks forced RLS. See §2d |
+| **Documents (Phase 5b-4)** | Pest group `documents` against a real Gotenberg (pinned in `docker-compose.yml`): Bangla font embedded (`pdffonts`), text round-trip (`pdftotext`, whitespace-insensitive), every kind × language with the expected pages, the queued job stores a PDF, 100 labels < 20 s. Skips without `GOTENBERG_URL` + poppler-utils | `apps/api/tests/Feature/Commerce/DocumentsGotenbergTest.php` | yes, job `api-documents` (fails when the group is empty or anything skips) |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -35,6 +36,9 @@ cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import
 #   DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=storeplix_test DB_USERNAME=storeplix DB_PASSWORD=storeplix CACHE_STORE=array \
 #     php artisan test --filter='::test_concurrent_checkouts_never_oversell$'   # one process per race test (see ci.yml)
 # Phase 5b-1 RLS suites (app role, TENANCY_RLS=true): see §2d.
+# Phase 5b-4 documents against a real Gotenberg (needs poppler-utils: pdffonts, pdftotext, pdfinfo):
+#   docker compose up -d gotenberg   # or: docker run -p 127.0.0.1:53000:3000 -e GOTENBERG_API_BASIC_AUTH_USERNAME=u -e GOTENBERG_API_BASIC_AUTH_PASSWORD=p <image from docker-compose.yml> gotenberg --api-enable-basic-auth
+#   GOTENBERG_URL=http://127.0.0.1:53000 GOTENBERG_USERNAME=u GOTENBERG_PASSWORD=p php artisan test --group=documents
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -96,6 +100,14 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase5.onboarding-golive` | throwaway tenant: checklist + `launch_blocked` details → 07 "Finish setup" shows the blocker list with links → fix → 05 → 06 (defaults ৳ 70 / ৳ 130, 50 Dhaka city thanas) → 07 → publish → 08 "You're live"; Coming soon disappears < 5 s; re-publish 200 |
 | `phase5.security` | §10 live: S1 tampering, S4 idempotency (replay, mismatch, missing/malformed key), S5 cross-store cart token + sha256 at rest + log scan, S6 foreign ids (Eve routes 404, payloads 422, spoofed tenant 403, bulk 422), S7 key sets (catalog, availability, cart, confirmation, track; staff cost null), S8 identical 404s + 429, S9 per-IP and per-phone limiters, S16 draft 404 / preview no-store / `store_not_live`, S10 state machine + staff 403s + refunds (partial, idempotent replay, full, over) |
 | `phase5.mobile` | 390 × 844: PDP, PLP, cart, checkout, track, dashboard Orders, Create order — no horizontal overflow (screenshots); order detail is a `test.fail()` until QA F-L4 is fixed |
+| `phase5b.documents` | throwaway shop, 2 confirmed orders: Invoices & labels lists them under Not printed · 2, sandboxed preview iframe shows a real order (Bangla name), Print 2 labels → popup on the signed URL (html driver) with both orders → `label_printed_at` set, Printed today · 2; S35 unsigned/tampered URL 403, `no-store` |
+| `phase5b.edit-and-return` | Edit items (+1 M) in the UI → committed by the difference, totals/due re-priced, revision++, timeline "changed the items · 1 → 2"; ship + deliver; Create return → Exchange M→L → Approve → Mark received (M back on the shelf) → Create exchange order (৳ 200 difference, credit as discount, tag `exchange`, `source_order_id`, L committed). The payment link for the difference is 5b-2 |
+| `phase5b.mobile` | 390 × 844: Returns list, return detail, Edit items, Invoices & labels; storefront payment result (paid, failed) and `/pay/{token}` (valid, invalid); 5b-3 Shipments list (KPIs, Needs attention, cards) and shipment detail — no horizontal overflow (screenshots) |
+| `phase5b.couriers` | fake courier (5b-3): Integrations → Connect Steadfast Courier (Sandbox, keys) → Booking rules → Status updates (webhook URL + 40-char Bearer token shown once; bad keys 422 `credentials_invalid`; no secret in any read; Test → balance) → order detail **Book with Steadfast** → `ready_to_ship`, `FK…` consignment, second booking 409 `shipment_booked` → Steadfast-style webhook (Bearer) `in_transit` → `shipped` → S32 `delivered` while the courier API says `in_transit` → no effect → courier agrees → `delivered`, COD charge `succeeded` ৳ 1,060, events `webhook` → Shipments KPIs (Delivered this week, COD held); S25 wrong/no bearer 401, unknown key / provider 404, replayed event once, A's consignment on B's key ignored; poll: Sync now (`poll` event, 429 inside a minute) and Refresh (`user`); dev fake-advance end to end; bulk book 3 (Starter) → batch `completed` 3/0/0, unknown id 422 `order_ids.1`; Free plan 402 `feature_not_in_plan`; `/track` shows the courier status |
+| `phase5b.online-checkout` | fake gateway (5b-2): checkout lists COD + bKash → bKash → fake page **Pay** → payment result "Paid ৳ 560", order `confirmed` + `paid` (system actor); **Fail** → "Payment didn't go through" → Try again → Pay; **Cancel** → "Pay on delivery instead" → `pending` COD, charge cancelled; API: 30-min hold, expiry → `cancelled` `payment_timeout`, stock released, retry 409 `payment_not_pending`; advance delivery charge (`advance_required` 422, ৳ 60 paid → `confirmed` `partially_paid`, no COD switch) |
+| `phase5b.payment-link` | order detail → Ask for an advance (Delivery charge, bKash, 2 h, cancel if unpaid) → shopper `/pay/{token}` (no-store, noindex) → fake Pay → order `confirmed`, due −৳ 60, link `paid`, used link → "isn't valid any more"; API: one active link (409), 25 % amount, link expiry cancels the order (`payment_link_expired`) and releases stock, expired = unknown token byte for byte |
+| `phase5b.refund` | bKash-paid order → Payments card Refund ৳ 200 → refund row `gateway` `succeeded`, charge/order `refunded_amount`, `partially_refunded`; over the charge balance 422; Idempotency-Key replay → same refund |
+| `phase5b.payments-security` | §12 live: S22 forged `status=success` on a failed payment and unsigned/tampered/`?next=` returns (403, no redirect); S23 17-paisa amount mismatch → `failed` `amount_mismatch`, 13-paisa → failed; S24 replayed return paid once, unknown IPN key 404; S26/S38 secrets in no response, DB column or log, staff read-only; S27 no host field; S30 staff refund 403, foreign `payment_id` 422, B on A's order/payment result/token 404; S28 identical 404s, DB has no raw token, 429 |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -118,6 +130,41 @@ How they run:
   a 4-worker server, a `default,media` worker, a separate `bulk` worker and the scheduler (QA F-L3). On SQLite also
   set `DB_JOURNAL_MODE=wal` and `DB_BUSY_TIMEOUT=5000`. Docker compose runs `queue-bulk`. Without it `phase4.import-export` / `phase4.security` time out with
   "is a queue worker consuming the `bulk` queue?".
+- **`tinker()` under RLS (Phase 5b-1):** on Postgres the helper switches to the `pgsql_admin` connection (BYPASSRLS) before running test-only code, because tinker has no tenant context and the app role would read nothing / be refused. No-op on sqlite.
+- **Documents (Phase 5b-4)** need a worker on `documents` (compose: `queue-documents`). The e2e specs use `DOCUMENTS_DRIVER=html`; with the compose default `gotenberg` the popup gets a PDF instead.
+- **Payments (Phase 5b-2) run on the fake gateway** (`PAYMENTS_FAKE=true`, P5B-29; never a real gateway). The API
+  needs `PAYMENTS_FAKE=true`, an `INTEGRATION_CREDENTIALS_KEY` (`base64:` + `openssl rand -base64 32`; compose has a
+  dev-only default), `PUBLIC_API_URL` and `APP_URL` = the API origin the browser reaches (the fake page is
+  `{APP_URL}/api/v1/dev/fake-gateway/{payment}`), a worker on `webhooks` (compose: `queue-webhooks`) and, for real
+  expiry, the scheduler (compose: `scheduler`). Fake outcomes are deterministic: an amount ending in 13 paisa fails,
+  17 is an amount mismatch, 19 is an Execute timeout then Query `Completed`. Helpers (`support/commerce.ts`):
+  `connectFakeGateway`, `placeOnlineOrder`, `placeAndPay`, `fakeGatewayOutcome` (server-side click: outcome POST →
+  signed return → first URL outside the API), `fakeGatewayReturnUrl` (the signed return without calling it, for
+  forgery/replay), `expireHolds` (the testing-only time travel `POST /api/v1/dev/payments/{payment}/expire-now`, 404 unless
+  `PAYMENTS_FAKE=true`; a link nobody tried to pay uses a test-only DB write + `payment-links:expire`), `mapStoreHost` (the API redirects returns and builds link URLs from the
+  store's primary host — local env `http://{primary}:3000` — and Playwright doesn't route redirect targets, so browser
+  specs make `{slug}.localhost` primary with a test-only DB write; `sp_order` lives there). Browser flows need the Next storefront
+  pointed at the same API (`STOREFRONT_API_URL`, `STOREFRONT_API_KEY`). Selectors written before the UI existed
+  are isolated in one helper each (`paymentOption`, `clickFakeGateway`, `askForAdvance`, `refundFromPaymentsCard`).
+  ```bash
+  # API with the fake gateway (Docker Postgres + RLS as in §2d), then:
+  PAYMENTS_FAKE=true INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32) APP_URL=http://localhost:8000 \
+    PUBLIC_API_URL=http://localhost:8000 php artisan serve --port=8000
+  php artisan queue:work --queue=default,media,bulk,notifications,documents,webhooks
+  STOREFRONT_API_URL=http://localhost:8000 STOREFRONT_API_KEY=<apps/api .env value> pnpm --filter @storeplix/storefront dev
+  cd tests/e2e && pnpm exec playwright test phase5b.online-checkout phase5b.payment-link phase5b.refund phase5b.payments-security
+  ```
+- **Couriers (Phase 5b-3) run on the fake courier** (`COURIERS_FAKE=true`, §15; never a real courier). The API and the
+  queue worker need `COURIERS_FAKE=true` and `INTEGRATION_CREDENTIALS_KEY`; webhook events are processed on `webhooks`,
+  "Sync now" polls on `default`, bulk batches on `bulk` (compose: `queue`, `queue-webhooks`, `queue-bulk`; the
+  `scheduler` runs `couriers:sync` every 15 min and `couriers:reconcile-bookings` every 2 min). Helpers
+  (`support/commerce.ts`): `connectFakeCourier` (PUT + default; returns the once-shown webhook secret), `ensurePickup`,
+  `setPlan` (test-only subscription write), `confirmedOrder`, `bookShipment`, `steadfastWebhook` (Bearer POST to the
+  account's `webhook_url`, re-pointed at `API_URL`), `fakeAdvance` (testing-only `POST /api/v1/dev/shipments/{id}/advance`,
+  404 unless `COURIERS_FAKE=true`: moves the fake parcel and delivers it like a signed webhook), `fakeParcelState`
+  (tinker: changes what the fake courier's status API answers **without** telling Store Plix, for re-query/S32 and
+  poll checks). The fake keeps parcels in the API's tenant cache: helpers that call `Cache::flush()` (`browserHost`,
+  `setPlan`, `mapStoreHost`) must run **before** any booking, or the fake forgets its parcels.
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the
   tenant (FK cascade) and the user. `createMember(owner, 'staff')` invites + accepts; `cleanup()` removes both.
@@ -212,7 +259,7 @@ DB_ADMIN_USERNAME=storeplix_admin DB_ADMIN_PASSWORD=storeplix_admin TENANCY_RLS=
 4. Catalogue checks with psql: every table is owned by `storeplix_owner`; every table with a `tenant_id` column has RLS
    enabled **and** forced with at least one policy.
 5. With `DB_USERNAME=storeplix_app TENANCY_RLS=true CACHE_STORE=array`: `--group=rls` (fails if empty or any test
-   skips), `--group=tenancy`, `--group=security --exclude-group perf --exclude-group race` (fail if empty), the seven race
+   skips), `--group=tenancy`, `--group=security --exclude-group perf --exclude-group race` (fail if empty), the eight race
    tests one process each (fail on skip), `--group=checkout-perf` (fail on skip). JUnit files are uploaded as `rls-junit`.
 
 `api-postgres` and `api-perf` also run `01-roles.sql` (the policy migration grants to the roles) but keep connecting

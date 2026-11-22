@@ -7,6 +7,10 @@ use App\Domain\Billing\Limit;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderEvent;
 use App\Domain\Orders\OrderTimeline;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\PaymentPresenter;
+use App\Domain\Payments\PaymentUrls;
+use App\Domain\Shared\Support\Money;
 use App\Domain\Sms\Models\SmsMessage;
 use App\Domain\Sms\SmsGateway;
 use App\Domain\Sms\SmsSendFailed;
@@ -95,6 +99,15 @@ class SendOrderSms implements ShouldQueue
 
                 return null;
             }
+            $vars = SmsTemplates::varsFor($locked, $store, $this->carrier);
+            if ($this->event === 'payment_link') {
+                // P5B-28: ref = "{link id}:{send #}"; only an active link is sent (never a paid/expired one).
+                $link = PaymentLink::query()->whereKey(explode(':', (string) $this->ref)[0])->where('order_id', $locked->id)->first();
+                if ($link === null || PaymentPresenter::linkStatus($link) !== PaymentLink::ACTIVE) {
+                    return null;
+                }
+                $vars += ['amount' => Money::plain((int) $link->amount), 'url' => PaymentUrls::linkUrl($store, PaymentPresenter::linkToken($link))];
+            }
             $message = SmsMessage::query()->create([
                 'tenant_id' => $locked->tenant_id,
                 'to' => $locked->customer_phone,
@@ -103,7 +116,7 @@ class SendOrderSms implements ShouldQueue
                 'status' => 'queued',
             ]);
 
-            return [$message, SmsTemplates::render($this->event, $language, SmsTemplates::varsFor($locked, $store, $this->carrier))];
+            return [$message, SmsTemplates::render($this->event, $language, $vars)];
         });
         if ($planned === null) {
             return;

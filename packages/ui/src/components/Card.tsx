@@ -67,18 +67,21 @@ export function KpiTile({
   value,
   hint,
   className,
+  wrapLabel = false,
 }: {
   icon?: ReactNode;
   label: ReactNode;
   value: ReactNode;
   hint?: ReactNode;
   className?: string;
+  /** Two-line labels (Shipments 39:10347 "Out for delivery today") instead of truncating. */
+  wrapLabel?: boolean;
 }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-2 rounded-card border border-border-default bg-surface-card px-5 py-[18px] shadow-elevation-1', className)}>
       <div className="flex items-center gap-2.5">
         {icon && <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600 [&_svg]:size-4">{icon}</span>}
-        <span className="truncate text-body font-medium text-text-secondary">{label}</span>
+        <span className={cn('text-body font-medium text-text-secondary', wrapLabel ? 'line-clamp-2' : 'truncate')}>{label}</span>
       </div>
       <span className="text-heading-24 text-text-primary">{value}</span>
       {hint && <span className="text-caption text-text-muted">{hint}</span>}

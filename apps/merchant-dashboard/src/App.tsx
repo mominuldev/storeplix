@@ -48,7 +48,10 @@ const OrderDetailPage = lazy(() => import('./orders/OrderDetailPage'));
 const OrderEditPage = lazy(() => import('./orders/OrderEditPage'));
 const CreateOrderPage = lazy(() => import('./orders/CreateOrderPage'));
 const ReturnsPage = lazy(() => import('./returns/ReturnsPage'));
+const ShipmentsPage = lazy(() => import('./shipments/ShipmentsPage'));
+const ShipmentDetailPage = lazy(() => import('./shipments/ShipmentDetailPage'));
 const PrintPage = lazy(() => import('./documents/PrintPage'));
+const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
 const CouponsPage = lazy(() => import('./coupons/CouponsPage'));
 const CouponEditorPage = lazy(() => import('./coupons/CouponEditorPage'));
 const ShippingPage = lazy(() => import('./settings/ShippingPage'));
@@ -64,7 +67,7 @@ const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{e
 /** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
 const onlineStoreRoutes = ['/online-store', '/online-store/seo'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
-const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/marketing', '/marketing/coupons'];
+const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 export function AppRoutes() {
@@ -169,8 +172,11 @@ export function AppRoutes() {
               <Route path="/orders/new" element={lazyEl(<CreateOrderPage />)} />
               <Route path="/orders/print" element={lazyEl(<PrintPage />)} />
               <Route path="/returns/:returnId?" element={lazyEl(<ReturnsPage />)} />
+              <Route path="/shipments" element={lazyEl(<ShipmentsPage />)} />
+              <Route path="/shipments/:shipmentId" element={lazyEl(<ShipmentDetailPage />)} />
               <Route path="/orders/:orderId" element={lazyEl(<OrderDetailPage />)} />
               <Route path="/orders/:orderId/edit" element={lazyEl(<OrderEditPage />)} />
+              <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
               <Route path="/marketing" element={<Navigate to="/marketing/coupons" replace />} />
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />

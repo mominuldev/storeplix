@@ -517,6 +517,83 @@ BEGIN
 END
 $$;
 
+-- table: payment_gateway_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.payment_gateway_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "payment_gateway_accounts";
+    ALTER TABLE "payment_gateway_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "payment_gateway_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: payment_links
+DO $$
+BEGIN
+  IF to_regclass('public.payment_links') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "payment_links";
+    ALTER TABLE "payment_links" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "payment_links" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: webhook_events
+DO $$
+BEGIN
+  IF to_regclass('public.webhook_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "webhook_events";
+    ALTER TABLE "webhook_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "webhook_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: courier_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.courier_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "courier_accounts";
+    ALTER TABLE "courier_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "courier_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: shipment_events
+DO $$
+BEGIN
+  IF to_regclass('public.shipment_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "shipment_events";
+    ALTER TABLE "shipment_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "shipment_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: courier_area_mappings
+DO $$
+BEGIN
+  IF to_regclass('public.courier_area_mappings') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "courier_area_mappings";
+    ALTER TABLE "courier_area_mappings" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "courier_area_mappings" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: shipment_batches
+DO $$
+BEGIN
+  IF to_regclass('public.shipment_batches') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "shipment_batches";
+    ALTER TABLE "shipment_batches" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "shipment_batches" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'storeplix_app') THEN

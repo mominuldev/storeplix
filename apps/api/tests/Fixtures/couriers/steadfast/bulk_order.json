@@ -1,0 +1,9 @@
+{
+  "_source": "docs",
+  "_doc": "https://documenter.getpostman.com/view/26211192/2sAYJ1mhpk",
+  "_note": "VERIFY against sandbox: answer shape of create_order/bulk-order",
+  "data": [
+    {"invoice": "INV-A", "recipient_name": "A", "recipient_phone": "01711000001", "recipient_address": "Dhaka", "cod_amount": 1000, "note": null, "consignment_id": 1424200, "tracking_code": "AAAA0001", "status": "success"},
+    {"invoice": "INV-B", "recipient_name": "B", "recipient_phone": "0171", "recipient_address": "Dhaka", "cod_amount": 1000, "note": null, "consignment_id": null, "tracking_code": null, "status": "error", "error": "The recipient phone must be 11 characters."}
+  ]
+}

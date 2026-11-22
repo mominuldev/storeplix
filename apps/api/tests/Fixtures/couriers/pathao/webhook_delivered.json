@@ -1,0 +1,12 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api webhook section (VERIFY against sandbox)",
+  "consignment_id": "DL121224VS8TTJ",
+  "merchant_order_id": "01JDXK0000000000000000SHIP",
+  "updated_at": "2026-11-23 15:20:00",
+  "timestamp": "2026-11-23T09:20:00+00:00",
+  "store_id": 1234,
+  "event": "order.delivered",
+  "delivery_fee": 80,
+  "total_fee": 80
+}

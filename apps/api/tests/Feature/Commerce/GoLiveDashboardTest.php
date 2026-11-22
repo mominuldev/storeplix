@@ -105,7 +105,8 @@ class GoLiveDashboardTest extends TestCase
                 'count' => 5, 'sales_amount' => (3000 + 13000) + (1000 + 13000), 'delivered_count' => 2, 'returned_count' => 1,
                 'cancelled_count' => 1, 'delivery_success_rate' => 0.6667,
             ])
-            ->assertJsonPath('data.orders.waiting', ['pending' => 1, 'confirmed' => 1, 'ready_to_ship' => 0])
+            ->assertJsonPath('data.orders.waiting', ['pending' => 1, 'confirmed' => 1, 'ready_to_ship' => 0, 'pending_payment' => 0, 'to_book' => 1])
+            ->assertJsonPath('data.orders.shipments', ['problems' => 0])
             ->assertJsonPath('data.orders.best_sellers.0.product_id', $p['id'])
             ->assertJsonPath('data.orders.best_sellers.0.units', 7)
             ->assertJsonPath('data.orders.plan.used', 5);
