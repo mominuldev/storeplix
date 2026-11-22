@@ -151,7 +151,7 @@ export function advanceAmount(kind: PaymentLinkAmountKind, order: { due_amount: 
     case 'delivery_charge':
       return order.shipping_amount > 0 ? Math.min(order.shipping_amount, order.due_amount) : null;
     case 'percent':
-      return percentBps && percentBps > 0 && percentBps < 10_000 ? Math.round((order.due_amount * percentBps) / 10_000) : null;
+      return percentBps && percentBps > 0 && percentBps < 10_000 ? Math.floor((order.due_amount * percentBps) / 10_000) /* same as the API: floor to the paisa */ : null;
     case 'full':
       return order.due_amount;
     case 'custom':

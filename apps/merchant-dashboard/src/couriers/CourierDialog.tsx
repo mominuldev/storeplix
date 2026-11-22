@@ -235,7 +235,9 @@ function Credentials({
   const scope = useStoreScope();
   const qc = useQueryClient();
   const invalidate = useCourierInvalidate();
-  const [mode, setMode] = useState<IntegrationMode>(account?.mode ?? 'live');
+  // Steadfast has no sandbox (its only host is live), so the API accepts only `live` for it.
+  const liveOnly = provider === 'steadfast';
+  const [mode, setMode] = useState<IntegrationMode>(liveOnly ? 'live' : (account?.mode ?? 'live'));
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -279,17 +281,21 @@ function Credentials({
       }}
     >
       <Header titleId={titleId} step={step} title={account?.credentials_hint ? `Replace your ${meta.short} keys` : `Enter your ${meta.short} credentials`} subtitle={meta.portalHint} />
-      <SegmentedControl
-        aria-label="Mode"
-        size="sm"
-        className="self-start"
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: 'live', label: 'Live' },
-          { value: 'sandbox', label: 'Sandbox (test)' },
-        ]}
-      />
+      {liveOnly ? (
+        <p className="text-caption text-text-secondary">Steadfast has no sandbox: connect with your live API keys. Parcels you book are real.</p>
+      ) : (
+        <SegmentedControl
+          aria-label="Mode"
+          size="sm"
+          className="self-start"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'live', label: 'Live' },
+            { value: 'sandbox', label: 'Sandbox (test)' },
+          ]}
+        />
+      )}
       {account?.credentials_hint && (
         <p className="text-caption text-text-muted">
           Saved keys end in <span className="font-medium text-text-secondary">{account.credentials_hint}</span>. Enter all fields again to replace them.

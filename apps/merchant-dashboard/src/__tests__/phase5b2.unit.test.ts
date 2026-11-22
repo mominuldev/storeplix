@@ -16,7 +16,7 @@ describe('ask for an advance amounts (P5B-22, 144:46081)', () => {
   it('25 % of the due amount by default, editable, rounded to the paisa', () => {
     expect(advanceAmount('percent', order, 2_500, null)).toBe(78_250);
     expect(advanceAmount('percent', { due_amount: 177_000, shipping_amount: 7_000 }, 2_500, null)).toBe(44_250);
-    expect(advanceAmount('percent', order, 3_333, null)).toBe(104_323);
+    expect(advanceAmount('percent', order, 3_333, null)).toBe(104_322) // floored like the API (104 322.9);
     expect(advanceError('percent', order, 50, null, formatBdt)).toMatch(/between 1 and 99/);
     expect(advanceError('percent', order, 10_000, null, formatBdt)).toMatch(/between 1 and 99/);
     expect(advanceError('percent', order, 2_500, null, formatBdt)).toBeNull();

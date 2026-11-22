@@ -5,8 +5,9 @@
 --   psql -v ON_ERROR_STOP=1 -U storeplix_owner -d storeplix -f database/sql/rls-emergency-off.sql
 -- The SECURITY DEFINER functions and the GUC helpers STAY (QA 5b-1 F-L6): a running app with TENANCY_RLS=true keeps
 -- resolving storefront hosts through them, so there is no outage before the config change. Then set
--- TENANCY_RLS=false and restart web + workers at a calm moment. Re-enable later by re-running the policy migration
--- (`migrate:rollback --step=…` + `migrate`), which recreates the policies of every table in the list.
+-- TENANCY_RLS=false and restart web + workers at a calm moment. Re-enable later with
+-- `php artisan tenancy:rls-enable` (as the owner; idempotent, keeps data), then TENANCY_RLS=true and restart.
+-- Never re-enable through `migrate:rollback`: later migrations sit on top of the policy migration (RUNBOOK §7.2).
 --
 -- The table list must equal RlsTables::TENANT (RlsEmergencyScriptTest). Tables of later increments that do not exist
 -- yet are skipped (to_regclass).

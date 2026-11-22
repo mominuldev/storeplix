@@ -70,7 +70,7 @@ class CourierAccountsTest extends TestCase
 
     private function connect(array $h, Store $store, string $provider = 'steadfast', ?array $credentials = null, array $extra = [])
     {
-        return $this->api($h, 'PUT', $this->url($store, "/{$provider}"), ['mode' => 'sandbox', 'credentials' => $credentials ?? ($provider === 'pathao' ? self::PATHAO : self::STEADFAST)] + $extra);
+        return $this->api($h, 'PUT', $this->url($store, "/{$provider}"), ['mode' => $provider === 'steadfast' ? 'live' : 'sandbox', 'credentials' => $credentials ?? ($provider === 'pathao' ? self::PATHAO : self::STEADFAST)] + $extra);
     }
 
     private function pickup(Tenant $tenant, Store $store): string
@@ -118,7 +118,7 @@ class CourierAccountsTest extends TestCase
         $this->assertSame(self::KEYS, array_keys($res->json('data')));
         $secret = $res->json('meta.webhook_secret');
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9]{40}$/', $secret);
-        $res->assertJsonPath('data.status', 'connected')->assertJsonPath('data.mode', 'sandbox')->assertJsonPath('data.credentials_hint', '••••77aa')
+        $res->assertJsonPath('data.status', 'connected')->assertJsonPath('data.mode', 'live')->assertJsonPath('data.credentials_hint', '••••77aa')
             ->assertJsonPath('data.is_default', true)->assertJsonPath('data.revision', 1)->assertJsonPath('data.connected_by.id', $user->id)
             ->assertJsonPath('data.webhook_secret_hint', '••••'.substr($secret, -4))
             ->assertJsonPath('data.settings', ['pickup_location_id' => $pickup, 'parcel_description' => '{order_no}: {items}', 'default_weight_grams' => 700]);
@@ -143,7 +143,7 @@ class CourierAccountsTest extends TestCase
         $this->assertArrayNotHasKey('credentials', $account->toArray());
         $this->assertArrayNotHasKey('webhook_secret_encrypted', $account->toArray());
         $audit = $this->inTenant($tenant, fn () => AuditLog::query()->where('action', 'integration.connected')->firstOrFail());
-        $this->assertSame(['kind' => 'courier', 'provider' => 'steadfast', 'mode' => 'sandbox', 'replaced' => false], $audit->meta);
+        $this->assertSame(['kind' => 'courier', 'provider' => 'steadfast', 'mode' => 'live', 'replaced' => false], $audit->meta);
 
         // Reconnect (new credentials): the secret stays, nothing is shown again; the list never shows secrets.
         $again = $this->connect($h, $store, credentials: ['api_key' => 'sf-api-key-new1', 'secret_key' => 'other'])->assertOk();
@@ -166,6 +166,9 @@ class CourierAccountsTest extends TestCase
         $this->connect($h, $store)->assertStatus(502)->assertJsonPath('error.code', 'provider_unavailable');
         $this->assertSame(0, $this->platformTable('courier_accounts')->count());
 
+        // Steadfast has no sandbox (its only host is live): `sandbox` would book real parcels, so it's refused.
+        $this->api($h, 'PUT', $this->url($store, '/steadfast'), ['mode' => 'sandbox', 'credentials' => self::STEADFAST])
+            ->assertStatus(422)->assertJsonPath('error.details.mode.0', 'Steadfast has no sandbox. Connect with your live API keys.');
         $this->connect($h, $store, credentials: ['api_key' => 'x'])->assertStatus(422)->assertJsonValidationErrors(['credentials.secret_key'], 'error.details');
         $this->connect($h, $store, credentials: self::STEADFAST + ['base_url' => 'https://evil.test'])->assertStatus(422)->assertJsonValidationErrors(['credentials'], 'error.details');
         $this->connect($h, $store, 'pathao', ['username' => 'not-an-email'] + self::PATHAO)->assertStatus(422)->assertJsonValidationErrors(['credentials.username'], 'error.details');

@@ -1,7 +1,7 @@
 # API Conventions
 
 Status: Accepted (Phase 0). Binding for `apps/api` and all clients. Contract types: `packages/types/src/index.ts`.
-Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase).
+Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase; v1.6.1 after Phase 5b). Phase 5b additions (as built 2026-11-22): §3 (5b codes), §8 (limiters), §9 (scopes), §10.1–10.3 (webhooks, returns, dev endpoints).
 **Change process:** response shape change ⇒ update Laravel API Resource + `packages/types` + `openapi.yaml` in the same PR.
 
 ## 1. Base & versioning
@@ -17,7 +17,10 @@ Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase).
   | other tenant-level merchant routes (`/staff`, `/subscriptions`, `/invoices`, `/audit-logs`, `/media`) | Bearer (`merchant`) | `X-Tenant-Id` |
   | `/storefront/*` | `X-Storefront-Key` | `X-Storefront-Host` |
   | `/admin/*` | Bearer (`admin` ability + platform_role) | explicit route param |
-  | `/webhooks/{provider}` | provider signature | resolved from payload |
+  | `/webhooks/{provider}/{route_key}` (5b) | provider-specific (§10) | from the 32-char route key (definer lookup) |
+  | `/payments/return/{bkash\|sslcommerz}/{payment}` (5b) | Laravel signed URL (26 h) | from the signed payment id |
+  | `/documents/{document}/download`, `/exports/{export}/download` | Laravel signed URL (5 min) | from the signature |
+  | `/dev/*` (5b, testing only, §10.3) | none | from the path id |
   | `/health` | public | none |
   One store per tenant (D1, revised); a second `POST /stores` → 409 `store_limit_reached`. Paths keep `{store}` for a
   future multi-store option. Store-scoped resources (`products, categories, inventory, orders, customers, domains,
@@ -81,6 +84,40 @@ As built (accepted deviations from the contract draft):
   `zones.N.areas.M` ("Mirpur is already in Inside Dhaka."), not 409.
 - **Unavailable lines at storefront checkout** use `422 out_of_stock` (with the line's `details` key), not a separate code.
 
+**Phase 5b codes** (PHASE-5B-CONTRACT §4.0, as built 2026-11-22):
+| HTTP | code | When |
+|---|---|---|
+| 409 | `gateway_busy` | disconnect a gateway that still has `pending` charges or refunds |
+| 409 | `courier_busy` | disconnect a courier that still has non-final shipments |
+| 409 | `payment_link_active` | a second active payment link for one order |
+| 409 | `payment_not_pending` | `POST /storefront/orders/pay` on an order that isn't `pending_payment` or whose 30-min hold expired |
+| 409 | `shipment_booked` | book again / edit items while the order has an active courier shipment |
+| 409 | `courier_cancel_unsupported` | the courier API can't cancel this parcel; cancel in the courier panel, then `mark-cancelled` |
+| 409 | `return_not_allowed` | return on an order that isn't delivered, or the quantities are already returned |
+| 422 | `advance_required` | COD checkout in a shop that requires the delivery charge in advance, without `advance_gateway` |
+| 422 | `gateway_not_connected` | gateway **or courier** not connected / not enabled for this action (booking, shipment refresh, payment link, exchange `send_payment_link.provider`); also gateway `PATCH` / `test-payment` on a provider with no account |
+| 422 | `credentials_invalid` | the provider rejected the credentials on connect/test (`details["credentials.<field>"]` when the provider names it), or on a shipment refresh |
+| 422 | `courier_rejected` | the courier refused the booking or cancellation (sanitised courier message) |
+| 422 | `gateway_refund_rejected` | the gateway refused a refund (amount, window, partial not allowed) |
+| 422 | `total_below_paid` | edited items would make the order total lower than the net paid amount |
+| 502 | `provider_unavailable` | gateway/courier timeout, 5xx or transport error on a synchronous call (nothing changed, or the reconcile job finishes it) |
+
+Reused codes: `payment_method_unavailable` (checkout and `orders/pay` with a method the store hasn't enabled),
+`out_of_stock`, `refund_exceeds_paid`, `plan_limit_reached` (courier connections, exchange orders),
+`feature_not_in_plan` (bulk booking), `invalid_state_transition`, `revision_conflict`, `forbidden` (staff sending
+`cod_amount`, staff creating an exchange whose difference needs a refund), `rate_limited` (§8), `unauthenticated`
+(courier webhook with a bad secret, §10), `idempotency_key_*`.
+
+5b as-built rules:
+- **No `webhook_unauthorized` on the wire.** It is the courier driver's internal error code; the HTTP answer is
+  401 `unauthenticated` ("Invalid webhook credentials.").
+- **Missing integration account:** courier endpoints (`PATCH`, `test`, `webhook-secret`, `DELETE`, `areas`,
+  `pickup-stores`) on a provider that is not connected (no row, or `disconnected`) → **404 `not_found`**. Gateways:
+  `PATCH` and `test-payment` → **422 `gateway_not_connected`**; `DELETE` → **404 `not_found`**. `{provider}` outside
+  the allowlist → 404 (route constraint).
+- Courier area lookups that the courier refuses answer `422 validation_failed` on the offending query field, not
+  `courier_rejected`.
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
@@ -129,20 +166,31 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `auth` (login/register/forgot) | email + IP | 5/min, 20/hour |
 | `merchant` | tenant + user (IP before login) | 300/min (amended 2026-11-22, QA 5a F-L6; was 120) |
 | `merchant-bulk` (imports/exports) | tenant | 10/hour |
-| `storefront` | store host (`X-Storefront-Host`), whole store | 1 200/min (amended 2026-11-22, QA 5a F-L6; the planned per-shopper-IP 300/min and per-store 3 000/min split is not built; per-IP limits exist only on `cart`, `checkout` and `order-track`) |
-| `checkout` (`POST /storefront/checkout`) | store host + shopper IP; store host + normalised phone (`contact.phone`, only when it parses) | 10/min; 5 per 10 min |
+| `storefront` (whole `/storefront/*` group) | store host + shopper IP (IPv4, or IPv6 /64) **and** store host; a request without a valid storefront key: request IP only (`sf-keyless:`), never the host bucket | 300/min per host + IP (only when a trusted `X-Storefront-Client-Ip` is present; else a warning is logged once per host per 5 min) **and** 3 000/min per host; keyless 300/min per IP. Env `THROTTLE_STOREFRONT_PER_IP`, `THROTTLE_STOREFRONT_PER_HOST` (5b-1, P5B-9; replaces the 5a 1 200/min host-only limit) |
+| `checkout` (`POST /storefront/checkout`, **and** `POST /storefront/orders/pay`) | store host + shopper IP; store host + normalised phone (`contact.phone`, only when it parses) | 10/min; 5 per 10 min |
 | `cart` (all `/storefront/cart*` routes and `GET /storefront/orders/confirmation`) | store host + shopper IP | 60/min |
 | `order-track` (`POST /storefront/orders/track`) | store host + shopper IP | 10/min |
 | `geo` (`GET /geo/bd`, public, no auth) | request IP | 60/min |
 | `POST /stores/{store}/publish` | inline `throttle:20,1` | 20/min |
-| `webhooks` | provider | 600/min |
+| `pay-link` (`GET /storefront/payment-links/{token}`, `POST …/pay`) | store host + shopper IP (IPv6 /64) | 20/min |
+| `webhooks` (all `/webhooks/*`) | route key; sender IP | 600/min per route key **and** 300/min per IP |
+| `payment-returns` (`/payments/return/*`) | request IP | 60/min |
+| Payment-link resend (`POST …/payment-links/{link}/resend`, in code) | link (tenant-prefixed cache key) | 3/hour |
+| Shipment refresh (`POST /stores/{store}/shipments/{shipment}/refresh`, in code) | shipment | 6/min |
+| Shipments sync (`POST /stores/{store}/shipments/sync`, in code) | store | 1/min |
+| Inline `throttle:N,1` (5b) | Laravel default signature: **the user id** (public routes: domain + IP) | gateway connect, gateway test-payment, courier connect / test / webhook-secret, `shipments/bulk`: 20/min; `documents/preview`, courier `pickup-stores`: 30/min; courier `areas`: 120/min; signed `documents/{document}/download`, `dev/*`: 60/min |
 Auth routes (login, register, password reset, OTP send/verify) use per-route limiters; their exact values are
 maintained in `apps/api/README.md` (the table above is indicative). Responses include `X-RateLimit-Limit`,
 `X-RateLimit-Remaining`; every 429 has body `{error:{code, message, retry_after}}` (`rate_limited` or `otp_rate_limited`)
 and a `Retry-After` header with the same seconds. Limits scale with plan (Phase 7).
 Phase 5a limiters live in `apps/api/app/Domain/Orders/CommerceServiceProvider.php`; the storefront ones key on
 `X-Storefront-Host` (lowercased) and the shopper IP from `X-Storefront-Client-Ip` (trusted only with a valid storefront
-key). The cart, checkout and track limiters apply on top of the route group's `storefront` limiter.
+key). The cart, checkout, track and pay-link limiters apply on top of the route group's `storefront` limiter. 5b named
+limiters (`pay-link`, `webhooks`, `payment-returns`) live in the same provider; `storefront` lives in
+`AppServiceProvider`. The in-code limits (resend, refresh, sync) answer 429 `rate_limited` with `retry_after` like the
+middleware. **Caveat (as built):** inline `throttle:N,1` limiters without a prefix share one counter per user across
+every inline-throttled merchant route (each route compares that shared count with its own N), so e.g. 30 area lookups
+block `shipments/bulk` for the rest of the minute. Tracked as a code fix (named or prefixed limiters).
 
 ## 9. Idempotency
 Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,
@@ -158,6 +206,10 @@ different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 
 - **Enforced on:** `POST /storefront/checkout` (scope `storefront.checkout`), `POST /stores/{store}/orders` (manual
   order, `orders.create`), `POST /stores/{store}/orders/{order}/refunds` (`orders.refund`). Other POSTs ignore the
   header in 5a. Uniqueness is `U(store_id, scope, key)`.
+- **Phase 5b scopes:** `storefront.pay` (`POST /storefront/orders/pay`), `storefront.link-pay`
+  (`POST /storefront/payment-links/{token}/pay`), `payment-links.create`, `payment-gateways.test`
+  (`…/test-payment`), `shipments.book` (`POST …/orders/{order}/shipments`), `returns.exchange`
+  (`POST …/returns/{return}/exchange-order`). `PUT …/orders/{order}/items` uses `revision`, not a key.
 - **Request hash:** sha256 of method + path, the canonical (key-sorted) JSON body and, for checkout, the sha256 of
   `X-Cart-Token`.
 - The key row is inserted as `processing` (`locked_until = now + 30 s`) in its own transaction **before** the business
@@ -170,9 +222,49 @@ different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 
   dashboard uses `crypto.randomUUID()` per Create-order form / refund dialog session.
 
 ## 10. Webhooks
-**Inbound** (`POST /api/v1/webhooks/{bkash|sslcommerz|pathao|steadfast|redx|cloudflare}`): verify signature / validation
+**Inbound** (`POST /api/v1/webhooks/{provider}/{route_key}`, Phase 5b): verify signature / validation
 API / source IP per provider before anything else; store in `webhook_events` (unique `provider,event_id`); respond 200
 fast; process in `webhooks` queue (tenant-aware); never trust payload amounts — re-query provider (ADR 0007).
+
+### 10.1 Phase 5b inbound endpoints (as built)
+`{route_key}` is a random 32-char `[A-Za-z0-9]` key per integration account, shown on the Integrations page; it
+resolves tenant + store + account through a definer function. No tenant header. Bodies are `{ "data": { "received":
+true } }` and never carry tenant data. Throttle `webhooks` (§8).
+
+| Path | Auth | Answers |
+|---|---|---|
+| `POST /webhooks/sslcommerz/{route_key}` (IPN) | route key; `verify_sign` (md5, SSLCommerz SDK scheme) is a **pre-filter only** — every IPN is confirmed with the Validation API in the job | 200 ack; a bad `verify_sign` is stored as `ignored` (still 200); no `tran_id` → 200, nothing stored; unknown key → 404. Never 401 |
+| `POST /webhooks/bkash/{route_key}` (SNS-style, optional) | route key; a trigger for Query Payment only (a forged message can't change anything). `SubscriptionConfirmation` is confirmed only for an `https://sns.<region>.amazonaws.com` `SubscribeURL` | 200 ack for any body; unknown key → 404. Never 401 |
+| `POST /webhooks/steadfast/{route_key}` | `Authorization: Bearer {secret}` (sha256 + `hash_equals`) | 200 ack; bad/missing secret → **401 `unauthenticated`**, nothing stored, `webhook.rejected` log |
+| `POST /webhooks/pathao/{route_key}` | `X-PATHAO-Signature` = secret | **202** ack with Pathao's `X-Pathao-Merchant-Webhook-Integration-Secret` header; `webhook_integration` test event acknowledged and not stored; bad secret → 401 `unauthenticated` |
+| `POST /webhooks/redx/{route_key}` | — | **404** until the RedX driver declares webhook support (VERIFY) |
+
+**401 vs 404:** 404 `not_found` when the provider doesn't take webhooks, the route key is unknown, or it belongs to
+another provider's account — decided before any credential check. 401 only for a known courier account with a
+missing/wrong secret. An authenticated but unreadable courier payload is acknowledged (200/202) and logged, not stored.
+Duplicate `event_id` → same ack, no effect.
+
+**Webhook secrets** (Steadfast, Pathao) are issued by us: `PUT /stores/{store}/couriers/{provider}` returns
+`meta.webhook_secret` once (the key is always present; `null` for RedX and for a reconnect that keeps the existing
+secret); `POST …/webhook-secret` rotates (old secret invalid at once). Only a hint is ever shown again.
+
+### 10.2 Gateway browser returns (as built)
+`GET|POST /payments/return/{bkash|sslcommerz}/{payment}` — public, throttle `payment-returns`. The URL is a Laravel
+**temporary signed route, 26 h**, built relative and prefixed with `PUBLIC_API_URL` (tunnel-safe).
+Verification reads the **first** `expires` / `signature` of the raw query string (bKash appends its own `signature`).
+SSLCommerz gets **one** signed URL for `success_url`, `fail_url` and `cancel_url`; the outcome comes from the POSTed
+`status` (an optional `r=success|fail|cancel` hint outside the signature is still read). Query/body values are
+triggers only: the API verifies with the provider (Execute/Query, Validation API) before any state change.
+Answers: valid → **303** to `https://{primary_host}/checkout/payment-result?payment={id}` (`/pay/result?payment=` for
+link payments; test payments → the merchant app `/settings/payments?test_payment={id}`; a store with no primary
+domain → 200 HTML "Thank you"); bad/expired signature → **403** HTML page, no redirect; unknown payment, wrong
+provider or not a charge → **404** HTML page. Redirect targets come only from the DB, never from the request.
+
+### 10.3 Testing-only dev endpoints
+`POST /dev/payments/{payment}/expire-now`, `GET /dev/fake-gateway/{payment}` + `POST …/{pay|fail|cancel}` (signed),
+`POST /dev/shipments/{shipment}/advance`: registered **only outside production** (`APP_ENV != production`) and answer
+**404** unless `PAYMENTS_FAKE=true` (payments) or `COURIERS_FAKE=true` (shipments). They exist for e2e and local
+work, are never linked from the apps, and are **not** part of `openapi.yaml`.
 **Outbound** (Phase 8, Developer section): events `order.created|updated|paid|cancelled`, `product.*`, `inventory.low`,
 `customer.created`. Body `{ id, type, created_at, tenant_id, data }`. Headers `X-StorePlix-Event`, `X-StorePlix-Delivery`,
 `X-StorePlix-Signature: t=<unix>,v1=<hex hmac_sha256(secret, t + "." + body)>`; receivers reject if |now − t| > 300 s.

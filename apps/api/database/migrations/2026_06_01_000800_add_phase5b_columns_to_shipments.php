@@ -86,7 +86,13 @@ return new class extends Migration
             ]);
         });
 
-        // Forward-only data: courier rows can't satisfy the 5a CHECK; the rollback is for empty dev databases.
+        // Fold the courier statuses into the four 5a ones so existing rows satisfy the 5a CHECK again (CI rolls back a
+        // seeded database). booking_failed joins cancelled, so the 5a "one live shipment per order" index still holds.
+        DB::table('shipments')->whereIn('status', ['partially_delivered'])->update(['status' => 'delivered']);
+        DB::table('shipments')->whereIn('status', ['returning'])->update(['status' => 'returned']);
+        DB::table('shipments')->whereIn('status', ['booking_failed'])->update(['status' => 'cancelled']);
+        DB::table('shipments')->whereIn('status', ['booking', 'booked', 'picked_up', 'in_transit', 'out_for_delivery', 'on_hold', 'delivery_failed'])
+            ->update(['status' => 'shipped']);
         DB::statement("CREATE UNIQUE INDEX shipments_one_live_per_order ON shipments (order_id) WHERE status <> 'cancelled'");
         if (DB::getDriverName() === 'pgsql') {
             DB::statement("ALTER TABLE shipments ADD CONSTRAINT shipments_status_check CHECK (status IN ('shipped','delivered','returned','cancelled'))");

@@ -539,11 +539,11 @@ export function setPlan(s: Session, code: 'free' | 'starter' | 'growth'): void {
   );
 }
 
-/** PUT credentials (fake driver, sandbox mode) with the pickup location → `connected` + the webhook secret (shown once). */
+/** PUT credentials (fake driver; Steadfast has no sandbox, so `live`) with the pickup location → `connected` + the webhook secret (shown once). */
 export async function connectFakeCourier(s: Session, provider: Courier = 'steadfast', o: { credentials?: Json; isDefault?: boolean } = {}): Promise<{ account: Json; webhookSecret: string | null; webhookUrl: string | null; credentials: Json }> {
   const pickup = await ensurePickup(s);
   const credentials = o.credentials ?? fakeCourierCredentials(provider);
-  const put = await api(s, 'PUT', `/stores/${s.storeId}/couriers/${provider}`, { mode: 'sandbox', credentials, settings: { pickup_location_id: pickup } });
+  const put = await api(s, 'PUT', `/stores/${s.storeId}/couriers/${provider}`, { mode: provider === 'steadfast' ? 'live' : 'sandbox', credentials, settings: { pickup_location_id: pickup } });
   expect(put.status, JSON.stringify(put.json)).toBe(200);
   expect(put.json.data.status).toBe('connected');
   let account = put.json.data as Json;

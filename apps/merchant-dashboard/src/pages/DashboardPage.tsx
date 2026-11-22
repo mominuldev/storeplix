@@ -139,7 +139,7 @@ function CatalogCard({ query }: { query: ReturnType<typeof useDashboard> }) {
 
 /**
  * "Needs you today" 10:958 — Confirm / Pack orders (Phase 5a), unpaid online orders (5b §10), Restock (10:1011) and
- * "Add your first product". "Book N parcels" and "N delivery problems" wait for their dashboard fields in @storeplix/types.
+ * "Add your first product", plus 5b-3 "Book N parcels" (`waiting.to_book`) and "N delivery problems" (`shipments.problems`).
  */
 function TodayCard({ summary, loading, failed }: { summary: DashboardSummary | undefined; loading: boolean; failed: boolean }) {
   const restock = summary ? summary.inventory.low_stock_variants + summary.inventory.out_of_stock_variants : 0;
@@ -157,6 +157,28 @@ function TodayCard({ summary, loading, failed }: { summary: DashboardSummary | u
             title: `${plural(waiting.pending_payment, 'unpaid online order')}`,
             hint: 'Cancelled on their own if not paid in time',
             count: waiting.pending_payment as number | null,
+          },
+          {
+            key: 'book',
+            to: '/shipments',
+            icon: <Truck />,
+            tone: 'bg-info-bg text-info',
+            title: `Book ${plural(waiting.to_book, 'parcel')}`,
+            hint: 'Confirmed orders without a courier yet',
+            count: waiting.to_book as number | null,
+          },
+        ]
+      : []),
+    ...(summary?.orders?.shipments
+      ? [
+          {
+            key: 'problems',
+            to: '/shipments?status=problems&range=all',
+            icon: <AlertTriangle />,
+            tone: 'bg-danger-bg text-danger',
+            title: plural(summary.orders.shipments.problems, 'delivery problem'),
+            hint: 'Failed, on hold or coming back',
+            count: summary.orders.shipments.problems as number | null,
           },
         ]
       : []),

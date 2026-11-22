@@ -80,3 +80,15 @@ Checked and fine: `RunBulkBooking` timeout (300 s) fits the `queue-bulk` worker'
 - Pest suites of API-C1/C2 and the dashboard Vitest suites were not run by QA here.
 - The edited `e2e.yml` and compose env were not run in GitHub Actions or `docker compose`; the stack ran on the host.
 - The storefront courier status display was verified by Vitest only: it can't be seen in the browser until H-1.
+
+## Addendum (2026-11-22, after the gate)
+
+- **H-1 fixed** in e95393f: the storefront tracking `shipment` carries `status`, `status_at`, `checked_at` and
+  `events[{status, at}]` (no description, location or provider text; Pest proves it). `phase5b.couriers` `/track` passes.
+- **M-1 fixed** in e95393f: `ShipmentsPage.tsx` grid is `grid-cols-1` below `lg`; `phase5b.mobile` Shipments passes.
+- **L-1 fixed** in e95393f: `Order.shipment` and tracking use the newest shipment that isn't cancelled or `booking_failed`.
+- Since then: Steadfast connections are live-only (it has no sandbox; a "sandbox" connection booked real parcels), the
+  dashboard renders "Book N parcels" and "N delivery problems", and the 000800 rollback folds courier statuses back so
+  CI's rollback step works on seeded data.
+- Full run after the fixes: 37 passed; the one failure was the known per-IP limiter flake in `phase5.security` S9
+  (OPEN-QUESTIONS Q66), green on rerun.

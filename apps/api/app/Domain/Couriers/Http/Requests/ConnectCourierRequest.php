@@ -26,7 +26,9 @@ final class ConnectCourierRequest extends FormRequest
     {
         $fields = CourierAccount::CREDENTIAL_FIELDS[$this->provider()] ?? [];
         $rules = [
-            'mode' => ['required', 'string', Rule::in(CourierAccount::MODES)],
+            // Steadfast has no sandbox: its only host is live (portal.packzy.com), so a "sandbox" connection would book
+            // real parcels. Only `live` is accepted for it.
+            'mode' => ['required', 'string', Rule::in($this->provider() === 'steadfast' ? ['live'] : CourierAccount::MODES)],
             'credentials' => ['required', 'array:'.implode(',', array_keys($fields))],
         ];
         foreach ($fields as $field => $max) {
@@ -46,7 +48,10 @@ final class ConnectCourierRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return ['credentials.*.regex' => 'Use the value exactly as the courier shows it, without spaces.'] + CourierSettingsRules::messages();
+        return [
+            'credentials.*.regex' => 'Use the value exactly as the courier shows it, without spaces.',
+            'mode.in' => $this->provider() === 'steadfast' ? 'Steadfast has no sandbox. Connect with your live API keys.' : 'Choose sandbox or live.',
+        ] + CourierSettingsRules::messages();
     }
 
     public function provider(): string

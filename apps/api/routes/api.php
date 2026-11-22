@@ -95,7 +95,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('stores/{store}/settings', [StoreSettingsController::class, 'show'])->name('stores.settings.show');
         Route::patch('stores/{store}/settings', [StoreSettingsController::class, 'update'])->name('stores.settings.update');
         Route::post('stores/{store}/preview-token', PreviewTokenController::class)
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:30,1,stores.preview-token')
             ->name('stores.preview-token');
 
         // --- Phase 3: storefront engine (themes, pages, navigation) ---
@@ -106,8 +106,8 @@ Route::prefix('v1')->group(function (): void {
             Route::get('themes', [StoreThemeController::class, 'index'])->name('stores.themes.index');
             Route::prefix('themes/{code}')->where(['code' => '[a-z0-9-]{1,64}'])->group(function (): void {
                 Route::get('/', [StoreThemeController::class, 'show'])->name('stores.themes.show');
-                Route::put('draft', [StoreThemeController::class, 'saveDraft'])->middleware('throttle:120,1')->name('stores.themes.draft');
-                Route::middleware('throttle:20,1')->group(function (): void {
+                Route::put('draft', [StoreThemeController::class, 'saveDraft'])->middleware('throttle:120,1,stores.themes.draft')->name('stores.themes.draft');
+                Route::middleware('throttle:20,1,stores.themes.publish')->group(function (): void {
                     Route::post('publish', [StoreThemeController::class, 'publish'])->name('stores.themes.publish');
                     Route::post('discard', [StoreThemeController::class, 'discard'])->name('stores.themes.discard');
                     Route::post('apply', [StoreThemeController::class, 'apply'])->name('stores.themes.apply');
@@ -221,12 +221,12 @@ Route::prefix('v1')->group(function (): void {
                 Route::put('document-templates/{kind}', [DocumentController::class, 'updateTemplate'])
                     ->where('kind', 'invoice_a4|receipt_80mm|invoice_a5_two_up|packing_slip|label_4x6')->name('stores.document-templates.update');
                 Route::post('documents', [DocumentController::class, 'store'])->name('stores.documents.store');
-                Route::post('documents/preview', [DocumentController::class, 'preview'])->middleware('throttle:30,1')->name('stores.documents.preview');
+                Route::post('documents/preview', [DocumentController::class, 'preview'])->middleware('throttle:30,1,stores.documents.preview')->name('stores.documents.preview');
                 Route::get('documents/{document}', [DocumentController::class, 'show'])->name('stores.documents.show');
 
                 // --- Phase 5b-3: shipments (courier booking, list, detail, sync; O A S) ---
                 Route::post('orders/{order}/shipments', [ShipmentController::class, 'store'])->middleware('idempotent:shipments.book')->name('stores.orders.shipments.store');
-                Route::post('shipments/bulk', [ShipmentController::class, 'bulk'])->middleware('throttle:20,1')->name('stores.shipments.bulk');
+                Route::post('shipments/bulk', [ShipmentController::class, 'bulk'])->middleware('throttle:20,1,stores.shipments.bulk')->name('stores.shipments.bulk');
                 Route::get('shipment-batches/{batch}', [ShipmentController::class, 'batch'])->where('batch', '[0-9A-Za-z]{26}')->name('stores.shipment-batches.show');
                 Route::get('shipments', [ShipmentController::class, 'index'])->name('stores.shipments.index');
                 Route::post('shipments/sync', [ShipmentController::class, 'syncNow'])->name('stores.shipments.sync');
@@ -238,29 +238,29 @@ Route::prefix('v1')->group(function (): void {
                 // --- Phase 5b-2: payment gateways (reads O A S, writes O A ManageIntegrations) ---
                 Route::get('payment-gateways', [PaymentGatewayController::class, 'index'])->name('stores.payment-gateways.index');
                 Route::put('payment-gateways/{provider}', [PaymentGatewayController::class, 'connect'])->where('provider', 'bkash|sslcommerz')
-                    ->middleware('throttle:20,1')->name('stores.payment-gateways.connect');
+                    ->middleware('throttle:20,1,stores.payment-gateways.connect')->name('stores.payment-gateways.connect');
                 Route::patch('payment-gateways/{provider}', [PaymentGatewayController::class, 'update'])->where('provider', 'bkash|sslcommerz')->name('stores.payment-gateways.update');
                 Route::delete('payment-gateways/{provider}', [PaymentGatewayController::class, 'disconnect'])->where('provider', 'bkash|sslcommerz')->name('stores.payment-gateways.disconnect');
                 Route::post('payment-gateways/{provider}/test-payment', [PaymentGatewayController::class, 'testPayment'])->where('provider', 'bkash|sslcommerz')
-                    ->middleware(['throttle:20,1', 'idempotent:payment-gateways.test'])->name('stores.payment-gateways.test-payment');
+                    ->middleware(['throttle:20,1,stores.payment-gateways.test-payment', 'idempotent:payment-gateways.test'])->name('stores.payment-gateways.test-payment');
 
                 // --- Phase 5b-3: couriers (reads O A S, writes O A ManageIntegrations) ---
                 Route::get('couriers', [CourierAccountController::class, 'index'])->name('stores.couriers.index');
                 Route::put('couriers/{provider}', [CourierAccountController::class, 'connect'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1')->name('stores.couriers.connect');
+                    ->middleware('throttle:20,1,stores.couriers.connect')->name('stores.couriers.connect');
                 Route::patch('couriers/{provider}', [CourierAccountController::class, 'update'])->where('provider', 'steadfast|pathao|redx')->name('stores.couriers.update');
                 Route::delete('couriers/{provider}', [CourierAccountController::class, 'disconnect'])->where('provider', 'steadfast|pathao|redx')->name('stores.couriers.disconnect');
                 Route::post('couriers/{provider}/test', [CourierAccountController::class, 'test'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1')->name('stores.couriers.test');
+                    ->middleware('throttle:20,1,stores.couriers.test')->name('stores.couriers.test');
                 Route::post('couriers/{provider}/webhook-secret', [CourierAccountController::class, 'rotateWebhookSecret'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1')->name('stores.couriers.webhook-secret');
+                    ->middleware('throttle:20,1,stores.couriers.webhook-secret')->name('stores.couriers.webhook-secret');
                 Route::get('couriers/{provider}/areas', [CourierAccountController::class, 'areas'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:120,1')->name('stores.couriers.areas');
+                    ->middleware('throttle:120,1,stores.couriers.areas')->name('stores.couriers.areas');
                 Route::get('couriers/{provider}/pickup-stores', [CourierAccountController::class, 'pickupStores'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:30,1')->name('stores.couriers.pickup-stores');
+                    ->middleware('throttle:30,1,stores.couriers.pickup-stores')->name('stores.couriers.pickup-stores');
 
                 Route::get('launch-checklist', [LaunchController::class, 'checklist'])->name('stores.launch-checklist');
-                Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1')->name('stores.publish');
+                Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1,stores.publish')->name('stores.publish');
             });
         });
 
@@ -274,7 +274,7 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('staff/{member}', [StaffController::class, 'destroy'])->name('staff.destroy');
 
         Route::get('media', [MediaController::class, 'index'])->name('media.index');
-        Route::post('media', [MediaController::class, 'store'])->middleware('throttle:60,1')->name('media.store');
+        Route::post('media', [MediaController::class, 'store'])->middleware('throttle:60,1,media.store')->name('media.store');
         Route::get('media/{media}', [MediaController::class, 'show'])->name('media.show');
         Route::delete('media/{media}', [MediaController::class, 'destroy'])->name('media.destroy');
 
@@ -336,28 +336,28 @@ Route::prefix('v1')->group(function (): void {
     // Phase 5b-2: TESTING-ONLY time travel for the expiry e2e (404 unless PAYMENTS_FAKE=true; never in production).
     if (! app()->environment('production')) {
         Route::post('dev/payments/{payment}/expire-now', [DevPaymentController::class, 'expireNow'])
-            ->where('payment', '[0-9A-Za-z]{26}')->middleware('throttle:60,1')->name('dev.payments.expire-now');
+            ->where('payment', '[0-9A-Za-z]{26}')->middleware('throttle:60,1,dev.payments.expire-now')->name('dev.payments.expire-now');
     }
 
     // Phase 5b-3: TESTING-ONLY fake courier event (404 unless COURIERS_FAKE=true; never registered in production).
     if (! app()->environment('production')) {
         Route::post('dev/shipments/{shipment}/advance', DevShipmentController::class)
-            ->where('shipment', '[0-9A-Za-z]{26}')->middleware('throttle:60,1')->name('dev.shipments.advance');
+            ->where('shipment', '[0-9A-Za-z]{26}')->middleware('throttle:60,1,dev.shipments.advance')->name('dev.shipments.advance');
     }
 
     // Phase 5b-4: signed 5-minute document download (PDF; HTML with DOCUMENTS_DRIVER=html). Tenant from the signature.
     // Phase 5b-2 (P5B-29): fake hosted payment page. Never registered in production; 404 unless PAYMENTS_FAKE=true.
     if (! app()->environment('production')) {
         Route::get('dev/fake-gateway/{payment}', [FakeGatewayController::class, 'show'])
-            ->middleware(['signed', 'throttle:60,1'])->name('dev.fake-gateway.show');
+            ->middleware(['signed', 'throttle:60,1,dev.fake-gateway.show'])->name('dev.fake-gateway.show');
         Route::post('dev/fake-gateway/{payment}/{outcome}', [FakeGatewayController::class, 'outcome'])->where('outcome', 'pay|fail|cancel')
-            ->middleware(['signed', 'throttle:60,1'])->name('dev.fake-gateway.outcome');
+            ->middleware(['signed', 'throttle:60,1,dev.fake-gateway.outcome'])->name('dev.fake-gateway.outcome');
     }
 
     Route::get('documents/{document}/download', [DocumentController::class, 'download'])
-        ->middleware(['signed', 'throttle:60,1'])->name('documents.download');
+        ->middleware(['signed', 'throttle:60,1,documents.download'])->name('documents.download');
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])
-        ->middleware(['signed', 'throttle:60,1'])->name('exports.download');
+        ->middleware(['signed', 'throttle:60,1,exports.download'])->name('exports.download');
 });
