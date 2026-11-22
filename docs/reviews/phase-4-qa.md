@@ -151,14 +151,14 @@ via the Figma MCP. Images are kept outside the repo.
 |---|---|---|---|---|
 | F-L1 | Low · **fixed** | `apps/merchant-dashboard/src/layout/nav.ts:58` | The Products → **Import** child link shows for staff. The page then says "Imports are for owners and managers". §9 says bulk-data controls are hidden for staff. | Sign in as staff, open `/products`: the sidebar shows Import. Gate the child on `scope.canBulkData`. A `test.fail()` in `phase4.staff` flips when it's fixed. |
 | F-L2 | Low · **fixed** | `apps/merchant-dashboard/src/pages/DashboardPage.tsx:33-34` | The greeting says "8 products, **6 low on stock**", but 6 = low (4) + out (2), and the Low stock tile next to it says 4. | Say "6 low or sold out" or use low only. |
-| F-L3 | Low · open (ops) | Local stack | Under full-suite load, pages occasionally render more than 5 s late, and a `bulk` import waited more than 60 s behind `default` jobs (`php artisan serve` is a single process, sqlite, one shared worker). This caused all 4 full-run flakes. | Ops: run `queue-bulk` separately (compose does) and/or `PHP_CLI_SERVER_WORKERS=4`. The specs now allow 10 s / 120 s. |
+| F-L3 | Low · **fixed** (pending live re-run) | Local stack | Under full-suite load, pages occasionally render more than 5 s late, and a `bulk` import waited more than 60 s behind `default` jobs (`php artisan serve` is a single process, sqlite, one shared worker). This caused all 4 full-run flakes. | Ops: run `queue-bulk` separately (compose does) and/or `PHP_CLI_SERVER_WORKERS=4`. The specs now allow 10 s / 120 s. |
 | F-L4 | Low · **fixed** | `apps/api/config/cors.php:22`, `apps/api/.env.example:76` | The CORS default is still `http://localhost:5173,http://localhost:5174`. §7.2: empty after 4.7b. Harmless (`supports_credentials` is false and the SPAs are same-origin), but it is a needless allow-list. | Default to `''`. The local `.env` is emptied, and compose already defaults to empty. |
 | F-L5 | Low · **fixed** | `apps/merchant-dashboard/src/products/ProductsPage.tsx:150-185` | The numeric columns (variants, stock, price, profit) are right-aligned; Figma 60:8984 left-aligns them. | Visual nit; align with Figma or record the deviation in FIGMA-INDEX. |
 | F-L6 | Low · **fixed** | Contract §5 / `DataImportRow.row_number` | `row_number` is the **spreadsheet line** (header = 1), so data row 1 = 2. This is not stated in the contract or openapi. It's sensible (it matches what users see in Excel). | ARCH: document it in openapi `DataImportRow.row_number`. |
 
 ### Follow-up fixes (2026-11-22)
 
-Five of the six Low findings are fixed. F-L3 is a local-stack ops note and stays open.
+All six Low findings are fixed. F-L3 still needs a full e2e run on the restarted stack.
 
 | # | Fix |
 |---|---|
@@ -166,6 +166,7 @@ Five of the six Low findings are fixed. F-L3 is a local-stack ops note and stays
 | F-L2 | The greeting reports the two counts separately: "8 products, 4 low on stock, 2 out of stock". The out-of-stock part only shows when it is above 0, and the unit test is updated. |
 | F-L4 | `config/cors.php` and `apps/api/.env.example` now default `CORS_ALLOWED_ORIGINS` to empty. |
 | F-L5 | The cause was in the shared `packages/ui` `DataTable`, not the Products page. The desktop reset `md:text-[inherit]` compiled to a colour, so the mobile `text-right` carried over to desktop. Values now follow the column's `align` from `md` up (left by default), which matches Figma 60:8984. Inventory and Customers use the same component, so their tables change too. |
+| F-L3 | `composer dev` / `php artisan dev` now starts the same processes as compose: `serve --no-reload` with `PHP_CLI_SERVER_WORKERS=4`, `queue:listen` on `default,media`, a separate `queue:listen` on `bulk` (timeout 310) and `schedule:work` (`AppServiceProvider::registerDevProcesses()`). SQLite gets `DB_JOURNAL_MODE=wal` and `DB_BUSY_TIMEOUT=5000`. README and TESTING.md are updated. |
 | F-L6 | `DataImportRow.row_number` in openapi now has `minimum: 2` and a description: it is the spreadsheet line, and the header is line 1. |
 
 Re-verified: typecheck passes; lint has 0 errors; vitest passes; Pest 305 passed and 2 skipped; pint passes; and the OpenAPI

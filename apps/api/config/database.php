@@ -38,8 +38,10 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
+            // Local dev runs several `serve` workers and queue workers against one file (QA F-L3): WAL lets reads run
+            // during a write, and the busy timeout makes writers wait instead of failing with "database is locked".
+            'busy_timeout' => env('DB_BUSY_TIMEOUT'),
+            'journal_mode' => env('DB_JOURNAL_MODE'),
             'synchronous' => null,
             'transaction_mode' => 'DEFERRED',
         ],

@@ -11,11 +11,21 @@ composer install
 cp .env.example .env && php artisan key:generate   # Postgres + Redis by default
 createdb storeplix                                   # or point DB_* at your server
 php artisan migrate --seed                           # demo@storeplix.test / password
-php artisan serve --port=8000
 php artisan storage:link                             # media served at APP_URL/storage
-php artisan queue:work --queue=default,media         # mails, media variants, storefront revalidation
-php artisan schedule:work                            # daily sanctum:prune-expired --hours=24
+composer dev                                         # = php artisan dev (below)
 ```
+
+`composer dev` runs the same processes as docker compose (see `registerDevProcesses()` in `AppServiceProvider`):
+
+| Process | Command | Why |
+|---|---|---|
+| server | `serve --port=8000 --no-reload` | `PHP_CLI_SERVER_WORKERS=4` workers, so one slow request doesn't stall every page |
+| queue | `queue:listen --queue=default,media` | mails, media variants, storefront revalidation |
+| queue-bulk | `queue:listen --queue=bulk --timeout=310` | CSV imports and exports, never queued behind short jobs |
+| scheduler | `schedule:work` | daily `sanctum:prune-expired --hours=24` |
+
+On SQLite set `DB_JOURNAL_MODE=wal` and `DB_BUSY_TIMEOUT=5000` so these processes don't hit "database is locked".
+`--no-reload` means `.env` changes need a restart of `composer dev`.
 
 Tests need no external services (SQLite in-memory, array cache, sync queue — see `phpunit.xml`):
 

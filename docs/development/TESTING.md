@@ -100,9 +100,9 @@ How they run:
   `throttle:auth` limits auth calls per IP; `phase2.auth-flows` uses 5 and `phase4.staff`, `phase4.storefront`,
   `phase4.onboarding05`, `phase4.security` 1 each, so **wait ~60 s between back-to-back full runs**. If another
   process changes the demo password or logs sessions out, the cached state is detected as dead and replaced.
-- **Phase 4 needs a worker on the `bulk` queue** (imports/exports): locally
-  `php artisan queue:work --queue=default,media,bulk --timeout=310` (or a second worker with `--queue=bulk`);
-  docker compose runs `queue-bulk`. Without it `phase4.import-export` / `phase4.security` time out with
+- **Phase 4 needs a worker on the `bulk` queue** (imports/exports). Locally, `composer dev` in `apps/api` starts
+  a 4-worker server, a `default,media` worker, a separate `bulk` worker and the scheduler (QA F-L3). On SQLite also
+  set `DB_JOURNAL_MODE=wal` and `DB_BUSY_TIMEOUT=5000`. Docker compose runs `queue-bulk`. Without it `phase4.import-export` / `phase4.security` time out with
   "is a queue worker consuming the `bulk` queue?".
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the

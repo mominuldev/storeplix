@@ -17,7 +17,7 @@ export const urls = {
 export default defineConfig({
   testDir: './specs',
   timeout: 60_000,
-  // The local stack is single-threaded (php artisan serve + sqlite + one queue worker): give UI assertions headroom.
+  // Headroom for the local stack (sqlite; `composer dev` runs 4 server workers and separate default/bulk queues, QA F-L3).
   expect: { timeout: 10_000 },
   // The flow specs mutate the shared demo store (theme, menus, SEO, logo): run files one at a time.
   fullyParallel: false,

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -17,6 +18,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->registerDevProcesses();
+
         // Phase 4.7c: no Bearer / personal-access-token authentication. Merchant and admin SPAs use same-origin cookie
         // sessions; Phase 8 API keys will be a separate mechanism. A Bearer header is simply ignored → 401.
         Sanctum::getAccessTokenFromRequestUsing(fn () => null);
@@ -62,5 +65,24 @@ class AppServiceProvider extends ServiceProvider
         // Storefront traffic is proxied by the Next.js server, so limit per resolved host.
         RateLimiter::for('storefront', fn (Request $request) => Limit::perMinute(1200)
             ->by('storefront:'.strtolower((string) $request->header('X-Storefront-Host'))));
+    }
+
+    /**
+     * `composer dev` / `php artisan dev`: the local stack mirrors docker compose (QA F-L3). The framework default is one
+     * `serve` process plus a single `queue:listen` on `default`, so `bulk` imports never ran and one slow request
+     * stalled every page. Here: a multi-worker server (PHP_CLI_SERVER_WORKERS needs --no-reload), short jobs and
+     * `bulk` on separate workers so imports never wait behind revalidation, and the scheduler.
+     */
+    private function registerDevProcesses(): void
+    {
+        if (! $this->app->runningInConsole() || ! class_exists(DevCommands::class)) {
+            return;
+        }
+
+        DevCommands::withoutDefaultCommands();
+        DevCommands::artisan('serve --port=8000 --no-reload', 'server');
+        DevCommands::artisan('queue:listen --queue=default,media --tries=3 --timeout=90', 'queue');
+        DevCommands::artisan('queue:listen --queue=bulk --tries=1 --timeout=310 --memory=512', 'queue-bulk');
+        DevCommands::artisan('schedule:work', 'scheduler');
     }
 }
