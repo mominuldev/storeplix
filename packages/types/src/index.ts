@@ -54,6 +54,8 @@ export interface StorefrontConfig {
   navigation?: { main: StorefrontNavMenu; footer: StorefrontNavMenu; help: StorefrontNavMenu };
   /** Media ids referenced by `theme`. */
   media?: Record<string, StorefrontMedia>;
+  /** Phase 5. Optional on the wire for rolling deploys. */
+  commerce?: StorefrontCommerce;
 }
 
 export interface PreviewToken { token: string; url: string; /** ISO-8601 */ expires_at: string }
@@ -144,6 +146,8 @@ export interface StoreSettings {
   address: BusinessAddress;
   region: { country: string; currency: string; timezone: string };
   seo: StoreSeo;
+  /** Phase 5 */
+  commerce: StoreCommerceSettings;
   updated_at: string;
 }
 export interface UpdateStoreSettingsInput {
@@ -154,13 +158,17 @@ export interface UpdateStoreSettingsInput {
   address?: Partial<BusinessAddress>;
   region?: Partial<{ country: string; currency: string; timezone: string }>;
   seo?: Partial<{ title: string | null; description: string | null; share_image_media_id: string | null; hide_from_search: boolean }>;
+  /** Phase 5 */
+  checkout?: { cod_enabled?: boolean };
+  order_prefix?: string;
+  notifications?: { new_order_email?: boolean; sms_language?: 'bn' | 'en'; customer_sms?: Partial<Record<CustomerSmsEvent, boolean>> };
 }
 
 // ---------- Plans / subscription / features ----------
 export type FeatureKey =
   | 'custom_domain' | 'all_couriers' | 'bulk_courier_booking' | 'fake_order_guard' | 'sms_automation'
   | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks';
-export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections';
+export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month';
 export interface Plan {
   id: string; code: 'free' | 'starter' | 'growth' | (string & {}); name: string;
   price_amount: number; currency: string; interval: 'month' | 'year';
@@ -187,7 +195,9 @@ export interface AuditLog {
   ip: string | null; user_agent: string | null; created_at: string;
 }
 export interface AuditLogFilters {
-  action?: string; actor_id?: string; subject_type?: string; subject_id?: string;
+  action?: string; actor_id?: string; subject_id?: string;
+  /** server allowlist; Phase 5 adds 'order' | 'coupon' | 'shipping' | 'store' */
+  subject_type?: string;
   created_from?: string; created_to?: string; page?: number; per_page?: number;
 }  // api-client maps these to filter[...] query params
 
@@ -358,6 +368,9 @@ export const ROLE_CAN = {
   view_costs: ['owner', 'admin'],
   manage_catalog: ['owner', 'admin'],   // delete products/categories/customers
   bulk_data: ['owner', 'admin'],        // imports & exports
+  manage_marketing: ['owner', 'admin'], // coupons (P5-21)
+  manage_refunds: ['owner', 'admin'],   // refunds, cancelling paid orders
+  manage_settings: ['owner', 'admin'],  // shipping, checkout, notifications, publish
 } as const satisfies Record<string, readonly TenantRole[]>;
 
 // ---------- Catalog (Phase 4) ----------
@@ -473,15 +486,15 @@ export interface InventoryListFilters {
   category_id?: string; product_id?: string;
   sort?: 'name' | 'available' | '-available' | '-updated_at'; page?: number; per_page?: number;
 }
-export type StockMovementReason = 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other';
-export type ManualStockReason = Exclude<StockMovementReason, 'initial' | 'import'>;
+export type StockMovementReason = 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other' | 'order_shipped' | 'order_returned';
+export type ManualStockReason = Exclude<StockMovementReason, 'initial' | 'import' | 'order_shipped' | 'order_returned'>;
 export interface StockAdjustmentItem { variant_id: string; mode: 'delta' | 'set'; quantity: number; expected_on_hand?: number }
 export interface StockAdjustmentInput { reason: ManualStockReason; note?: string | null; items: StockAdjustmentItem[] }
 export interface StockMovement {
   id: string; variant_id: string; product: { id: string; name: string };
   variant_title: string; sku: string | null; delta: number; on_hand_after: number;
   reason: StockMovementReason; note: string | null;
-  reference: { type: 'import'; id: string } | null; actor: UserRef | null; created_at: string;
+  reference: { type: 'import' | 'order'; id: string } | null; actor: UserRef | null; created_at: string;
 }
 export interface StockAdjustmentResult { items: InventoryItem[]; movements: StockMovement[] }
 export interface StockMovementFilters {
@@ -498,6 +511,7 @@ export interface Customer {
   channel: CustomerChannel | null; source: 'manual' | 'import' | 'storefront';
   tags: string[]; accepts_marketing: boolean;
   orders_count: number; total_spent_amount: number; currency: string; last_order_at: string | null;
+  delivered_orders_count: number; returned_orders_count: number;
   notes_count: number; revision: number; created_at: string; updated_at: string; created_by: UserRef | null;
 }
 export interface CustomerNote { id: string; body: string; author: UserRef | null; created_at: string; can_delete: boolean }
@@ -565,8 +579,8 @@ export interface DashboardSummary {
   products: { total: number; active: number; draft: number; archived: number; limit: number | null };
   inventory: { low_stock_variants: number; out_of_stock_variants: number; units_on_hand: number; stock_value_cost_amount: number | null };
   customers: { total: number; new_this_month: number };
-  /** Phase 5 fills this; null means "no order data yet" → empty states. */
-  orders: null;
+  /** null means "no order data yet" → empty states. */
+  orders: OrderDashboard | null;
   setup: { has_products: boolean };
 }
 
@@ -577,5 +591,287 @@ export interface StorefrontProductCard {
   price_amount: number; compare_at_amount: number | null; currency: string;
   on_sale: boolean; image: StorefrontMedia | null;
 }
-export interface StorefrontProductListMeta { has_products: boolean }
-export interface StorefrontProductQuery { sort?: 'latest' | 'bestsellers'; limit?: number; on_sale?: boolean; category?: string }
+
+// ==================== Phase 5a: Commerce (PHASE-5-CONTRACT §6) ====================
+// ---------- Geo ----------
+export interface BdDivision { code: string; name: string; name_bn: string }
+export interface BdDistrict { code: string; division_code: string; name: string; name_bn: string }
+export interface BdThana { code: string; district_code: string; name: string; name_bn: string; is_city: boolean }
+export interface BdGeo { version: string; divisions: BdDivision[]; districts: BdDistrict[]; thanas: BdThana[] }
+
+export type AddressLabel = 'home' | 'office';
+export interface AddressInput {
+  district_code: string; thana_code: string; area?: string | null;
+  address_line: string; landmark?: string | null; label?: AddressLabel | null;
+}
+export interface Address extends Required<Omit<AddressInput, 'label'>> {
+  division_code: string; division: string; district: string; thana: string; label: AddressLabel | null;
+}
+
+// ---------- Permissions (P5-21) ----------
+
+// ---------- Shipping ----------
+export interface ShippingZoneArea { district_code: string; thana_code: string | null; label: string }
+export interface ShippingZone {
+  id: string; name: string; kind: 'custom' | 'fallback'; charge_amount: number;
+  min_days: number; max_days: number; is_active: boolean; position: number;
+  areas: ShippingZoneArea[]; area_summary: string;        // "Dhaka city · 41 thanas"
+}
+export interface ShippingZoneInput {
+  id?: string; name: string; kind: 'custom' | 'fallback'; charge_amount: number;
+  min_days: number; max_days: number; is_active?: boolean;
+  areas?: { district_code: string; thana_code?: string | null }[];
+}
+export interface PickupLocation {
+  id: string; name: string; contact_name: string | null; contact_phone: string | null;
+  district_code: string; thana_code: string; district: string; thana: string;
+  address_line: string; is_default: boolean; created_at: string; updated_at: string;
+}
+export interface PickupLocationInput {
+  name: string; contact_name?: string | null; contact_phone?: string | null;
+  district_code: string; thana_code: string; address_line: string; is_default?: boolean;
+}
+export interface ShippingSettings {
+  zones: ShippingZone[]; pickup_locations: PickupLocation[];
+  free_delivery_over_amount: number | null; configured: boolean;
+}
+export interface SaveShippingInput { zones: ShippingZoneInput[]; free_delivery_over_amount: number | null }
+export interface ShippingQuote {
+  zone_id: string; zone_name: string; min_days: number; max_days: number;
+  charge_amount: number;          // before free delivery
+  amount: number;                 // what the shopper pays
+  is_free: boolean;
+}
+
+// ---------- Store settings additions ----------
+export type CustomerSmsEvent = 'order_placed' | 'order_confirmed' | 'order_shipped' | 'order_cancelled';
+export interface StoreCommerceSettings {
+  checkout: { cod_enabled: boolean };
+  order_prefix: string;                      // effective prefix
+  next_order_number: string;                 // "GS-1049"
+  notifications: {
+    new_order_email: boolean; sms_language: 'bn' | 'en';
+    customer_sms: Record<CustomerSmsEvent, boolean>;
+  };
+}
+
+// ---------- Coupons ----------
+export type CouponType = 'percentage' | 'fixed' | 'free_shipping';
+export type CouponStatus = 'draft' | 'active' | 'disabled';
+export type CouponDisplayStatus = CouponStatus | 'scheduled' | 'expired' | 'used_up';
+export type CouponAppliesTo = 'all' | 'categories' | 'products';
+export interface Coupon {
+  id: string; code: string; type: CouponType;
+  percent_bps: number | null; amount: number | null; max_discount_amount: number | null;
+  applies_to: CouponAppliesTo; categories: CategoryRef[];
+  products: { id: string; name: string; image: MediaRef | null; price_min_amount: number }[];
+  min_subtotal_amount: number | null; usage_limit: number | null; usage_per_customer: number | null;
+  first_order_only: boolean; starts_at: string; ends_at: string | null;
+  status: CouponStatus; display_status: CouponDisplayStatus;
+  stats: { used_count: number; orders_count: number; revenue_amount: number; discount_amount: number };
+  share_path: string;                        // "/discount/WINTER15"
+  revision: number; created_by: UserRef | null; created_at: string; updated_at: string;
+}
+export interface CreateCouponInput {
+  code: string; type: CouponType; percent_bps?: number | null; amount?: number | null;
+  max_discount_amount?: number | null; applies_to?: CouponAppliesTo;
+  category_ids?: string[]; product_ids?: string[];          // ≤ 100 each
+  min_subtotal_amount?: number | null; usage_limit?: number | null; usage_per_customer?: number | null;
+  first_order_only?: boolean; starts_at?: string; ends_at?: string | null; status?: CouponStatus;
+}
+export interface UpdateCouponInput extends Partial<CreateCouponInput> { revision: number }
+export interface CouponListFilters {
+  q?: string; type?: CouponType[]; status?: CouponDisplayStatus[];
+  sort?: '-created_at' | '-revenue' | '-used_count'; page?: number; per_page?: number;
+}
+export interface CouponListMeta extends PaginationMeta { counts: Record<'all' | 'active' | 'scheduled' | 'expired', number> }
+
+// ---------- Storefront catalog ----------
+export interface StorefrontProductQuery {
+  sort?: 'latest' | 'bestsellers' | 'price_asc' | 'price_desc'; limit?: number; page?: number; per_page?: number;
+  on_sale?: boolean; category?: string; q?: string; price_min?: number; price_max?: number;
+  in_stock?: boolean; exclude?: string;
+}   // replaces the Phase 4 StorefrontProductQuery (superset)
+export interface StorefrontProductListMeta extends Partial<PaginationMeta> { has_products: boolean }
+export interface StorefrontVariant {
+  id: string; title: string; option_values: string[];
+  price_amount: number; compare_at_amount: number | null; image_media_id: string | null;
+}
+export interface StorefrontProduct {
+  id: string; slug: string; name: string; description: RichTextDoc | null;
+  options: ProductOption[]; variants: StorefrontVariant[];      // enabled variants only
+  images: { media_id: string; alt: string | null; media: StorefrontMedia }[];
+  price_min_amount: number; price_max_amount: number; currency: string;
+  categories: { slug: string; name: string }[];                 // first = primary for breadcrumb
+  seo: { title: string | null; description: string | null };
+  url_path: string; is_preview_only: boolean; updated_at: string;
+}
+export interface StorefrontAvailability {
+  variants: { id: string; available: boolean; low_stock: number | null }[];
+}
+export interface StorefrontCategory {
+  slug: string; name: string; image: StorefrontMedia | null; url_path: string;   // "/c/{slug}"
+  children: StorefrontCategory[];
+}
+export interface StorefrontCategoryDetail extends Omit<StorefrontCategory, 'children'> {
+  description: string | null; ancestors: { slug: string; name: string }[];
+  children: { slug: string; name: string; url_path: string }[];
+}
+export interface StorefrontCommerce {
+  checkout_enabled: boolean; payment_methods: PaymentMethod[];
+  free_delivery_over_amount: number | null;
+  delivery: { name: string; charge_amount: number; min_days: number; max_days: number }[];
+}
+
+// ---------- Cart ----------
+export type CartLineIssue = 'unavailable' | 'insufficient_stock';
+export interface CartLine {
+  id: string; variant_id: string; product_slug: string; product_name: string; variant_title: string;
+  option_values: string[]; image: StorefrontMedia | null; quantity: number;
+  unit_price_amount: number; compare_at_amount: number | null; line_amount: number;
+  issue: CartLineIssue | null; max_quantity: number | null; low_stock: number | null;
+}
+export interface Cart {
+  lines: CartLine[]; lines_count: number; items_count: number; currency: string;
+  coupon: { code: string; type: CouponType; discount_amount: number; free_shipping: boolean } | null;
+  subtotal_amount: number; discount_amount: number; savings_amount: number; estimated_total_amount: number;
+  free_delivery: { threshold_amount: number; remaining_amount: number } | null;
+  can_checkout: boolean;
+}
+export interface CartMeta { cart_token?: string; notices?: string[] }
+
+// ---------- Checkout / storefront orders ----------
+export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz';   // 5a: 'cod' only
+export interface CheckoutInput {
+  contact: { name: string; phone: string; email?: string | null };
+  shipping_address: AddressInput; payment_method: PaymentMethod;
+  customer_note?: string | null; accepts_marketing?: boolean; expected_total_amount: number;
+}
+export interface StorefrontOrderLine {
+  product_name: string; variant_title: string; quantity: number; image: StorefrontMedia | null;
+  unit_price_amount: number; total_amount: number;
+}
+export interface StorefrontOrder {
+  number: string; status: OrderStatus; payment_method: PaymentMethod; placed_at: string;
+  customer_name: string; customer_phone: string; shipping_address: Address;
+  lines: StorefrontOrderLine[]; coupon_code: string | null;
+  subtotal_amount: number; discount_amount: number; shipping_amount: number; total_amount: number;
+  due_amount: number; currency: string; delivery: { zone_name: string; min_days: number | null; max_days: number | null };
+}
+export interface CheckoutResult { order: StorefrontOrder; confirmation_token: string }
+export interface TrackOrderInput { number: string; phone: string }
+export interface StorefrontOrderTracking {
+  number: string; status: OrderStatus; placed_at: string;
+  shipping: { district: string; thana: string };
+  lines: StorefrontOrderLine[]; total_amount: number; due_amount: number; currency: string;
+  timeline: { status: OrderStatus; at: string }[];
+  shipment: { carrier_name: string | null; tracking_code: string | null; tracking_url: string | null } | null;
+}
+
+// ---------- Orders (merchant) ----------
+export type OrderStatus = 'pending_payment' | 'pending' | 'confirmed' | 'ready_to_ship' | 'shipped' | 'delivered' | 'returned' | 'cancelled';
+export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'partially_refunded' | 'refunded';
+export type OrderChannel = 'website' | 'facebook' | 'instagram' | 'whatsapp' | 'phone' | 'walk_in' | 'landing_page' | 'other';
+export type CancelReason = 'customer_request' | 'fake_order' | 'unreachable' | 'out_of_stock' | 'duplicate' | 'other';
+export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  pending_payment: [], pending: ['confirmed', 'cancelled'], confirmed: ['ready_to_ship', 'shipped', 'cancelled'],
+  ready_to_ship: ['shipped', 'confirmed', 'cancelled'], shipped: ['delivered', 'returned'],
+  delivered: [], returned: [], cancelled: [],
+};
+export interface OrderCustomerSummary {
+  id: string | null; name: string; phone: string; email: string | null;
+  orders_count: number; delivered_orders_count: number; returned_orders_count: number;
+  total_spent_amount: number;
+}
+export interface OrderSummary {
+  id: string; number: string; status: OrderStatus; payment_status: PaymentStatus; payment_method: PaymentMethod;
+  channel: OrderChannel; created_via: 'storefront' | 'dashboard';
+  customer: OrderCustomerSummary; district: string; thana: string;
+  items_count: number; total_amount: number; paid_amount: number; due_amount: number; currency: string;
+  coupon_code: string | null; tags: string[]; placed_at: string; updated_at: string;
+}
+export interface OrderItem {
+  id: string; product_id: string | null; variant_id: string | null;
+  product_name: string; variant_title: string; option_values: string[]; sku: string | null;
+  image: MediaRef | null; unit_price_amount: number; compare_at_amount: number | null;
+  unit_cost_amount: number | null;                         // null for staff (ViewCosts)
+  quantity: number; subtotal_amount: number; discount_amount: number; total_amount: number;
+  restocked_quantity: number;
+  current_stock: { available: number; tracked: boolean } | null;   // "43 in stock"; null when variant deleted
+}
+export interface OrderEvent {
+  id: string; type: 'placed' | 'status_changed' | 'note' | 'edited' | 'payment' | 'refund' | 'shipment' | 'notification' | 'coupon_released';
+  from_status: OrderStatus | null; to_status: OrderStatus | null;
+  actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null };
+  body: string | null; meta: Record<string, unknown>; created_at: string;
+}
+export interface Payment {
+  id: string; provider: 'cod' | 'manual' | 'bkash' | 'sslcommerz'; type: 'charge' | 'refund';
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled'; amount: number; currency: string;
+  method: RefundMethod | null; reference: string | null; note: string | null;
+  actor: UserRef | null; created_at: string;
+}
+export interface Shipment {
+  id: string; provider: 'manual' | 'steadfast' | 'pathao' | 'redx'; carrier_name: string | null;
+  tracking_code: string | null; tracking_url: string | null; status: 'shipped' | 'delivered' | 'returned' | 'cancelled';
+  cod_amount: number; shipped_at: string | null; delivered_at: string | null; returned_at: string | null;
+}
+export interface Order extends OrderSummary {
+  contact: { name: string; phone: string; email: string | null };
+  shipping_address: Address; customer_note: string | null;
+  items: OrderItem[]; events: OrderEvent[]; payments: Payment[]; shipment: Shipment | null;
+  subtotal_amount: number; discount_amount: number; shipping_amount: number; shipping_discount_amount: number;
+  tax_amount: number; refunded_amount: number;
+  shipping_zone_name: string; delivery_min_days: number | null; delivery_max_days: number | null; shipping_overridden: boolean;
+  cancel_reason: CancelReason | null;
+  timestamps: Partial<Record<'confirmed_at' | 'shipped_at' | 'delivered_at' | 'returned_at' | 'cancelled_at', string>>;
+  allowed_transitions: OrderStatus[];                      // already filtered by role
+  can: { edit: boolean; cancel: boolean; refund: boolean };
+  revision: number; created_by: UserRef | null;
+}
+export interface OrderListFilters {
+  status?: OrderStatus[]; payment_status?: PaymentStatus[]; channel?: OrderChannel[]; district_code?: string;
+  customer_id?: string; coupon_id?: string; placed_from?: string; placed_to?: string; q?: string;
+  sort?: '-placed_at' | 'placed_at' | '-total'; page?: number; per_page?: number;
+}
+export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus, number> }
+export interface ManualOrderInput extends Omit<CheckoutInput, 'expected_total_amount' | 'payment_method'> {
+  items: { variant_id: string; quantity: number }[]; channel: Exclude<OrderChannel, 'website'>;
+  payment_method?: 'cod'; coupon_code?: string | null; shipping_amount_override?: number | null;
+  customer_id?: string | null; notify_customer?: boolean;
+}
+export interface OrderQuote {
+  lines: (Omit<OrderItem, 'id' | 'restocked_quantity'> & { issue: CartLineIssue | null })[];
+  zone: ShippingQuote | null; coupon_error: string | null;
+  subtotal_amount: number; discount_amount: number; shipping_amount: number; total_amount: number;
+  customer: OrderCustomerSummary | null;                   // matched by phone in this store
+}
+export interface UpdateOrderInput {
+  revision: number; contact?: { name?: string; phone?: string; email?: string | null };
+  shipping_address?: AddressInput; customer_note?: string | null; tags?: string[];
+}
+export interface ShipOrderInput { carrier_name?: string | null; tracking_code?: string | null; tracking_url?: string | null; notify_customer?: boolean }
+export interface ReturnOrderInput { restock: { item_id: string; quantity: number }[]; note?: string | null }
+export interface CancelOrderInput { reason: CancelReason; note?: string | null; notify_customer?: boolean }
+export type RefundMethod = 'cash' | 'bkash_personal' | 'nagad_personal' | 'bank' | 'other';
+export interface RefundInput { amount: number; method: RefundMethod; reference?: string | null; note?: string | null }
+export interface OrderBulkInput { action: 'confirm' | 'ready'; ids: string[] }
+export interface OrderBulkResult { action: 'confirm' | 'ready'; updated: number; skipped: { id: string; reason: string }[] }
+
+// ---------- Go-live ----------
+export type LaunchItemKey = 'products' | 'shipping' | 'payments' | 'contact_phone' | 'policy_pages' | 'first_order';
+export interface LaunchChecklist {
+  status: 'draft' | 'active'; can_publish: boolean; published_at: string | null; shop_url: string;
+  items: { key: LaunchItemKey; required: boolean; done: boolean; href: string }[];
+}
+
+// ---------- Dashboard ----------
+export interface OrderDashboard {
+  this_month: {
+    count: number; sales_amount: number; delivered_count: number; returned_count: number;
+    cancelled_count: number; delivery_success_rate: number | null;   // 0..1
+  };
+  waiting: { pending: number; confirmed: number; ready_to_ship: number };
+  best_sellers: { product_id: string; name: string; image: MediaRef | null; units: number }[];
+  plan: { used: number; limit: number | null };
+}

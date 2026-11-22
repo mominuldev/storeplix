@@ -14,6 +14,7 @@ const limitLabel: Record<LimitKey, string> = {
   staff_seats: 'Staff seats',
   products: 'Products',
   courier_connections: 'Courier connections',
+  sms_per_month: 'Order SMS per month',
 };
 const featureLabel: Record<string, string> = {
   custom_domain: 'Your own domain',

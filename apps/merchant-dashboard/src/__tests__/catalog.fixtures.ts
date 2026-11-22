@@ -157,6 +157,8 @@ export function customer(overrides: Partial<CustomerDetail> = {}): CustomerDetai
     source: 'manual',
     tags: ['repeat buyer'],
     accepts_marketing: false,
+    delivered_orders_count: 0,
+    returned_orders_count: 0,
     orders_count: 0,
     total_spent_amount: 0,
     currency: 'BDT',

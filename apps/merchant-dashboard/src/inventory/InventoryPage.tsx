@@ -23,6 +23,8 @@ const movementReasonLabel: Record<StockMovementReason, string> = {
   returned: 'Returned',
   import: 'CSV import',
   other: 'Adjusted',
+  order_shipped: 'Order shipped',
+  order_returned: 'Order returned',
 };
 
 function MovementIcon({ m }: { m: StockMovement }) {
