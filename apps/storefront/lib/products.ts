@@ -4,6 +4,7 @@ import type { StorefrontMedia, StorefrontProductCard } from '@storeplix/types';
 import { buildProductFeedRequest, type ProductFeedQuery } from './config-request';
 import { serverEnv } from './env';
 import { getPreviewToken } from './preview';
+import { previewClientIp } from './preview-client-ip';
 import { isAllowedMediaOrigin } from './media';
 import { parseProductFeed, type ProductFeed } from './storefront-schemas';
 
@@ -116,7 +117,7 @@ export async function loadProductFeed(host: string, query: ProductFeedQuery, pre
   try {
     const apiKey = serverEnv.apiKey;
     if (!apiKey) throw new Error('STOREFRONT_API_KEY is not configured');
-    const { url, init } = buildProductFeedRequest(host, query, previewToken, { apiUrl: serverEnv.apiUrl, apiKey });
+    const { url, init } = buildProductFeedRequest(host, query, previewToken, { apiUrl: serverEnv.apiUrl, apiKey }, await previewClientIp(previewToken));
     const res = await fetch(url, init);
     if (!res.ok) {
       console.error(`[storefront] product feed responded ${res.status} for ${where}; using placeholders`);

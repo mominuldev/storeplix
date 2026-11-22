@@ -26,6 +26,7 @@ export function buildStorefrontRequest(
   previewToken: string | null,
   env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>,
   revalidateSeconds: number,
+  clientIp: string | null = null,
 ): { url: string; init: StorefrontRequestInit } {
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -36,19 +37,21 @@ export function buildStorefrontRequest(
 
   if (previewToken) {
     headers[PREVIEW_HEADER] = previewToken;
+    // Per-visitor (no-store) only: lets the API apply the per-shopper limit (5b §2.10).
+    if (clientIp) headers['X-Storefront-Client-Ip'] = clientIp;
     return { url, init: { headers, cache: 'no-store' } };
   }
   return { url, init: { headers, next: { tags: [storeTag(host)], revalidate: revalidateSeconds } } };
 }
 
 /** GET /storefront/config. */
-export function buildConfigRequest(host: string, previewToken: string | null, env: ConfigRequestEnv) {
-  return buildStorefrontRequest('/config', host, previewToken, env, env.revalidateSeconds);
+export function buildConfigRequest(host: string, previewToken: string | null, env: ConfigRequestEnv, clientIp: string | null = null) {
+  return buildStorefrontRequest('/config', host, previewToken, env, env.revalidateSeconds, clientIp);
 }
 
 /** GET /storefront/pages/{slug} (slug must already match the page slug regex). */
-export function buildPageRequest(host: string, slug: string, previewToken: string | null, env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>) {
-  return buildStorefrontRequest(`/pages/${encodeURIComponent(slug)}`, host, previewToken, env, PAGES_REVALIDATE_SECONDS);
+export function buildPageRequest(host: string, slug: string, previewToken: string | null, env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>, clientIp: string | null = null) {
+  return buildStorefrontRequest(`/pages/${encodeURIComponent(slug)}`, host, previewToken, env, PAGES_REVALIDATE_SECONDS, clientIp);
 }
 
 /** GET /storefront/pages (sitemap). Published pages only, so it is always fetched publicly. */
@@ -75,9 +78,10 @@ export function buildProductFeedRequest(
   query: ProductFeedQuery,
   previewToken: string | null,
   env: Pick<ConfigRequestEnv, 'apiUrl' | 'apiKey'>,
+  clientIp: string | null = null,
 ) {
   const limit = Math.min(24, Math.max(1, Math.trunc(query.limit)));
   const params = new URLSearchParams({ sort: query.sort, limit: String(limit) });
   if (query.onSale) params.set('on_sale', '1');
-  return buildStorefrontRequest(`/products?${params.toString()}`, host, previewToken, env, PRODUCTS_REVALIDATE_SECONDS);
+  return buildStorefrontRequest(`/products?${params.toString()}`, host, previewToken, env, PRODUCTS_REVALIDATE_SECONDS, clientIp);
 }

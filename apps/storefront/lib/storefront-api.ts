@@ -6,6 +6,7 @@ import { parseCommerce } from './commerce-schemas';
 import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
 import { normalizeHost } from './host';
+import { previewClientIp } from './preview-client-ip';
 import { sanitizeImageUrl } from './sanitize';
 import {
   isPageSlug,
@@ -118,7 +119,7 @@ async function fetchStorefrontConfig(host: string, previewToken: string | null):
     apiUrl: serverEnv.apiUrl,
     apiKey: requireApiKey(),
     revalidateSeconds: serverEnv.configRevalidateSeconds,
-  });
+  }, await previewClientIp(previewToken));
 
   const res = await send(url, init);
   if (res.status === 404) return { status: 'not_found' };
@@ -152,7 +153,7 @@ export const getStorefrontConfig = cache(fetchStorefrontConfig);
  */
 async function fetchStorefrontPage(host: string, slug: string, previewToken: string | null): Promise<SafeStorefrontPage | null> {
   if (!isPageSlug(slug)) return null;
-  const { url, init } = buildPageRequest(host, slug, previewToken, { apiUrl: serverEnv.apiUrl, apiKey: requireApiKey() });
+  const { url, init } = buildPageRequest(host, slug, previewToken, { apiUrl: serverEnv.apiUrl, apiKey: requireApiKey() }, await previewClientIp(previewToken));
   const res = await send(url, init);
   if (res.status === 404) return null;
   if (!res.ok) throw new StorefrontApiError(`Storefront API responded ${res.status}`, res.status);

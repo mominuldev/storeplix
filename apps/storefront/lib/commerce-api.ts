@@ -88,37 +88,40 @@ export async function getClientIp(): Promise<string | null> {
   return clientIpFromHeaders(await headers(), isTrustedProxy());
 }
 
-const catalogCache = (previewToken: string | null): CommerceCall =>
-  previewToken ? { cache: { kind: 'no-store' }, previewToken } : { cache: { kind: 'public', revalidate: CATALOG_REVALIDATE_SECONDS } };
+/** Preview calls are per visitor (no-store) and carry the shopper IP; public calls are shared and never do (5b §2.10). */
+const catalogCache = async (previewToken: string | null): Promise<CommerceCall> =>
+  previewToken
+    ? { cache: { kind: 'no-store' }, previewToken, clientIp: await getClientIp() }
+    : { cache: { kind: 'public', revalidate: CATALOG_REVALIDATE_SECONDS } };
 
 // ---------- catalog (public, tagged; preview no-store) ----------
 export const getProduct = cache(async (host: string, slug: string, previewToken: string | null): Promise<StorefrontProduct | null> => {
-  const r = await request(host, `/storefront/products/${encodeURIComponent(slug)}`, catalogCache(previewToken), parseStorefrontProduct);
+  const r = await request(host, `/storefront/products/${encodeURIComponent(slug)}`, await catalogCache(previewToken), parseStorefrontProduct);
   if (!r.ok && r.status !== 404) console.error(`[storefront] product ${slug}: ${r.status} ${r.code}`);
   return r.ok ? r.data : null;
 });
 
 /** Never throws: an API error yields an empty page (the PLP shows its empty state). */
 export async function listProducts(host: string, query: URLSearchParams, previewToken: string | null): Promise<ProductPage> {
-  const r = await request(host, `/storefront/products?${query.toString()}`, catalogCache(previewToken), (_d, body) => parseProductPage(body));
+  const r = await request(host, `/storefront/products?${query.toString()}`, await catalogCache(previewToken), (_d, body) => parseProductPage(body));
   if (r.ok) return r.data;
   console.error(`[storefront] product list: ${r.status} ${r.code}`);
   return { products: [], has_products: false, page: 1, per_page: 0, total: 0, last_page: 1 };
 }
 
 export const getCategory = cache(async (host: string, slug: string, previewToken: string | null): Promise<StorefrontCategoryDetail | null> => {
-  const r = await request(host, `/storefront/categories/${encodeURIComponent(slug)}`, catalogCache(previewToken), parseCategoryDetail);
+  const r = await request(host, `/storefront/categories/${encodeURIComponent(slug)}`, await catalogCache(previewToken), parseCategoryDetail);
   return r.ok ? r.data : null;
 });
 
 export const getCategoryTree = cache(async (host: string): Promise<StorefrontCategory[]> => {
-  const r = await request(host, '/storefront/categories', catalogCache(null), (d) => parseCategoryTree(d));
+  const r = await request(host, '/storefront/categories', await catalogCache(null), (d) => parseCategoryTree(d));
   return r.ok ? r.data : [];
 });
 
 /** Availability is per visitor and never cached (P5-6). */
 export async function getAvailability(host: string, slug: string, previewToken: string | null): Promise<StorefrontAvailability | null> {
-  const r = await request(host, `/storefront/products/${encodeURIComponent(slug)}/availability`, { cache: { kind: 'no-store' }, previewToken }, parseAvailability);
+  const r = await request(host, `/storefront/products/${encodeURIComponent(slug)}/availability`, { cache: { kind: 'no-store' }, previewToken, clientIp: await getClientIp() }, parseAvailability);
   return r.ok ? r.data : null;
 }
 
