@@ -73,7 +73,7 @@ final class ReturnPresenter
         return self::summary($r, $courier ? [$r->order_id => $courier] : []) + [
             'customer_note' => $r->customer_note,
             'pickup_tracking_code' => $r->pickup_tracking_code,
-            'checks' => (object) ($r->checks ?? []),
+            'checks' => self::checks($r->checks ?? []),
             'items' => $items->map(function (ReturnItem $i) use ($media, $variants) {
                 /** @var OrderItem|null $oi */
                 $oi = $i->orderItem;
@@ -119,5 +119,22 @@ final class ReturnPresenter
             'meta' => (object) ($e->meta ?? []),
             'created_at' => UserRef::iso($e->created_at),
         ];
+    }
+
+    /**
+     * Fixed key order on every database: Postgres jsonb reorders keys (shorter first), sqlite keeps insertion order.
+     *
+     * @param  array<string, mixed>  $checks
+     */
+    private static function checks(array $checks): object
+    {
+        $out = [];
+        foreach (['tags_intact', 'unused', 'original_packaging'] as $key) {
+            if (array_key_exists($key, $checks)) {
+                $out[$key] = (bool) $checks[$key];
+            }
+        }
+
+        return (object) $out;
     }
 }
