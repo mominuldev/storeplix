@@ -1,11 +1,15 @@
 import {
   couponStatusMeta,
+  dnsRecordStatusMeta,
+  domainStatusMeta,
   orderStatusMeta,
   paymentStatusMeta,
   returnStatusMeta,
   returnTypeMeta,
   shipmentStatusMeta,
   type CouponDisplayStatus,
+  type DnsRecordStatusValue,
+  type DomainStatusValue,
   type OrderStatus,
   type PaymentStatus,
   type ReturnStatus,
@@ -68,6 +72,29 @@ export function ShipmentStatusBadge({ status, className }: { status: ShipmentSta
   const m = shipmentStatusMeta[status] ?? { label: String(status).replace(/_/g, ' '), tone: 'neutral' as const };
   return (
     <Badge tone={m.tone} dot className={className}>
+      {m.label}
+    </Badge>
+  );
+}
+
+/**
+ * Phase 6 domains (V3 Domains 2042:47403). Platform rows are always "Connected". Unknown values fall back to neutral.
+ */
+export function DomainStatusBadge({ status, className }: { status: DomainStatusValue; className?: string }) {
+  const m = domainStatusMeta[status] ?? { label: String(status).replace(/_/g, ' '), tone: 'neutral' as const };
+  return (
+    <Badge tone={m.tone} dot className={className}>
+      {m.label}
+    </Badge>
+  );
+}
+
+/** Per-record DNS status chip: ✓ found, ✗ not found yet, ≠ doesn't match, … not checked yet. */
+export function DnsRecordStatusBadge({ status, className }: { status: DnsRecordStatusValue; className?: string }) {
+  const m = dnsRecordStatusMeta[status] ?? dnsRecordStatusMeta.pending;
+  return (
+    <Badge tone={m.tone} className={className}>
+      <span aria-hidden>{m.symbol}</span>
       {m.label}
     </Badge>
   );

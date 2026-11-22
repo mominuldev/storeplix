@@ -108,6 +108,7 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase5b.payment-link` | order detail → Ask for an advance (Delivery charge, bKash, 2 h, cancel if unpaid) → shopper `/pay/{token}` (no-store, noindex) → fake Pay → order `confirmed`, due −৳ 60, link `paid`, used link → "isn't valid any more"; API: one active link (409), 25 % amount, link expiry cancels the order (`payment_link_expired`) and releases stock, expired = unknown token byte for byte |
 | `phase5b.refund` | bKash-paid order → Payments card Refund ৳ 200 → refund row `gateway` `succeeded`, charge/order `refunded_amount`, `partially_refunded`; over the charge balance 422; Idempotency-Key replay → same refund |
 | `phase5b.payments-security` | §12 live: S22 forged `status=success` on a failed payment and unsigned/tampered/`?next=` returns (403, no redirect); S23 17-paisa amount mismatch → `failed` `amount_mismatch`, 13-paisa → failed; S24 replayed return paid once, unknown IPN key 404; S26/S38 secrets in no response, DB column or log, staff read-only; S27 no host field; S30 staff refund 403, foreign `payment_id` 422, B on A's order/payment result/token 404; S28 identical 404s, DB has no raw token, 429 |
+| `phase6.domains` | fake DNS + fake Cloudflare (6.1–6.5, PHASE-6-CONTRACT §10 QA): **fresh shop** (never the demo store) on Starter; UI Connect `https://SHOP-x.localhost/` (client strip) → "Waiting for DNS", TXT `_storeplix-verify.{host}` = `sp-verify={52 chars}` + CNAME → `meta.cname_target`, no provider fields; S42 config 404 + `ask` 404 while pending → dev DNS correct → **Check now** → "Securing" (`ask` 200, config still 404) → dev provider active → Check now → "Connected" → **Make primary** (confirm copy) → `redirect_host` on both platform hosts, null on the primary → `{slug}.localhost` and `{slug}.storeplix.test` (raw Host header) **308** to `http://shop-x.localhost:3000{path}?{query}`, HEAD 308, robots/sitemap **301**, forged `?next=` keeps the target, canonical + robots `Sitemap:` on the custom host, browser lands there; `ask` 401 (no/wrong key), byte-identical 404s; taken (same + other tenant), invalid, reserved codes + inline dialog errors; S47 staff read-only (UI + 403s); S48 other tenant 404 on every route + dashboard detail; 390 px list + records; failures: wrong TXT → mismatch "We found", `age 73` → "Failed" → Check now → fresh 72 h, 3rd domain 402 `plan_limit_reached` + disabled CTA, 409 `domain_not_active` / `platform_domain_locked`; expiry (DNS missing + `age 169`) → "Disconnected", primary falls back, redirect stops; re-activate → primary → **Remove** in the UI → platform primary, platform host 200 |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -165,6 +166,21 @@ How they run:
   (tinker: changes what the fake courier's status API answers **without** telling Store Plix, for re-query/S32 and
   poll checks). The fake keeps parcels in the API's tenant cache: helpers that call `Cache::flush()` (`browserHost`,
   `setPlan`, `mapStoreHost`) must run **before** any booking, or the fake forgets its parcels.
+- **Custom domains (Phase 6) run on the fake drivers** (`DOMAINS_FAKE=true`, P6-13; CI never calls Cloudflare or a
+  public DoH resolver). The API needs `DOMAINS_FAKE=true` (accepts `*.localhost` custom hosts, registers
+  `POST /api/v1/dev/domains/{id}/{dns|provider|age}[?check=1]`) and `DOMAINS_ASK_KEY` (the spec reads it from the env,
+  else `apps/api/.env`, else the compose default `dev-domains-ask-key-change-me`); queue + scheduler for
+  `domains:check` (compose: `queue-domains`, `scheduler`) and the `default` worker for storefront revalidation after a
+  primary change. Fake DNS/provider state lives in the API cache store: `browserHost`/`setPlan` (cache flush) run in
+  `beforeAll` before any fake answer. Helpers: `support/domains.ts` (`devDns`, `devProvider`, `devAge`, `ask`,
+  `storefrontGet` = raw request with a `Host` header so `{slug}.storeplix.test` needs no resolver rule, UI selectors in
+  one helper each). The certification spec `phase6.cloudflare.spec.ts` (real Cloudflare, manual only) is written during
+  certification (RUNBOOK §9.6).
+  ```bash
+  DOMAINS_FAKE=true DOMAINS_ASK_KEY=dev-domains-ask-key-change-me php artisan serve --port=8000   # + the 5b env above
+  php artisan queue:work --queue=default,media,bulk,notifications,documents,webhooks,domains
+  cd tests/e2e && pnpm exec playwright test phase6.domains
+  ```
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the
   tenant (FK cascade) and the user. `createMember(owner, 'staff')` invites + accepts; `cleanup()` removes both.

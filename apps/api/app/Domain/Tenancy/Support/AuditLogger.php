@@ -16,6 +16,7 @@ use App\Domain\Pages\Models\StorePage;
 use App\Domain\Payments\Models\PaymentGatewayAccount;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\Tenant;
@@ -53,6 +54,7 @@ class AuditLogger
         DataExport::class => 'data_export',
         PaymentGatewayAccount::class => 'payment_gateway',
         CourierAccount::class => 'courier',
+        StoreDomain::class => 'store_domain',
     ];
 
     public function __construct(

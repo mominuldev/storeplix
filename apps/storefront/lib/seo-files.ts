@@ -14,6 +14,14 @@ export interface SeoTarget {
 
 const crawlable = (store: SeoTarget) => isIndexable(store.mode, store.config.seo);
 
+/**
+ * robots.txt / sitemap.xml on a non-primary host: 301 to the same path on the primary
+ * (PHASE-6-CONTRACT P6-15). Not cached, so switching the primary back takes effect at once.
+ */
+export function primaryRedirectResponse(target: string): Response {
+  return new Response(null, { status: 301, headers: { location: target, 'cache-control': NO_STORE } });
+}
+
 /** robots.txt for a store (or null = unknown host). Only live, not-hidden stores are crawlable. */
 export function robotsResponse(store: SeoTarget | null): Response {
   if (!store || !crawlable(store)) {

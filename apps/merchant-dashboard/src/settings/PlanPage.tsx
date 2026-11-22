@@ -15,6 +15,7 @@ const limitLabel: Record<LimitKey, string> = {
   products: 'Products',
   courier_connections: 'Courier connections',
   sms_per_month: 'Order SMS per month',
+  custom_domains: 'Custom domains',
 };
 const featureLabel: Record<string, string> = {
   custom_domain: 'Your own domain',
@@ -83,7 +84,10 @@ export function PlanPage() {
       <SettingsCard title="Usage this month" description={sub.current_period_end ? `Resets on ${new Date(sub.current_period_end).toLocaleDateString()}.` : 'Live usage against your plan limits.'} className="gap-4">
         <div className="grid gap-4 md:grid-cols-2">
           {(Object.keys(limitLabel) as LimitKey[]).map((k) => {
-            const { limit, used } = features.data.limits[k];
+            // Optional for rolling deploys: an API without the key yet (e.g. custom_domains before Phase 6) skips the row.
+            const usage = features.data.limits[k] as (typeof features.data.limits)[LimitKey] | undefined;
+            if (!usage) return null;
+            const { limit, used } = usage;
             const ratio = limit ? used / limit : 0;
             return (
               <div key={k} className="flex flex-col gap-2.5 rounded-lg border border-border-default p-4">

@@ -31,6 +31,10 @@ jobs:
             echo "INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32)"
             echo 'PUBLIC_API_URL=http://localhost:8000'
             echo 'DOCUMENTS_DRIVER=html'
+            # Phase 6 (PHASE-6-CONTRACT §11, §12.1): fake DNS + fake Cloudflare for SaaS, `*.localhost` custom hosts,
+            # /api/v1/dev/domains/*. CI never calls Cloudflare or a public DoH resolver.
+            echo 'DOMAINS_FAKE=true'
+            echo 'DOMAINS_ASK_KEY=ci-domains-ask-key-0b7d4e19a3c2'
           } >> .env
           cp apps/api/.env.example apps/api/.env
           docker compose up -d --build --wait
@@ -55,6 +59,10 @@ jobs:
           PAYMENTS_FAKE: 'true'
           # 5b-3 specs book on FakeCourier and move parcels with the testing-only fake-advance endpoint.
           COURIERS_FAKE: 'true'
+          # Phase 6 phase6.domains: drives the fake DNS/provider via /api/v1/dev/domains/* and calls the `ask` endpoint
+          # with this key (must equal the compose value above).
+          DOMAINS_FAKE: 'true'
+          DOMAINS_ASK_KEY: ci-domains-ask-key-0b7d4e19a3c2
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()

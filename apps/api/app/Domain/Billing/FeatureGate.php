@@ -13,6 +13,7 @@ use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Sms\Models\SmsMessage;
 use App\Domain\Staff\SeatCounter;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\TenantCache;
 use App\Domain\Tenancy\TenantContext;
@@ -57,6 +58,9 @@ final class FeatureGate
             // 5b-3 (P5B-31): connected (or erroring) courier accounts; disconnected rows don't count.
             Limit::CourierConnections => app(TenantContext::class)->run($tenant, fn () => CourierAccount::query()
                 ->whereIn('status', [CourierAccount::CONNECTED, CourierAccount::ERROR])->count()),
+            // Phase 6 (P6-7): custom domain rows of the (single) store in any status; platform rows don't count.
+            Limit::CustomDomains => app(TenantContext::class)->run($tenant, fn () => StoreDomain::query()
+                ->where('type', StoreDomain::TYPE_CUSTOM)->count()),
             default => 0,
         };
     }

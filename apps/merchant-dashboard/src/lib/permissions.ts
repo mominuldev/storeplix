@@ -26,6 +26,8 @@ export const can = {
   manageSettings: (role: TenantRole | undefined) => has(ROLE_CAN.manage_settings, role),
   /** Phase 5b P5B-10: connect/disconnect gateways and couriers (O A). */
   manageIntegrations: (role: TenantRole | undefined) => has(ROLE_CAN.manage_integrations, role),
+  /** Phase 6 §8: connect, check, make primary and remove domains (O A); staff read only. */
+  manageDomains: (role: TenantRole | undefined) => has(ROLE_CAN.manage_domains, role),
   manageStaff: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   editSettings: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   viewBilling: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',

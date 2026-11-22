@@ -69,7 +69,7 @@ export const mainNav: NavEntry[] = [
     label: 'Online store',
     to: '/online-store',
     icon: Store,
-    // Phase 3 §6: SEO is live; Media, Domains and Shop settings stay placeholders.
+    // Phase 3 §6: SEO is live; Phase 6: Domains is live; Media and Shop settings stay placeholders.
     children: [
       { label: 'Overview', to: '/online-store' },
       { label: 'Media', to: '/online-store/media' },

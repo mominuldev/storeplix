@@ -10,4 +10,5 @@ enum Limit: string
     case Products = 'products';
     case CourierConnections = 'courier_connections';
     case SmsPerMonth = 'sms_per_month';
+    case CustomDomains = 'custom_domains';
 }

@@ -22,6 +22,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 | `queue-bulk` | `php artisan queue:work redis --queue=bulk --tries=1 --timeout=310 --sleep=1 --memory=512` | 1 | CSV import/export (300 s jobs) and shipment batches (`RunBulkBooking`, up to 500 parcels) |
 | `queue-notifications` | `php artisan queue:work redis --queue=notifications --tries=3 --backoff=10,60 --timeout=60 --sleep=1` | 1 | Shopper SMS/email, merchant email incl. `payment.mismatch`, late-payment refund and refund-failed alerts. Without it no order SMS or email is ever sent |
 | `queue-documents` | `php artisan queue:work redis --queue=documents --tries=2 --timeout=150 --sleep=1 --memory=512` | 1 per Gotenberg | Invoice/label rendering (`RenderDocument`: `$timeout` 120 s, `$tries` 2). Needs Gotenberg (§5) |
+| `queue-domains` | `php artisan queue:work redis --queue=domains --tries=3 --timeout=90 --sleep=1` | 1 | Custom-domain DNS checks and Cloudflare custom-hostname calls (`CheckDomainJob`, `DeleteProviderHostnameJob`; §9). Without it a domain only moves on "Check now" |
 | `queue-webhooks` | `php artisan queue:work redis --queue=webhooks --tries=5 --backoff=10,60,300 --timeout=60 --sleep=1` | 1+ | SSLCommerz IPN verification, bKash notifications, courier webhook events (each re-queried with the provider before any effect) |
 | `scheduler` | `php artisan schedule:work` (or cron `* * * * * php artisan schedule:run`) | **exactly 1** | §6. DB role `storeplix_admin` for discovery |
 | `gotenberg` | `gotenberg --api-enable-basic-auth --api-timeout=120s` | 1 per API node pool | Internal only (§5) |
@@ -252,6 +253,8 @@ Redis cache.
 | `payments:refund-status` | every 10 min, no overlap | Poll SSLCommerz refunds still `processing` |
 | `couriers:sync` | every 15 min, no overlap | One job per courier account with non-final shipments (batch ≤ 100) |
 | `couriers:reconcile-bookings` | every 2 min, no overlap | Bookings with an unknown outcome (timeout) looked up by our invoice; `booking_failed` after 10 min |
+| `domains:check` | every minute, no overlap | Dispatch DNS / SSL checks for domains that are due (pending verification, SSL provisioning, active re-checks); drives the 72 h / 7-day transitions (§9) |
+| `domains:reconcile-provider` | daily 03:30 Asia/Dhaka, no overlap | Compare our custom hostnames with Cloudflare; clean up orphans (§9) |
 | `documents:prune` | hourly | Delete generated documents after 24 h |
 | `webhooks:prune` | daily | Delete `webhook_events` older than 90 days |
 | `idempotency:prune` | hourly | |
@@ -333,3 +336,150 @@ fixed.
 5. `php artisan schedule:list` on the scheduler host shows the §6 commands; queue depth per queue stays near zero.
 6. Gotenberg: one label renders and downloads (§5).
 7. Staging only: a sandbox payment and a fake-courier booking end to end (`tests/e2e` `phase5b.*`).
+
+---
+
+## 9. Custom domains (Cloudflare for SaaS, Phase 6)
+
+Sources: PHASE-6-CONTRACT §1 (P6-1, P6-11–P6-18), §5.2, §11–§13; DOMAIN-INFRASTRUCTURE; ADR 0003. Owner: QA (ARCH
+reviews). Everything marked **VERIFY** is a Cloudflare detail the public docs don't settle; the §13 certification run
+resolves it and records the answer in PHASE-6-CONTRACT. Until then treat those lines as the expected setup, not a fact.
+
+How it fits together: a merchant points `shop.acme.com` at `customers.storeplix.com` (CNAME) and publishes a TXT
+`_storeplix-verify.shop.acme.com`. Our checker proves both over DNS-over-HTTPS, then creates a Cloudflare custom
+hostname (`ssl.method=http`, DV). Cloudflare issues the certificate and proxies the visitor to the **fallback origin**
+(our Nginx → Next.js storefront) with the merchant's `Host`. The storefront resolves the store from that host through
+the API (`sp_resolve_host`, `active` rows only).
+
+### 9.1 One-time Cloudflare setup (per environment: staging zone first)
+1. **Zone.** The platform zone (`storeplix.com`; staging may be a separate zone or the same zone with a staging fallback
+   origin, §13). Plan with Cloudflare for SaaS available (VERIFY the custom-hostname quota of the plan against Q70:
+   2–5 per paying shop).
+2. **Enable Cloudflare for SaaS**: dashboard → zone → SSL/TLS → Custom Hostnames → enable (VERIFY the exact menu path;
+   it has moved between dashboard versions).
+3. **Fallback origin record.** Create `customers.storeplix.com` as a **proxied** (orange cloud) DNS record pointing at
+   the storefront origin (A/AAAA to the load balancer, or CNAME to its hostname). Then set it as the fallback origin:
+   dashboard Custom Hostnames → Fallback Origin → `customers.storeplix.com`, or
+   `PUT /zones/{zone_id}/custom_hostnames/fallback_origin` `{"origin":"customers.storeplix.com"}`. Wait until the
+   fallback origin status is `active`. `customers.storeplix.com` is also `DOMAINS_CNAME_TARGET` (contract default
+   `customers.{PLATFORM_DOMAIN}`), so one record is both the merchants' CNAME target and the fallback origin. If ops
+   prefers a separate origin record (e.g. `fallback-origin.storeplix.com`), keep `customers.storeplix.com` as a proxied
+   CNAME to it; `DOMAINS_CNAME_TARGET` stays `customers.storeplix.com` either way.
+4. **SSL mode Full (strict)** for the zone, with a Cloudflare **Origin CA certificate** on the origin Nginx covering
+   `customers.storeplix.com` and `*.storeplix.com`. Custom hostnames reach the origin with SNI/Host = the merchant's
+   hostname (VERIFY: whether the origin sees the custom hostname or the fallback origin as SNI; Nginx must serve the
+   Origin CA certificate as `default_server` either way).
+5. **Origin Nginx** (DOMAIN-INFRASTRUCTURE §5): the storefront server block is the `default_server` (any `Host`), and
+   accepts traffic **only from Cloudflare IP ranges** (`allow` the published IPv4/IPv6 lists, `deny all`; refresh the
+   lists from `https://www.cloudflare.com/ips-v4` / `ips-v6` on every deploy). `set_real_ip_from` the same ranges with
+   `real_ip_header CF-Connecting-IP`, so `X-Forwarded-For` (and the storefront's per-shopper limiter, S37) sees the
+   shopper, not Cloudflare. Keep the existing rules: `X-Forwarded-Host` overwritten with `$host`, `X-Storefront-*`
+   request headers blanked.
+6. **API token** (Cloudflare → My Profile → API Tokens → Create custom token):
+   - Permissions: **Zone → SSL and Certificates → Edit** (custom hostnames create/read/delete live under it) — VERIFY;
+     add **Zone → Zone → Read** only if certification shows list calls need it. Nothing else (no DNS edit, no account
+     permissions).
+   - Zone resources: **Include → Specific zone → the SaaS zone** only.
+   - Client IP filtering: the API/worker egress IPs if they are static. TTL: none, rotated yearly (§9.6).
+   - Store it in the secret manager as `CLOUDFLARE_API_TOKEN`; the zone id (zone overview page) as `CLOUDFLARE_ZONE_ID`.
+
+### 9.2 Environment (web, every queue worker, scheduler)
+| Key | Production | Notes |
+|---|---|---|
+| `DOMAINS_FAKE` | **`false`** | `true` with `APP_ENV=production` → the API refuses to boot (P6-13) |
+| `CLOUDFLARE_API_TOKEN` | secret manager | Required in production (boot refuses when empty). Never logged, never in a response, `last_check` or audit |
+| `CLOUDFLARE_ZONE_ID` | the SaaS zone id | Required in production |
+| `CLOUDFLARE_API_BASE` | default `https://api.cloudflare.com/client/v4` | config only |
+| `DOMAINS_CNAME_TARGET` | `customers.storeplix.com` | Shown to merchants; changing it later breaks every merchant's CNAME |
+| `DOMAINS_ASK_KEY` | 32+ random chars, secret manager (`openssl rand -hex 32`) | Empty → the `ask` endpoint always answers 401 |
+| `DOMAINS_VERIFY_WINDOW_HOURS` / `_SSL_WINDOW_HOURS` / `_EXPIRE_AFTER_DAYS` / `_RECLAIM_AFTER_DAYS` | 72 / 24 / 7 / 7 (defaults) | |
+| `PLATFORM_DOMAIN` | `storeplix.com` | Its subdomains are reserved (P6-5) |
+
+DoH resolvers (`domains.doh`: `https://cloudflare-dns.com/dns-query`, `https://dns.google/resolve`) are config, not env:
+the API and `queue-domains` hosts need outbound HTTPS to both and to `api.cloudflare.com`. Nothing else is called;
+the API never connects to a merchant's hostname.
+
+### 9.3 Processes and schedule
+| Process / command | Schedule | Notes |
+|---|---|---|
+| `queue-domains`: `php artisan queue:work redis --queue=domains --tries=3 --timeout=90 --sleep=1` | worker, 1+ | `CheckDomainJob` (60 s job timeout), `DeleteProviderHostnameJob` (5 tries with backoff). Add it to the §1 process list |
+| `domains:check` | scheduler, every minute, no overlap | Discovery on `pgsql_admin` (≤ 500 due rows), one job per row on `domains` |
+| `domains:reconcile-provider` | scheduler, daily 03:30 Asia/Dhaka (cloudflare driver only) | Deletes Cloudflare custom hostnames older than 1 h that no row references. `--dry-run` lists them only |
+| `domains:suspend {hostname} --reason=` / `domains:reinstate {hostname}` | by hand | §9.5 |
+| `domains:update-psl` | by hand, monthly | Refreshes `apps/api/resources/data/public_suffix_list.dat`; commit the result (CI never downloads it) |
+
+**Reading the reconcile output:** each line is a provider hostname id + hostname + created time + the action
+(`deleted`, `would delete` with `--dry-run`, or `kept: referenced`). A non-zero orphan count every day means removals
+are not reaching Cloudflare: check `queue-domains` and failed `DeleteProviderHostnameJob` rows (`php artisan
+queue:failed`). **After any database restore** run `domains:reconcile-provider --dry-run` first: a restored DB may lack
+rows that still have live, paying merchants on Cloudflare.
+
+### 9.4 The `ask` endpoint (6.5, future Caddy on-demand TLS)
+`GET /api/v1/internal/domains/allowed?domain={host}&key={DOMAINS_ASK_KEY}` → 200 `{data:{allowed:true}}` for a
+`verified` / `ssl_provisioning` / `active` custom host or an `active` platform host of a non-suspended store; 404
+`domain_not_allowed` (unknown, pending, malformed, suspended — byte-identical bodies); 401 without the right key; 429
+above 1 200/min per IP. Phase 6 does **not** deploy Caddy; Cloudflare issues certificates. The endpoint exists so a
+later Caddy (or an allowlist check) can ask before issuing:
+```
+{
+  on_demand_tls {
+    ask http://<internal-api-host>:8000/api/v1/internal/domains/allowed?key=<DOMAINS_ASK_KEY>
+  }
+}
+```
+(Caddy appends `domain=`; VERIFY the exact Caddy version's `ask` semantics when Caddy is adopted.)
+- **Internal network only.** The public load balancer / Nginx must not route `/api/v1/internal/*` (answer 404 there).
+  The reference `infrastructure/nginx/conf.d/api.conf` allows the location only from loopback and RFC 1918 ranges.
+- **The key is in the query string**, so no access log may record it: the reference Nginx location has
+  `access_log off`; any LB or APM in front must drop the query for this path. Laravel logs the path only.
+- Smoke test from an internal host: no key → 401; `domain=unknown.example` → 404; the platform subdomain of a live
+  shop → 200.
+
+### 9.5 Operating
+- **Suspend one hostname** (phishing, abuse, legal): `php artisan domains:suspend shop.acme.com --reason="ticket 123"`.
+  The host stops routing at once (resolver cache forgotten, storefront revalidated); if it was primary the store falls
+  back to its platform subdomain; the Cloudflare hostname is kept (so a reinstate is quick). Merchants cannot undo it.
+  `php artisan domains:reinstate shop.acme.com` re-checks DNS now. Suspending the whole store (`stores.status`) needs no
+  domain command.
+- **A merchant says "stuck on Securing"**: `ssl_provisioning` polls every 2 min for 1 h then every 15 min, and fails
+  after 24 h (`ssl_timeout`). Look at the Cloudflare dashboard custom hostname (certificate validation errors) — the
+  usual cause is a CAA record on the merchant's domain that excludes Cloudflare's CAs, or the merchant's own Cloudflare
+  proxy (orange cloud) in front of the CNAME (`cname_mismatch`: tell them to switch it to "DNS only").
+- **Apex domains** work only with CNAME flattening / ALIAS at the merchant's DNS (Q75); no A-record IPs are handed out.
+
+### 9.6 Staging certification (PHASE-6-CONTRACT §13; blocker for closing Phase 6)
+Needs from the PO (Q69): the staging zone with Cloudflare for SaaS, its zone id, a token per §9.1.6, a fallback
+origin reachable from Cloudflare (the staging storefront), and a test domain with DNS access (plus one apex with CNAME
+flattening if Q75 is to be certified).
+1. Staging API, `queue-domains` and scheduler with `DOMAINS_FAKE=false`, `CLOUDFLARE_*` set, `APP_ENV=staging`.
+2. Boot check: start once with `CLOUDFLARE_ZONE_ID` empty and `APP_ENV=production` on a scratch container → refuses.
+3. As a Starter test shop add `cert-{date}.<test domain>`; publish the TXT and CNAME shown in the dashboard; wait.
+   Expected: `pending_verification → verified → ssl_provisioning → active` without "Check now". Record each transition
+   time and the raw Cloudflare `status` / `ssl.status` sequence (VERIFY the status lists in contract §5.2).
+4. `curl -vI https://cert-….<test domain>/` → valid certificate for that host (issuer, SAN), 200 from the storefront.
+5. Make it primary → `https://<slug>.staging-platform-domain/x?y=1` answers 308 to `https://cert-…/x?y=1`.
+6. Duplicate create: add the same hostname to a second test shop after releasing it (reclaim path) → the driver
+   adopts / reports the duplicate (VERIFY the Cloudflare error code).
+7. Remove the domain → the custom hostname disappears from Cloudflare within one `queue-domains` run (dashboard / `GET
+   /zones/{zone}/custom_hostnames?hostname=`).
+8. Create a hostname by hand in the dashboard, wait > 1 h, run `domains:reconcile-provider --dry-run` (listed) then
+   without `--dry-run` (deleted).
+9. Apex with flattening (if available): A set ⊆ the target's A set passes (VERIFY P6-3).
+10. Re-record `apps/api/tests/Fixtures/domains/cloudflare/*.json` with `"_source": "staging-YYYY-MM-DD"` (ids and the
+    token redacted), resolve every VERIFY in the contract, and run `tests/e2e/specs/phase6.cloudflare.spec.ts`
+    (manual dispatch only) once it exists.
+
+### 9.7 Rollback
+- **Application rollback** (previous image): the Phase 6 migrations are additive; the previous release ignores the new
+  columns. Existing custom hostnames keep routing through Cloudflare (the old resolver serves `active` rows), but
+  nothing checks them any more: re-deploy Phase 6 within days, or run `domains:suspend` on hosts that must stop.
+- **Stop new connections without a deploy**: there is no runtime flag; remove `custom_domain` from the plans
+  (`plan_features`) — adding a domain then answers 402, existing domains keep working (Q71).
+- **Cloudflare misconfiguration** (fallback origin wrong, token revoked): domains in `ssl_provisioning` time out after
+  24 h, `active` ones keep serving while Cloudflare still has them. Fix the token/fallback origin first; then merchants
+  press "Check now" (failed rows go back to `pending_verification` with a fresh 72 h window).
+- **Never** set `DOMAINS_FAKE=true` in production (refused at boot) and never run `domains:reconcile-provider` without
+  `--dry-run` right after a database restore (§9.3).
+- **Leaving Cloudflare for SaaS**: delete custom hostnames only through the app (remove / reconcile), never by disabling
+  the feature on the zone while merchants still point at `customers.storeplix.com`: every custom domain would go dark
+  at once.

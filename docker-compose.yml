@@ -26,13 +26,19 @@
 # `queue-webhooks` works `webhooks` (PHASE-5B-CONTRACT §17.3: IPN verification and courier webhook events
 # (Steadfast/Pathao/RedX, P5B-37), --tries=5 --backoff=10,60,300). `queue-bulk` also books shipment batches (P5B-40).
 # `scheduler` runs `schedule:work` (payments:expire / reconcile / refund-status, prunes; 5b-2; couriers:sync every
-# 15 min and couriers:reconcile-bookings every 2 min, 5b-3).
+# 15 min and couriers:reconcile-bookings every 2 min, 5b-3; domains:check every minute and domains:reconcile-provider
+# daily, Phase 6).
+# `queue-domains` works `domains` (PHASE-6-CONTRACT §2.2, §11: CheckDomainJob / DeleteProviderHostnameJob, 3 tries,
+# job timeout 60 s). Without it a domain never leaves `pending_verification` on its own (only "Check now" moves it).
 #
 # Payments (5b-2): PAYMENTS_FAKE=true (default here, DEV-ONLY) serves the fake hosted page
 # http://localhost:8000/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
 # Sandbox runs: PAYMENTS_FAKE=false, PUBLIC_API_URL=<https tunnel>, credentials entered in the dashboard.
 # Couriers (5b-3): COURIERS_FAKE=true (default here, DEV-ONLY) binds FakeCourier for Steadfast/Pathao/RedX and the
 # testing-only fake-advance endpoint; set COURIERS_FAKE=false with real test-account credentials for certification.
+# Custom domains (Phase 6): DOMAINS_FAKE=true (default here, DEV-ONLY) binds FakeDnsResolver + FakeCustomHostnames
+# (no DoH resolver, no Cloudflare), accepts `*.localhost` custom hosts and registers the testing-only /api/v1/dev/domains/*
+# endpoints. The API refuses to boot with it in production. Cloudflare: docs/deployment/RUNBOOK.md §9.
 #
 # Postgres roles + RLS (PHASE-5B-CONTRACT §2, ADR 0012)
 #   infrastructure/docker/postgres/initdb/01-roles.sql runs on a FRESH pgdata volume and creates
@@ -129,6 +135,19 @@ x-api-env: &api-env
   INTEGRATION_CREDENTIALS_PREVIOUS_KEYS: ${INTEGRATION_CREDENTIALS_PREVIOUS_KEYS:-}
   # Base of the signed payment return URLs and the webhook URLs shown to merchants. Sandbox work: the tunnel URL.
   PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
+  # Phase 6 custom domains (PHASE-6-CONTRACT §11, P6-13, P6-17). DEV-ONLY values.
+  # DOMAINS_FAKE binds the fake DNS resolver + fake Cloudflare for SaaS driver and the /api/v1/dev/domains/* routes;
+  # refused in production (like PAYMENTS_FAKE). Real certification: DOMAINS_FAKE=false + CLOUDFLARE_* (RUNBOOK §9).
+  DOMAINS_FAKE: ${DOMAINS_FAKE:-true}
+  # Shared key of the Caddy `ask` endpoint GET /api/v1/internal/domains/allowed?domain=&key= (empty → always 401).
+  DOMAINS_ASK_KEY: ${DOMAINS_ASK_KEY:-dev-domains-ask-key-change-me}
+  # The CNAME target merchants point their hostname at (contract default customers.{PLATFORM_DOMAIN}). Set explicitly:
+  # an empty env value would reach config() as "" instead of the default.
+  DOMAINS_CNAME_TARGET: ${DOMAINS_CNAME_TARGET:-customers.${PLATFORM_DOMAIN:-storeplix.test}}
+  # Fake provider: number of `get` polls before a hostname turns active (contract default 1).
+  DOMAINS_FAKE_SSL_POLLS: ${DOMAINS_FAKE_SSL_POLLS:-1}
+  CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+  CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
 
 x-api-common: &api-common
   build:
@@ -313,9 +332,28 @@ services:
       timeout: 5s
       retries: 3
 
+  # Phase 6 custom domains (PHASE-6-CONTRACT §2.2, §11): CheckDomainJob (DNS-over-HTTPS consensus + provider calls,
+  # job timeout 60 s, 3 tries) and DeleteProviderHostnameJob (5 tries with backoff) on their own worker, so a slow DoH
+  # resolver or Cloudflare API never delays storefront revalidation or order mail.
+  queue-domains:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=domains", "--tries=3", "--timeout=90", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Laravel scheduler (routes/console.php). Phase 5b-2 adds payments:expire (1 min, P5B-21), payments:reconcile
   # (5 min, P5B-19) and payments:refund-status (10 min, P5B-24); without it unpaid holds never expire and a lost
-  # IPN is never reconciled. Platform discovery runs on pgsql_admin, per-tenant work is dispatched as jobs.
+  # IPN is never reconciled. Phase 6: domains:check (every minute, discovery on pgsql_admin → CheckDomainJob on
+  # `domains`) and domains:reconcile-provider (daily 03:30 Asia/Dhaka, cloudflare driver only).
+  # Platform discovery runs on pgsql_admin, per-tenant work is dispatched as jobs.
   scheduler:
     <<: *api-common
     command: ["php", "artisan", "schedule:work"]

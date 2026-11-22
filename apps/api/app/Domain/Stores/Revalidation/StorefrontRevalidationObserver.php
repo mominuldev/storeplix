@@ -54,8 +54,11 @@ class StorefrontRevalidationObserver
         } elseif ($model instanceof StoreNavigation) {
             $this->dispatch($model->tenant_id, $model->store_id);
         } elseif ($model instanceof StoreDomain) {
-            $old = $model->wasChanged('hostname') ? [(string) $model->getOriginal('hostname')] : [];
-            $this->dispatch($model->tenant_id, $model->store_id, $old);
+            // Phase 6 (P6-16): creates and routing changes only, never check bookkeeping.
+            if ($model->wasRecentlyCreated || $model->wasChanged(StoreDomain::ROUTING_FIELDS)) {
+                $old = $model->wasChanged('hostname') ? [(string) $model->getOriginal('hostname')] : [];
+                $this->dispatch($model->tenant_id, $model->store_id, $old);
+            }
         }
     }
 

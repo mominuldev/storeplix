@@ -165,7 +165,10 @@ don't invalidate HTML.
 
 ## 6. SEO
 - `generateMetadata` per route: title template `%s · {store.name}`, description, canonical = `StorefrontConfig.store.primary_host`
-  (`store_domains.is_primary`) + path; non-primary hosts 301 to primary (platform subdomain redirects once custom domain is `active`).
+  (`store_domains.is_primary`) + path. Phase 6 (PHASE-6-CONTRACT P6-15): the API sets `store.redirect_host` (the primary) for
+  every other host of the store when the primary or the request host is a custom domain and the storefront permanently redirects page requests
+  to the same path + query on the primary (`permanentRedirect`, 308; `robots.txt`/`sitemap.xml` 301; never for previews,
+  `/api/*` or Server Actions). Platform hosts never redirect to a platform primary.
 - Open Graph + Twitter cards from product images / store `og_image`.
 - JSON-LD: `Organization` + `WebSite` (layout), `Product` + `Offer` (price in major units, `priceCurrency`,
   availability), `BreadcrumbList`, `ItemList` on PLP.

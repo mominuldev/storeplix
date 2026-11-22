@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plug, Settings as SettingsIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm, type FieldPath } from 'react-hook-form';
+import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { api } from '../lib/api';
 import { can } from '../lib/permissions';
@@ -164,7 +165,7 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
               error={errors.identity?.name_bn?.message}
               {...register('identity.name_bn')}
             />
-            <Input label="Shop address (URL)" value={settings.identity.primary_domain ?? `${settings.identity.slug}.storeplix.com`} readOnly disabled hint="Changing your shop address is coming with custom domains." />
+            <Input label="Shop address (URL)" value={settings.identity.primary_domain ?? `${settings.identity.slug}.storeplix.com`} readOnly disabled hint="Connect your own domain in Online store → Domains." />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Brand colour" type="color" className="h-8 cursor-pointer" error={errors.branding?.primary_color?.message} {...register('branding.primary_color')} />
               <Input label="Accent colour" type="color" className="h-8 cursor-pointer" error={errors.branding?.secondary_color?.message} {...register('branding.secondary_color')} />
@@ -190,7 +191,10 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
             />
           </div>
           <p className="flex items-center gap-2 text-caption text-text-secondary">
-            <Plug aria-hidden className="size-4" /> Want your own domain like {store ? storeDomain(store).split('.')[0] : 'yourshop'}.com? Custom domains are coming soon.
+            <Plug aria-hidden className="size-4" /> Want your own domain like {store ? storeDomain(store).split('.')[0] : 'yourshop'}.com?{' '}
+            <Link to="/online-store/domains" className="font-medium text-brand-600 hover:underline">
+              Connect a domain
+            </Link>
           </p>
         </SettingsCard>
 

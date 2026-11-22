@@ -86,8 +86,10 @@ Binding API/type contract: `docs/development/PHASE-4-CONTRACT.md` (4.7 is a stri
 
 ## Phase 5 — Commerce (cart, checkout, orders, payments, shipping)
 Binding contracts: `docs/development/PHASE-5-CONTRACT.md` (5a) and `docs/development/PHASE-5B-CONTRACT.md` (5b).
-**Status 2026-11-22:** 5a shipped; all five 5b increments built and QA-gated (5b-2/5b-3 on fake drivers only); Phase 5
-closes after the blockers listed under "5b" below. Split into two build cycles (P5-1, Q31 accepted by the PO
+**Status 2026-11-22:** 5a shipped; all five 5b increments built and QA-gated (5b-2/5b-3 on fake drivers only) and
+**merged to `main`** (PR #1, `phase-5b-online-money`, merged 2026-11-22 with CI green on every job, including `api-rls`
+and `api-documents`). Phase 5 closes after the two remaining blockers under "5b" below (sandbox certification, small WEB
+gaps); Phase 6 started from `main` @ 7ad4a05 in parallel, since neither blocker touches domains. Split into two build cycles (P5-1, Q31 accepted by the PO
 2026-11-22); see "Phase 5 cycles" below the table. The AC column is the original roadmap AC; where 5a narrows it
 (e.g. "merge on login", stock "reservation" → commitment), the contract wins.
 | # | Task | Owner | AC |
@@ -132,7 +134,7 @@ own QA gate (`docs/reviews/phase-5b-*-qa.md`). Status on 2026-11-22:
 | 5b-4 Documents | 5.9 | A4 invoice, 80 mm receipt, A5 two-up, packing slip, 4×6 label PDFs (Gotenberg 9.1.0, Bangla shaping), JSON templates, Invoices & labels page, VAT display + BIN | ✅ **Built and QA-gated** (`phase-5b-4-5b-5-qa.md`: pass, real Gotenberg, 100 labels in 1.3 s) |
 | 5b-5 Order changes | 5.7 (rest) | Edit items (re-commit, re-price), post-delivery returns and exchanges (RT-n), restock after courier return. Customer accounts / cart merge not in 5b (Q58) | ✅ **Built and QA-gated** (`phase-5b-4-5b-5-qa.md`: pass) |
 
-**Remaining blockers for closing Phase 5b** (no Phase 6 work starts from this list):
+**Remaining blockers for closing Phase 5b** (open: 1 and 4; done: 2, 3, 6; 5 per its note):
 1. **Sandbox / test-account certification** (contract §13 "sandbox certification", §16), each run with
    `phase5b.sandbox.spec.ts` and a public HTTPS tunnel (`PUBLIC_API_URL`), replacing the docs-based fixtures
    (`"_source": "docs"`) with recordings and resolving every **VERIFY** point:
@@ -143,9 +145,8 @@ own QA gate (`docs/reviews/phase-5b-*-qa.md`). Status on 2026-11-22:
      Steadfast panel (needs a PO decision, OPEN-QUESTIONS Q68);
    - Pathao: sandbox client credentials + test store; RedX: API access token and webhook docs (RedX is poll-only until
      its webhook is verified).
-2. **CI not yet run on GitHub** for the edited `e2e.yml` (fake-driver env, migrations as `pgsql_owner`), the
-   `api-documents` job and the RLS-on race loops; compose `queue-webhooks` / `queue-documents` / `scheduler` only
-   checked with `docker compose config`.
+2. ~~CI not yet run on GitHub~~ **Done 2026-11-22:** PR #1 ran the edited `e2e.yml`, `api-documents`, `api-rls` and
+   the RLS-on race loops green on GitHub.
 3. ~~QA open items (OPEN-QUESTIONS Q66, Q67)~~: resolved 2026-11-22 (unique e2e shopper IPs; full API suite green as
    the app role with RLS on).
 4. **WEB gaps found by ARCH** (small): courier detail built as a dialog without the event log, recent shipments
@@ -156,16 +157,22 @@ own QA gate (`docs/reviews/phase-5b-*-qa.md`). Status on 2026-11-22:
    API-CONVENTIONS (§4.0 codes, limiter values, webhook paths), SECURITY.md (T1/T5 updates, T28, T29) and
    MULTI-TENANCY §9 (as built) are being updated in parallel; the deployment runbook (DB roles, Gotenberg, egress IP
    for SSLCommerz live refunds) is still to write.
-6. Merge of `phase-5b-online-money` to `main` after the above.
+6. ~~Merge of `phase-5b-online-money` to `main`~~ **Done 2026-11-22** (PR #1, CI green).
 
 ## Phase 6 — Custom domains
+Binding contract: `docs/development/PHASE-6-CONTRACT.md` (2026-11-22; branch `phase-6-custom-domains` from `main` @
+7ad4a05; openapi 1.7.0). One build cycle on fake drivers (`DOMAINS_FAKE`) and one QA gate
+(`docs/reviews/phase-6-qa.md`), then certification against a real Cloudflare for SaaS staging zone (contract §13,
+OPEN-QUESTIONS Q69) before the phase closes. PO defaults pending: Q69–Q76. Out of scope: buying domains, DNS/email
+hosting, apex proxying, Caddy deployment, Cloudflare webhooks (Q74), downgrade enforcement (Phase 7), admin domain
+screens (Phase 8.1), slug change.
 | # | Task | Owner | AC |
 |---|---|---|---|
-| 6.1 | Domain add/verify API + state machine + jobs | API | DOMAIN-INFRASTRUCTURE §7 tests |
-| 6.2 | Cloudflare for SaaS integration (custom hostnames, SSL polling/webhooks) | API/QA | Staging domain goes `active` end-to-end |
-| 6.3 | Domain UI with DNS instructions (Online store 60:11061 domain frames) | WEB | Status badges per state, re-check button |
-| 6.4 | Primary domain redirects + canonical | SF | Platform subdomain 301 → custom domain |
-| 6.5 | `ask` endpoint (Caddy fallback / allowlist) | API | Returns 200 only for routable hosts |
+| 6.1 | Domain add/verify API + state machine + jobs | API | DOMAIN-INFRASTRUCTURE §7 and PHASE-6 §10 tests; lifecycle on fakes reaches `active` by the scheduler alone |
+| 6.2 | Cloudflare for SaaS integration (custom hostnames, SSL polling; poll-only, Q74) | API/QA | Fakes + fixtures in CI; **post-build:** staging domain goes `active` end-to-end with a real certificate |
+| 6.3 | Domain UI with DNS instructions (V3 Domains `2042:47403`, composed states from 60:11061 / 148:34032) | WEB | Status badges per state, per-record DNS status, re-check, make primary, remove; 390 px |
+| 6.4 | Primary domain redirects + canonical | SF/API | Platform subdomain permanently redirects to the custom primary (308 for pages, 301 for robots/sitemap; amended from "301", PHASE-6 P6-15); canonical on the primary |
+| 6.5 | `ask` endpoint (Caddy fallback / allowlist) | API | `GET /internal/domains/allowed` returns 200 only for `verified`/`ssl_provisioning`/`active` hosts of non-suspended stores |
 
 ## Phase 7 — Monetization
 | # | Task | Owner | AC |

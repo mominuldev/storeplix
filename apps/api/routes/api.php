@@ -15,6 +15,9 @@ use App\Domain\Dashboard\Http\Controllers\DashboardController;
 use App\Domain\DataTransfer\Http\Controllers\ExportController;
 use App\Domain\DataTransfer\Http\Controllers\ImportController;
 use App\Domain\Documents\Http\DocumentController;
+use App\Domain\Domains\Http\DevDomainController;
+use App\Domain\Domains\Http\DomainAskController;
+use App\Domain\Domains\Http\DomainController;
 use App\Domain\Geo\Http\GeoController;
 use App\Domain\Identity\Http\Controllers\AccountController;
 use App\Domain\Identity\Http\Controllers\AuthController;
@@ -259,6 +262,17 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('couriers/{provider}/pickup-stores', [CourierAccountController::class, 'pickupStores'])->where('provider', 'steadfast|pathao|redx')
                     ->middleware('throttle:30,1,stores.couriers.pickup-stores')->name('stores.couriers.pickup-stores');
 
+                // --- Phase 6: custom domains (reads O A S, writes O A ManageDomains; PHASE-6 §4.1) ---
+                Route::get('domains', [DomainController::class, 'index'])->name('stores.domains.index');
+                Route::post('domains', [DomainController::class, 'store'])->middleware('throttle:domains')->name('stores.domains.store');
+                Route::get('domains/{domain}', [DomainController::class, 'show'])->where('domain', '[0-9A-Za-z]{26}')->name('stores.domains.show');
+                Route::delete('domains/{domain}', [DomainController::class, 'destroy'])->where('domain', '[0-9A-Za-z]{26}')
+                    ->middleware('throttle:domains')->name('stores.domains.destroy');
+                Route::post('domains/{domain}/verify', [DomainController::class, 'verify'])->where('domain', '[0-9A-Za-z]{26}')
+                    ->middleware('throttle:domains')->name('stores.domains.verify');
+                Route::post('domains/{domain}/primary', [DomainController::class, 'primary'])->where('domain', '[0-9A-Za-z]{26}')
+                    ->middleware('throttle:domains')->name('stores.domains.primary');
+
                 Route::get('launch-checklist', [LaunchController::class, 'checklist'])->name('stores.launch-checklist');
                 Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1,stores.publish')->name('stores.publish');
             });
@@ -343,6 +357,19 @@ Route::prefix('v1')->group(function (): void {
     if (! app()->environment('production')) {
         Route::post('dev/shipments/{shipment}/advance', DevShipmentController::class)
             ->where('shipment', '[0-9A-Za-z]{26}')->middleware('throttle:60,1,dev.shipments.advance')->name('dev.shipments.advance');
+    }
+
+    // Phase 6 (P6-17, roadmap 6.5): Caddy `ask` allowlist. Internal network only (never through the public Nginx);
+    // shared key in the query string (never logged); no tenant header, no session.
+    Route::get('internal/domains/allowed', DomainAskController::class)->middleware('throttle:domains-ask')->name('internal.domains.allowed');
+
+    // Phase 6: TESTING-ONLY fake DNS / provider / clock for custom domains (404 unless DOMAINS_FAKE=true; never in production).
+    if (! app()->environment('production')) {
+        Route::prefix('dev/domains/{domain}')->where(['domain' => '[0-9A-Za-z]{26}'])->middleware('throttle:60,1,dev.domains')->group(function (): void {
+            Route::post('dns', [DevDomainController::class, 'dns'])->name('dev.domains.dns');
+            Route::post('provider', [DevDomainController::class, 'provider'])->name('dev.domains.provider');
+            Route::post('age', [DevDomainController::class, 'age'])->name('dev.domains.age');
+        });
     }
 
     // Phase 5b-4: signed 5-minute document download (PDF; HTML with DOCUMENTS_DRIVER=html). Tenant from the signature.
