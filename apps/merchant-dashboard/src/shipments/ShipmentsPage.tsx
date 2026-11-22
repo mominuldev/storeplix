@@ -195,7 +195,7 @@ export function ShipmentsPage() {
             }}
             placeholder="Consignment, order or phone"
             label="Search shipments"
-            className="w-full sm:w-[220px]"
+            className="h-[38px] w-full border border-border-default bg-surface-card sm:w-[214px] [&>svg]:size-4"
           />
         </div>
       </div>
@@ -329,7 +329,7 @@ function NeedsAttention({ rows, total, pending, failed, onAll }: { rows: Shipmen
           <AlertTriangle aria-hidden className="size-[18px]" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="text-body-lg font-semibold text-text-primary">Needs attention</h2>
+          <h2 className="text-heading text-text-primary">Needs attention</h2>
           <p className="text-body text-text-secondary">Riders couldn’t deliver these. Sort them out today so they don’t come back as returns.</p>
         </div>
         {total > 0 && <span className="shrink-0 rounded-full bg-warning-bg px-2.5 py-0.5 text-caption font-medium text-warning">{plural(total, 'parcel')}</span>}
@@ -386,7 +386,7 @@ function CodWithCouriers({ meta }: { meta: ShipmentListMeta | undefined }) {
   const cod = meta?.kpis.cod_held;
   return (
     <section aria-label="COD with couriers" className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
-      <h2 className="text-body-lg font-semibold text-text-primary">COD with couriers</h2>
+      <h2 className="text-body-lg font-medium text-text-primary">COD with couriers</h2>
       <div className="flex flex-col gap-1 border-b border-border-default pb-4">
         <span className="text-heading-32 text-text-primary">{cod ? formatBdt(cod.total_amount) : '—'}</span>
         <span className="text-caption text-text-muted">Collected from buyers, not yet paid to you</span>

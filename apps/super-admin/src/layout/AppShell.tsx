@@ -32,10 +32,15 @@ export function AppShell() {
             />
           </label>
           <div className="flex-1" />
-          <Button variant="secondary" className="hidden sm:inline-flex" disabled title="Available in a later phase">
+          {/* Impersonation ships in a later phase: drawn enabled (as in Figma) but inert and announced as disabled. */}
+          <Button variant="secondary" className="hidden sm:inline-flex" aria-disabled="true" title="Available in a later phase">
             Impersonate shop
           </Button>
-          <button type="button" aria-label="Notifications" className="rounded-md p-2 text-text-secondary hover:bg-surface-subtle">
+          <button
+            type="button"
+            aria-label="Notifications"
+            className="-m-1.5 shrink-0 rounded-md p-1.5 text-text-secondary outline-none hover:bg-surface-subtle focus-visible:shadow-focus"
+          >
             <Bell className="size-5" aria-hidden />
           </button>
         </header>

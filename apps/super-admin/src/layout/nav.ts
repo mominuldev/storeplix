@@ -1,6 +1,6 @@
 import {
   BarChart3,
-  Building2,
+  Building,
   Clock,
   CreditCard,
   LayoutDashboard,
@@ -26,7 +26,7 @@ export const navGroups: { heading: string; items: NavEntry[] }[] = [
     heading: 'Overview',
     items: [
       { label: 'Dashboard', to: '/', icon: LayoutDashboard },
-      { label: 'Merchants', to: '/merchants', icon: Building2 },
+      { label: 'Merchants', to: '/merchants', icon: Building },
       { label: 'Billing', to: '/billing', icon: CreditCard },
       { label: 'Revenue reports', to: '/revenue', icon: BarChart3 },
     ],

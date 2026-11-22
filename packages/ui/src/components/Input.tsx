@@ -11,6 +11,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   /** Leading adornment, e.g. a country code. Rendered with a 1×24 divider (Figma phone field). */
   leading?: ReactNode;
+  /** `false` drops the divider after `leading` (Figma price field 50:734, shop link 48:7982, sign-in icon 44:4755). */
+  leadingDivider?: boolean;
   trailing?: ReactNode;
   containerClassName?: string;
   /** Field box class (height/radius overrides, e.g. `min-h-12` for 48px onboarding fields). */
@@ -23,6 +25,7 @@ export function Input({
   hint,
   error,
   leading,
+  leadingDivider = true,
   trailing,
   id,
   className,
@@ -49,7 +52,7 @@ export function Input({
         {leading && (
           <>
             <span className="flex shrink-0 items-center gap-1.5 text-body-lg font-medium text-text-secondary">{leading}</span>
-            <span aria-hidden className="h-6 w-px shrink-0 bg-border-default" />
+            {leadingDivider && <span aria-hidden className="h-6 w-px shrink-0 bg-border-default" />}
           </>
         )}
         <input

@@ -24,6 +24,11 @@ export function mediaThumb(m: Pick<Media, 'url' | 'variants'>): string {
   return m.variants?.find((v) => v.key === 'w320')?.url ?? m.variants?.[0]?.url ?? m.url;
 }
 
+/** No file names are stored, so the caption is the alt text or the pixel size. */
+function mediaName(m: Pick<Media, 'alt' | 'width' | 'height'>): string {
+  return m.alt?.trim() || `${m.width} × ${m.height}`;
+}
+
 export function refToPicked(ref: MediaRef | null | undefined): PickedMedia | null {
   return ref ? { id: ref.id, url: ref.url } : null;
 }
@@ -53,7 +58,7 @@ export function MediaPicker({
   const queryClient = useQueryClient();
   const library = useMediaLibrary(purpose === 'logo' ? ['logo'] : ['page_image', 'product_image'], page, open);
   const items = library.data?.data ?? [];
-  const meta = library.data?.meta as { last_page?: number } | undefined;
+  const meta = library.data?.meta as { last_page?: number; total?: number } | undefined;
 
   const upload = async (file: File) => {
     setError(null);
@@ -82,10 +87,14 @@ export function MediaPicker({
       onClose={onClose}
       title={title}
       description={`Best size: ${hint}`}
-      className="max-w-[880px]"
+      variant="v3"
+      className="max-w-[1120px]"
       footer={
         <>
-          <span className="mr-auto hidden truncate text-caption text-text-secondary sm:block">{selected ? `${selected.alt ?? 'Image'} selected` : 'Pick an image or upload a new one'}</span>
+          <span className="mr-auto hidden min-w-0 items-center gap-2 text-caption text-text-secondary sm:flex">
+            {selected && <img src={mediaThumb(selected)} alt="" className="h-6 w-9 shrink-0 rounded-[4px] object-cover" />}
+            <span className="truncate">{selected ? `${mediaName(selected)} selected` : 'Pick an image or upload a new one'}</span>
+          </span>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
@@ -102,95 +111,141 @@ export function MediaPicker({
         </>
       }
     >
-      <div className="flex flex-col gap-4">
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if (file) void upload(file);
-          }}
-          className="flex items-center gap-3 rounded-lg border border-dashed border-brand-500 bg-brand-50 px-4 py-3"
-        >
-          <Upload aria-hidden className="size-5 shrink-0 text-brand-600" />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="text-body font-medium text-text-primary">
-              Drag & drop a photo here, or{' '}
-              <button type="button" className="font-semibold text-brand-600 underline-offset-2 hover:underline" onClick={() => inputRef.current?.click()}>
-                browse
-              </button>
-            </span>
-            <span className="text-caption text-text-muted">JPG, PNG or WebP up to 10 MB</span>
-          </div>
-          {uploading !== null && <Spinner size="sm" label={`Uploading ${Math.round(uploading * 100)}%`} />}
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPT}
-            className="sr-only"
-            aria-label="Upload from computer"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
+      <div className="grid md:grid-cols-[208px_minmax(0,1fr)_300px]">
+        <nav aria-label="Image sources" className="hidden flex-col gap-0.5 border-r border-border-default bg-surface-canvas px-3 py-3.5 md:flex">
+          <span className="flex items-center gap-2.5 rounded-md bg-surface-card px-2.5 py-2 text-[13px] leading-[18px] font-semibold text-text-primary shadow-elevation-1">
+            <ImageIcon aria-hidden className="size-4 text-brand-600" />
+            <span className="min-w-0 flex-1">Media library</span>
+            {meta?.total !== undefined && <span className="text-caption font-medium text-text-muted">{meta.total.toLocaleString('en-US')}</span>}
+          </span>
+          <span className="px-2.5 pt-3 pb-1 text-[10px] leading-[14px] font-semibold tracking-[0.8px] text-text-muted uppercase">Add new</span>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] leading-[18px] font-medium text-text-secondary outline-none hover:bg-surface-subtle focus-visible:shadow-focus"
+          >
+            <Upload aria-hidden className="size-4 shrink-0" /> Upload from computer
+          </button>
+        </nav>
+        <div className="flex min-w-0 flex-col gap-3.5 px-5 py-4">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const file = e.dataTransfer.files[0];
               if (file) void upload(file);
             }}
-          />
-        </div>
-        {error && (
-          <p role="alert" className="text-caption text-danger">
-            {error}
-          </p>
-        )}
-        {library.isPending ? (
-          <div className="flex h-40 items-center justify-center">
-            <Spinner label="Loading your images" />
+            className="flex items-center gap-3 rounded-lg border-[1.5px] border-dashed border-brand-500 bg-brand-50 px-3.5 py-3"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface-card text-brand-600">
+              <Upload aria-hidden className="size-[18px]" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-[13px] leading-[18px] font-medium text-text-primary">
+                Drag & drop a photo here, or{' '}
+                <button type="button" className="font-semibold text-brand-600 underline-offset-2 hover:underline" onClick={() => inputRef.current?.click()}>
+                  browse
+                </button>
+              </span>
+              <span className="text-[11px] leading-[15px] text-text-muted">JPG, PNG or WebP up to 10 MB · saved to Media library</span>
+            </div>
+            {uploading !== null && <Spinner size="sm" label={`Uploading ${Math.round(uploading * 100)}%`} />}
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPT}
+              className="sr-only"
+              aria-label="Upload from computer"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void upload(file);
+              }}
+            />
           </div>
-        ) : library.isError ? (
-          <p className="text-body text-text-secondary">We couldn’t load your images. Upload a new one instead.</p>
-        ) : items.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2 text-text-muted">
-            <ImageIcon aria-hidden className="size-6" />
-            <span className="text-body">No images yet — upload your first one.</span>
-          </div>
-        ) : (
-          <ul aria-label="Media library" className="grid max-h-[52dvh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
-            {items.map((m) => {
-              const active = selected?.id === m.id;
-              return (
-                <li key={m.id}>
-                  <button
-                    type="button"
-                    aria-pressed={active}
-                    aria-label={m.alt ?? `Image ${m.id.slice(-6)}`}
-                    onClick={() => setSelected(m)}
-                    className={cn(
-                      'relative block aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-subtle outline-none focus-visible:shadow-focus',
-                      active && 'shadow-[0_0_0_2px_var(--color-brand-600)]',
-                    )}
-                  >
-                    <img src={mediaThumb(m)} alt="" loading="lazy" className="size-full object-cover" />
-                    {m.id === currentId && <span className="absolute top-1.5 left-1.5 rounded-sm bg-text-primary/80 px-1.5 py-0.5 text-[10px] text-text-inverse">In use now</span>}
-                    {active && (
-                      <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-brand-600 text-text-inverse">
-                        <Check aria-hidden className="size-3.5" />
+          {error && (
+            <p role="alert" className="text-caption text-danger">
+              {error}
+            </p>
+          )}
+          {library.isPending ? (
+            <div className="flex h-40 items-center justify-center">
+              <Spinner label="Loading your images" />
+            </div>
+          ) : library.isError ? (
+            <p className="text-body text-text-secondary">We couldn’t load your images. Upload a new one instead.</p>
+          ) : items.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center gap-2 text-text-muted">
+              <ImageIcon aria-hidden className="size-6" />
+              <span className="text-body">No images yet — upload your first one.</span>
+            </div>
+          ) : (
+            <ul aria-label="Media library" className="grid max-h-[52dvh] grid-cols-2 gap-x-3 gap-y-3.5 overflow-y-auto sm:grid-cols-4">
+              {items.map((m) => {
+                const active = selected?.id === m.id;
+                return (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      aria-label={m.alt ?? `Image ${m.id.slice(-6)}`}
+                      onClick={() => setSelected(m)}
+                      className="flex w-full flex-col gap-1.5 text-left outline-none focus-visible:shadow-focus"
+                    >
+                      <span
+                        className={cn(
+                          'relative block aspect-[134/96] w-full overflow-hidden rounded-control bg-surface-subtle',
+                          active ? 'shadow-[0_0_0_2.5px_var(--color-brand-600)]' : 'shadow-[inset_0_0_0_1px_var(--color-border-default)]',
+                        )}
+                      >
+                        <img src={mediaThumb(m)} alt="" loading="lazy" className="size-full object-cover" />
+                        {m.id === currentId && (
+                          <span className="absolute top-1.5 left-1.5 rounded-sm bg-text-primary/80 px-1.5 py-0.5 text-[10px] leading-[14px] font-medium text-text-inverse">In use now</span>
+                        )}
                       </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {(meta?.last_page ?? 1) > 1 && (
-          <div className="flex items-center justify-end gap-2">
-            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              Previous
-            </Button>
-            <Button size="sm" variant="secondary" disabled={page >= (meta?.last_page ?? 1)} onClick={() => setPage((p) => p + 1)}>
-              Next
-            </Button>
-          </div>
-        )}
+                      <span className={cn('truncate text-[11px] leading-[15px]', active ? 'font-semibold text-brand-600' : 'text-text-secondary')}>{mediaName(m)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {(meta?.last_page ?? 1) > 1 && (
+            <div className="flex items-center justify-end gap-2">
+              <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <Button size="sm" variant="secondary" disabled={page >= (meta?.last_page ?? 1)} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
+        </div>
+        <aside aria-label="Selected image" className="hidden flex-col gap-3.5 border-l border-border-default px-5 py-4 md:flex">
+          {selected ? (
+            <>
+              <span className="truncate text-body font-semibold text-text-primary">{mediaName(selected)}</span>
+              <img src={mediaThumb(selected)} alt="" className="aspect-[260/146] w-full rounded-control object-cover" />
+              <div className="flex flex-col gap-1.5 rounded-lg bg-success-bg px-3 py-2.5 text-caption text-text-primary">
+                <span className="flex items-center gap-1.5">
+                  <Check aria-hidden className="size-3 shrink-0 text-success" strokeWidth={3} />
+                  <span className="min-w-0 flex-1">Size</span>
+                  <span className="text-text-muted">
+                    {selected.width} × {selected.height}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Check aria-hidden className="size-3 shrink-0 text-success" strokeWidth={3} />
+                  <span className="min-w-0 flex-1">File size</span>
+                  <span className="text-text-muted">{Math.max(1, Math.round(selected.size_bytes / 1024)).toLocaleString('en-US')} KB</span>
+                </span>
+              </div>
+              {selected.id === currentId && <span className="text-[11px] leading-[15px] text-text-muted">In use here now</span>}
+            </>
+          ) : (
+            <p className="text-caption text-text-muted">Pick an image to see it here.</p>
+          )}
+        </aside>
       </div>
     </Modal>
   );

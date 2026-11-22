@@ -31,7 +31,8 @@ describe('@storeplix/ui', () => {
     render(<Logo height={28} />);
     const img = screen.getByAltText('Storeplix');
     expect(img).toHaveAttribute('height', '28');
-    expect(img).toHaveAttribute('width', '70');
+    // Figma Storeplix/Logo 117:32 is 93.65 × 32.
+    expect(img).toHaveAttribute('width', '82');
   });
 });
 

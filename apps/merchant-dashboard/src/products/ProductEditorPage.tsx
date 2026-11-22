@@ -4,7 +4,7 @@ import type { Category, Product, ProductOption } from '@storeplix/types';
 import { CATALOG_LIMITS } from '@storeplix/types';
 import { Button, Checkbox, cn, DraftBar, DraftBarGhostButton, Input, Label, MoneyInput, SortableList, TagInput, Toggle, gripProps } from '@storeplix/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Copy, GripVertical, ImagePlus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, GripVertical, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, type FieldPath } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -12,10 +12,10 @@ import { formatBdt, formatCount } from '../catalog/format';
 import { useCategories, useInvalidate, useProduct } from '../catalog/queries';
 import { keys, useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage, StateCard } from '../catalog/states';
-import { ProductStatusBadge, useIsMobile } from '../catalog/ui';
+import { CatalogPanel as Panel, ProductStatusBadge, useIsMobile } from '../catalog/ui';
 import { PRODUCT_IMAGE_ACCEPT, useProductImageUpload, type UploadedImage } from '../catalog/useImageUpload';
 import { api } from '../lib/api';
-import { ConflictDialog, LoadingState, Panel } from '../online-store/components/Shell';
+import { ConflictDialog, LoadingState } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
 import { storeDomain } from '../stores/useTenantStore';
@@ -205,12 +205,16 @@ function ProductEditor({ product }: { product: Product | null }) {
   };
 
   const changedCount = useMemo(() => Object.keys(formState.dirtyFields).length, [formState.dirtyFields]);
+  const barTitle = isNew ? 'New product' : 'Unsaved changes';
+  const barDescription = isNew ? 'Not saved yet' : `${changedCount} ${changedCount === 1 ? 'section' : 'sections'} changed. Buyers see the new version after you save.`;
   const bar =
-    isNew || isDirty ? (
+    (isNew || isDirty) && !isMobile ? (
+      <SaveCard title={barTitle} description={barDescription} onDiscard={discard} saving={isSubmitting} />
+    ) : isNew || isDirty ? (
       <DraftBar
-        title={isNew ? 'New product' : 'Unsaved changes'}
-        description={isNew ? 'Not saved yet' : `${changedCount} ${changedCount === 1 ? 'section' : 'sections'} changed. Buyers see the new version after you save.`}
-        className={isMobile ? 'fixed inset-x-3 bottom-[84px] z-30' : 'static'}
+        title={barTitle}
+        description={barDescription}
+        className="fixed inset-x-3 bottom-[84px] z-30"
         actions={
           <>
             <DraftBarGhostButton onClick={discard} disabled={isSubmitting}>
@@ -232,7 +236,7 @@ function ProductEditor({ product }: { product: Product | null }) {
 
   return (
     <form id="product-form" noValidate onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-5 pb-24 lg:pb-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-caption text-text-secondary">
             <Link to="/products" className="hover:text-text-primary">
@@ -269,7 +273,7 @@ function ProductEditor({ product }: { product: Product | null }) {
         </p>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <div className="grid gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="order-2 flex min-w-0 flex-col gap-5 lg:order-1">
           <Panel>
             <Input label="Product name" placeholder="e.g. Jamdani Three-Piece — Handwoven Dhakai" maxLength={200} error={nameError} {...register('name')} />
@@ -314,24 +318,24 @@ function ProductEditor({ product }: { product: Product | null }) {
               )}
             </div>
             {(scope.canViewCosts || discount !== null) && (
-              <dl className="grid gap-3 rounded-lg bg-surface-subtle p-4 sm:grid-cols-3">
+              <dl className="grid gap-y-3 rounded-lg bg-surface-subtle py-3.5 sm:grid-cols-3">
                 {scope.canViewCosts && (
                   <>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 px-5">
                       <dt className="text-caption text-text-muted">Profit per item</dt>
                       <dd className={cn('text-heading', profit !== null && profit < 0 ? 'text-danger' : 'text-success')}>{profit === null ? '—' : formatBdt(profit)}</dd>
-                      <dd className="text-caption text-text-muted">after product cost</dd>
+                      <dd className="text-caption text-text-secondary">after product cost</dd>
                     </div>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 px-5">
                       <dt className="text-caption text-text-muted">Margin</dt>
                       <dd className="text-heading text-text-primary">{profit !== null && first.price_amount ? `${Math.round((profit / first.price_amount) * 100)}%` : '—'}</dd>
                     </div>
                   </>
                 )}
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5 px-5">
                   <dt className="text-caption text-text-muted">Buyer sees</dt>
                   <dd className="text-heading text-brand-600">{discount !== null ? `${discount}% off` : 'Full price'}</dd>
-                  {discount !== null && <dd className="text-caption text-text-muted">{formatBdt(first.compare_at_amount! - first.price_amount!)} saved on shop</dd>}
+                  {discount !== null && <dd className="text-caption text-text-secondary">{formatBdt(first.compare_at_amount! - first.price_amount!)} saved on shop</dd>}
                 </div>
               </dl>
             )}
@@ -422,8 +426,8 @@ function ProductEditor({ product }: { product: Product | null }) {
 
         <aside className="order-1 flex min-w-0 flex-col gap-5 lg:sticky lg:top-4 lg:order-2">
           {!isMobile && bar}
-          <Panel title="Status">
-            <div role="radiogroup" aria-label="Status" className="flex flex-col gap-3">
+          <Panel title="Status" compact>
+            <div role="radiogroup" aria-label="Status" className="flex flex-col gap-4">
               {(
                 [
                   ['active', 'Active', 'Visible on your shop once it’s live'],
@@ -432,8 +436,8 @@ function ProductEditor({ product }: { product: Product | null }) {
                 ] as const
               ).map(([value, label, hint]) => (
                 <label key={value} className="flex cursor-pointer items-start gap-2.5">
-                  <input type="radio" value={value} className="mt-0.5 size-[18px] accent-brand-600" {...register('status')} />
-                  <span className="flex flex-col">
+                  <input type="radio" value={value} className="size-5 shrink-0 accent-brand-600" {...register('status')} />
+                  <span className="flex flex-col gap-0.5">
                     <span className="text-body font-medium text-text-primary">{label}</span>
                     <span className="text-caption text-text-muted">{hint}</span>
                   </span>
@@ -441,7 +445,7 @@ function ProductEditor({ product }: { product: Product | null }) {
               ))}
             </div>
           </Panel>
-          <Panel title="Organize">
+          <Panel title="Organize" compact>
             <CategoryPicker categories={categories.data ?? []} value={values.category_ids} onChange={(ids) => setValue('category_ids', ids, dirty)} error={(errors.category_ids as { message?: string } | undefined)?.message} />
             <TagInput
               label="Tags"
@@ -457,6 +461,30 @@ function ProductEditor({ product }: { product: Product | null }) {
       {isMobile && bar}
       <ConflictDialog open={conflict} loading={reloading} onReload={() => void reload()} />
     </form>
+  );
+}
+
+/**
+ * Save bar (sticky) 62:12890: text-primary card, radius 16, padding 20, gap 12 — coral dot + Body/14 Semibold title,
+ * Caption muted description, then Discard (secondary) and Save product (primary) as two equal 40px buttons.
+ */
+function SaveCard({ title, description, onDiscard, saving }: { title: string; description: string; onDiscard: () => void; saving: boolean }) {
+  return (
+    <div role="region" aria-label="Unsaved changes" className="flex flex-col gap-3 rounded-card bg-text-primary p-5 text-text-inverse shadow-elevation-1">
+      <div className="flex items-center gap-2">
+        <span aria-hidden className="size-2 shrink-0 rounded-full bg-accent-500" />
+        <p className="min-w-0 flex-1 text-body font-semibold">{title}</p>
+      </div>
+      <p className="text-caption text-text-muted">{description}</p>
+      <div className="flex gap-2">
+        <Button variant="secondary" className="min-w-0 flex-1" onClick={onDiscard} disabled={saving}>
+          Discard
+        </Button>
+        <Button type="submit" form="product-form" className="min-w-0 flex-1" loading={saving}>
+          Save product
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -537,61 +565,68 @@ function PhotosPanel({
   const items = images.map((i) => ({ ...i, id: i.media_id }));
   return (
     <Panel title="Photos" description="First photo is the cover on your shop and Facebook. Drag to reorder.">
-      <SortableList
-        label="Photos"
-        items={items}
-        className="grid grid-cols-3 gap-3 sm:grid-cols-4"
-        onMove={(from, to) => {
-          const next = images.slice();
-          const [m] = next.splice(from, 1);
-          next.splice(to, 0, m!);
-          onChange(next);
-        }}
-        renderItem={(img, { handle, index }) => (
-          <div className="group relative aspect-square overflow-hidden rounded-lg bg-surface-subtle">
-            <img src={img.url} alt={img.alt || `Photo ${index + 1}`} className="size-full object-cover" />
-            {index === 0 && <span className="absolute bottom-2 left-2 rounded-full bg-text-primary px-2 py-0.5 text-caption font-medium text-text-inverse">Cover</span>}
-            <button type="button" aria-label={`Move photo ${index + 1}`} className="absolute top-1.5 left-1.5 rounded-md bg-surface-card/90 p-1 text-text-secondary" {...gripProps(handle)}>
-              <GripVertical aria-hidden className="size-4" />
-            </button>
-            <button type="button" aria-label={`Remove photo ${index + 1}`} onClick={() => onChange(images.filter((x) => x.media_id !== img.media_id))} className="absolute top-1.5 right-1.5 rounded-md bg-surface-card/90 p-1 text-text-secondary hover:text-danger">
-              <Trash2 aria-hidden className="size-4" />
-            </button>
-          </div>
-        )}
-      />
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          onFiles(Array.from(e.dataTransfer.files));
-        }}
-        className={cn('flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-strong bg-surface-subtle px-4 py-5 text-center', full && 'opacity-60')}
-      >
-        <ImagePlus aria-hidden className="size-5 text-text-secondary" />
-        <button type="button" disabled={full || progress !== null} onClick={() => inputRef.current?.click()} className="text-body font-medium text-text-primary hover:text-brand-600 disabled:cursor-not-allowed">
-          {progress !== null ? `Uploading ${Math.round(progress * 100)}%` : 'Drop photos or click to upload'}
-        </button>
-        <span className="text-caption text-text-muted">
-          JPG/PNG/WebP · up to 10 MB · {images.length} of {CATALOG_LIMITS.images}
-        </span>
-        {progress !== null && (
-          <div role="progressbar" aria-label="Photo upload" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} className="mt-1 h-1 w-40 overflow-hidden rounded-full bg-border-default">
-            <div className="h-full bg-brand-600" style={{ width: `${progress * 100}%` }} />
-          </div>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept={PRODUCT_IMAGE_ACCEPT}
-          className="sr-only"
-          aria-label="Upload photos"
-          onChange={(e) => {
-            onFiles(Array.from(e.target.files ?? []));
-            e.target.value = '';
+      {/* Media 61:13065: 232px cover (2×2) + 110px tiles, 12px gaps; the drop tile (232×110) sits in the grid. */}
+      <div className="grid grid-cols-3 gap-3 sm:auto-rows-[110px] sm:grid-cols-[repeat(auto-fill,110px)] [&>ul>li:first-child]:col-span-2 [&>ul>li:first-child]:row-span-2">
+        <SortableList
+          label="Photos"
+          items={items}
+          className="contents"
+          onMove={(from, to) => {
+            const next = images.slice();
+            const [m] = next.splice(from, 1);
+            next.splice(to, 0, m!);
+            onChange(next);
           }}
+          renderItem={(img, { handle, index }) => (
+            <div className="group relative aspect-square size-full overflow-hidden rounded-lg bg-surface-subtle">
+              <img src={img.url} alt={img.alt || `Photo ${index + 1}`} className="size-full object-cover" />
+              {index === 0 && <span className="absolute bottom-2 left-2 rounded-full bg-text-primary px-2 py-0.5 text-caption font-medium text-text-inverse">Cover</span>}
+              <button type="button" aria-label={`Move photo ${index + 1}`} className="absolute top-1.5 left-1.5 rounded-md bg-surface-card/90 p-1 text-text-secondary" {...gripProps(handle)}>
+                <GripVertical aria-hidden className="size-4" />
+              </button>
+              <button type="button" aria-label={`Remove photo ${index + 1}`} onClick={() => onChange(images.filter((x) => x.media_id !== img.media_id))} className="absolute top-1.5 right-1.5 rounded-md bg-surface-card/90 p-1 text-text-secondary hover:text-danger">
+                <Trash2 aria-hidden className="size-4" />
+              </button>
+            </div>
+          )}
         />
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            onFiles(Array.from(e.dataTransfer.files));
+          }}
+          className={cn(
+            'col-span-full flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border-strong bg-surface-subtle px-3 py-5 text-center',
+            images.length > 0 && 'sm:col-span-2 sm:py-0',
+            full && 'opacity-60',
+          )}
+        >
+          <Upload aria-hidden className="size-5 text-text-secondary" />
+          <button type="button" disabled={full || progress !== null} onClick={() => inputRef.current?.click()} className="text-caption font-medium text-text-primary hover:text-brand-600 disabled:cursor-not-allowed">
+            {progress !== null ? `Uploading ${Math.round(progress * 100)}%` : 'Drop photos or click to upload'}
+          </button>
+          <span className="text-caption text-text-muted">
+            JPG/PNG/WebP · up to 10 MB · {images.length} of {CATALOG_LIMITS.images}
+          </span>
+          {progress !== null && (
+            <div role="progressbar" aria-label="Photo upload" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} className="mt-1 h-1 w-40 overflow-hidden rounded-full bg-border-default">
+              <div className="h-full bg-brand-600" style={{ width: `${progress * 100}%` }} />
+            </div>
+          )}
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept={PRODUCT_IMAGE_ACCEPT}
+            className="sr-only"
+            aria-label="Upload photos"
+            onChange={(e) => {
+              onFiles(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+        </div>
       </div>
       {error && (
         <p role="alert" className="text-caption text-danger">

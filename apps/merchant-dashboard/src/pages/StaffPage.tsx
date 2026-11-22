@@ -129,15 +129,15 @@ export function StaffPage() {
           ) : staff.isError ? (
             <EmptyState icon={<Users />} title="Couldn’t load your team" description={staff.error.message} />
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border-default">
+            <div className="relative overflow-x-auto rounded-lg border border-border-default">
               <table className="w-full min-w-[560px] text-left">
-                <thead className="bg-surface-subtle text-caption font-medium tracking-wide text-text-muted uppercase">
+                <thead className="bg-surface-subtle text-caption font-medium text-text-muted uppercase">
                   <tr>
-                    <th className="px-4 py-2.5 font-medium">Member</th>
-                    <th className="w-[100px] px-3 py-2.5 font-medium">Role</th>
-                    <th className="w-[110px] px-3 py-2.5 font-medium">Joined</th>
-                    <th className="w-[96px] px-3 py-2.5 font-medium">Status</th>
-                    <th className="w-12 px-3 py-2.5">
+                    <th className="py-2.5 pl-4 font-medium">Member</th>
+                    <th className="w-[112px] py-2.5 pl-3 font-medium">Role</th>
+                    <th className="w-[102px] py-2.5 pl-3 font-medium">Joined</th>
+                    <th className="w-[96px] py-2.5 pl-3 font-medium">Status</th>
+                    <th className="w-[60px] py-2.5 pr-4 pl-3">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -163,7 +163,7 @@ export function StaffPage() {
         <Card className="flex w-full flex-col gap-3 p-5 xl:w-[340px]">
           <h2 className="text-body-lg font-medium text-text-primary">Roles</h2>
           {(['owner', 'admin', 'staff'] as const).map((r) => (
-            <div key={r} className="flex flex-col gap-1 rounded-lg border border-border-default px-3 py-2.5">
+            <div key={r} className="flex flex-col gap-0.5 rounded-lg border border-border-default px-3 py-2.5">
               <span className="flex items-center gap-1.5">
                 <RolePill role={r} />
                 <span className="text-caption text-text-muted">
@@ -173,7 +173,7 @@ export function StaffPage() {
               <span className="text-caption text-text-secondary">{roleDescription[r]}</span>
             </div>
           ))}
-          <p className="flex items-start gap-2 rounded-md bg-warning-bg px-3 py-2.5 text-caption text-text-primary">
+          <p className="flex items-start gap-2 rounded-lg bg-warning-bg px-3 py-2.5 text-caption text-text-primary">
             <Shield aria-hidden className="size-4 shrink-0 text-warning" />
             Custom roles like Order staff and Packer arrive in a later update.
           </p>
@@ -182,13 +182,13 @@ export function StaffPage() {
 
       <Card className="flex flex-col gap-4 p-6">
         <SectionTitle title="Roles & permissions" subtitle="What each role can do. Owner always has full access." />
-        <div className="overflow-x-auto rounded-lg border border-border-default">
+        <div className="relative overflow-x-auto rounded-lg border border-border-default">
           <table className="w-full min-w-[520px] text-left">
-            <thead className="bg-surface-subtle text-caption font-medium tracking-wide text-text-muted uppercase">
+            <thead className="bg-surface-subtle text-caption font-medium text-text-muted uppercase">
               <tr>
-                <th className="px-4 py-2.5 font-medium">Permission</th>
+                <th className="py-2.5 pl-4 font-medium">Permission</th>
                 {(['owner', 'admin', 'staff'] as const).map((r) => (
-                  <th key={r} className="w-24 px-3 py-2.5 text-center font-medium">
+                  <th key={r} className={cn('py-2.5 pl-4 text-center font-medium', r === 'staff' ? 'w-32 pr-4' : 'w-28')}>
                     {roleLabel[r]}
                   </th>
                 ))}
@@ -197,17 +197,17 @@ export function StaffPage() {
             <tbody>
               {permissionMatrix.map((p) => (
                 <tr key={p.label} className="border-t border-border-default">
-                  <td className="px-4 py-3">
+                  <td className="py-3 pl-4">
                     <span className="block text-body font-medium text-text-primary">{p.label}</span>
-                    {p.hint && <span className="text-caption text-text-secondary">{p.hint}</span>}
+                    {p.hint && <span className="mt-0.5 block text-caption text-text-secondary">{p.hint}</span>}
                   </td>
                   {(['owner', 'admin', 'staff'] as const).map((r) => (
-                    <td key={r} className="px-3 py-3 text-center">
+                    <td key={r} className={cn('py-3 pl-4 text-center', r === 'staff' && 'pr-4')}>
                       <span
                         role="img"
                         aria-label={p[r] ? `${roleLabel[r]}: allowed` : `${roleLabel[r]}: not allowed`}
                         className={cn(
-                          'inline-flex size-5 items-center justify-center rounded-sm',
+                          'inline-flex size-5 items-center justify-center rounded-sm align-middle',
                           p[r] ? 'bg-brand-600 text-text-inverse' : 'border-[1.5px] border-border-strong bg-surface-card',
                           r === 'owner' && 'opacity-50',
                         )}
@@ -251,7 +251,7 @@ function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole:
   const name = m.name ?? m.email;
   return (
     <tr className="border-t border-border-default">
-      <td className="px-4 py-3">
+      <td className="py-3 pl-4">
         <span className="flex items-center gap-3">
           <Avatar name={name} className={m.kind === 'invitation' ? 'bg-surface-subtle text-text-muted' : undefined} />
           <span className="flex min-w-0 flex-col gap-0.5">
@@ -263,11 +263,11 @@ function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole:
           </span>
         </span>
       </td>
-      <td className="px-3 py-3">
+      <td className="py-3 pl-3">
         <RolePill role={m.role} />
       </td>
-      <td className="px-3 py-3 text-caption text-text-secondary">{m.kind === 'member' ? relative(m.joined_at) : '—'}</td>
-      <td className="px-3 py-3">
+      <td className="py-3 pl-3 text-caption text-text-secondary">{m.kind === 'member' ? relative(m.joined_at) : '—'}</td>
+      <td className="py-3 pl-3">
         {m.status === 'active' ? (
           <Badge tone="success" dot>
             Active
@@ -282,7 +282,7 @@ function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole:
           </Badge>
         )}
       </td>
-      <td className="px-3 py-3">
+      <td className="py-3 pr-4 pl-3">
         <MemberActions member={m} viewerRole={viewerRole} />
       </td>
     </tr>

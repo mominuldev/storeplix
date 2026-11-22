@@ -30,13 +30,13 @@ export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps
           {s.eyebrow}
         </p>
       ) : null}
-      <h1 id={headingId} className="type-display-m text-ink xl:type-display-xl">
+      <h1 id={headingId} className="type-display-m text-ink md:text-[54px] md:leading-[1.04] md:tracking-[-2.5px] xl:type-display-xl">
         <span className="block">{s.heading}</span>
         {s.headingAccent ? <span className="type-accent-italic block text-brand">{s.headingAccent}</span> : null}
       </h1>
       {s.subheading ? <p className="type-body-m text-ink-secondary xl:type-body-l">{s.subheading}</p> : null}
       {(s.primaryCtaLabel && s.primaryCtaHref) || (s.secondaryCtaLabel && s.secondaryCtaHref) ? (
-        <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:flex-row xl:gap-3">
+        <div className="flex w-full flex-col gap-2.5 md:items-start xl:w-auto xl:flex-row xl:gap-3">
           {s.primaryCtaLabel && s.primaryCtaHref ? (
             <ButtonLink href={s.primaryCtaHref}>
               {s.primaryCtaLabel}
@@ -44,14 +44,14 @@ export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps
             </ButtonLink>
           ) : null}
           {s.secondaryCtaLabel && s.secondaryCtaHref ? (
-            <ButtonLink href={s.secondaryCtaHref} variant="outline">
+            <ButtonLink href={s.secondaryCtaHref} variant="outline" className="md:max-xl:px-5 md:max-xl:py-3">
               {s.secondaryCtaLabel}
             </ButtonLink>
           ) : null}
         </div>
       ) : null}
       {blocks.length > 0 ? (
-        <dl className="flex flex-wrap items-center gap-6 pt-2 xl:gap-8">
+        <dl className="hidden flex-wrap items-center gap-6 pt-2 xl:flex xl:gap-8">
           {blocks.map((b, i) => (
             <div key={b.id} className="flex items-center gap-6 xl:gap-8">
               {i > 0 ? <span aria-hidden className="h-10 w-px bg-line" /> : null}
@@ -79,18 +79,18 @@ export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps
 
   return (
     <div
-      className={`flex flex-col gap-6 px-4 xl:items-center xl:gap-16 xl:px-20 ${s.layout === 'image_left' ? 'xl:flex-row' : 'xl:flex-row-reverse'} ${HEIGHT[s.height]}`}
+      className={`flex flex-col gap-6 px-4 md:items-center md:gap-8 md:px-10 xl:gap-16 xl:px-20 ${s.layout === 'image_left' ? 'md:flex-row' : 'md:flex-row-reverse'} ${HEIGHT[s.height]}`}
     >
       {/* Visual */}
-      <div className="relative h-[400px] w-full shrink-0 xl:h-[640px] xl:w-[620px] max-xl:max-w-[358px]">
-        <div className="absolute top-0 left-0 h-[388px] w-[346px] max-w-[calc(100%-12px)] overflow-hidden rounded-sf-xs border border-line bg-surface p-[9px] shadow-[10px_10px_0_0_var(--color-sun)] xl:top-4 xl:left-[110px] xl:h-[560px] xl:w-[490px] xl:max-w-none xl:p-[11px]">
+      <div className="relative h-[400px] w-full max-w-[358px] shrink-0 md:h-[440px] md:w-[340px] md:max-w-none xl:h-[640px] xl:w-[620px]">
+        <div className="absolute top-0 left-0 h-[388px] w-[346px] max-w-[calc(100%-12px)] overflow-hidden rounded-sf-xs border border-line bg-surface p-[9px] shadow-[10px_10px_0_0_var(--color-sun)] md:top-2 md:h-[420px] md:w-[320px] md:max-w-none xl:top-4 xl:left-[110px] xl:h-[560px] xl:w-[490px] xl:p-[11px]">
           <div className="relative size-full overflow-hidden rounded-[2px]">
-            <ThemeImage src={image.src} alt={alt} sizes="(min-width: 1280px) 470px, 330px" priority />
+            <ThemeImage src={image.src} alt={alt} sizes="(min-width: 1280px) 470px, (min-width: 768px) 300px, 330px" priority />
           </div>
         </div>
 
-        <div className="absolute top-[302px] left-[6px] hidden -rotate-5 xl:block">
-          <div className="relative h-[212px] w-[180px] overflow-hidden rounded-sf-xs border border-line bg-surface p-[9px] shadow-[10px_10px_0_0_var(--color-accent)]">
+        <div className="absolute top-[302px] left-[6px] hidden h-[227px] w-[198px] items-center justify-center xl:flex">
+          <div className="relative h-[212px] shrink-0 -rotate-5 w-[180px] overflow-hidden rounded-sf-xs border border-line bg-surface p-[9px] shadow-[10px_10px_0_0_var(--color-accent)]">
             <div className="relative size-full overflow-hidden rounded-[2px]">
               <ThemeImage src={detail.src} alt="" sizes="162px" />
             </div>
@@ -98,8 +98,8 @@ export async function HeroSection({ id, settings: s, blocks, ctx }: SectionProps
         </div>
 
         {s.tagLabel ? (
-          <div className="absolute top-4 right-5 rotate-8 xl:top-2 xl:right-4 xl:rotate-9">
-            <p className="type-accent-italic flex items-center gap-2.5 rounded-sf-sm bg-accent py-2 pr-3.5 pl-3 text-[16px] leading-[1.3] text-on-accent shadow-[10px_10px_0_0_var(--color-brand)] xl:py-3 xl:pr-5 xl:text-[20px]">
+          <div className="absolute top-4 left-[209px] flex h-[54px] w-[132px] items-center justify-center md:top-0 md:left-[204px] md:h-[57px] xl:left-[444px] xl:h-[73px] xl:w-[160px]">
+            <p className="type-accent-italic flex shrink-0 rotate-8 items-center gap-2.5 rounded-sf-sm md:rotate-9 bg-accent py-2 pr-3.5 pl-3 text-[16px] leading-[1.3] text-on-accent shadow-[10px_10px_0_0_var(--color-brand)] xl:py-3 xl:pr-5 xl:text-[20px]">
               <Icon name="eyelet" original />
               {s.tagLabel}
             </p>

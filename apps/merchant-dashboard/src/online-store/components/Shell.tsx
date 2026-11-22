@@ -1,4 +1,4 @@
-import { Badge, Button, cn, Dialog, EmptyState, Spinner } from '@storeplix/ui';
+import { Button, cn, Dialog, EmptyState, Spinner } from '@storeplix/ui';
 import { AlertTriangle, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
@@ -29,12 +29,12 @@ export function SectionNav() {
       <ul className="flex w-max items-center gap-0.5 rounded-lg bg-surface-subtle p-1">
         {tabs.map((t, i) =>
           t === 'divider' ? (
-            <li key={`d${i}`} aria-hidden className="px-1.5">
+            <li key={`d${i}`} aria-hidden className="flex px-1.5">
               <span className="block h-4 w-px bg-border-strong" />
             </li>
           ) : 'disabled' in t ? (
             <li key={t.label}>
-              <span aria-disabled="true" title="Coming soon" className={cn(pill, 'block cursor-not-allowed font-medium text-text-muted')}>
+              <span aria-disabled="true" title="Coming soon" className={cn(pill, 'block cursor-not-allowed font-medium text-text-secondary')}>
                 {t.label}
               </span>
             </li>
@@ -61,10 +61,10 @@ export function SectionNav() {
 export function OnlineStoreHeader({ title, description, actions, nav = true }: { title: string; description: string; actions?: ReactNode; nav?: boolean }) {
   return (
     <div className="flex flex-col gap-5 lg:gap-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="text-heading-24 text-text-primary lg:text-heading-32">{title}</h1>
-          <p className="text-body text-text-secondary lg:text-body-lg">{description}</p>
+          <h1 className="text-heading-24 text-text-primary lg:text-[28px] lg:leading-9 lg:font-semibold lg:tracking-[-0.42px]">{title}</h1>
+          <p className="text-body text-text-secondary lg:text-[15px] lg:leading-[22px]">{description}</p>
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
@@ -120,14 +120,26 @@ export function ConflictDialog({ open, onReload, loading }: { open: boolean; onR
   );
 }
 
+/** Figma 2036:47025 status pill: 11/16 medium, px 8 py 2, 6 px dot, gap 5. */
 export function StatusBadge({ status }: { status: 'draft' | 'published' | 'hidden' | 'live' }) {
-  const map = { published: ['success', 'Published'], live: ['success', 'Live'], draft: ['warning', 'Draft'], hidden: ['neutral', 'Hidden'] } as const;
+  const map = {
+    published: ['bg-success-bg text-success', 'Published'],
+    live: ['bg-success-bg text-success', 'Live'],
+    draft: ['bg-warning-bg text-warning', 'Draft'],
+    hidden: ['bg-surface-subtle text-text-muted', 'Hidden'],
+  } as const;
   const [tone, label] = map[status];
   return (
-    <Badge tone={tone} dot>
+    <span className={cn('inline-flex items-center gap-[5px] rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap', tone)}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current" />
       {label}
-    </Badge>
+    </span>
   );
+}
+
+/** Figma 2036:47021 grey tag pill: 11/16 medium text-secondary on surface-subtle, px 8 py 2. */
+export function TagPill({ children }: { children: ReactNode }) {
+  return <span className="inline-flex items-center rounded-full bg-surface-subtle px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-secondary">{children}</span>;
 }
 
 /** Section card used across V3 settings screens (radius 16, p 20, elevation 1, 15px semibold title). */
@@ -135,7 +147,7 @@ export function Panel({ title, description, actions, children, className }: { ti
   return (
     <section className={cn('flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1', className)}>
       {(title || actions) && (
-        <div className="flex items-start justify-between gap-3">
+        <div className={cn('flex justify-between gap-3', description ? 'items-start' : 'items-center')}>
           <div className="flex min-w-0 flex-col gap-0.5">
             {title && <h2 className="text-[15px] leading-[22px] font-semibold text-text-primary">{title}</h2>}
             {description && <p className="text-[13px] leading-[18px] text-text-muted">{description}</p>}

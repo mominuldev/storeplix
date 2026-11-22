@@ -28,14 +28,14 @@ export function MaybeLink({ href, className, label, children }: { href: string |
 }
 
 /**
- * Figma "Product Card" (1:9565, Size=Default 1:9566). Prices are paisa from the API - the card only
+ * Figma "Product Card" (1:9565): Size=Default 1:9566 from sm, Size=Compact 1:9583 on phones (media 210, gap 12). Prices are paisa from the API - the card only
  * formats them. Real cards link to the PDP and add to the bag (Phase 5); placeholder demo cards have
  * no link and a disabled button. Wishlist and ratings are deferred (PHASE-5-CONTRACT §11).
  */
 export function ProductCard({ product }: ProductCardProps) {
   return (
-    <article className="flex h-full min-w-0 flex-col gap-4" data-sp-product={product.placeholder ? 'placeholder' : 'real'}>
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-sf-xs border border-line-subtle bg-sunken sm:aspect-auto sm:h-[320px]">
+    <article className="flex h-full min-w-0 flex-col gap-3 sm:gap-4" data-sp-product={product.placeholder ? 'placeholder' : 'real'}>
+      <div className="relative h-[210px] w-full overflow-hidden rounded-sf-xs border border-line-subtle bg-sunken sm:h-[320px]">
         <MaybeLink href={product.href} label={product.name} className="absolute inset-0">
           <ProductImage image={product.image} sizes="(min-width: 1024px) 25vw, 50vw" unoptimized={product.image_unoptimized} />
         </MaybeLink>

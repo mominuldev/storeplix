@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { Coupon, CouponStatus } from '@storeplix/types';
-import { Button, Checkbox, ChipSelect, cn, CouponStatusBadge, Dialog, Input, MoneyInput, PercentInput, Toggle } from '@storeplix/ui';
+import { Button, buttonVariants, Checkbox, ChipSelect, cn, CouponStatusBadge, Dialog, Input, MoneyInput, PercentInput, Toggle } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -125,13 +125,18 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
 
   return (
     <>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
+          <nav aria-label="Breadcrumb" className="flex flex-wrap gap-2 text-caption font-medium text-text-muted">
+            <Link to="/marketing/coupons" className="hover:text-text-primary">
+              Marketing
+            </Link>
+            <span aria-hidden>/</span>
             <Link to="/marketing/coupons" className="hover:text-text-primary">
               Coupons
-            </Link>{' '}
-            / {coupon ? coupon.code : 'New'}
+            </Link>
+            <span aria-hidden>/</span>
+            <span>{coupon ? coupon.code : 'New'}</span>
           </nav>
           <div className="flex items-center gap-2">
             <h1 className="text-heading-24 text-text-primary">{coupon ? `Edit ${coupon.code}` : 'Create coupon'}</h1>
@@ -140,7 +145,12 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
           <p className="text-body text-text-secondary">Customers see the discount instantly at checkout — no codes to check by hand.</p>
         </div>
         {editable && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            {!coupon && (
+              <Link to="/marketing/coupons" className={buttonVariants({ variant: 'ghost' })}>
+                Cancel
+              </Link>
+            )}
             {coupon && coupon.stats.used_count === 0 && (
               <Button variant="ghost" onClick={() => setDeleting(true)}>
                 Delete
@@ -164,8 +174,8 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
       {formError && <FormAlert>{formError}</FormAlert>}
       {!editable && <p className="rounded-md bg-surface-subtle px-3 py-2 text-body text-text-secondary">Only owners and managers can change coupons.</p>}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <fieldset disabled={!editable} className="flex min-w-0 flex-col gap-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+        <fieldset disabled={!editable} className="flex min-w-0 flex-col gap-4">
           <Section title="Coupon code" description="Customers type it at checkout or tap your share link.">
             <div className="flex items-end gap-2">
               <Input
@@ -222,16 +232,14 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
                   disabled={locked}
                   onClick={() => patch({ type: value, ...(value === 'free_shipping' ? { applies_to: 'all' as const } : {}) })}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg border p-3 text-left outline-none focus-visible:shadow-focus disabled:opacity-60',
-                    f.type === value ? 'border-brand-600 bg-brand-50' : 'border-border-default hover:bg-surface-subtle',
+                    'flex items-center gap-3 rounded-lg text-left outline-none focus-visible:shadow-focus disabled:opacity-60',
+                    f.type === value ? 'border-2 border-brand-600 bg-brand-50 px-[15px] py-[13px]' : 'border border-border-default bg-surface-card px-4 py-3.5 hover:bg-surface-subtle',
                   )}
                 >
-                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border-2', f.type === value ? 'border-brand-600' : 'border-border-strong')}>
-                    {f.type === value && <span className="size-2 rounded-full bg-brand-600" />}
-                  </span>
-                  <span className="flex flex-col">
+                  <span className={cn('flex size-5 shrink-0 items-center justify-center rounded-full', f.type === value ? 'border-[6px] border-brand-600 bg-surface-card' : 'border-[1.5px] border-border-strong bg-surface-card')} />
+                  <span className="flex flex-col gap-0.5">
                     <span className="text-body font-semibold text-text-primary">{title}</span>
-                    <span className="text-caption text-text-muted">{hint}</span>
+                    <span className="text-caption text-text-secondary">{hint}</span>
                   </span>
                 </button>
               ))}
@@ -318,25 +326,25 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
         </fieldset>
 
         <aside aria-label="Live preview" className="flex flex-col gap-4 lg:sticky lg:top-20">
-          <span className="text-caption font-medium tracking-wide text-text-muted uppercase">Live preview</span>
-          <div className="flex flex-col gap-3 rounded-card bg-brand-600 p-5 text-text-inverse shadow-elevation-1">
-            <span className="text-caption text-text-inverse/80">{scope.store?.name}</span>
-            <span className="text-heading-24" data-testid="preview-headline">
+          <span className="text-caption font-medium text-text-muted uppercase">Live preview</span>
+          <div className="flex flex-col gap-3.5 rounded-card bg-brand-600 p-6 text-text-inverse shadow-elevation-1">
+            <span className="text-caption font-medium">{scope.store?.name}</span>
+            <span className="text-display" data-testid="preview-headline">
               {f.type === 'percentage' ? `${(rule.percent_bps ?? 0) / 100}% OFF` : f.type === 'fixed' ? `${formatBdt(rule.amount ?? 0)} OFF` : 'FREE DELIVERY'}
             </span>
-            <span className="text-caption text-text-inverse/80">
+            <span className="text-body">
               {[f.type === 'percentage' && rule.max_discount_amount ? `Up to ${formatBdt(rule.max_discount_amount)} off` : null, rule.min_subtotal_amount ? `on orders over ${formatBdt(rule.min_subtotal_amount)}` : null]
                 .filter(Boolean)
                 .join(' ') || couponValue({ type: f.type, percent_bps: rule.percent_bps, amount: rule.amount, max_discount_amount: rule.max_discount_amount })}
             </span>
-            <div className="flex items-center justify-between border-t border-dashed border-text-inverse/40 pt-3">
-              <span className="rounded-md border border-dashed border-text-inverse/60 px-3 py-1 font-semibold">{f.code || 'CODE'}</span>
-              <span className="text-caption text-text-inverse/80">{f.no_end || !f.ends_at ? 'No end date' : `Valid till ${new Date(fromDhakaLocal(f.ends_at) ?? '').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}</span>
+            <div className="flex items-center justify-between border-t border-dashed border-text-inverse/50 pt-3.5">
+              <span className="rounded-md border border-dashed border-text-inverse px-3 py-1.5 text-body-lg font-medium">{f.code || 'CODE'}</span>
+              <span className="text-caption">{f.no_end || !f.ends_at ? 'No end date' : `Valid till ${new Date(fromDhakaLocal(f.ends_at) ?? '').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}</span>
             </div>
           </div>
-          <section aria-label="At checkout" className="flex flex-col gap-3 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
-            <div className="flex flex-col">
-              <h2 className="text-body-lg font-semibold text-text-primary">At checkout</h2>
+          <section aria-label="At checkout" className="flex flex-col gap-3.5 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
+            <div className="flex flex-col gap-0.5">
+              <h2 className="text-body-lg font-medium text-text-primary">At checkout</h2>
               <span className="text-caption text-text-muted">How a customer sees it</span>
             </div>
             <ul className="flex flex-col gap-2">
@@ -400,9 +408,9 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
+    <section aria-label={title} className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-6 shadow-elevation-1">
       <div className="flex flex-col gap-0.5">
-        <h2 className="text-body-lg font-semibold text-text-primary">{title}</h2>
+        <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
         {description && <p className="text-caption text-text-muted">{description}</p>}
       </div>
       {children}

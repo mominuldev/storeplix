@@ -4,9 +4,9 @@ import { cn } from '../lib/cn';
 import { Button } from './Button';
 
 // Products table 60:11450 (Figma): header row surface-subtle, Caption/12 Medium muted UPPERCASE labels, px 16 py 10,
-// gap 12; rows h 68, px 16, border-b, selected rows brand-50; 20px checkbox (radius 6, border-strong 1.5 /
+// gap 12; rows px 16 py 12 + border-b (row height follows content: 44px thumb → 69, 40px photo → 65), selected rows brand-50; 20px checkbox (radius 6, border-strong 1.5 /
 // brand-600 checked). Bulk bar (60:11481): brand-50, "N selected" Body/14 Semibold brand-600, small buttons.
-// Under `md` every row stacks as label/value pairs (contract §9.3); one DOM, so tests and a11y see one table.
+// Orders table head 7:509 uses `columnGap={16}` + `headTone="canvas"` (surface-canvas). Under `md` every row stacks as label/value pairs (contract §9.3); one DOM, so tests and a11y see one table.
 export interface DataTableColumn<T> {
   key: string;
   header: ReactNode;
@@ -37,6 +37,10 @@ export interface DataTableProps<T> {
   toolbar?: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** Column gap on md+ (Products 60:11450 = 12, Orders 7:509 = 16). */
+  columnGap?: 12 | 16;
+  /** Header fill: `subtle` (Products 60:11450) or `canvas` (Orders 7:509). */
+  headTone?: 'subtle' | 'canvas';
 }
 
 function Box({ checked, indeterminate, label, onChange }: { checked: boolean; indeterminate?: boolean; label: string; onChange: () => void }) {
@@ -85,7 +89,10 @@ export function DataTable<T>({
   toolbar,
   footer,
   className,
+  columnGap = 12,
+  headTone = 'subtle',
 }: DataTableProps<T>) {
+  const gapClass = columnGap === 16 ? 'md:gap-4' : 'md:gap-3';
   const selectable = !!selected && !!onSelectedChange;
   const ids = rows.map(getRowId);
   const selectedOnPage = selectable ? ids.filter((id) => selected.includes(id)) : [];
@@ -124,7 +131,10 @@ export function DataTable<T>({
       )}
       <div role="table" aria-label={label} aria-rowcount={rows.length + 1}>
         <div role="rowgroup">
-          <div role="row" className="hidden items-center gap-3 border-b border-border-default bg-surface-subtle px-4 py-2.5 md:flex">
+          <div
+            role="row"
+            className={cn('hidden items-center border-b border-border-default px-4 py-2.5 md:flex', gapClass, headTone === 'canvas' ? 'bg-surface-canvas' : 'bg-surface-subtle')}
+          >
             {selectable && (
               <span role="columnheader" className="flex">
                 <Box checked={allOn} indeterminate={someOn} label="Select all" onChange={toggleAll} />
@@ -154,7 +164,8 @@ export function DataTable<T>({
                   aria-selected={selectable ? isOn : undefined}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={cn(
-                    'relative flex flex-col gap-2 border-b border-border-default px-4 py-3 last:border-b-0 md:min-h-17 md:flex-row md:items-center md:gap-3',
+                    'relative flex flex-col gap-2 border-b border-border-default px-4 py-3 last:border-b-0 md:flex-row md:items-center',
+                    gapClass,
                     isOn && 'bg-brand-50',
                     onRowClick && 'cursor-pointer hover:bg-surface-subtle',
                     rowClassName?.(row),

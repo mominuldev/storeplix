@@ -10,6 +10,11 @@ const TONES = {
   warning: 'bg-sun-soft border-sun/40',
 } as const;
 
+/** In-page anchor for an H2 block ("On this page" list, Figma policy page 149:1453). */
+export function headingAnchor(blockId: string): string {
+  return `section-${blockId.replace(/[^A-Za-z0-9_-]/g, '')}`;
+}
+
 /** Button links: theme href rule, wa.me or tel (re-checked; an unsafe href drops the button). */
 function safeButtonHref(href: string): string | null {
   if (/^tel:\+?[0-9]{7,15}$/.test(href)) return href;
@@ -20,7 +25,13 @@ function safeButtonHref(href: string): string | null {
 function Block({ block, media }: { block: SafePageBlock; media: Record<string, StorefrontMedia> }) {
   switch (block.type) {
     case 'heading':
-      return block.level === 3 ? <h3 className="type-h3 text-ink">{block.text}</h3> : <h2 className="type-h2 text-ink">{block.text}</h2>;
+      return block.level === 3 ? (
+        <h3 className="type-h3 text-ink">{block.text}</h3>
+      ) : (
+        <h2 id={headingAnchor(block.id)} className="type-h2 scroll-mt-[200px] text-ink max-md:text-[22px] max-md:leading-[1.2]">
+          {block.text}
+        </h2>
+      );
     case 'rich_text':
       return <RichText doc={block.doc} className="text-ink-secondary" />;
     case 'image': {
@@ -98,7 +109,7 @@ function Block({ block, media }: { block: SafePageBlock; media: Record<string, S
 /** Page body blocks → React elements. Unknown blocks render nothing. */
 export function PageBlocks({ blocks, media }: { blocks: SafePageBlock[]; media: Record<string, StorefrontMedia> }) {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 md:gap-6">
       {blocks.map((b) => (
         <Block key={b.id} block={b} media={media} />
       ))}

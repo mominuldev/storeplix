@@ -19,7 +19,7 @@ export interface PitchCopy {
 export function BrandPanel({ eyebrow, headline, bangla }: PitchCopy) {
   return (
     <aside className="hidden w-[560px] shrink-0 flex-col justify-between bg-brand-600 p-12 text-text-inverse lg:flex">
-      <Logo tone="white" height={32} />
+      <Logo tone="inverse" height={32} />
       <div className="flex flex-col gap-7">
         <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-brand-500 px-3 py-1.5 text-caption font-medium">
           <Star aria-hidden className="size-3.5" /> {eyebrow}
@@ -55,7 +55,7 @@ export function BrandPanel({ eyebrow, headline, bangla }: PitchCopy) {
             <span className="text-caption text-brand-100">Nusrat’s Closet · Chattogram</span>
           </span>
           <span className="flex items-center gap-1 text-caption font-medium">
-            <Star aria-hidden className="size-3.5 fill-accent-500 text-accent-500" /> 4.8 · 2,300+ sellers
+            <Star aria-hidden className="size-3.5 text-accent-500" /> 4.8 · 2,300+ sellers
           </span>
         </figcaption>
       </figure>

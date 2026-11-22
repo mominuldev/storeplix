@@ -8,7 +8,7 @@ import { NOINDEX_ROBOTS } from '@/lib/seo';
 import { whatsappHref } from '@/lib/contact';
 import { formatMoney } from '@/lib/format';
 import { CartLineControls, CouponForm } from '@/themes/modern-commerce/commerce/cart-client';
-import { FreeDeliveryBar, Notice, PageTitle, PAYMENT_METHOD_LABELS, PriceLine } from '@/themes/modern-commerce/commerce/ui';
+import { EmptyState, FreeDeliveryBar, Notice, PageTitle, PAYMENT_METHOD_LABELS, PriceLine } from '@/themes/modern-commerce/commerce/ui';
 import { ButtonLink } from '@/themes/modern-commerce/components/button';
 import { Icon } from '@/themes/modern-commerce/components/icon';
 import { ProductImage } from '@/themes/modern-commerce/components/product-image';
@@ -36,16 +36,22 @@ export default async function CartPage({ searchParams }: Props) {
 
   if (!cart || cart.lines.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-6 px-4 pt-10 pb-20 lg:px-20 lg:pt-14 lg:pb-28">
+      <div className="flex flex-col items-start gap-6 px-4 pt-8 pb-20 lg:px-20 lg:pt-12 lg:pb-28">
         <PageTitle title="Your bag" />
         {loadError ? <Notice tone="error">{loadError}</Notice> : null}
-        <div className="flex w-full flex-col items-start gap-4 rounded-sf-sm bg-sunken p-8" data-sp-empty-bag>
-          <h2 className="type-h2 text-ink">Your bag is empty</h2>
-          <p className="type-body-m text-ink-secondary">Find something you love and it will wait for you here.</p>
-          <ButtonLink href="/">
-            Continue shopping
-            <Icon name="arrow-right" />
-          </ButtonLink>
+        <div className="w-full" data-sp-empty-bag>
+          <EmptyState
+            icon="bag"
+            title="Your bag is empty"
+            action={
+              <ButtonLink href="/">
+                Continue shopping
+                <Icon name="arrow-right" />
+              </ButtonLink>
+            }
+          >
+            Find something you love and it will wait for you here.
+          </EmptyState>
         </div>
       </div>
     );
@@ -55,10 +61,10 @@ export default async function CartPage({ searchParams }: Props) {
   const c = cart.currency;
 
   return (
-    <div className="flex flex-col gap-8 px-4 pt-8 pb-20 lg:gap-10 lg:px-20 lg:pt-14 lg:pb-28">
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-20 lg:px-20 lg:pt-12 lg:pb-28">
       <PageTitle title="Your bag" count={`${cart.items_count} ${cart.items_count === 1 ? 'item' : 'items'}`} />
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
           {sp.changed === 'stock' ? <Notice tone="error">Some items changed while you were checking out. Check your bag, then continue.</Notice> : null}
           {notices.map((n) => (
             <Notice key={n}>{n}</Notice>
@@ -67,13 +73,13 @@ export default async function CartPage({ searchParams }: Props) {
 
           <ul className="flex flex-col" aria-label="Items in your bag">
             {cart.lines.map((line) => (
-              <li key={line.id} className="flex gap-4 border-b border-line-subtle py-5 first:pt-0 lg:gap-5" data-sp-cart-line>
+              <li key={line.id} className="flex gap-3 border-b border-line-subtle py-5 lg:gap-5" data-sp-cart-line>
                 <Link href={line.product_slug ? `/products/${line.product_slug}` : '/'} className="relative h-[120px] w-24 shrink-0 overflow-hidden rounded-sf-xs bg-sunken lg:h-36 lg:w-[120px]">
                   <ProductImage image={line.image} sizes="120px" />
                 </Link>
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       <h2 className="type-label-m text-ink">
                         {line.product_slug ? (
                           <Link href={`/products/${line.product_slug}`} className="hover:underline">
@@ -85,7 +91,7 @@ export default async function CartPage({ searchParams }: Props) {
                       </h2>
                       {line.variant_title ? <p className="type-body-s text-ink-muted">{line.variant_title}</p> : null}
                     </div>
-                    <p className="type-price-m shrink-0 text-ink">{formatMoney(line.line_amount, c)}</p>
+                    <p className="type-price-m hidden shrink-0 text-ink lg:block">{formatMoney(line.line_amount, c)}</p>
                   </div>
                   {line.issue === 'unavailable' ? (
                     <p className="type-label-s text-sale">No longer available. Remove it to check out.</p>
@@ -97,7 +103,7 @@ export default async function CartPage({ searchParams }: Props) {
                   ) : line.low_stock !== null ? (
                     <p className="type-label-s flex items-center gap-1.5 text-sale">
                       <Icon name="lightning-sm" />
-                      Only {line.low_stock} left
+                      Only {line.low_stock} left{line.variant_title ? ' in this size' : ''}
                     </p>
                   ) : null}
                   <PriceLine price={line.unit_price_amount} compareAt={line.compare_at_amount} currency={c} />
@@ -112,18 +118,18 @@ export default async function CartPage({ searchParams }: Props) {
               </li>
             ))}
           </ul>
-          <Link href="/" className="type-label-s flex items-center gap-2 self-start text-brand hover:underline">
+          <Link href="/" className="type-label-s mt-3 hidden items-center gap-2 self-start text-brand hover:underline lg:flex">
             <Icon name="arrow-right-sm" className="rotate-180" />
             Continue shopping
           </Link>
         </div>
 
         <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:w-[420px] lg:shrink-0" aria-labelledby="summary-title">
-          <div className="flex flex-col gap-5 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-7">
+          <div className="flex flex-col gap-4 rounded-sf-md border border-line bg-surface p-5 lg:p-7">
             <h2 id="summary-title" className="type-h3 text-ink">
               Order summary
             </h2>
-            <dl className="type-body-m flex flex-col gap-3 text-ink-secondary">
+            <dl className="type-body-m flex flex-col gap-4 text-ink-secondary">
               <div className="flex justify-between gap-4">
                 <dt>Items ({cart.items_count})</dt>
                 <dd className="text-ink">{formatMoney(cart.subtotal_amount, c)}</dd>
@@ -136,12 +142,13 @@ export default async function CartPage({ searchParams }: Props) {
               ) : null}
               <div className="flex justify-between gap-4">
                 <dt>Delivery</dt>
-                <dd>Calculated at next step</dd>
+                <dd className="text-ink-muted">Calculated at next step</dd>
               </div>
             </dl>
             <CouponForm applied={cart.coupon?.code ?? null} />
-            <div className="flex items-end justify-between gap-4 border-t border-line-subtle pt-5">
-              <div className="flex flex-col gap-1">
+            <hr className="border-line" />
+            <div className="flex items-baseline justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
                 <p className="type-label-m text-ink">Estimated total</p>
                 {cart.savings_amount > 0 ? <p className="type-body-s text-sale">You save {formatMoney(cart.savings_amount, c)}</p> : null}
               </div>
@@ -159,6 +166,7 @@ export default async function CartPage({ searchParams }: Props) {
               </button>
             )}
             {issues ? <p className="type-body-s text-sale">Fix the highlighted items to check out.</p> : null}
+            <div className="flex flex-col gap-2.5 pt-1">
             <ul className="type-body-s flex flex-col gap-2.5 text-ink-secondary">
               {methods.includes('cod') ? (
                 <li className="flex items-center gap-2">
@@ -172,21 +180,22 @@ export default async function CartPage({ searchParams }: Props) {
               </li>
             </ul>
             {methods.length ? (
-              <ul className="flex flex-wrap gap-2" aria-label="Pay with">
+              <ul className="flex flex-wrap gap-1.5" aria-label="Pay with">
                 {methods.map((m) => (
-                  <li key={m} className="type-label-s rounded-sf-sm bg-sunken px-2.5 py-1.5 text-ink">
+                  <li key={m} className="type-label-s rounded-sf-xs bg-sunken px-2 py-1 text-ink">
                     {PAYMENT_METHOD_LABELS[m]}
                   </li>
                 ))}
               </ul>
             ) : null}
+            </div>
           </div>
           {wa ? (
-            <a href={wa} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-sf-sm bg-sunken px-5 py-4 hover:brightness-95">
-              <Icon name="whatsapp" className="text-brand" />
-              <span className="flex flex-col">
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 rounded-sf-md bg-sunken p-4 hover:brightness-95">
+              <Icon name="whatsapp" size={20} className="text-brand" />
+              <span className="flex flex-col gap-0.5">
                 <span className="type-label-s text-ink">Need help with your order?</span>
-                <span className="type-body-s text-ink-secondary">Chat with us on WhatsApp{config.contact.support_hours ? `, ${config.contact.support_hours}` : ''}</span>
+                <span className="type-body-s text-ink-muted">Chat with us on WhatsApp{config.contact.support_hours ? `, ${config.contact.support_hours}` : ''}</span>
               </span>
             </a>
           ) : null}

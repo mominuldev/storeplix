@@ -2,6 +2,7 @@ import type { LayoutProps } from '../types';
 import type { ModernCommerceSettings } from './schema';
 import { Footer } from './footer';
 import { Header } from './header';
+import { MobileTabBar } from './components/tab-bar';
 
 export function ModernCommerceLayout({ store, settings, navigation, description, contact, social, commerce = null, children }: LayoutProps<ModernCommerceSettings>) {
   return (
@@ -19,6 +20,7 @@ export function ModernCommerceLayout({ store, settings, navigation, description,
         menus={[navigation.footer, navigation.help]}
         paymentMethods={commerce?.payment_methods ?? null}
       />
+      <MobileTabBar />
     </div>
   );
 }

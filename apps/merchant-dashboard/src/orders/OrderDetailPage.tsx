@@ -2,7 +2,7 @@ import { isApiError } from '@storeplix/api-client';
 import type { CourierProvider, Order, OrderStatus, Payment } from '@storeplix/types';
 import { Avatar, Badge, Button, buttonVariants, cn, Menu, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ChevronDown, Clock, MapPin, MessageCircle, Phone, Printer, Store } from 'lucide-react';
+import { ChevronRight, Clock, MapPin, MessageCircle, Phone, Printer, Store } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { formatBdt, formatCount } from '../catalog/format';
@@ -59,9 +59,9 @@ type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | 'restock' | 'createR
 
 export function Card({ title, actions, children, className, label }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; label?: string }) {
   return (
-    <section aria-label={label ?? (typeof title === 'string' ? title : undefined)} className={cn('flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1', className)}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-body-lg font-semibold text-text-primary">{title}</h2>
+    <section aria-label={label ?? (typeof title === 'string' ? title : undefined)} className={cn('flex flex-col gap-3.5 rounded-card border border-border-default bg-surface-card p-4 shadow-elevation-1 sm:px-6 sm:py-[22px]', className)}>
+      <div className="flex items-center justify-between gap-2.5">
+        <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
         {actions}
       </div>
       {children}
@@ -73,7 +73,7 @@ function Row({ label, value, strong, tone }: { label: ReactNode; value: ReactNod
   return (
     <div className={cn('flex items-center justify-between gap-3 text-body', strong ? 'font-semibold text-text-primary' : 'text-text-secondary', tone === 'success' && 'text-success')}>
       <dt>{label}</dt>
-      <dd className={cn(strong ? 'text-body-lg' : 'text-text-primary', tone === 'success' && 'text-success')}>{value}</dd>
+      <dd className={cn('text-right font-medium text-text-primary', strong && 'text-body-lg', tone === 'success' && 'text-success')}>{value}</dd>
     </div>
   );
 }
@@ -131,16 +131,17 @@ function OrderView({ order }: { order: Order }) {
 
   return (
     <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-body font-medium text-text-secondary">
+        <Link to="/orders" className="text-brand-600 hover:text-brand-700">
+          Orders
+        </Link>
+        <ChevronRight aria-hidden className="size-3.5 text-text-muted" />
+        <span>{order.number}</span>
+      </nav>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
-            <Link to="/orders" className="text-brand-600 hover:text-brand-700">
-              Orders
-            </Link>{' '}
-            › {order.number}
-          </nav>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-heading-24 text-text-primary">{order.number}</h1>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-heading-32 text-text-primary">{order.number}</h1>
             <OrderStatusBadge status={order.status} />
             <PaymentStatusBadge status={order.payment_status} />
             {order.return_status !== 'none' && (
@@ -149,30 +150,28 @@ function OrderView({ order }: { order: Order }) {
               </Link>
             )}
           </div>
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-text-secondary">
-            <span className="flex items-center gap-1">
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-text-secondary">
+            <span className="flex items-center gap-1.5">
               <Clock aria-hidden className="size-3.5" /> Placed {dateTime(order.placed_at)}
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <Store aria-hidden className="size-3.5" /> {orderChannelLabels[order.channel]}
               {order.created_by ? ` · added by ${order.created_by.name}` : ''}
             </span>
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <span className="flex items-stretch">
-            <Button variant="secondary" className="rounded-r-none" loading={print.pending && print.kind === 'invoice_a4'} onClick={() => print.start('invoice_a4', [order.id])}>
-              <Printer aria-hidden className="size-4" /> Invoice
-            </Button>
-            <Menu
-              label="More prints"
-              align="end"
-              triggerClassName={cn(buttonVariants({ variant: 'secondary' }), 'size-auto h-full rounded-l-none border-l-0 px-2.5 text-text-primary')}
-              trigger={<ChevronDown aria-hidden className="size-4" />}
-              disabled={print.pending}
-              entries={(['packing_slip', 'label_4x6', 'receipt_80mm', 'invoice_a5_two_up'] as const).map((k) => ({ key: k, label: documentKindLabels[k].action, onSelect: () => print.start(k, [order.id]) }))}
-            />
-          </span>
+          <Button variant="secondary" className="gap-1.5 px-3" loading={print.pending && print.kind === 'invoice_a4'} onClick={() => print.start('invoice_a4', [order.id])}>
+            <Printer aria-hidden className="size-4" /> Invoice
+          </Button>
+          <Menu
+            label="More prints"
+            align="end"
+            triggerClassName={cn(buttonVariants({ variant: 'secondary' }), 'size-auto text-text-primary')}
+            trigger={<>More ⋯</>}
+            disabled={print.pending}
+            entries={(['packing_slip', 'label_4x6', 'receipt_80mm', 'invoice_a5_two_up'] as const).map((k) => ({ key: k, label: documentKindLabels[k].action, onSelect: () => print.start(k, [order.id]) }))}
+          />
           {order.status === 'delivered' && (
             <Button variant="secondary" onClick={() => setDialog('createReturn')}>
               Create return
@@ -215,26 +214,26 @@ function OrderView({ order }: { order: Order }) {
       )}
       {link && <ActiveLinkBanner order={order} link={link} />}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-5">
+        <div className="flex flex-col gap-5 max-lg:contents">
           <Card
             title={`Items · ${formatCount(order.items_count)}`}
             label="Items"
             actions={
               itemsEditable ? (
-                <Link to={`/orders/${order.id}/edit`} className="text-caption font-medium text-brand-600">
+                <Link to={`/orders/${order.id}/edit`} className="text-body font-medium text-brand-600">
                   Edit items
                 </Link>
               ) : undefined
             }
           >
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-3.5">
               {order.items.map((i) => (
-                <li key={i.id} className="flex items-center gap-3">
-                  <Thumb src={i.image?.url} />
-                  <div className="flex min-w-0 flex-1 flex-col">
+                <li key={i.id} className="flex items-center gap-3.5">
+                  <Thumb src={i.image?.url} size={56} className="rounded-lg" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-body font-semibold text-text-primary">{i.product_name}</span>
-                    <span className="truncate text-caption text-text-muted">{[i.variant_title !== 'Default' ? i.variant_title : null, i.sku ? `SKU ${i.sku}` : null].filter(Boolean).join(' · ')}</span>
+                    <span className="truncate text-caption text-text-secondary">{[i.variant_title !== 'Default' ? i.variant_title : null, i.sku ? `SKU ${i.sku}` : null].filter(Boolean).join(' · ')}</span>
                     {i.current_stock && i.current_stock.tracked && (
                       <span className={cn('text-caption', i.current_stock.available > 0 ? 'text-success' : 'text-danger')}>
                         {i.current_stock.available > 0 ? `${formatCount(i.current_stock.available)} in stock` : 'Out of stock'}
@@ -244,11 +243,11 @@ function OrderView({ order }: { order: Order }) {
                   <span className="hidden text-body text-text-secondary sm:inline">
                     {formatBdt(i.unit_price_amount)} × {i.quantity}
                   </span>
-                  <span className="w-24 text-right text-body font-semibold text-text-primary">{formatBdt(i.total_amount)}</span>
+                  <span className="w-20 shrink-0 text-right text-body font-semibold text-text-primary">{formatBdt(i.total_amount)}</span>
                 </li>
               ))}
             </ul>
-            <dl className="flex flex-col gap-2 border-t border-border-default pt-3">
+            <dl className="flex flex-col gap-2 border-t border-border-default pt-3.5">
               <Row label="Subtotal" value={formatBdt(order.subtotal_amount)} />
               <Row
                 label={`Delivery · ${order.shipping_zone_name}${order.shipping_overridden ? ' (set by hand)' : ''}`}
@@ -258,8 +257,8 @@ function OrderView({ order }: { order: Order }) {
               <div className="border-t border-border-default pt-2">
                 <Row label="Total" value={formatBdt(order.total_amount)} strong />
               </div>
-              <div className="flex items-center justify-between rounded-md bg-surface-subtle px-3 py-2.5 text-body">
-                <span className="text-text-secondary">Paid {formatBdt(order.paid_amount)}</span>
+              <div className="mt-1.5 flex items-center justify-between gap-2.5 rounded-control bg-surface-canvas px-3.5 py-2.5 text-body">
+                <span className="font-medium text-text-secondary">Paid {formatBdt(order.paid_amount)}</span>
                 <span className="font-semibold text-text-primary">
                   {order.status === 'cancelled' || order.status === 'returned' ? 'Nothing due' : order.due_amount <= 0 ? 'Paid in full' : `Due on delivery ${formatBdt(order.due_amount)}`}
                 </span>
@@ -312,9 +311,10 @@ function OrderView({ order }: { order: Order }) {
             {order.cancel_reason && <p className="text-caption text-danger">Cancelled: {cancelReasonLabels[order.cancel_reason]}</p>}
           </Card>
 
-          <Card title="Timeline">
+          <Card title="Timeline" className="gap-1">
+            <Timeline label="Order timeline" items={order.events.map(eventToEntry)} />
             <form
-              className="flex gap-2"
+              className="mt-2.5 flex items-center gap-2.5 rounded-control border border-border-default py-1.5 pr-2 pl-3.5 focus-within:border-brand-600"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (note.trim()) addNote.mutate();
@@ -326,45 +326,45 @@ function OrderView({ order }: { order: Order }) {
                 maxLength={1000}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-md border border-border-default px-3 text-body outline-none focus:border-brand-600"
+                className="h-8 min-w-0 flex-1 bg-transparent text-body text-text-primary outline-none placeholder:text-text-muted"
               />
               <Button type="submit" size="sm" variant="secondary" loading={addNote.isPending} disabled={!note.trim()}>
                 Add note
               </Button>
             </form>
-            <Timeline label="Order timeline" items={order.events.map(eventToEntry)} />
           </Card>
         </div>
 
-        <div className="flex flex-col gap-5">
-          <section aria-label="Customer" className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
+        <div className="flex flex-col gap-5 max-lg:contents">
+          <section aria-label="Customer" className="flex flex-col gap-3.5 max-lg:order-first rounded-card border border-border-default bg-surface-card p-4 shadow-elevation-1 sm:px-6 sm:py-[22px]">
             <div className="flex items-center gap-3">
-              <Avatar name={c.name} />
-              <div className="flex min-w-0 flex-col">
+              <Avatar name={c.name} className="size-11 bg-brand-50 text-body font-semibold" />
+              <div className="flex min-w-0 flex-col gap-px">
                 {c.id ? (
-                  <Link to={`/customers/${c.id}`} className="truncate text-body font-semibold text-text-primary hover:text-brand-600">
+                  <Link to={`/customers/${c.id}`} className="truncate text-body-lg font-medium text-text-primary hover:text-brand-600">
                     {c.name}
                   </Link>
                 ) : (
-                  <span className="truncate text-body font-semibold text-text-primary">{c.name}</span>
+                  <span className="truncate text-body-lg font-medium text-text-primary">{c.name}</span>
                 )}
-                <span className="text-caption text-text-muted">
+                <span className="text-caption text-text-secondary">
                   {localPhone(c.phone)} · {c.orders_count <= 1 ? 'first order' : `${ordinal(c.orders_count)} order`}
                 </span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <a href={`tel:+${c.phone}`} className={buttonVariants({ size: 'sm' })}>
+              <a href={`tel:+${c.phone}`} className={cn(buttonVariants(), 'gap-1.5 rounded-control font-semibold')}>
                 <Phone aria-hidden className="size-4" /> Call
               </a>
-              <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className={buttonVariants({ size: 'sm', variant: 'secondary' })}>
+              <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ variant: 'secondary' }), 'gap-1.5 rounded-control font-semibold')}>
                 <MessageCircle aria-hidden className="size-4" /> WhatsApp
               </a>
             </div>
-            <div className="flex gap-3 border-t border-border-default pt-3">
-              <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-text-muted" />
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-caption text-text-muted">Delivery address</span>
+            <div className="h-px bg-border-default" />
+            <div className="flex gap-2.5">
+              <MapPin aria-hidden className="size-4 shrink-0 text-text-muted" />
+              <div className="flex min-w-0 flex-1 flex-col gap-px">
+                <span className="text-caption text-text-secondary">Delivery address</span>
                 <span className="text-body text-text-primary">{[addr.address_line, addr.area, addr.thana, addr.district].filter(Boolean).join(', ')}</span>
                 {addr.landmark && <span className="text-caption text-text-muted">{addr.landmark}</span>}
               </div>
@@ -376,14 +376,14 @@ function OrderView({ order }: { order: Order }) {
             </div>
             {order.customer_note && <p className="rounded-md bg-surface-subtle p-3 text-caption text-text-secondary">“{order.customer_note}”</p>}
             <div className="grid grid-cols-3 gap-2" aria-label="This shop only">
+              <Tile label="Orders" value={formatCount(c.orders_count)} />
               <Tile label="Delivered" value={formatCount(c.delivered_orders_count)} />
-              <Tile label="Returned" value={formatCount(c.returned_orders_count)} />
               <Tile label="Spent" value={formatBdt(c.total_spent_amount)} />
             </div>
           </section>
 
-          <Card title="Order details">
-            <dl className="flex flex-col gap-2">
+          <Card title="Order details" className="gap-2.5">
+            <dl className="flex flex-col gap-2.5">
               <Row label="Source" value={orderChannelLabels[order.channel]} />
               <Row label="Payment" value={paymentMethodLabel(order.payment_method)} />
               {order.coupon_code && <Row label="Coupon" value={order.coupon_code} />}
@@ -392,7 +392,7 @@ function OrderView({ order }: { order: Order }) {
               {order.invoice_printed_at && <Row label="Invoice printed" value={dateTime(order.invoice_printed_at)} />}
               {order.label_printed_at && <Row label="Label printed" value={dateTime(order.label_printed_at)} />}
             </dl>
-            <TagInput label="Order tags" value={order.tags} disabled={tags.isPending || !editable} onChange={(next) => tags.mutate(next)} placeholder="+ Tag" />
+            <TagInput label="Order tags" value={order.tags} disabled={tags.isPending || !editable} onChange={(next) => tags.mutate(next)} placeholder="+ Tag" variant="inline" />
           </Card>
         </div>
       </div>
@@ -414,18 +414,18 @@ function OrderView({ order }: { order: Order }) {
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-caption text-text-muted">{label}</dt>
-      <dd className="truncate text-body text-text-primary">{value}</dd>
+    <div className="flex min-w-0 flex-col gap-1">
+      <dt className="text-caption text-text-secondary">{label}</dt>
+      <dd className="truncate text-body font-medium text-text-primary">{value}</dd>
     </div>
   );
 }
 
 function Tile({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 rounded-md bg-surface-subtle px-3 py-2">
-      <span className="text-caption text-text-muted">{label}</span>
-      <span className="truncate text-body font-semibold text-text-primary">{value}</span>
+    <div className="flex min-w-0 flex-col rounded-control bg-surface-canvas px-2.5 py-2">
+      <span className="text-caption text-text-secondary">{label}</span>
+      <span className="truncate text-body-lg font-medium text-text-primary">{value}</span>
     </div>
   );
 }

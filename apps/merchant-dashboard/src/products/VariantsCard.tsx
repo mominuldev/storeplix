@@ -5,7 +5,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 import { formatCount } from '../catalog/format';
-import { Panel } from '../online-store/components/Shell';
+import { CatalogPanel as Panel } from '../catalog/ui';
 import { canAddValue, regenerateVariants, variantTitle, type ProductFormValues, type VariantRow } from './variants';
 
 // Product editor 60:9381 · Variants card: option rows (name + value chips + "+ Add"), "+ Add option" (max 3),

@@ -16,8 +16,8 @@ import { ProductImage } from '../components/product-image';
 function DealCard({ deal }: { deal: FlashDeal }) {
   const meter = deal.stock_left !== null && deal.claimed_percent !== null ? { left: deal.stock_left, claimed: deal.claimed_percent } : null;
   return (
-    <article className="relative flex w-[200px] shrink-0 snap-start flex-col gap-3 rounded-sf-lg bg-surface p-3 text-[#0e1a33] lg:w-auto lg:min-w-0 lg:flex-1">
-      <div className="relative h-[170px] overflow-hidden rounded-sf-xs bg-sunken lg:h-[240px]">
+    <article className="relative flex w-[200px] shrink-0 snap-start flex-col gap-3 rounded-sf-lg bg-surface p-3 text-[#0e1a33] md:w-auto md:min-w-0 lg:flex-1">
+      <div className="relative h-[170px] overflow-hidden rounded-sf-xs bg-sunken md:h-[240px]">
         <MaybeLink href={deal.href} label={deal.name} className="absolute inset-0">
           <ProductImage image={deal.image} sizes="(min-width: 1024px) 25vw, 200px" />
         </MaybeLink>
@@ -87,20 +87,20 @@ export async function FlashSaleSection({ id, settings: s, ctx }: SectionProps<Fl
   const remaining = s.endsAt ? Date.parse(s.endsAt) - Date.now() : 0;
 
   return (
-    <div className="px-4 lg:px-20">
-      <div className="flex flex-col gap-6 overflow-hidden rounded-sf-xl bg-brand p-5 text-on-brand lg:gap-8 lg:p-10">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
-          <div className="flex flex-col items-start gap-3.5">
+    <div className="px-4 md:px-10 lg:px-20">
+      <div className="flex flex-col gap-4 overflow-hidden rounded-sf-xl bg-brand p-5 text-on-brand md:gap-6 md:p-8 lg:gap-8 lg:p-10">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between lg:gap-10">
+          <div className="flex flex-col items-start gap-4 lg:gap-3.5">
             {s.eyebrow ? (
               <p className="type-eyebrow flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-on-accent">
                 <Icon name="lightning" />
                 {s.eyebrow}
               </p>
             ) : null}
-            <h2 id={`${id}-title`} className="type-display-m max-md:text-[32px]">
+            <h2 id={`${id}-title`} className="type-h2 md:type-h1 lg:type-display-m">
               {s.title}
             </h2>
-            {s.subtitle ? <p className="type-body-m hidden opacity-85 md:block">{s.subtitle}</p> : null}
+            {s.subtitle ? <p className="type-body-m hidden opacity-85 lg:block">{s.subtitle}</p> : null}
           </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:gap-8">
             {s.endsAt && remaining > 0 ? (
@@ -124,7 +124,7 @@ export async function FlashSaleSection({ id, settings: s, ctx }: SectionProps<Fl
           </div>
         </div>
         {deals.length > 0 ? (
-          <div className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 lg:mx-0 lg:gap-5 lg:overflow-visible lg:px-0 [scrollbar-width:none]">
+          <div className="-mx-5 flex snap-x scroll-px-5 gap-3 overflow-x-auto px-5 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 lg:flex lg:gap-5 md:max-lg:[&>*:nth-child(n+4)]:hidden [scrollbar-width:none]">
             {deals.map((d) => (
               <DealCard key={d.id} deal={d} />
             ))}
@@ -137,7 +137,7 @@ export async function FlashSaleSection({ id, settings: s, ctx }: SectionProps<Fl
         {s.linkLabel && s.linkHref ? (
           <Link
             href={s.linkHref}
-            className="type-label-m flex items-center justify-center gap-2 rounded-control bg-surface px-7 py-4 text-[#0e1a33] lg:hidden"
+            className="type-label-m flex items-center justify-center gap-2 rounded-control bg-surface px-5 py-3 text-[#0e1a33] lg:hidden"
           >
             {s.linkLabel}
             <Icon name="arrow-right" />

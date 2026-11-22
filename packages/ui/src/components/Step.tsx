@@ -4,7 +4,7 @@ import { cn } from '../lib/cn';
 
 export type StepState = 'done' | 'current' | 'upcoming';
 
-// Figma Merchant Onboarding · Step 45:8034 — px 12, py 10, radius 10, gap 12, 28px indicator.
+// Figma Merchant Onboarding · Step 45:8034 — px 12, py 10, radius 10, gap 12, 28px indicator, title/hint gap 2.
 export interface StepProps {
   index: number;
   title: ReactNode;
@@ -29,7 +29,7 @@ export function Step({ index, title, hint, state, className }: StepProps) {
       >
         {state === 'done' ? <Check aria-hidden className="size-4" /> : index}
       </span>
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-col gap-0.5">
         <span
           className={cn(
             'truncate text-body',

@@ -134,7 +134,7 @@ export function PrintPage() {
                   const on = chosen.includes(o.id);
                   return (
                     <li key={o.id}>
-                      <label className={cn('flex cursor-pointer items-center gap-3 rounded-lg border p-3', on ? 'border-brand-600 bg-brand-50' : 'border-border-default')}>
+                      <label className={cn('flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5', previewOrder?.id === o.id ? 'border-brand-600 bg-brand-50' : 'border-transparent hover:bg-surface-subtle')}>
                         <input
                           type="checkbox"
                           aria-label={`Select ${o.number}`}
@@ -171,7 +171,7 @@ export function PrintPage() {
                     role="radio"
                     aria-checked={on}
                     onClick={() => setKind(k)}
-                    className={cn('flex flex-col gap-2 rounded-lg border p-3 text-left', on ? 'border-brand-600 bg-brand-50' : 'border-border-default hover:bg-surface-subtle')}
+                    className={cn('flex flex-col gap-2 rounded-lg p-3 text-left', on ? 'border-2 border-brand-600 bg-brand-50 p-[11px]' : 'border border-border-default hover:bg-surface-subtle')}
                   >
                     <span className="flex h-16 items-center justify-center rounded-md bg-surface-subtle text-text-muted">
                       <FileText aria-hidden className="size-7" />
@@ -187,7 +187,7 @@ export function PrintPage() {
             </div>
           </Panel>
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_270px] lg:items-start">
             <Panel
               title="Live preview"
               label="Live preview"
@@ -296,7 +296,7 @@ function Panel({ title, subtitle, actions, label, children }: { title: string; s
     <section aria-label={label} className="flex min-w-0 flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          <h2 className="text-body-lg font-semibold text-text-primary">{title}</h2>
+          <h2 className="text-body-lg font-medium text-text-primary">{title}</h2>
           {subtitle && <span className="truncate text-caption text-text-muted">{subtitle}</span>}
         </div>
         {actions}

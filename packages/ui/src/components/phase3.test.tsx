@@ -46,7 +46,8 @@ describe('Phase 3 components', () => {
     render(<ColorSwatch color="url(x)" label="Violet" selected />);
     const b = screen.getByRole('button', { name: 'Violet' });
     expect(b).toHaveAttribute('aria-pressed', 'true');
-    expect(b.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    // lg (Figma 48:8283) paints the colour on the inner disc.
+    expect(b.querySelector('span')?.style.backgroundColor).toBe('rgb(255, 255, 255)');
   });
 
   it('DraftBar and Dialog render actions', () => {

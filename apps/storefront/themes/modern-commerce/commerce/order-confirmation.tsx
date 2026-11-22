@@ -54,13 +54,13 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
   return (
     <div className="flex flex-col pb-20 lg:pb-28" data-sp-confirmation={hero.kind === 'pending' ? 'pending' : unpaid ? 'unpaid' : 'placed'}>
       <section className="bg-brand text-on-brand">
-        <div className="flex flex-col gap-8 px-4 py-10 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-20 lg:py-16">
-          <div className="flex min-w-0 flex-col items-start gap-5">
-            <p className="type-eyebrow flex items-center gap-2 rounded-full bg-accent px-3 py-1.5 text-on-accent">
-              <Icon name={hero.kind === 'pending' || unpaid ? 'clock' : 'check'} size={14} />
+        <div className="flex flex-col gap-8 px-4 py-10 lg:min-h-[388px] lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-20 lg:py-16">
+          <div className="flex min-w-0 flex-col items-start gap-4">
+            <p className="type-eyebrow flex items-center gap-2 rounded-full bg-accent py-[7px] pr-3.5 pl-2 text-on-accent">
+              <Icon name={hero.kind === 'pending' || unpaid ? 'clock' : 'check'} size={18} />
               {eyebrow}
             </p>
-            <h1 className="type-display-m break-words lg:type-display-xl">{title}</h1>
+            <h1 className="type-display-m break-words lg:text-[64px] lg:leading-[1.04] lg:tracking-[-2.5px]">{title}</h1>
             {hero.kind === 'pending' ? (
               <>
                 <p className="type-body-l max-w-[760px] opacity-90">Order {order.number} is in. We&apos;re confirming your payment with the gateway.</p>
@@ -79,7 +79,7 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
                   {placedText}
                 </p>
                 <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-                  <Link href={`/track?number=${encodeURIComponent(order.number)}`} className="type-label-m flex h-[52px] items-center justify-center gap-2 rounded-control bg-surface px-7 text-[#0e1a33] hover:bg-sunken">
+                  <Link href={`/track?number=${encodeURIComponent(order.number)}`} className="type-label-m flex h-[52px] items-center justify-center gap-2 tone-dark rounded-control bg-surface px-7 hover:bg-sunken">
                     Track this order
                     <Icon name="truck-sm" />
                   </Link>
@@ -90,18 +90,16 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
               </>
             )}
           </div>
-          <div className="relative hidden h-[270px] w-[390px] shrink-0 pr-2.5 pb-2.5 lg:block">
-            <div className="relative size-full overflow-hidden rounded-sf-xs bg-surface p-2.5 shadow-[10px_10px_0_0_var(--color-sun)]">
-              <div className="relative size-full overflow-hidden rounded-[2px]">
-                <ThemeImage src="/themes/modern-commerce/images/gift-set.png" alt="" sizes="370px" />
-              </div>
+          <div className="relative hidden h-[260px] w-[380px] shrink-0 overflow-hidden rounded-sf-xs bg-surface shadow-[10px_10px_0_0_var(--color-sun)] lg:block">
+            <div className="absolute inset-2.5 overflow-hidden rounded-[2px]">
+              <ThemeImage src="/themes/modern-commerce/images/gift-set.png" alt="" sizes="360px" />
             </div>
           </div>
         </div>
       </section>
 
       <div className="flex flex-col gap-5 px-4 pt-8 lg:flex-row lg:items-start lg:gap-8 lg:px-20 lg:pt-14">
-        <section aria-labelledby="next-title" className="flex min-w-0 flex-1 flex-col gap-6 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-7">
+        <section aria-labelledby="next-title" className="flex min-w-0 flex-1 flex-col gap-5 rounded-sf-md border border-line bg-surface p-5 lg:p-7">
           <h2 id="next-title" className="type-h3 text-ink">
             What happens next
           </h2>
@@ -124,8 +122,8 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
           />
         </section>
 
-        <div className="flex min-w-0 flex-col gap-5 lg:w-[595px] lg:shrink-0">
-          <section aria-labelledby="to-title" className="flex flex-col gap-3 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-6">
+        <div className="flex min-w-0 flex-col gap-4 lg:w-[595px] lg:shrink-0">
+          <section aria-labelledby="to-title" className="flex flex-col gap-3 rounded-sf-md border border-line bg-surface p-5 lg:p-6">
             <h2 id="to-title" className="type-label-m text-ink">
               Delivering to
             </h2>
@@ -141,15 +139,15 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
               ) : null}
             </p>
           </section>
-          <section aria-labelledby="order-title" className="flex flex-col gap-4 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-6">
+          <section aria-labelledby="order-title" className="flex flex-col gap-3 rounded-sf-md border border-line bg-surface p-5 lg:p-6">
             <h2 id="order-title" className="type-label-m text-ink">
               Order {order.number}
             </h2>
             <ul className="flex flex-col gap-3">
               {order.lines.map((l, i) => (
                 <li key={`${l.product_name}-${i}`} className="flex items-center gap-3">
-                  <span className="relative size-12 shrink-0 overflow-hidden rounded-sf-xs bg-sunken">
-                    <ProductImage image={l.image} sizes="48px" />
+                  <span className="relative h-[52px] w-11 shrink-0 overflow-hidden rounded-sf-xs bg-sunken">
+                    <ProductImage image={l.image} sizes="44px" />
                   </span>
                   <span className="type-body-s min-w-0 flex-1 text-ink">
                     {l.product_name}
@@ -159,7 +157,7 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
                 </li>
               ))}
             </ul>
-            <dl className="type-body-s flex flex-col gap-2 border-t border-line-subtle pt-4 text-ink-secondary">
+            <dl className="type-body-s flex flex-col gap-3 border-t border-line pt-3 text-ink-secondary">
               {order.discount_amount > 0 ? (
                 <div className="flex justify-between">
                   <dt>Coupon {order.coupon_code}</dt>
@@ -176,19 +174,16 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
                   <dd className="text-brand">− {formatMoney(order.paid_amount, c)}</dd>
                 </div>
               ) : null}
-              <div className="flex items-end justify-between gap-4 pt-1">
+              <div className="flex items-center justify-between gap-4">
                 <dt className="type-label-m text-ink">{order.payment_method === 'cod' || paidOnline ? 'Cash to pay on delivery' : 'Total'}</dt>
-                <dd className="type-price-l text-ink">{formatMoney(order.payment_method === 'cod' || paidOnline ? order.due_amount : order.total_amount, c)}</dd>
+                <dd className="type-price-m text-ink">{formatMoney(order.payment_method === 'cod' || paidOnline ? order.due_amount : order.total_amount, c)}</dd>
               </div>
             </dl>
           </section>
           {wa ? (
-            <a href={wa} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-sf-sm bg-sunken px-5 py-4 hover:brightness-95">
-              <Icon name="whatsapp" className="text-brand" />
-              <span className="flex flex-col">
-                <span className="type-label-s text-ink">Questions about your order?</span>
-                <span className="type-body-s text-ink-secondary">Message us on WhatsApp with your order number</span>
-              </span>
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="type-body-s flex items-center gap-2.5 rounded-sf-md bg-sunken p-4 text-ink-secondary hover:brightness-95">
+              <Icon name="whatsapp" size={20} className="text-brand" />
+              Need to change something? Message us on WhatsApp before it ships.
             </a>
           ) : null}
         </div>

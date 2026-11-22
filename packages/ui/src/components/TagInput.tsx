@@ -6,6 +6,8 @@ import { Label } from './Label';
 // Product editor Organize · Tags (60:9381) and Customer detail Tags (64:16382): small tag pills + "+ Add tag".
 // Enter or comma commits; Backspace on an empty input removes the last tag. Normalisation mirrors the API
 // (trimmed, lowercased, unique; contract P4-9).
+// `variant="inline"` = Order detail · Details 33:4175: no field box; brand-50 / brand-700 pills (Caption/12 Medium,
+// px 8 py 2, gap 6) and a surface-subtle "+ Tag" pill that opens a pill-sized input. The × appears on hover/focus.
 export interface TagInputProps {
   label?: string;
   value: string[];
@@ -17,6 +19,7 @@ export interface TagInputProps {
   error?: string;
   disabled?: boolean;
   normalize?: (tag: string) => string;
+  variant?: 'field' | 'inline';
   className?: string;
 }
 
@@ -33,9 +36,11 @@ export function TagInput({
   error,
   disabled,
   normalize = defaultNormalize,
+  variant = 'field',
   className,
 }: TagInputProps) {
   const [draft, setDraft] = useState('');
+  const [adding, setAdding] = useState(false);
   const id = useId();
   const full = value.length >= max;
 
@@ -59,6 +64,67 @@ export function TagInput({
       onChange(value.slice(0, -1));
     }
   };
+
+  if (variant === 'inline') {
+    const feedback = error ? <p className="text-caption text-danger">{error}</p> : hint ? <p className="text-caption text-text-muted">{hint}</p> : null;
+    return (
+      <div className={cn('flex flex-col gap-1.5', className)}>
+        {label && <span className="sr-only">{label}</span>}
+        <ul aria-label={label} className="flex flex-wrap items-center gap-1.5">
+          {value.map((tag) => (
+            <li key={tag} className="group inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-caption font-medium text-brand-700">
+              {tag}
+              {!disabled && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${tag}`}
+                  onClick={() => onChange(value.filter((t) => t !== tag))}
+                  className="-mr-0.5 ml-0 inline-flex w-0 overflow-hidden rounded-full opacity-0 outline-none group-hover:ml-1 group-hover:w-3 group-hover:opacity-100 focus-visible:ml-1 focus-visible:w-3 focus-visible:opacity-100"
+                >
+                  <X aria-hidden className="size-3 shrink-0" />
+                </button>
+              )}
+            </li>
+          ))}
+          {!disabled && !full && (
+            <li className="inline-flex">
+              {adding ? (
+                <input
+                  id={id}
+                  autoFocus
+                  value={draft}
+                  maxLength={maxLength * 4}
+                  aria-label={label ?? placeholder}
+                  aria-invalid={error ? true : undefined}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setDraft('');
+                      setAdding(false);
+                    } else onKeyDown(e);
+                  }}
+                  onBlur={() => {
+                    commit(draft);
+                    setAdding(false);
+                  }}
+                  className="h-5 w-24 rounded-full bg-surface-subtle px-2 text-caption font-medium text-text-primary outline-none focus-visible:shadow-focus"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAdding(true)}
+                  className="inline-flex rounded-full bg-surface-subtle px-2 py-0.5 text-caption font-medium text-text-secondary outline-none hover:text-text-primary focus-visible:shadow-focus"
+                >
+                  {placeholder}
+                </button>
+              )}
+            </li>
+          )}
+        </ul>
+        {feedback}
+      </div>
+    );
+  }
 
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>

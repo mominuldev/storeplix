@@ -2,7 +2,7 @@ import { isApiError } from '@storeplix/api-client';
 import type { Category } from '@storeplix/types';
 import { Badge, Button, cn, Dialog, Drawer, Input, Label, Menu, Select, SortableTree, Tabs, Toggle, gripProps, validParentIds } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, GripVertical, ImagePlus, MoreHorizontal, Pencil, Plus, X } from 'lucide-react';
+import { Copy, GripVertical, ImagePlus, MoreHorizontal, PenLine, Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
@@ -72,44 +72,48 @@ export function CategoriesPage() {
   const row = (c: Category, handle?: Parameters<typeof gripProps>[0], dragging = false) => (
     <div
       className={cn(
-        'flex items-center gap-3 border-b border-border-default bg-surface-card px-4 py-3',
+        'flex items-center gap-3 border-b border-border-default bg-surface-card px-4 py-3 sm:h-18',
         dragging && 'shadow-elevation-1',
         editingCategory?.id === c.id && 'bg-brand-50 shadow-[inset_0_0_0_1px_var(--color-brand-500)]',
       )}
     >
       {handle ? (
-        <button type="button" aria-label={`Drag ${c.name}`} className="cursor-grab rounded-sm p-1 text-text-muted touch-none" {...gripProps(handle)}>
+        <button type="button" aria-label={`Drag ${c.name}`} className="-m-1 cursor-grab rounded-sm p-1 text-text-muted touch-none" {...gripProps(handle)}>
           <GripVertical aria-hidden className="size-4" />
         </button>
       ) : (
-        <span className="w-6" />
+        <span className="w-4" />
       )}
       <Thumb src={c.image?.url} size={48} />
-      <span className="flex min-w-0 flex-1 flex-col">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-body font-semibold text-text-primary">{c.name}</span>
         <span className="truncate text-caption text-text-muted">
           {c.url_path.replace(/^\/c/, '')}
           {c.children_count > 0 ? ` · ${plural(c.children_count, 'sub-category', 'sub-categories')}` : c.description ? ` · ${c.description}` : ''}
         </span>
       </span>
-      <span className="hidden w-24 flex-col sm:flex">
+      <span className="hidden w-[100px] shrink-0 flex-col gap-0.5 sm:flex">
         <span className="text-body font-semibold text-text-primary">{formatCount(c.product_count)}</span>
         <span className="text-caption text-text-muted">products</span>
       </span>
-      <Badge tone={c.is_visible ? 'success' : 'neutral'} dot className="hidden sm:inline-flex">
-        {c.is_visible ? 'In menu' : 'Hidden'}
-      </Badge>
-      <button type="button" aria-label={`Edit ${c.name}`} className={iconButton} onClick={() => setEditing({ mode: 'edit', id: c.id })}>
-        <Pencil aria-hidden />
-      </button>
-      {scope.canManageCatalog && (
-        <Menu
-          label={`More actions for ${c.name}`}
-          triggerClassName={iconButton}
-          trigger={<MoreHorizontal aria-hidden />}
-          entries={[{ key: 'del', label: 'Delete', danger: true, onSelect: () => setDeleting(c) }]}
-        />
-      )}
+      <span className="hidden w-[88px] shrink-0 sm:flex">
+        <Badge tone={c.is_visible ? 'success' : 'neutral'} dot>
+          {c.is_visible ? 'In menu' : 'Hidden'}
+        </Badge>
+      </span>
+      <span className="flex shrink-0 justify-end gap-1 sm:w-[68px]">
+        <button type="button" aria-label={`Edit ${c.name}`} className={iconButton} onClick={() => setEditing({ mode: 'edit', id: c.id })}>
+          <PenLine aria-hidden className="text-text-secondary" />
+        </button>
+        {scope.canManageCatalog && (
+          <Menu
+            label={`More actions for ${c.name}`}
+            triggerClassName={iconButton}
+            trigger={<MoreHorizontal aria-hidden />}
+            entries={[{ key: 'del', label: 'Delete', danger: true, onSelect: () => setDeleting(c) }]}
+          />
+        )}
+      </span>
     </div>
   );
 
@@ -131,20 +135,20 @@ export function CategoriesPage() {
         title="Categories"
         subtitle="Categories build your shop menu. Buyers see this order in your shop menu."
         actions={
-          <Button leftIcon={<Plus aria-hidden className="size-4" />} onClick={() => setEditing({ mode: 'new' })}>
-            New category
+          <Button aria-label="New category" onClick={() => setEditing({ mode: 'new' })}>
+            + New category
           </Button>
         }
       />
       <Tabs aria-label="Catalog groups" value="categories" onChange={() => {}} items={[{ value: 'categories', label: 'Categories', count: categories.length }]} />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+      <div className="grid gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <section aria-label="Shop menu order" className="overflow-hidden rounded-card border border-border-default bg-surface-card shadow-elevation-1">
           <div className="flex flex-wrap items-center gap-3 border-b border-border-default px-5 py-4">
             <div className="flex min-w-0 flex-1 flex-col">
               <h2 className="text-body-lg font-medium text-text-primary">Shop menu order</h2>
-              <p className="text-caption text-text-secondary">Drag to reorder. Drag right onto a category to nest it (up to 3 levels).</p>
+              <p className="text-caption text-text-muted">Drag to reorder. Drag right onto a category to nest it (up to 3 levels).</p>
             </div>
-            <SearchBox value={q} onChange={setQ} placeholder="Search categories" label="Search categories" className="w-full sm:w-56" />
+            <SearchBox value={q} onChange={setQ} placeholder="Search categories" label="Search categories" className="h-10 w-full sm:w-[200px]" />
           </div>
           {list.isPending ? (
             <LoadingRows label="Loading categories" />

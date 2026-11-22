@@ -21,7 +21,8 @@ import { DEFAULT_FREE_DELIVERY, defaultZones, settingsToInputs, shippingErrorMes
 import { api } from '../lib/api';
 import { LoadingState } from '../online-store/components/Shell';
 import { FormAlert } from './AuthShell';
-import { OnboardingCard, OnboardingFrame } from './OnboardingFrame';
+import { OnboardingCard, OnboardingFrame, PreviewOption, previewCardClass } from './OnboardingFrame';
+import { storeDomain } from '../stores/useTenantStore';
 
 // Figma Merchant Onboarding · 06 Delivery & charges 50:604 (connect card 45:8086). Contract §9: pickup address →
 // default pickup location; Inside / Outside Dhaka cards prefilled ৳ 70 / ৳ 130; free delivery toggle; "+ Add a zone";
@@ -112,50 +113,54 @@ function DeliveryForm() {
         </Button>
       }
       aside={
-        <>
-          <span className="flex items-center gap-2 text-caption font-medium text-brand-600">
-            <span className="size-2 rounded-full bg-success" /> Checkout preview
+        <section aria-label="Checkout preview" className={cn(previewCardClass, 'gap-4')}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-body-lg font-medium text-text-primary">Checkout</span>
+            <span className="truncate text-caption text-text-muted">{storeDomain(scope.store!)}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="size-12 shrink-0 overflow-hidden rounded-md bg-surface-subtle">
+              {firstProduct?.image && <img src={firstProduct.image.url} alt="" className="size-full object-cover" />}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-body font-medium text-text-primary">{productName}</span>
+              <span className="text-caption text-text-muted">Qty 1</span>
+            </span>
+            <span className="text-body font-semibold text-text-primary">{formatBdt(productPrice)}</span>
+          </div>
+          <span aria-hidden className="h-px bg-border-default" />
+          <span className="text-caption font-medium text-text-secondary">Delivery area</span>
+          <div role="radiogroup" aria-label="Delivery area" className="flex flex-col gap-4">
+            {previewZones.map((z, i) => (
+              <PreviewOption
+                key={`${z.name}-${i}`}
+                selected={chosen === z}
+                onSelect={() => setSelected(i)}
+                title={z.name}
+                hint={daysRange(z.min_days, z.max_days)}
+                trailing={<span className="text-body font-semibold text-text-primary">{Number.isFinite(z.charge_amount) ? formatBdt(z.charge_amount) : '—'}</span>}
+              />
+            ))}
+          </div>
+          <span aria-hidden className="h-px bg-border-default" />
+          <dl className="flex flex-col gap-4">
+            <div className="flex justify-between text-body">
+              <dt className="text-text-secondary">Subtotal</dt>
+              <dd className="font-medium text-text-primary">{formatBdt(productPrice)}</dd>
+            </div>
+            <div className="flex justify-between text-body">
+              <dt className="text-text-secondary">Delivery</dt>
+              <dd className="font-medium text-text-primary">{chosenCharge === 0 ? 'Free' : formatBdt(chosenCharge)}</dd>
+            </div>
+            <div className="flex justify-between text-body-lg font-medium text-text-primary">
+              <dt>Total</dt>
+              <dd>{formatBdt(productPrice + chosenCharge)}</dd>
+            </div>
+          </dl>
+          <span aria-hidden className="flex min-h-10 items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-body font-semibold text-text-inverse">
+            Confirm order · {formatBdt(productPrice + chosenCharge)}
           </span>
-          <section aria-label="Checkout preview" className="flex flex-col gap-4 rounded-card bg-surface-card p-4 shadow-elevation-1">
-            <span className="text-body-lg font-semibold text-text-primary">Checkout</span>
-            <div className="flex items-center justify-between text-body">
-              <span className="truncate font-medium text-text-primary">{productName}</span>
-              <span className="font-semibold">{formatBdt(productPrice)}</span>
-            </div>
-            <div role="radiogroup" aria-label="Delivery area" className="flex flex-col gap-2 border-t border-border-default pt-3">
-              {previewZones.map((z, i) => (
-                <button
-                  key={`${z.name}-${i}`}
-                  type="button"
-                  role="radio"
-                  aria-checked={chosen === z}
-                  onClick={() => setSelected(i)}
-                  className={cn('flex items-center justify-between rounded-lg border px-3 py-2.5 text-left', chosen === z ? 'border-brand-600 bg-brand-50' : 'border-border-default')}
-                >
-                  <span className="flex flex-col">
-                    <span className="text-body font-medium text-text-primary">{z.name}</span>
-                    <span className="text-caption text-text-muted">{daysRange(z.min_days, z.max_days)}</span>
-                  </span>
-                  <span className="text-body font-semibold">{Number.isFinite(z.charge_amount) ? formatBdt(z.charge_amount) : '—'}</span>
-                </button>
-              ))}
-            </div>
-            <dl className="flex flex-col gap-1.5 border-t border-border-default pt-3 text-body">
-              <div className="flex justify-between text-text-secondary">
-                <dt>Subtotal</dt>
-                <dd>{formatBdt(productPrice)}</dd>
-              </div>
-              <div className="flex justify-between text-text-secondary">
-                <dt>Delivery</dt>
-                <dd>{chosenCharge === 0 ? 'Free' : formatBdt(chosenCharge)}</dd>
-              </div>
-              <div className="flex justify-between font-semibold text-text-primary">
-                <dt>Total</dt>
-                <dd>{formatBdt(productPrice + chosenCharge)}</dd>
-              </div>
-            </dl>
-          </section>
-        </>
+        </section>
       }
     >
       {error && <FormAlert>{error}</FormAlert>}
@@ -172,11 +177,11 @@ function DeliveryForm() {
             const z = zones[i]!;
             const fallback = z.kind === 'fallback';
             return (
-              <div key={i} className="flex items-center gap-3 rounded-lg border border-border-default p-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-brand-50 text-brand-600">{fallback ? <Truck aria-hidden className="size-4" /> : <House aria-hidden className="size-4" />}</span>
-                <span className="flex min-w-0 flex-1 flex-col">
+              <div key={i} className="flex items-center gap-3.5 rounded-lg border border-border-default py-3 pr-3 pl-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-brand-50 text-brand-600">{fallback ? <Truck aria-hidden className="size-5" /> : <House aria-hidden className="size-5" />}</span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-body font-semibold text-text-primary">{z.name}</span>
-                  <span className="text-caption text-text-muted">
+                  <span className="text-caption text-text-secondary">
                     {fallback ? 'All other districts' : 'Dhaka city'} · usually {daysRange(z.min_days, z.max_days)}
                   </span>
                 </span>
@@ -185,7 +190,9 @@ function DeliveryForm() {
                   value={Number.isFinite(z.charge_amount) ? z.charge_amount : null}
                   onChange={(v) => setCharge(i, v)}
                   disabled={!editable}
-                  containerClassName="w-28"
+                  containerClassName="w-[120px]"
+                  fieldClassName="min-h-11 border-border-strong"
+                  trailing={<span aria-hidden className="text-caption font-medium text-brand-600">Edit</span>}
                 />
               </div>
             );
@@ -218,16 +225,16 @@ function DeliveryForm() {
         {couriers.isError ? (
           <ErrorBlock title="We couldn’t load couriers" error={couriers.error} onRetry={() => void couriers.refetch()} />
         ) : (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-5">
             {COURIERS.map((p) => {
               const meta = courierMeta[p];
               const connected = courierConnected(courierAccounts[p]);
               return (
-                <li key={p} aria-label={meta.name} className={cn('flex items-center gap-3 rounded-lg border p-3', connected ? 'border-success' : 'border-border-default')}>
-                  <ProviderLogo provider={p} />
-                  <span className="flex min-w-0 flex-1 flex-col">
+                <li key={p} aria-label={meta.name} className={cn('flex items-center gap-3.5 rounded-lg border bg-surface-card p-4', connected ? 'border-success' : 'border-border-default')}>
+                  <ProviderLogo provider={p} size="lg" className="rounded-control" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="text-body font-semibold text-text-primary">{meta.name}</span>
-                    <span className="text-caption text-text-muted">{meta.onboardingHint}</span>
+                    <span className="text-caption text-text-secondary">{meta.onboardingHint}</span>
                   </span>
                   {connected ? (
                     scope.canManageIntegrations ? (

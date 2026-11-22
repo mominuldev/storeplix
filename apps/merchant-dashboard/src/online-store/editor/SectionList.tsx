@@ -21,7 +21,7 @@ export function sectionLabel(config: ThemeConfig, section: ThemeSection): string
   return def?.label ?? section.type;
 }
 
-const rowBase = 'flex w-full items-center gap-1.5 rounded-md py-[7px] pr-1 pl-2 text-left outline-none';
+const rowBase = 'flex min-h-[38px] w-full items-center gap-1.5 rounded-md py-[7px] pr-1 pl-2 text-left outline-none';
 
 function LockedItem({ label, active, onSelect }: { label: string; active: boolean; onSelect: () => void }) {
   return (
@@ -54,13 +54,14 @@ export function SectionList({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[11px] leading-4 font-semibold tracking-[0.66px] text-text-muted uppercase">Header · every page</p>
+      <p className="text-[11px] leading-4 font-semibold tracking-[0.88px] text-text-muted uppercase">Header · every page</p>
       <LockedItem label="Announcement bar" active={isLocked('announcement')} onSelect={() => onSelect({ kind: 'locked', row: 'announcement' })} />
       <LockedItem label="Header & menu" active={isLocked('header')} onSelect={() => onSelect({ kind: 'locked', row: 'header' })} />
 
-      <p className="text-[11px] leading-4 font-semibold tracking-[0.66px] text-text-muted uppercase">Home page</p>
+      <p className="text-[11px] leading-4 font-semibold tracking-[0.88px] text-text-muted uppercase">Home page</p>
       <SortableList
         label="Home page sections"
+        className="gap-3"
         items={config.sections}
         disabled={readOnly}
         onMove={(from, to) => dispatch({ type: 'move', from, to })}
@@ -167,7 +168,7 @@ export function SectionList({
         </button>
       )}
 
-      <p className="text-[11px] leading-4 font-semibold tracking-[0.66px] text-text-muted uppercase">Footer · every page</p>
+      <p className="text-[11px] leading-4 font-semibold tracking-[0.88px] text-text-muted uppercase">Footer · every page</p>
       <LockedItem label="Footer" active={isLocked('footer')} onSelect={() => onSelect({ kind: 'locked', row: 'footer' })} />
 
       {adding && theme && (

@@ -8,7 +8,7 @@ import { Icon } from '../components/icon';
 import { OrderTimeline } from './order-timeline';
 import { Notice } from './ui';
 
-const inputCls = 'type-body-m h-[52px] w-full rounded-sf-xs border border-line bg-surface px-4 text-ink outline-none focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
+const inputCls = 'type-body-m h-[52px] w-full rounded-sf-md border border-line bg-surface px-4 text-ink outline-none placeholder:text-ink-muted focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
 
 /** Track form + result (Figma 1:11959). Street address and email are never part of the response. */
 export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; whatsapp: string | null }) {
@@ -22,10 +22,10 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
       <div className="flex flex-col gap-6 lg:w-[460px] lg:shrink-0">
         <div className="flex flex-col gap-4">
           <p className="type-eyebrow text-accent-ink">Track your order</p>
-          <h1 className="type-display-m text-ink">Where&apos;s my parcel?</h1>
-          <p className="type-body-m text-ink-secondary">Enter your order number and the phone number you ordered with. Both are needed so nobody else can see your order.</p>
+          <h1 className="type-display-m text-ink">Where&rsquo;s my parcel?</h1>
+          <p className="type-body-m text-ink-secondary">Enter your order number and the phone number you ordered with. Both are needed so nobody else can see your address.</p>
         </div>
-        <form action={action} className="flex flex-col gap-5 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-6" noValidate>
+        <form action={action} className="flex flex-col gap-5 rounded-sf-md border border-line bg-surface p-5 lg:p-6" noValidate>
           <div className="flex flex-col gap-2">
             <label htmlFor="track-number" className="type-label-s text-ink">
               Order number
@@ -62,27 +62,27 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
       </div>
 
       {t ? (
-        <section aria-labelledby="track-result" className="flex min-w-0 flex-1 flex-col gap-6 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-8" data-sp-tracking>
+        <section aria-labelledby="track-result" className="flex min-w-0 flex-1 flex-col gap-6 rounded-sf-md border border-line bg-surface p-5 lg:p-8" data-sp-tracking>
           <div className="flex flex-col gap-1">
             <p className="type-body-s text-ink-muted">Order {t.number}</p>
-            <h2 id="track-result" className="type-h2 text-ink">
+            <h2 id="track-result" className="type-h1 text-ink">
               {TRACK_HEADLINES[t.status]}
             </h2>
           </div>
-          <dl className="type-body-s grid gap-4 rounded-sf-xs bg-sunken p-4 sm:grid-cols-3">
+          <dl className="type-body-s flex flex-wrap gap-x-8 gap-y-4 rounded-sf-md bg-sunken p-4">
             <div>
               <dt className="text-ink-muted">Delivering to</dt>
-              <dd className="type-label-s text-ink">{[t.shipping.thana, t.shipping.district].filter(Boolean).join(', ') || '—'}</dd>
+              <dd className="type-label-m text-ink">{[t.shipping.thana, t.shipping.district].filter(Boolean).join(', ') || '—'}</dd>
             </div>
             {t.shipment?.carrier_name || t.shipment?.tracking_code ? (
               <div>
                 <dt className="text-ink-muted">Courier</dt>
-                <dd className="type-label-s break-words text-ink">{[t.shipment.carrier_name, t.shipment.tracking_code].filter(Boolean).join(' · ')}</dd>
+                <dd className="type-label-m break-words text-ink">{[t.shipment.carrier_name, t.shipment.tracking_code].filter(Boolean).join(' · ')}</dd>
               </div>
             ) : null}
             <div>
               <dt className="text-ink-muted">Pay on delivery</dt>
-              <dd className="type-label-s text-ink">{t.due_amount > 0 ? `${formatMoney(t.due_amount, t.currency)} cash` : 'Nothing to pay'}</dd>
+              <dd className="type-label-m text-ink">{t.due_amount > 0 ? `${formatMoney(t.due_amount, t.currency)} cash` : 'Nothing to pay'}</dd>
             </div>
           </dl>
           <OrderTimeline steps={trackingSteps(t).map((s) => ({ key: s.key, title: s.title, detail: formatDhakaTime(s.at), state: s.state }))} />
@@ -98,7 +98,7 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
               <Icon name="arrow-up-right" />
             </a>
           ) : null}
-          <ul className="flex flex-col gap-2 border-t border-line-subtle pt-5">
+          <ul className="flex flex-col gap-2 border-t border-line pt-5">
             {t.lines.map((l, i) => (
               <li key={`${l.product_name}-${i}`} className="type-body-s flex justify-between gap-4 text-ink-secondary">
                 <span className="min-w-0">

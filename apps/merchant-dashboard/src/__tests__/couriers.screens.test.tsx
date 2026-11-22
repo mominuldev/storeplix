@@ -35,7 +35,7 @@ describe('Integrations courier cards (14:980)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connected · 2' }));
     expect(screen.queryByRole('article', { name: 'Pathao Courier' })).not.toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Steadfast Courier' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Couriers · 3' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Couriers' }));
     expect(screen.queryByRole('article', { name: 'SSLCommerz' })).not.toBeInTheDocument();
   });
 

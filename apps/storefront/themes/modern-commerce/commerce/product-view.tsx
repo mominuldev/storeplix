@@ -133,7 +133,7 @@ export function ProductView({ slug, name, currency, options, variants, images, h
           </ul>
         ) : null}
         <div className="relative min-w-0 flex-1 pr-2.5 pb-2.5">
-          <div className="relative aspect-[4/5] overflow-hidden rounded-sf-xs border border-line bg-surface p-2.5 shadow-[10px_10px_0_0_var(--color-sun)]">
+          <div className="relative aspect-[59/71] overflow-hidden rounded-sf-xs border border-line bg-surface p-[13px] shadow-[10px_10px_0_0_var(--color-sun)]">
             <div className="relative size-full overflow-hidden rounded-[2px] bg-sunken">
               {main ? (
                 <Image src={main.url} alt={main.alt || name} fill priority sizes="(min-width: 1024px) 600px, 100vw" unoptimized={main.unoptimized} className="object-cover" />
@@ -148,14 +148,14 @@ export function ProductView({ slug, name, currency, options, variants, images, h
       </div>
 
       {/* Buy box */}
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <div className="flex min-w-0 flex-1 flex-col gap-5 lg:gap-6">
         {heading}
 
         {variant ? (
-          <p className="flex flex-wrap items-center gap-3" data-sp-price>
-            <span className="type-display-m text-ink">{formatMoney(variant.price_amount, currency)}</span>
+          <p className="flex flex-wrap items-baseline gap-3" data-sp-price>
+            <span className="type-price-l text-ink lg:type-display-m">{formatMoney(variant.price_amount, currency)}</span>
             {variant.compare_at_amount ? (
-              <s className="type-body-l text-ink-muted">
+              <s className="type-body-m text-ink-muted lg:type-body-l">
                 <span className="sr-only">Was </span>
                 {formatMoney(variant.compare_at_amount, currency)}
               </s>
@@ -169,9 +169,9 @@ export function ProductView({ slug, name, currency, options, variants, images, h
         {options.map((option, oi) => (
           <fieldset key={option.name} className="flex flex-col gap-3">
             <legend className="type-label-m mb-3 text-ink">
-              {option.name}: <span className="font-normal text-ink-secondary">{selection[oi] ?? ''}</span>
+              {option.name}: <span className="type-body-m ml-0.5 text-ink-secondary">{selection[oi] ?? ''}</span>
             </legend>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-3 gap-2 lg:flex lg:flex-wrap">
               {option.values.map((value) => {
                 const st = optionState(variants, selection, oi, value, avail);
                 const selected = selection[oi] === value;
@@ -182,8 +182,8 @@ export function ProductView({ slug, name, currency, options, variants, images, h
                     disabled={st === 'missing'}
                     aria-pressed={selected}
                     onClick={() => choose(oi, value)}
-                    className={`type-label-m min-h-12 min-w-16 rounded-sf-sm border px-4 py-2 transition ${
-                      selected ? 'border-inverse bg-inverse text-paper' : 'border-line bg-surface text-ink hover:border-ink'
+                    className={`type-label-m rounded-sf-md lg:min-w-[78px] border px-[18px] py-3 transition ${
+                      selected ? 'border-ink bg-inverse text-paper' : 'border-line bg-surface text-ink hover:border-ink'
                     } ${st === 'sold_out' && !selected ? 'text-ink-muted line-through' : ''} disabled:cursor-not-allowed disabled:opacity-40`}
                   >
                     {value}
@@ -197,9 +197,9 @@ export function ProductView({ slug, name, currency, options, variants, images, h
 
         {!variant ? <p className="type-body-s text-sale">This combination isn&apos;t available. Choose another option.</p> : null}
         {lowStock !== null ? (
-          <p className="type-label-s flex items-center gap-1.5 text-sale" data-sp-low-stock>
-            <Icon name="lightning-sm" />
-            Only {lowStock} left
+          <p className="type-label-s -mt-3 flex items-center gap-2 text-sale" data-sp-low-stock>
+            <Icon name="lightning" />
+            Only {lowStock} left{options.length && selection.length ? ` in ${selection.join(' / ')}` : ''}
           </p>
         ) : null}
 
@@ -210,7 +210,7 @@ export function ProductView({ slug, name, currency, options, variants, images, h
               type="button"
               onClick={() => submit('add')}
               disabled={!variant || soldOut || pending}
-              className="type-label-m flex h-[52px] min-w-0 flex-1 items-center justify-center gap-2 rounded-control bg-brand px-5 text-on-brand transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              className="type-label-m flex h-[52px] min-w-0 flex-1 items-center justify-center gap-2 rounded-control bg-brand px-7 text-on-brand transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {soldOut ? 'Sold out' : pending ? 'Adding…' : 'Add to cart'}
               {soldOut ? null : <Icon name="bag-inverse" />}
@@ -221,7 +221,7 @@ export function ProductView({ slug, name, currency, options, variants, images, h
               type="button"
               onClick={() => submit('buy')}
               disabled={!variant || pending}
-              className="type-label-m flex h-[52px] w-full items-center justify-center rounded-control bg-orange px-5 text-[#0e1a33] transition hover:brightness-105 disabled:opacity-60"
+              className="type-label-m flex h-[51px] w-full items-center justify-center rounded-control bg-orange px-7 text-ink transition hover:brightness-105 disabled:opacity-60"
             >
               Buy now — cash on delivery
             </button>

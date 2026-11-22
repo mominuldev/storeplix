@@ -159,6 +159,7 @@ function ThemeEditor({ theme, onReload }: { theme: StoreTheme; onReload: () => P
       const t = e.target as HTMLElement;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
       if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey && !e.altKey) setFullScreen((f) => !f);
+      if (e.key === 'Escape') setFullScreen(false);
       if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey && canEdit) {
         e.preventDefault();
         dispatch({ type: 'undo' });
@@ -286,8 +287,8 @@ function ThemeEditor({ theme, onReload }: { theme: StoreTheme; onReload: () => P
 
   return (
     <div className="flex h-dvh flex-col bg-surface-subtle">
-      {/* Toolbar 2045:48302 */}
-      <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-border-default bg-surface-card pr-3 pl-2 sm:gap-3 sm:pr-4 sm:pl-3">
+      {/* Toolbar 2045:48302 — hidden in full screen 2047:49102, which uses the floating bar 2047:50107 instead */}
+      <header className={cn('flex h-[60px] shrink-0 items-center gap-2 border-b border-border-default bg-surface-card pr-3 pl-2 sm:gap-3 sm:pr-4 sm:pl-3', fullScreen && 'hidden')}>
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <button type="button" aria-label="Back to themes" onClick={onBack} className="flex size-8 shrink-0 items-center justify-center rounded-md outline-none hover:bg-surface-subtle focus-visible:shadow-focus">
             <ChevronLeft aria-hidden className="size-4" />
@@ -381,13 +382,65 @@ function ThemeEditor({ theme, onReload }: { theme: StoreTheme; onReload: () => P
       <div className="flex min-h-0 flex-1">
         {!fullScreen && <aside aria-label="Sections" className="hidden w-72 shrink-0 overflow-y-auto border-r border-border-default bg-surface-card p-4 lg:block">{left}</aside>}
         <main className="flex min-w-0 flex-1 flex-col">
-          <p className="pt-3 pb-1 text-center text-caption text-text-muted">
-            {storeDomain(store)} · {DEVICE_WIDTH[device]} px wide
-          </p>
+          {!fullScreen && (
+            <p className="pt-3 pb-1 text-center text-caption text-text-muted">
+              {storeDomain(store)} · {DEVICE_WIDTH[device]} px wide
+            </p>
+          )}
           <PreviewFrame ref={previewRef} path="/" device={device} onScale={setScale} onMessage={onPreviewMessage} label={`${store.name} preview`} />
         </main>
         {!fullScreen && <aside aria-label="Section settings" className="hidden w-80 shrink-0 overflow-y-auto border-l border-border-default bg-surface-card p-5 lg:block">{right}</aside>}
       </div>
+
+      {fullScreen && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[14px] bg-text-primary p-1.5 text-[13px] leading-[18px] text-text-inverse shadow-[0_12px_32px_0_rgb(0_0_0/0.25)]">
+          <button
+            type="button"
+            aria-label="Exit full screen (F)"
+            onClick={() => setFullScreen(false)}
+            className="flex items-center gap-2 rounded-[9px] bg-text-inverse/14 px-2.5 py-[7px] font-semibold outline-none focus-visible:shadow-focus"
+          >
+            <Minimize2 aria-hidden className="size-4" /> Exit
+            <kbd className="rounded-[4px] bg-text-inverse/16 px-[5px] py-px font-sans text-[11px] font-semibold">Esc</kbd>
+          </button>
+          <span aria-hidden className="h-[18px] w-px bg-text-inverse/20" />
+          <div role="tablist" aria-label="Preview device" className="flex gap-1.5">
+            {(['desktop', 'tablet', 'phone'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                role="tab"
+                aria-selected={device === d}
+                onClick={() => setDevice(d)}
+                className={cn('rounded-[9px] px-3 py-[7px] capitalize outline-none focus-visible:shadow-focus', device === d ? 'bg-text-inverse/14 font-semibold' : 'font-medium opacity-70')}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          {canEdit && (
+            <>
+              <span aria-hidden className="h-[18px] w-px bg-text-inverse/20" />
+              {changes > 0 && (
+                <span className="flex items-center gap-1.5 px-2 font-medium">
+                  <span aria-hidden className="size-[7px] rounded-full bg-accent-500" />
+                  <span className="opacity-80">
+                    {changes} change{changes === 1 ? '' : 's'}
+                  </span>
+                </span>
+              )}
+              <button
+                type="button"
+                disabled={busyAction !== null || invalid || conflict}
+                onClick={() => void publish()}
+                className="rounded-[9px] bg-brand-600 px-3.5 py-[7px] font-semibold outline-none focus-visible:shadow-focus disabled:opacity-60"
+              >
+                Publish
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <Drawer open={drawer === 'left'} onClose={() => setDrawer(null)} title="Sections" side="left">
         <div className="p-4">{left}</div>

@@ -1,4 +1,4 @@
-import type { ThemeConfig, ThemeSection } from '@storeplix/types';
+import type { ThemeConfig, ThemeGlobalSettings, ThemeSection } from '@storeplix/types';
 import { Button, cn, gripProps, SegmentedControl, SortableList, Toggle } from '@storeplix/ui';
 import { ChevronDown, GripVertical, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState, type Dispatch } from 'react';
@@ -103,7 +103,18 @@ function SectionSettings({
         <>
           {theme.designFields
             .filter((f) => f.key !== 'customBackground' || getAt(section.settings, 'design.background') === 'custom')
-            .map((f) => (
+            .map((f) =>
+              f.key === 'background' && f.options ? (
+                <BackgroundSwatches
+                  key={f.key}
+                  label={f.label}
+                  options={f.options}
+                  settings={config.settings}
+                  disabled={ctx.disabled}
+                  value={(getAt(section.settings, 'design.background') as string | undefined) ?? 'default'}
+                  onChange={set('design.background')}
+                />
+              ) : (
               <SchemaField
                 key={f.key}
                 field={f}
@@ -112,7 +123,8 @@ function SectionSettings({
                 error={first(errors, `${base}.settings.design.${f.key}`)}
                 ctx={ctx}
               />
-            ))}
+              ),
+            )}
           <ShowOn vis={vis} disabled={ctx.disabled} onChange={(device, value) => dispatch({ type: 'setVisibility', id: section.id, device, value })} />
         </>
       )}
@@ -292,5 +304,62 @@ function GlobalGroup({ row, config, dispatch, errors, ctx }: { row: LockedRow; c
           />
         ))}
     </div>
+  );
+}
+
+/** Figma 2050:49617 Colours › Background: 28 px swatches from the theme colours, "+" for a custom colour. */
+function BackgroundSwatches({
+  label,
+  options,
+  settings,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  settings: ThemeGlobalSettings;
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const fill: Record<string, string | undefined> = {
+    default: settings.backgroundColor,
+    muted: `color-mix(in srgb, ${settings.primaryColor} 8%, ${settings.backgroundColor})`,
+    brand: settings.primaryColor,
+    accent: settings.secondaryColor,
+    inverse: settings.textColor,
+  };
+  const current = options.find((o) => o.value === value);
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="pb-2 text-caption font-medium text-text-secondary">{label}</legend>
+      <div className="flex flex-wrap items-center gap-2.5">
+        {options.map((o) => {
+          const active = o.value === value;
+          const custom = o.value === 'custom';
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-label={o.label}
+              aria-pressed={active}
+              title={o.label}
+              disabled={disabled}
+              onClick={() => onChange(o.value)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-full outline-none focus-visible:shadow-focus disabled:cursor-not-allowed',
+                active ? 'shadow-[0_0_0_2px_var(--color-surface-card),0_0_0_4px_var(--color-brand-600)]' : '',
+                custom ? 'border border-dashed border-border-strong text-text-muted' : 'border border-border-default',
+              )}
+              style={custom ? undefined : { background: fill[o.value] }}
+            >
+              {custom && <Plus aria-hidden className="size-3.5" />}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-caption text-text-muted">{current ? (current.value === 'custom' ? 'Your own colour' : `${current.label} · from your theme`) : ''}</p>
+    </fieldset>
   );
 }

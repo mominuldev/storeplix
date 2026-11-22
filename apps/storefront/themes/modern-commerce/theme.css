@@ -23,8 +23,9 @@
   /* bg/brand, text/brand */
   --color-brand: var(--sp-brand);
   --color-on-brand: var(--sp-on-brand);
-  /* bg/brand-soft #dde8fd */
-  --color-brand-soft: color-mix(in srgb, var(--sp-brand) 14%, white);
+  /* bg/brand-soft #dde8fd: Figma's tint keeps the brand hue at OKLCH L 0.929 / C ≈ 15% of the brand chroma
+     (a plain mix with white gives #dce5f7, too grey). */
+  --color-brand-soft: oklch(from var(--sp-brand) 0.929 calc(c * 0.153) h);
   /* bg/inverse #0a2563 (announcement bar, footer) */
   --color-inverse: color-mix(in srgb, var(--sp-brand) 50%, #0c0418);
   /* bg/accent #ff7a00, bg/accent-soft #ffebd6, text/accent #c24e00 */

@@ -1,13 +1,13 @@
 import { isApiError } from '@storeplix/api-client';
 import type { NavigationHandle, PageStatus, PageTemplateCode, StorePageSummary } from '@storeplix/types';
-import { Badge, Button, cn, Dialog, Menu, type MenuEntry } from '@storeplix/ui';
+import { Button, cn, Dialog, Menu, type MenuEntry } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Eye, EyeOff, FileText, Home, Lock, MoreHorizontal, Plus, Search, Send, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, FileText, Lock, MoreHorizontal, Plus, Search, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../../lib/api';
 import { useTenantStore } from '../../stores/useTenantStore';
-import { ErrorState, LoadingState, OnlineStoreHeader, ReadOnlyBanner, StatusBadge } from '../components/Shell';
+import { ErrorState, LoadingState, OnlineStoreHeader, ReadOnlyBanner, StatusBadge, TagPill } from '../components/Shell';
 import { toast } from '../components/Toast';
 import { embedUrl, osKeys, relativeTime, useCanEditStore, useStorePages } from '../hooks';
 import { NewPageDialog } from './NewPageDialog';
@@ -91,7 +91,7 @@ export function PagesPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex flex-col gap-6 lg:gap-7">
       <OnlineStoreHeader
         title="Pages"
         description="Your own pages, plus the built-in shop pages every theme needs."
@@ -106,40 +106,43 @@ export function PagesPage() {
       {!canEdit && <ReadOnlyBanner />}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label className="flex h-10 items-center gap-2 rounded-md border border-border-strong bg-surface-card px-3 sm:w-80">
+        <label className="flex h-[38px] items-center gap-2 rounded-control border border-border-strong bg-surface-card px-3 focus-within:border-brand-600 focus-within:shadow-focus sm:w-80">
           <Search aria-hidden className="size-4 text-text-muted" />
           <span className="sr-only">Find a page</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={80} placeholder="Find a page by name or link" className="w-full bg-transparent text-body outline-none placeholder:text-text-muted" />
         </label>
-        <div role="group" aria-label="Filter pages" className="flex gap-1 rounded-control bg-surface-subtle p-[3px]">
+        <div role="group" aria-label="Filter pages" className="flex gap-0.5 self-start rounded-control bg-surface-subtle p-[3px] sm:self-auto">
           {chips.map((c) => (
             <button
               key={c.value}
               type="button"
               aria-pressed={chip === c.value}
               onClick={() => setChip(c.value)}
-              className={cn('rounded-md px-3 py-1.5 text-[13px] outline-none focus-visible:shadow-focus', chip === c.value ? 'bg-surface-card font-semibold text-text-primary shadow-elevation-1' : 'font-medium text-text-secondary')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] leading-[18px] outline-none focus-visible:shadow-focus',
+                chip === c.value ? 'bg-surface-card font-semibold text-text-primary shadow-elevation-1' : 'font-medium text-text-secondary',
+              )}
             >
-              {c.label} <span className="ml-1 text-caption text-text-muted">{c.count}</span>
+              {c.label} <span className="text-caption leading-[18px] font-medium text-text-muted">{c.count}</span>
             </button>
           ))}
         </div>
       </div>
 
       {canEdit && (
-        <section aria-label="Suggested pages" className="flex flex-col gap-3 rounded-card border border-brand-100 bg-brand-50 px-5 py-4 lg:flex-row lg:items-center">
+        <section aria-label="Suggested pages" className="flex flex-col gap-2.5 rounded-[14px] border border-brand-100 bg-gradient-to-r from-brand-50 to-surface-card py-3.5 pr-4 pl-5 lg:flex-row lg:items-center">
           <div className="flex min-w-0 flex-1 flex-col">
-            <h2 className="text-body-lg font-semibold text-text-primary">Missing a page buyers look for?</h2>
-            <p className="text-caption text-text-secondary">Ready-made, written for Bangladeshi shops — edit the words and publish.</p>
+            <h2 className="text-body font-semibold text-text-primary">Missing a page buyers look for?</h2>
+            <p className="text-caption text-text-muted">Ready-made, written for Bangladeshi shops — edit the words and publish.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             {quickTemplates.map((t) => (
               <button
                 key={t.code}
                 type="button"
                 disabled={atLimit}
                 onClick={() => setCreating(t.code)}
-                className="flex items-center gap-1.5 rounded-full border border-border-default bg-surface-card px-3 py-1.5 text-body font-medium text-text-primary outline-none hover:border-brand-500 focus-visible:shadow-focus disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-full border border-border-default bg-surface-card py-1.5 pr-3 pl-2.5 text-[13px] leading-[18px] font-medium text-text-primary outline-none hover:border-brand-500 focus-visible:shadow-focus disabled:opacity-50"
               >
                 <Plus aria-hidden className="size-3.5 text-brand-600" /> {t.label}
               </button>
@@ -149,9 +152,9 @@ export function PagesPage() {
       )}
 
       {chip !== 'all' || yours.length > 0 || data.length === 0 ? (
-        <section aria-labelledby="your-pages" className="flex flex-col gap-3">
-          <h2 id="your-pages" className="text-body-lg font-semibold text-text-primary">
-            Your pages <span className="ml-1 text-body font-normal text-text-muted">{meta.counts.all} pages · you can add, hide or delete these</span>
+        <section aria-labelledby="your-pages" className="flex flex-col gap-2.5">
+          <h2 id="your-pages" className="text-[15px] leading-[22px] font-semibold tracking-[-0.045px] text-text-primary">
+            Your pages <span className="ml-1 text-[13px] leading-[18px] font-normal tracking-normal text-text-muted">{meta.counts.all} pages · you can add, hide or delete these</span>
           </h2>
           {yours.length === 0 ? (
             <p className="rounded-card border border-border-default bg-surface-card px-5 py-8 text-center text-body text-text-secondary">{q ? 'No pages match your search.' : chip === 'hidden' ? 'No hidden pages.' : 'No pages yet.'}</p>
@@ -186,15 +189,15 @@ export function PagesPage() {
       ) : null}
 
       {showBuiltIn && (
-        <section aria-labelledby="builtin" className="flex flex-col gap-3">
-          <h2 id="builtin" className="text-body-lg font-semibold text-text-primary">
-            Built-in shop pages <span className="ml-1 text-body font-normal text-text-muted">your theme needs these, so they can be edited but not deleted</span>
+        <section aria-labelledby="builtin" className="flex flex-col gap-2.5">
+          <h2 id="builtin" className="text-[15px] leading-[22px] font-semibold tracking-[-0.045px] text-text-primary">
+            Built-in shop pages <span className="ml-1 text-[13px] leading-[18px] font-normal tracking-normal text-text-muted">your theme needs these, so they can be edited but not deleted</span>
           </h2>
           <ul className="overflow-hidden rounded-card border border-border-default bg-surface-card shadow-elevation-1">
             <PageRow
               title="Home"
               locked
-              icon={<Home aria-hidden className="size-4" />}
+              thumb="home"
               path="/"
               status={<StatusBadge status="published" />}
               onPreview={() => void preview('/')}
@@ -230,6 +233,29 @@ export function PagesPage() {
   );
 }
 
+/** Figma 2036:47010 page thumbnail: 56×40 brand-50 card with a tiny page sketch. */
+function PageThumb({ kind }: { kind: 'text' | 'home' }) {
+  return (
+    <span aria-hidden className="relative h-10 w-14 shrink-0 overflow-hidden rounded-sm border border-brand-100 bg-brand-50">
+      <span className="absolute top-1 left-[5px] h-[3px] w-3.5 rounded-[1.5px] bg-brand-600" />
+      <span className="absolute top-1 left-[35px] h-[3px] w-3.5 rounded-[1.5px] bg-brand-100" />
+      {kind === 'text' ? (
+        <>
+          <span className="absolute top-[11px] left-[5px] h-[3px] w-[30px] rounded-[1.5px] bg-text-muted" />
+          {[17, 22, 27, 32].map((top, i) => (
+            <span key={top} className="absolute left-[5px] h-0.5 rounded-[1.5px] bg-brand-100" style={{ top, width: [44, 40, 44, 26][i] }} />
+          ))}
+        </>
+      ) : (
+        <>
+          <span className="absolute top-[11px] left-[5px] h-3 w-11 rounded-[2px] bg-brand-100" />
+          <span className="absolute top-[27px] left-[5px] h-1.5 w-11 rounded-[1.5px] bg-surface-card" />
+        </>
+      )}
+    </span>
+  );
+}
+
 function PageRow({
   title,
   path,
@@ -241,7 +267,7 @@ function PageRow({
   editLabel,
   menu,
   locked,
-  icon,
+  thumb = 'text',
 }: {
   title: string;
   path: string;
@@ -253,33 +279,33 @@ function PageRow({
   editLabel: string;
   menu?: React.ReactNode;
   locked?: boolean;
-  icon?: React.ReactNode;
+  thumb?: 'text' | 'home';
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap">
-      <span aria-hidden className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md border border-border-default bg-brand-50 text-brand-600">
-        {icon ?? <FileText className="size-4" />}
-      </span>
-      <div className="flex min-w-0 flex-1 basis-48 flex-col">
+    <li className="flex flex-wrap items-center gap-3.5 py-3 pr-3 pl-4 sm:flex-nowrap">
+      <PageThumb kind={thumb} />
+      <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-body-lg text-text-primary">{title}</span>
-          {locked && <Lock aria-label="Built-in" className="size-3.5 text-text-muted" />}
+          <span className="truncate text-body font-medium text-text-primary">{title}</span>
+          {locked && <Lock aria-label="Built-in" className="size-[13px] text-text-muted" />}
           {badges.map((b) => (
-            <Badge key={b}>{b}</Badge>
+            <TagPill key={b}>{b}</TagPill>
           ))}
         </div>
         <span className="truncate text-caption text-text-muted">{path}</span>
       </div>
-      <div className="ml-auto flex w-full items-center justify-end gap-3 sm:w-auto">
-        {edited && <span className="hidden w-44 shrink-0 truncate text-caption text-text-muted md:block">{edited}</span>}
-        <span className="shrink-0 sm:w-24">{status}</span>
-        <button type="button" aria-label={`Preview ${title}`} onClick={onPreview} className="flex size-8 items-center justify-center rounded-md text-text-secondary outline-none hover:bg-surface-subtle focus-visible:shadow-focus">
-          <Eye aria-hidden className="size-4" />
-        </button>
-        <Button size="sm" variant="secondary" onClick={onEdit} aria-label={`${editLabel} ${title}`}>
-          {editLabel}
-        </Button>
-        <span className="flex w-8 justify-center">{menu}</span>
+      <div className="ml-auto flex w-full items-center justify-end gap-3.5 sm:w-auto">
+        <span className="hidden w-[150px] shrink-0 truncate text-caption text-text-muted md:block">{edited}</span>
+        <span className="flex w-24 shrink-0">{status}</span>
+        <span className="flex items-center gap-1">
+          <button type="button" aria-label={`Preview ${title}`} onClick={onPreview} className="flex size-8 items-center justify-center rounded-md text-text-secondary outline-none hover:bg-surface-subtle focus-visible:shadow-focus">
+            <Eye aria-hidden className="size-4" />
+          </button>
+          <Button size="sm" variant="secondary" onClick={onEdit} aria-label={`${editLabel} ${title}`}>
+            {editLabel}
+          </Button>
+          <span className="flex w-8 justify-center">{menu}</span>
+        </span>
       </div>
     </li>
   );
