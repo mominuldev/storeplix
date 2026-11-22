@@ -3,6 +3,7 @@
 namespace App\Domain\Tenancy\Middleware;
 
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
@@ -22,7 +23,10 @@ class ResolveTenant
 {
     public const HEADER = 'X-Tenant-Id';
 
-    public function __construct(private readonly TenantContext $context) {}
+    public function __construct(
+        private readonly TenantContext $context,
+        private readonly RlsSession $rls,
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -39,6 +43,12 @@ class ResolveTenant
         }
 
         $tenantId = strtolower($tenantId);
+
+        // Phase 5b (B2): the membership lookup below runs before a tenant is set; under RLS it relies on
+        // app.user_id (normally already set by SetDatabaseUser right after auth:sanctum).
+        if ($this->rls->enabled() && $this->rls->userId() !== (string) $user->getAuthIdentifier()) {
+            $this->rls->setUser((string) $user->getAuthIdentifier());
+        }
 
         $membership = Str::isUlid($tenantId)
             ? TenantUser::query()->where('tenant_id', $tenantId)->where('user_id', $user->getAuthIdentifier())->first()

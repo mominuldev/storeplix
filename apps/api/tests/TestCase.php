@@ -5,6 +5,7 @@ namespace Tests;
 use App\Domain\Identity\Models\User;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Services\StoreProvisioner;
+use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
@@ -110,6 +111,11 @@ abstract class TestCase extends BaseTestCase
      */
     protected function platformQuery(string $model): Builder
     {
+        // Tenant-owned models: the explicit opt-out (TenantScope off, rerouted to pgsql_admin with RLS on).
+        if (isset(class_uses_recursive($model)[BelongsToTenant::class])) {
+            return $model::withoutTenancy();
+        }
+
         $name = PlatformDb::connectionName();
 
         return $name === null ? $model::query() : $model::on($name);
