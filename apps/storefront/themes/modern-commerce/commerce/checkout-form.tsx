@@ -2,12 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
-import type { BdGeo, ShippingQuote } from '@storeplix/types';
+import type { BdGeo, GatewayProvider, PaymentMethod, ShippingQuote } from '@storeplix/types';
 import { placeOrder, type CheckoutState } from '@/app/actions/commerce';
+import { advanceRequired, GATEWAYS, METHOD_HINT, METHOD_LABEL } from '@/lib/payments';
 import { districtsOf, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
 import { formatMoney } from '@/lib/format';
 import { Icon } from '../components/icon';
 import { deliveryDays, Notice } from './ui';
+import { isNextRedirect } from './payment-client';
 
 export interface CheckoutSummary {
   currency: string;
@@ -24,6 +26,10 @@ interface Props {
   summary: CheckoutSummary;
   idempotencyKey: string;
   notLiveMessage: string | null;
+  /** 5b-2 (P5B-12): `cod` and/or enabled gateways, in display order; never empty. */
+  paymentMethods: PaymentMethod[];
+  /** 5b-2 (P5B-13): COD pays the delivery charge online first. */
+  codAdvance: 'none' | 'delivery_charge';
 }
 
 type Values = Record<'name' | 'phone' | 'email' | 'division_code' | 'district_code' | 'thana_code' | 'area' | 'address_line' | 'landmark' | 'label' | 'customer_note', string>;
@@ -53,6 +59,28 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
   );
 }
 
+const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: 'wallet', bkash: 'phone', sslcommerz: 'lock' };
+
+function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string }) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center gap-4 rounded-sf-xs px-4 py-4 ${checked ? 'border-2 border-brand bg-brand-soft' : 'border border-line-subtle bg-surface hover:border-line'}`}
+      data-sp-method={value}
+    >
+      <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} className="sr-only" />
+      <span aria-hidden className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${checked ? 'border-brand' : 'border-ink'}`}>
+        {checked ? <span className="size-2.5 rounded-full bg-brand" /> : null}
+      </span>
+      <Icon name={icon} className={icon === 'wallet' ? 'text-ink' : 'text-brand'} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="type-label-m text-ink">{title}</span>
+        <span className="type-body-s text-ink-secondary">{hint}</span>
+      </span>
+      {aside ? <span className="type-label-s shrink-0 text-ink">{aside}</span> : null}
+    </label>
+  );
+}
+
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={`step-${n}`} className="flex flex-col gap-5 rounded-sf-sm border border-line-subtle bg-surface p-5 lg:p-7">
@@ -69,11 +97,15 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 
 /**
  * Checkout (Figma 1:11591 desktop, 1:11690 / 32:5087 mobile): contact, BD address cascade from
- * `/geo/bd`, the one resolved delivery zone, COD. The Idempotency-Key is created on the server and
+ * `/geo/bd`, the one resolved delivery zone, payment (COD, bKash, "Card or mobile banking"; 5b-2). The Idempotency-Key is created on the server and
  * reused for retries of the same attempt (P5-14); the total sent is what the shopper sees (P5-15).
  */
-export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: Props) {
+export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, paymentMethods, codAdvance }: Props) {
   const [values, setValues] = useState<Values>(EMPTY);
+  const [method, setMethod] = useState<PaymentMethod>(paymentMethods[0] ?? 'cod');
+  const gateways = GATEWAYS.filter((g) => paymentMethods.includes(g));
+  const [advanceGateway, setAdvanceGateway] = useState<GatewayProvider | null>(gateways[0] ?? null);
+  const [leaving, setLeaving] = useState(false);
   const [clientErrors, setClientErrors] = useState<FieldErrors>({});
   const [quote, setQuote] = useState<{ status: 'idle' | 'loading' | 'error'; data: ShippingQuote | null; message?: string }>({ status: 'idle', data: null });
   const [state, setState] = useState<CheckoutState>({ status: 'idle', message: null, fieldErrors: {}, idempotencyKey });
@@ -111,6 +143,12 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: P
 
   const shipping = quote.data ? (summary.coupon?.freeShipping ? 0 : quote.data.amount) : null;
   const total = shipping === null ? null : summary.estimatedTotal + shipping;
+  const online = method !== 'cod';
+  // P5B-13: before the address is known the charge is unknown; assume one applies (most zones charge).
+  const advance = codAdvance === 'delivery_charge' && method === 'cod' && (shipping === null || advanceRequired(codAdvance, method, shipping));
+  const advanceBlocked = advance && gateways.length === 0;
+  const payNow = total === null ? null : online ? total : advance && shipping ? shipping : 0;
+  const goingTo = online ? method : advance ? advanceGateway : null;
 
   const set = (field: keyof Values) => (e: { target: { value: string } }) => {
     const v = e.target.value;
@@ -140,6 +178,8 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: P
     for (const [k, val] of Object.entries(values)) fd.set(k, val);
     fd.set('idempotency_key', state.idempotencyKey);
     fd.set('expected_total_amount', String(total));
+    fd.set('payment_method', method);
+    if (advance && advanceGateway) fd.set('advance_gateway', advanceGateway);
     if (inFlight.current) return;
     inFlight.current = true;
     startTransition(async () => {
@@ -152,7 +192,12 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: P
           return;
         }
         setState(next);
-      } catch {
+      } catch (e) {
+        // Online payment: the action redirected to the gateway; Next is already navigating away.
+        if (isNextRedirect(e)) {
+          setLeaving(true);
+          return;
+        }
         setState((s) => ({ ...s, status: 'error', message: 'We couldn’t reach the shop. Check your connection and try again.' }));
       } finally {
         inFlight.current = false;
@@ -277,21 +322,52 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: P
         </Step>
 
         <Step n={4} title="Payment">
-          <div className="flex items-center gap-4 rounded-sf-xs border-2 border-brand bg-brand-soft px-4 py-4">
-            <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-brand">
-              <span className="size-2.5 rounded-full bg-brand" />
-            </span>
-            <Icon name="wallet" className="text-ink" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="type-label-m text-ink">Cash on delivery</span>
-              <span className="type-body-s text-ink-secondary">Pay in cash when the parcel arrives</span>
-            </span>
-            <span className="type-label-s text-ink">No fee</span>
+          <div role="radiogroup" aria-label="Payment method" className="flex flex-col gap-3">
+            {paymentMethods.map((m) => (
+              <RadioCard
+                key={m}
+                name="payment_method"
+                value={m}
+                checked={method === m}
+                onSelect={() => setMethod(m)}
+                icon={METHOD_ICON[m]}
+                title={METHOD_LABEL[m]}
+                hint={
+                  m === 'cod' && codAdvance === 'delivery_charge'
+                    ? shipping
+                      ? `Pay the ${formatMoney(shipping, c)} delivery charge now, the rest on delivery`
+                      : 'Pay the delivery charge now, the rest on delivery'
+                    : METHOD_HINT[m]
+                }
+                aside={m === 'cod' && codAdvance !== 'delivery_charge' ? 'No fee' : undefined}
+              />
+            ))}
           </div>
-          <p className="type-body-s flex items-center gap-2 rounded-sf-xs bg-sky-soft px-4 py-3 text-ink">
-            <Icon name="phone" className="text-brand" />
-            For some cash orders our team calls to confirm before dispatch — it only takes a minute.
-          </p>
+          {advance && gateways.length > 0 ? (
+            <fieldset className="flex flex-col gap-3 rounded-sf-xs bg-sunken p-4" data-sp-advance>
+              <legend className="type-label-s float-left mb-3 w-full text-ink">Pay the delivery charge with</legend>
+              <div className="flex flex-wrap gap-2">
+                {gateways.map((g) => (
+                  <label key={g} className={`type-label-s flex h-9 cursor-pointer items-center rounded-full border px-4 ${advanceGateway === g ? 'border-inverse bg-inverse text-paper' : 'border-line bg-surface text-ink'}`}>
+                    <input type="radio" name="advance_gateway" value={g} checked={advanceGateway === g} onChange={() => setAdvanceGateway(g)} className="sr-only" />
+                    {METHOD_LABEL[g]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+          {advanceBlocked ? <Notice tone="error">This shop needs the delivery charge paid in advance, but online payment isn&apos;t available right now. Contact the shop to order.</Notice> : null}
+          {online ? (
+            <p className="type-body-s flex items-center gap-2 rounded-sf-xs bg-sky-soft px-4 py-3 text-ink">
+              <Icon name="lock" className="text-brand" />
+              {method === 'bkash' ? "You'll approve the payment in bKash, then come back here." : "You'll pay on the secure SSLCommerz page, then come back here."} Your order is held for 30 minutes.
+            </p>
+          ) : (
+            <p className="type-body-s flex items-center gap-2 rounded-sf-xs bg-sky-soft px-4 py-3 text-ink">
+              <Icon name="phone" className="text-brand" />
+              For some cash orders our team calls to confirm before dispatch — it only takes a minute.
+            </p>
+          )}
         </Step>
 
         <div className="flex flex-col gap-2">
@@ -338,17 +414,39 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage }: P
           </div>
         </dl>
         <div className="flex items-end justify-between gap-4 border-t border-line-subtle pt-5">
-          <p className="type-label-m text-ink">Total to pay on delivery</p>
+          <p className="type-label-m text-ink">{online ? 'Total to pay now' : advance ? 'Total' : 'Total to pay on delivery'}</p>
           <p className="type-price-l text-ink" data-sp-total>
             {total === null ? '—' : formatMoney(total, c)}
           </p>
         </div>
+        {advance && total !== null && payNow ? (
+          <dl className="type-body-s -mt-2 flex flex-col gap-1 text-ink-secondary" data-sp-advance-split>
+            <div className="flex justify-between gap-4">
+              <dt>Pay now (delivery charge)</dt>
+              <dd className="text-ink">{formatMoney(payNow, c)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>Pay on delivery</dt>
+              <dd className="text-ink">{formatMoney(total - payNow, c)}</dd>
+            </div>
+          </dl>
+        ) : null}
         <button
           type="submit"
-          disabled={pending || state.status === 'redirect' || total === null || Boolean(notLiveMessage) || !geo}
+          disabled={pending || leaving || state.status === 'redirect' || total === null || Boolean(notLiveMessage) || !geo || advanceBlocked}
           className="type-label-m flex h-[52px] items-center justify-center gap-2 rounded-control bg-brand px-5 text-on-brand hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending || state.status === 'redirect' ? 'Placing your order…' : total === null ? 'Place order' : `Place order — ${formatMoney(total, c)}`}
+          {leaving && goingTo
+            ? `Taking you to ${goingTo === 'bkash' ? 'bKash' : 'the payment page'}…`
+            : pending || leaving || state.status === 'redirect'
+              ? 'Placing your order…'
+              : total === null
+                ? 'Place order'
+                : online
+                  ? `Pay ${formatMoney(total, c)} with ${method === 'bkash' ? 'bKash' : 'card or mobile banking'}`
+                  : advance && payNow
+                    ? `Place order — pay ${formatMoney(payNow, c)} now`
+                    : `Place order — ${formatMoney(total, c)}`}
           <Icon name="lock" />
         </button>
         <p className="type-body-s text-ink-muted">Prices and delivery are confirmed by our server when you place the order.</p>

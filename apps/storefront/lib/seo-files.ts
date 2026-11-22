@@ -31,6 +31,7 @@ export function robotsResponse(store: SeoTarget | null): Response {
     'Disallow: /track',
     'Disallow: /search',
     'Disallow: /discount',
+    'Disallow: /pay',
     '',
     `Sitemap: ${canonicalOrigin(store.config.store, store.host)}/sitemap.xml`,
     '',

@@ -1,0 +1,14 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.sslcommerz.com/doc/v4/#order-validation-api (invalid)",
+  "status": "INVALID_TRANSACTION",
+  "tran_date": "",
+  "tran_id": "",
+  "val_id": "",
+  "amount": "",
+  "store_amount": "",
+  "currency": "",
+  "bank_tran_id": "",
+  "card_type": "",
+  "APIConnect": "DONE"
+}

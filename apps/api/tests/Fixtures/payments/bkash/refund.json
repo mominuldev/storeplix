@@ -1,0 +1,15 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.bka.sh/docs/refund",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "originalTrxId": "6H7801QFYM",
+  "refundTrxId": "6H7801QFZZ",
+  "refundTransactionStatus": "Completed",
+  "originalTrxAmount": "{originalAmount}",
+  "refundAmount": "{refundAmount}",
+  "currency": "BDT",
+  "completedTime": "2026-11-22T11:00:00:000 GMT+0600",
+  "sku": "{sku}",
+  "reason": "Refund"
+}

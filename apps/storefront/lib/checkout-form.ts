@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { BdDistrict, BdGeo, BdThana, CheckoutInput } from '@storeplix/types';
+import type { BdDistrict, BdGeo, BdThana, CheckoutInput, GatewayProvider, PaymentMethod } from '@storeplix/types';
 
 /**
  * Checkout form rules (PHASE-5-CONTRACT §3.4, §2.1), shared by the client form (instant feedback)
@@ -77,8 +77,14 @@ export function validateCheckoutForm(input: Record<string, unknown>): { ok: true
   return { ok: false, errors };
 }
 
-export function toCheckoutInput(form: CheckoutForm, expectedTotal: number): CheckoutInput {
-  return {
+export interface CheckoutPayment {
+  method: PaymentMethod;
+  /** COD with the delivery charge paid in advance (P5B-13); ignored for online methods. */
+  advanceGateway?: GatewayProvider | null;
+}
+
+export function toCheckoutInput(form: CheckoutForm, expectedTotal: number, payment: CheckoutPayment = { method: 'cod' }): CheckoutInput {
+  const input: CheckoutInput = {
     contact: { name: form.name, phone: form.phone, email: form.email },
     shipping_address: {
       district_code: form.district_code,
@@ -88,10 +94,12 @@ export function toCheckoutInput(form: CheckoutForm, expectedTotal: number): Chec
       landmark: form.landmark,
       label: form.label,
     },
-    payment_method: 'cod',
+    payment_method: payment.method,
     customer_note: form.customer_note,
     expected_total_amount: expectedTotal,
   };
+  if (payment.method === 'cod' && payment.advanceGateway) input.advance_gateway = payment.advanceGateway;
+  return input;
 }
 
 /** API `details` keys (`contact.phone`, `shipping_address.thana_code`, …) → form fields. */

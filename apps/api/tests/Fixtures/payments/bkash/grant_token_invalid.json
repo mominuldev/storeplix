@@ -1,0 +1,6 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.bka.sh/docs/grant-token (error)",
+  "statusCode": "2079",
+  "statusMessage": "Invalid app token"
+}

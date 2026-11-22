@@ -3,6 +3,7 @@ import { requireCurrentStore } from '@/lib/store';
 import { fetchCart, getGeo } from '@/lib/commerce-api';
 import { getCommerceContext } from '@/lib/commerce-context';
 import { NOINDEX_ROBOTS } from '@/lib/seo';
+import { checkoutMethods } from '@/lib/payments';
 import { CheckoutForm } from '@/themes/modern-commerce/commerce/checkout-form';
 import { PageTitle } from '@/themes/modern-commerce/commerce/ui';
 import { ButtonLink } from '@/themes/modern-commerce/components/button';
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: 'Checkout', robots: NOINDEX_ROBOTS };
 
 const STEPS = ['Bag', 'Delivery', 'Payment', 'Confirm'];
 
-/** `/checkout` — Figma desktop 1:11591, mobile 1:11690 / 32:5087. COD only (PHASE-5-CONTRACT §5). */
+/** `/checkout` — Figma desktop 1:11591, mobile 1:11690 / 32:5087. COD + online methods (PHASE-5B-CONTRACT §11). */
 export default async function CheckoutPage() {
   const store = await requireCurrentStore();
   if (store.mode === 'coming_soon') return null;
@@ -56,6 +57,8 @@ export default async function CheckoutPage() {
         geo={geo}
         idempotencyKey={crypto.randomUUID()}
         notLiveMessage={notLive}
+        paymentMethods={checkoutMethods(store.config.commerce?.payment_methods)}
+        codAdvance={store.config.commerce?.cod_advance ?? 'none'}
         summary={{
           currency: cart.currency,
           itemsCount: cart.items_count,

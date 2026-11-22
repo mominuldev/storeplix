@@ -1,0 +1,10 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.bka.sh/docs/refresh-token",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "id_token": "eyJraWQiOiJyZWZyZXNoZWQifQ.sandbox",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "eyJjdHkiOiJmYWtlLXJlZnJlc2gifQ.sandbox"
+}

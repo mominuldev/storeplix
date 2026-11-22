@@ -1,9 +1,17 @@
 import type { CustomerSmsEvent, StoreSettings, UpdateStoreSettingsInput } from '@storeplix/types';
-import { Badge, Button, cn, Input, SegmentedControl, Spinner, Toggle } from '@storeplix/ui';
-import { Banknote, CreditCard, Mail, Wallet } from 'lucide-react';
+import { isApiError } from '@storeplix/api-client';
+import type { PaymentGatewayAccount } from '@storeplix/types';
+import { Badge, Button, buttonVariants, cn, Input, ProviderLogo, SegmentedControl, Spinner, Toggle } from '@storeplix/ui';
+import { useMutation } from '@tanstack/react-query';
+import { ArrowUpRight, Mail, ShieldCheck, Truck, Wallet } from 'lucide-react';
+import { Link } from 'react-router';
 import { useState, type ReactNode } from 'react';
 import { useStoreScope } from '../catalog/scope';
-import { ErrorBlock } from '../catalog/states';
+import { ErrorBlock, errorMessage } from '../catalog/states';
+import { api } from '../lib/api';
+import { toast } from '../online-store/components/Toast';
+import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, isUsable, modeLabel } from '../payments/gateways';
+import { usePaymentGateways, usePaymentInvalidate } from '../payments/queries';
 import { FormAlert } from '../onboarding/AuthShell';
 import { smsPreview, useSaveSettings, useStoreSettings, vatIncluded } from './commerceSettings';
 import { SettingsCard } from './SettingsLayout';
@@ -48,38 +56,149 @@ function ToggleRow({ icon, title, hint, children, disabled }: { icon?: ReactNode
   );
 }
 
-const ComingSoon = () => <Badge>Coming soon</Badge>;
-
-/** Payments & checkout 60:14865: COD toggle is the only active control (Q36: COD-only go-live). */
+/**
+ * Payments & checkout 60:14865 (5b-2): COD toggle; Advance delivery charge (`checkout.cod_advance`, needs a gateway
+ * that's connected and on at checkout); Full online payment = per-gateway "on at checkout" toggles (`PATCH enabled`,
+ * O A `ManageIntegrations`); Connected gateways list + "Manage in Integrations". Not built (§14): 2 % online
+ * discount, Advance payment rules, WhatsApp link delivery, Order form fields, OTP, settlement text.
+ */
 export function PaymentsSettingsPage() {
-  const { canManageSettings } = useStoreScope();
+  const { canManageSettings, canManageIntegrations } = useStoreScope();
   const save = useSaveSettings('Payment settings saved.');
+  const gateways = usePaymentGateways();
+  const invalidate = usePaymentInvalidate();
+  const { storeId } = useStoreScope();
+  const toggleGateway = useMutation({
+    mutationFn: (a: PaymentGatewayAccount) => api.paymentGateways.update(storeId!, a.provider, { revision: a.revision, enabled: !a.enabled }),
+    onSuccess: async (a) => {
+      toast(a.enabled ? `${gatewayMeta[a.provider].short} is on at checkout.` : `${gatewayMeta[a.provider].short} is off at checkout.`);
+      await invalidate.gateways();
+    },
+    onError: async (e) => {
+      await invalidate.gateways();
+      toast(isApiError(e) && e.code === 'revision_conflict' ? 'Someone else changed this gateway. We loaded the latest.' : errorMessage(e, 'We couldn’t change this gateway.'), 'error');
+    },
+  });
+  const connected = (gateways.data ?? []).filter(isConnected);
+  const usable = connected.filter(isUsable);
   return (
     <Gate>
-      {(s) => (
-        <>
-          <Heading title="Payments & checkout" subtitle="How customers pay you. Money goes straight to you — Store Plix never holds it." />
-          <ReadOnlyNote show={!canManageSettings} />
-          <SettingsCard title="Checkout payment methods" description="What customers can choose at checkout.">
-            <ToggleRow icon={<Banknote />} title="Cash on delivery" hint="Customers pay the courier or you at the door. 9 in 10 shoppers in Bangladesh choose this.">
-              <Toggle
-                label="Cash on delivery"
-                checked={s.commerce.checkout.cod_enabled}
-                disabled={!canManageSettings || save.isPending}
-                onChange={(on) => save.mutate({ checkout: { cod_enabled: on } })}
-              />
-            </ToggleRow>
-            {!s.commerce.checkout.cod_enabled && <FormAlert>With cash on delivery off, customers can’t place orders until online payments arrive.</FormAlert>}
-            <ToggleRow icon={<Wallet />} title="Advance delivery charge" hint="Collect the delivery charge online before you ship" disabled>
-              <ComingSoon />
-            </ToggleRow>
-            <ToggleRow icon={<CreditCard />} title="Full online payment" hint="bKash, Nagad and cards through your own merchant account" disabled>
-              <ComingSoon />
-            </ToggleRow>
-          </SettingsCard>
-        </>
-      )}
+      {(s) => {
+        const advance = s.commerce.checkout.cod_advance === 'delivery_charge';
+        return (
+          <>
+            <Heading title="Payments & checkout" subtitle="Choose how customers pay. Online payments are confirmed automatically by your gateway — no TrxID checking." />
+            <ReadOnlyNote show={!canManageSettings} />
+            <SettingsCard title="Checkout payment methods" description="Customers choose one of these at checkout. Turn on at least one.">
+              <ToggleRow icon={<Truck />} title={<TitleWithBadge title="Cash on delivery" badge={<Badge>Most used</Badge>} />} hint="The rider collects cash. Your courier sends the money to you after delivery.">
+                <Toggle
+                  label="Cash on delivery"
+                  checked={s.commerce.checkout.cod_enabled}
+                  disabled={!canManageSettings || save.isPending}
+                  onChange={(on) => save.mutate({ checkout: { cod_enabled: on } })}
+                />
+              </ToggleRow>
+              {!s.commerce.checkout.cod_enabled && usable.length === 0 && <FormAlert>With cash on delivery off and no gateway on, customers can’t place orders.</FormAlert>}
+              <ToggleRow
+                icon={<Wallet />}
+                title={<TitleWithBadge title="Advance delivery charge" badge={<Badge tone="success">Recommended</Badge>} />}
+                hint={usable.length ? 'Customers pay only the delivery charge online before you ship. Cuts fake orders.' : 'Connect bKash or SSLCommerz and turn it on at checkout first.'}
+                disabled={!usable.length && !advance}
+              >
+                <Toggle
+                  label="Advance delivery charge"
+                  checked={advance}
+                  disabled={!canManageSettings || save.isPending || (!usable.length && !advance)}
+                  onChange={(on) => save.mutate({ checkout: { cod_advance: on ? 'delivery_charge' : 'none' } })}
+                />
+              </ToggleRow>
+              <div className="flex flex-col gap-3 rounded-lg border border-border-default p-4">
+                <div className="flex items-center gap-4">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-surface-subtle text-text-secondary [&_svg]:size-5">
+                    <ShieldCheck />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-body font-semibold text-text-primary">Full online payment</span>
+                    <span className="text-caption text-text-muted">Customers pay the full amount with bKash, Nagad, card or net banking through your gateway.</span>
+                  </span>
+                </div>
+                {gateways.isPending ? (
+                  <Spinner label="Loading gateways" />
+                ) : gateways.isError ? (
+                  <ErrorBlock title="We couldn’t load your gateways" error={gateways.error} onRetry={() => void gateways.refetch()} />
+                ) : connected.length === 0 ? (
+                  <p className="text-caption text-text-muted">
+                    No gateway connected yet.{' '}
+                    <Link to="/integrations" className="font-medium text-brand-600">
+                      Connect one in Integrations
+                    </Link>
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {connected.map((a) => (
+                      <li key={a.provider} className="flex items-center gap-3 rounded-md bg-surface-subtle px-3 py-2">
+                        <ProviderLogo provider={a.provider} size="sm" />
+                        <span className="min-w-0 flex-1 truncate text-body text-text-primary">{gatewayMeta[a.provider].checkoutLabel}</span>
+                        <Toggle
+                          label={`${gatewayMeta[a.provider].short} at checkout`}
+                          checked={a.enabled}
+                          disabled={!canManageIntegrations || toggleGateway.isPending}
+                          onChange={() => toggleGateway.mutate(a)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <p className="flex items-start gap-2.5 rounded-lg bg-info-bg px-4 py-3 text-caption text-text-primary">
+                <ShieldCheck aria-hidden className="size-4 shrink-0 text-info" /> Paid orders move to Confirmed on their own when the gateway confirms the payment. Failed or cancelled payments stay Unpaid.
+              </p>
+            </SettingsCard>
+            <SettingsCard title="Connected gateways" description="Online payments go straight to your gateway account. Settlement follows each gateway’s schedule.">
+              <div className="-mt-2 flex justify-end">
+                <Link to="/integrations" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+                  Manage in Integrations <ArrowUpRight aria-hidden className="size-4" />
+                </Link>
+              </div>
+              {gateways.isPending ? (
+                <Spinner label="Loading gateways" />
+              ) : (
+                <ul className="flex flex-col divide-y divide-border-default">
+                  {GATEWAYS.map((p) => {
+                    const a = byProvider(gateways.data)[p];
+                    const st = integrationStatusMeta(a?.status ?? 'not_connected');
+                    return (
+                      <li key={p} className="flex items-center gap-3 py-3">
+                        <ProviderLogo provider={p} size="sm" />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="flex items-center gap-2 text-body font-semibold text-text-primary">
+                            {gatewayMeta[p].name}
+                            {a?.is_default && isConnected(a) && <Badge tone="brand">Default</Badge>}
+                          </span>
+                          <span className="truncate text-caption text-text-muted">{isConnected(a) && a?.mode ? `${modeLabel[a.mode]} · ${gatewayMeta[p].capability}` : gatewayMeta[p].capability}</span>
+                        </span>
+                        <Badge tone={st.tone} dot>
+                          {st.label}
+                        </Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </SettingsCard>
+          </>
+        );
+      }}
     </Gate>
+  );
+}
+
+function TitleWithBadge({ title, badge }: { title: string; badge: ReactNode }) {
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {title}
+      {badge}
+    </span>
   );
 }
 

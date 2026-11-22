@@ -1,0 +1,12 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.sslcommerz.com/doc/v4/#query-the-status-of-a-refund-request",
+  "APIConnect": "DONE",
+  "bank_tran_id": "2611221016020LZvlXBRe6Y9vR",
+  "tran_id": "{tran_id}",
+  "refund_ref_id": "5c76e0fbc0e14",
+  "initiated_on": "2026-11-22 11:00:00",
+  "refunded_on": "2026-11-22 11:05:00",
+  "status": "refunded",
+  "errorReason": ""
+}
