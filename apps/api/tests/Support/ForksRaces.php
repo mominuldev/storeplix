@@ -67,10 +67,10 @@ trait ForksRaces
         if (DB::getDriverName() !== 'pgsql') {
             return;
         }
-        // Guard: this TRUNCATEs every table. Only ever on a dedicated test database (CI: storeplix_test).
+        // Guard: this TRUNCATEs every table. Only ever on a dedicated test database (CI: storeplix_test, storeplix_perf).
         $database = (string) DB::connection()->getDatabaseName();
-        if (! str_ends_with($database, '_test') && ! str_ends_with($database, '_testing')) {
-            throw new \RuntimeException("raceCleanup() refuses to truncate database \"{$database}\": the name must end in _test or _testing.");
+        if (! app()->environment('testing') || ! preg_match('/_(test|testing|perf)$/', $database)) {
+            throw new \RuntimeException("raceCleanup() refuses to truncate database \"{$database}\": needs APP_ENV=testing and a name ending in _test, _testing or _perf.");
         }
         while (DB::transactionLevel() > 0) {
             DB::rollBack();

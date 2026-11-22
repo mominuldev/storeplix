@@ -44,7 +44,7 @@ trait CommerceFixtures
     protected function sf(Store $store, string $method, string $path, array $body = [], ?string $cart = null, array $extra = []): TestResponse
     {
         $headers = array_filter(array_merge([
-            'X-Storefront-Key' => 'test-storefront-key',
+            'X-Storefront-Key' => (string) config('storeplix.storefront_api_key'), // CI sets its own key; never hard-code
             'X-Storefront-Host' => $this->host($store),
             'X-Cart-Token' => $cart,
             'X-Storefront-Client-Ip' => '203.0.113.'.random_int(1, 250),

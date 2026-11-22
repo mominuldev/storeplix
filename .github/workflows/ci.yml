@@ -204,6 +204,9 @@ jobs:
       REDIS_HOST: 127.0.0.1
       CACHE_STORE: redis
       QUEUE_CONNECTION: sync
+      # The seeder publishes the demo store; with a sync queue the revalidation job would call a storefront
+      # that isn't running here. Empty URL = the job skips (RevalidateStorefront: "not_configured").
+      STOREFRONT_REVALIDATE_URL: ''
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

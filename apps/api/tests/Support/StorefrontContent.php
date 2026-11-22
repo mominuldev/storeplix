@@ -34,7 +34,7 @@ trait StorefrontContent
     protected function storefront(string $path, string $host, ?string $preview = null): TestResponse
     {
         return $this->flushHeaders()->withHeaders(array_filter([
-            'X-Storefront-Key' => 'test-storefront-key',
+            'X-Storefront-Key' => (string) config('storeplix.storefront_api_key'), // CI sets its own key; never hard-code
             'X-Storefront-Host' => $host,
             'X-Storefront-Preview' => $preview,
         ], fn ($v) => $v !== null))->getJson('/api/v1/storefront'.$path);

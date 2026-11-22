@@ -26,8 +26,11 @@
         <env name="MEDIA_DISK" value="public"/>
         <env name="MEDIA_URL" value=""/>
         <env name="MERCHANT_APP_URL" value="http://localhost:5173"/>
-        <env name="STOREFRONT_REVALIDATE_URL" value=""/>
-        <env name="REVALIDATE_SECRET" value=""/>
+        <!-- force: CI sets workflow-level sentinel secrets (for the bundle-leak check); tests use these fixed values. Laravel reads $_SERVER first, so both env and server are forced. -->
+        <env name="STOREFRONT_REVALIDATE_URL" value="" force="true"/>
+        <server name="STOREFRONT_REVALIDATE_URL" value="" force="true"/>
+        <env name="REVALIDATE_SECRET" value="" force="true"/>
+        <server name="REVALIDATE_SECRET" value="" force="true"/>
         <env name="SMS_DRIVER" value="fake"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
@@ -41,6 +44,7 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="PLATFORM_DOMAIN" value="storeplix.test"/>
-        <env name="STOREFRONT_API_KEY" value="test-storefront-key"/>
+        <env name="STOREFRONT_API_KEY" value="test-storefront-key" force="true"/>
+        <server name="STOREFRONT_API_KEY" value="test-storefront-key" force="true"/>
     </php>
 </phpunit>
