@@ -207,7 +207,10 @@ class ShippingService
     public function createPickup(Store $store, array $input): PickupLocation
     {
         return DB::transaction(function () use ($store, $input) {
-            $count = PickupLocation::query()->where('store_id', $store->id)->lockForUpdate()->count();
+            // Serialise per store by locking the store row: Postgres rejects FOR UPDATE with count(), and row locks
+            // on existing pickups wouldn't guard the first insert anyway.
+            Store::query()->whereKey($store->id)->lockForUpdate()->first();
+            $count = PickupLocation::query()->where('store_id', $store->id)->count();
             if ($count >= PickupLocation::MAX_PER_STORE) {
                 throw new ApiException(409, 'conflict', 'You can add up to 10 pickup addresses.');
             }
