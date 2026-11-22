@@ -24,3 +24,14 @@ BD commerce is COD-heavy, mobile-first, guest checkout common, fake orders frequ
 ## Alternatives
 - Client-side (localStorage) cart: cheap but prices/stock stale and no abandoned-cart recovery.
 - Multi-step checkout API: more endpoints and partial states; single-shot with idempotency is simpler.
+
+## Amendment 2026-11-22 — Phase 5a (PHASE-5-CONTRACT P5-2–P5-4, P5-14, P5-15, P5-23, P5-29)
+- Guest checkout only in 5a (Q14 default); no cart merge until shopper accounts exist.
+- The API returns the cart token once (`meta.cart_token`); the storefront server keeps it in the httpOnly host-only
+  `sp_cart` cookie and forwards `X-Cart-Token`. Cart mutations go through Next.js Server Actions only.
+- Carts do **not** reserve stock; stock is committed at order placement (ADR 0011). The 30-minute release applies
+  only to unpaid online orders (5b, Q35).
+- Checkout also requires `expected_total_amount`; a recomputed total that differs → 409 `checkout_changed`.
+- Shipping uses zones of districts/thanas with one charge each and a guaranteed fallback zone (P5-7), not method
+  rules; tax is 0 until VAT settings ship (5b).
+- Shoppers reach their order via a 24-hour confirmation token (cookie `sp_order`) or by order number + phone.

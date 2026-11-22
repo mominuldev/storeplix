@@ -25,3 +25,11 @@ idempotency keys. Raw payloads stored with secrets stripped.
 ## Alternatives
 - Aggregator only (SSLCommerz for everything): fewer drivers but higher fees and no native bKash UX.
 - Platform as merchant-of-record collecting all money: regulatory burden (BD payment licensing). Rejected; merchants use their own gateway accounts.
+
+## Amendment 2026-11-22 — Phase 5 split (PHASE-5-CONTRACT P5-1, P5-18, §16.2)
+- Phase 5a ships COD only. `payments` rows exist from 5a (`provider: cod` charge; `provider: manual` refunds recorded by
+  the merchant); no money moves through Storeplix.
+- Online gateways (bKash Tokenized Checkout, SSLCommerz) are Phase 5b, after Postgres RLS lands. Merchant-owned
+  credentials are confirmed by the Figma copy ("Money goes straight to your bKash merchant account", Integrations
+  14:980); OPEN-QUESTIONS Q32 records the PO confirmation still needed. Advance payment links (144:46081) use the same
+  drivers through a hosted pay page.

@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.4.0
+  version: 1.5.0
   description: |
-    Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine) and Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) endpoints. Binding sources: docs/development/AGENT-CONTRACTS.md,
-    docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md and PHASE-4-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (payments, couriers, documents) is not specified yet. Binding sources: docs/development/AGENT-CONTRACTS.md,
+    docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -30,6 +30,10 @@ tags:
 - name: customers
 - name: data
 - name: dashboard
+- name: geo
+- name: shipping
+- name: coupons
+- name: orders
 paths:
   /health:
     get:
@@ -3559,6 +3563,8 @@ paths:
           enum:
           - latest
           - bestsellers
+          - price_asc
+          - price_desc
       - in: query
         name: limit
         schema:
@@ -3577,6 +3583,51 @@ paths:
         schema:
           type: string
           maxLength: 140
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+        description: PLP pagination (Phase 5a); mutually exclusive with limit
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 48
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: price_min
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: price_max
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: in_stock
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+      - in: query
+        name: exclude
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
       responses:
         '200':
           description: Cards
@@ -3606,8 +3657,2030 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /geo/bd:
+    get:
+      tags:
+      - geo
+      summary: Bangladesh geography
+      operationId: getBdGeo
+      security: []
+      description: 'Public, `Cache-Control: public, max-age=86400`, ETag = dataset version.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BdGeo'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/products/{slug}:
+    get:
+      tags:
+      - storefront
+      summary: Storefront product (PDP)
+      operationId: storefrontProduct
+      description: Active product with ≥ 1 enabled variant; with a valid preview also draft (`is_preview_only`). Never cost/SKU/stock.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/ProductSlug'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontProduct'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` (draft without preview) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/products/{slug}/availability:
+    get:
+      tags:
+      - storefront
+      summary: Variant availability
+      operationId: storefrontProductAvailability
+      description: '`private, no-store`. `low_stock` only when at or below the low-stock threshold (P5-6).'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/ProductSlug'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontAvailability'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` (draft without preview) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/categories:
+    get:
+      tags:
+      - storefront
+      summary: Category tree
+      operationId: storefrontCategories
+      description: Visible categories, nested, by position.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorefrontCategory'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` (draft without preview) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/categories/{slug}:
+    get:
+      tags:
+      - storefront
+      summary: Category detail (PLP header)
+      operationId: storefrontCategory
+      description: Hidden categories still resolve by slug.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CategorySlug'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontCategoryDetail'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` (draft without preview) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/cart:
+    get:
+      tags:
+      - storefront
+      summary: Get cart
+      operationId: storefrontGetCart
+      description: Prices, coupon and availability recomputed on every read. `private, no-store`.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/cart/items:
+    post:
+      tags:
+      - storefront
+      summary: Add to cart
+      operationId: storefrontAddCartItem
+      description: 'Without a valid `X-Cart-Token` a cart is created: 201 with `meta.cart_token` (returned once). Quantity is added to
+        an existing line (cap 99); ≤ 50 lines.'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - variant_id
+              - quantity
+              properties:
+                variant_id:
+                  $ref: '#/components/schemas/Ulid'
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 99
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '201':
+          description: Cart created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed` (unknown/unavailable variant, 50 lines) or `out_of_stock`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/cart/items/{item}:
+    patch:
+      tags:
+      - storefront
+      summary: Change line quantity
+      operationId: storefrontUpdateCartItem
+      description: Item must belong to this cart, else 404.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      - $ref: '#/components/parameters/CartItemPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - quantity
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 99
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`out_of_stock`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - storefront
+      summary: Remove line
+      operationId: storefrontDeleteCartItem
+      description: ''
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      - $ref: '#/components/parameters/CartItemPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/cart/coupon:
+    put:
+      tags:
+      - storefront
+      summary: Apply coupon
+      operationId: storefrontApplyCoupon
+      description: Phone-based rules are checked at checkout.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+                  maxLength: 32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`coupon_invalid` with `details.code`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - storefront
+      summary: Remove coupon
+      operationId: storefrontRemoveCoupon
+      description: ''
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Cart'
+                  meta:
+                    $ref: '#/components/schemas/CartMeta'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/cart/shipping-options:
+    get:
+      tags:
+      - storefront
+      summary: Delivery charge for an address
+      operationId: storefrontShippingQuote
+      description: Resolves the zone (thana → district → fallback) and applies free delivery.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      - in: query
+        name: district_code
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: thana_code
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShippingQuote'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/checkout:
+    post:
+      tags:
+      - storefront
+      summary: Place order (COD)
+      operationId: storefrontCheckout
+      description: 'One transaction: re-price, commit stock, coupon, zone, customer upsert, order. Replay with the same key → same 201
+        + `Idempotent-Replayed: true`. Throttle `checkout`.'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+      responses:
+        '201':
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CheckoutResult'
+          headers:
+            Idempotent-Replayed:
+              schema:
+                type: string
+                enum:
+                - 'true'
+              description: Present on replays
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (clear sp_cart) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`, `checkout_changed`, `idempotency_key_mismatch`, `idempotency_key_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`cart_empty`, `out_of_stock` (`items.N.quantity`), `coupon_invalid`, `payment_method_unavailable`, `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/orders/confirmation:
+    get:
+      tags:
+      - storefront
+      summary: Order confirmation
+      operationId: storefrontOrderConfirmation
+      description: Header `X-Order-Token` = the checkout `confirmation_token` (24 h). `private, no-store`.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - in: header
+        name: X-Order-Token
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontOrder'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/orders/track:
+    post:
+      tags:
+      - storefront
+      summary: Track order
+      operationId: storefrontTrackOrder
+      description: Order number + phone. Mismatch → 404 identical to unknown. Throttle `order-track` 10/min per IP.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontOrderTracking'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipping:
+    get:
+      tags:
+      - shipping
+      summary: Shipping settings
+      operationId: getShipping
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShippingSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    put:
+      tags:
+      - shipping
+      summary: Save zones and free delivery
+      operationId: saveShipping
+      description: Full replacement of zones; exactly one `fallback`. O A (`ManageSettings`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveShippingInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShippingSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pickup-locations:
+    post:
+      tags:
+      - shipping
+      summary: Add pickup location
+      operationId: createPickupLocation
+      description: O A (`ManageSettings`). Max 10 (409 `conflict`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PickupLocationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PickupLocation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`conflict` (10 exist)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pickup-locations/{location}:
+    parameters:
+    - $ref: '#/components/parameters/PickupLocationPath'
+    patch:
+      tags:
+      - shipping
+      summary: Update pickup location
+      operationId: updatePickupLocation
+      description: O A (`ManageSettings`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 60
+                contact_name:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 80
+                contact_phone:
+                  type:
+                  - string
+                  - 'null'
+                district_code:
+                  type: string
+                thana_code:
+                  type: string
+                address_line:
+                  type: string
+                  minLength: 5
+                  maxLength: 255
+                is_default:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PickupLocation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - shipping
+      summary: Delete pickup location
+      operationId: deletePickupLocation
+      description: O A (`ManageSettings`). Default is promoted to the oldest remaining.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`conflict` (a zone references it)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/coupons:
+    get:
+      tags:
+      - coupons
+      summary: List coupons
+      operationId: listCoupons
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 32
+      - in: query
+        name: filter[type]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of CouponDisplayStatus
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - -created_at
+          - -revenue
+          - -used_count
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Coupon'
+                  meta:
+                    $ref: '#/components/schemas/CouponListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - coupons
+      summary: Create coupon
+      operationId: createCoupon
+      description: O A (`ManageMarketing`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCouponInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Coupon'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/coupons/{coupon}:
+    parameters:
+    - $ref: '#/components/parameters/CouponPath'
+    get:
+      tags:
+      - coupons
+      summary: Get coupon
+      operationId: getCoupon
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Coupon'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - coupons
+      summary: Update coupon
+      operationId: updateCoupon
+      description: O A. `code`/`type` immutable once used.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCouponInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Coupon'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - coupons
+      summary: Delete coupon
+      operationId: deleteCoupon
+      description: O A. Only never-redeemed coupons.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`coupon_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders:
+    get:
+      tags:
+      - orders
+      summary: List orders
+      operationId: listOrders
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of OrderStatus
+      - in: query
+        name: filter[payment_status]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[channel]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[district_code]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[customer_id]
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[coupon_id]
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[placed_at][gte]
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: filter[placed_at][lte]
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 100
+        description: Order number prefix, customer name, or phone
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - -placed_at
+          - placed_at
+          - -total
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: '#/components/schemas/OrderListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - orders
+      summary: Create manual order
+      operationId: createOrder
+      description: O A S. Same pricing as checkout (P5-19). 402 at the monthly order limit (P5-27).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualOrderInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch` / `idempotency_key_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `out_of_stock`, `coupon_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/quote:
+    post:
+      tags:
+      - orders
+      summary: Quote a manual order
+      operationId: quoteOrder
+      description: O A S. No writes; stock issues returned as data.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderQuote'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/bulk:
+    post:
+      tags:
+      - orders
+      summary: Bulk confirm / mark packed
+      operationId: bulkOrders
+      description: O A S. Each order its own transaction; invalid states skipped. Foreign ids → 422, nothing applied.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderBulkInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderBulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    get:
+      tags:
+      - orders
+      summary: Get order
+      operationId: getOrder
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - orders
+      summary: Edit contact, address, note, tags
+      operationId: updateOrder
+      description: O A S. Allowed in pending, confirmed, ready_to_ship (P5-20).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+                  meta:
+                    type: object
+                    required: []
+                    properties:
+                      shipping_hint:
+                        oneOf:
+                        - $ref: '#/components/schemas/ShippingQuote'
+                        - type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict` or `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/confirm:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Confirm order
+      operationId: confirmOrder
+      description: O A S. pending → confirmed.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                notify_customer:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/ready:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Mark packed
+      operationId: readyOrder
+      description: O A S. confirmed → ready_to_ship.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/ship:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Mark shipped
+      operationId: shipOrder
+      description: O A S. Creates a manual shipment; on_hand and committed decrease (ledger order_shipped).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/deliver:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Mark delivered
+      operationId: deliverOrder
+      description: O A S. COD payment succeeded; payment_status paid.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/return:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Mark returned
+      operationId: returnOrder
+      description: O A S. shipped → returned; restocks chosen quantities (ledger order_returned).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Cancel order
+      operationId: cancelOrder
+      description: O A S for unpaid orders; O A when paid_amount > 0 (else 403). Releases committed stock and the coupon.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/notes:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Add note
+      operationId: createOrderNote
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - body
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderEvent'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/refunds:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Record manual refund
+      operationId: createOrderRefund
+      description: O A (`ManageRefunds`). Records money returned outside Storeplix (P5-18).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: idempotency conflicts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`refund_exceeds_paid` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/launch-checklist:
+    get:
+      tags:
+      - stores
+      summary: Go-live checklist
+      operationId: getLaunchChecklist
+      description: O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LaunchChecklist'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/publish:
+    post:
+      tags:
+      - stores
+      summary: Publish store (go live)
+      operationId: publishStore
+      description: O A (`ManageSettings`). draft → active; revalidates the host. Already active → 200 no-op.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Store'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`launch_blocked` with `details.<item_key>`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
+    StorefrontPreview:
+      in: header
+      name: X-Storefront-Preview
+      required: false
+      schema:
+        type: string
+      description: Preview token from the sp_preview cookie; invalid is ignored.
+    StorefrontClientIp:
+      in: header
+      name: X-Storefront-Client-Ip
+      required: false
+      schema:
+        type: string
+        maxLength: 45
+      description: Shopper IP; trusted only with a valid storefront key.
+    CartToken:
+      in: header
+      name: X-Cart-Token
+      required: false
+      schema:
+        type: string
+        maxLength: 64
+      description: Opaque cart token from the sp_cart cookie (P5-3).
+    IdempotencyKeyRequired:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+      description: UUID/ULID; 24 h (API-CONVENTIONS §9).
+    ProductSlug:
+      in: path
+      name: slug
+      required: true
+      schema:
+        type: string
+        maxLength: 220
+    CategorySlug:
+      in: path
+      name: slug
+      required: true
+      schema:
+        type: string
+        maxLength: 140
+    CartItemPath:
+      in: path
+      name: item
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    OrderPath:
+      in: path
+      name: order
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: orders.id of this store, else 404.
+    CouponPath:
+      in: path
+      name: coupon
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    PickupLocationPath:
+      in: path
+      name: location
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
     TenantId:
       in: header
       name: X-Tenant-Id
@@ -4175,6 +6248,8 @@ components:
       - contact
       - social
       properties:
+        commerce:
+          $ref: '#/components/schemas/StorefrontCommerce'
         store:
           type: object
           required:
@@ -4780,6 +6855,8 @@ components:
       - seo
       - updated_at
       properties:
+        commerce:
+          $ref: '#/components/schemas/StoreCommerceSettings'
         store_id:
           $ref: '#/components/schemas/Ulid'
         seo:
@@ -4857,6 +6934,38 @@ components:
       type: object
       required: []
       properties:
+        checkout:
+          type: object
+          required: []
+          properties:
+            cod_enabled:
+              type: boolean
+        order_prefix:
+          type: string
+          pattern: ^[A-Z]{1,6}$
+        notifications:
+          type: object
+          required: []
+          properties:
+            new_order_email:
+              type: boolean
+            sms_language:
+              type: string
+              enum:
+              - bn
+              - en
+            customer_sms:
+              type: object
+              required: []
+              properties:
+                order_placed:
+                  type: boolean
+                order_confirmed:
+                  type: boolean
+                order_shipped:
+                  type: boolean
+                order_cancelled:
+                  type: boolean
         seo:
           type: object
           required: []
@@ -5023,6 +7132,7 @@ components:
       - staff_seats
       - products
       - courier_connections
+      - sms_per_month
     Plan:
       type: object
       required:
@@ -6854,6 +8964,8 @@ components:
       - returned
       - import
       - other
+      - order_shipped
+      - order_returned
     StockAdjustmentInput:
       type: object
       required:
@@ -7013,6 +9125,10 @@ components:
       - updated_at
       - created_by
       properties:
+        delivered_orders_count:
+          type: integer
+        returned_orders_count:
+          type: integer
         id:
           $ref: '#/components/schemas/Ulid'
         name:
@@ -7620,8 +9736,10 @@ components:
             new_this_month:
               type: integer
         orders:
-          type: 'null'
-          description: Always null in Phase 4
+          oneOf:
+          - $ref: '#/components/schemas/OrderDashboard'
+          - type: 'null'
+          description: Phase 5a; null until the store's first order
         setup:
           type: object
           required:
@@ -7674,3 +9792,2523 @@ components:
       properties:
         has_products:
           type: boolean
+        current_page:
+          type: integer
+          description: Present only when `page` was sent (Phase 5a PLP)
+        per_page:
+          type: integer
+        total:
+          type: integer
+        last_page:
+          type: integer
+    BdGeo:
+      type: object
+      required:
+      - version
+      - divisions
+      - districts
+      - thanas
+      properties:
+        version:
+          type: string
+        divisions:
+          type: array
+          items:
+            type: object
+            required:
+            - code
+            - name
+            - name_bn
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+              name_bn:
+                type: string
+        districts:
+          type: array
+          items:
+            type: object
+            required:
+            - code
+            - division_code
+            - name
+            - name_bn
+            properties:
+              code:
+                type: string
+              division_code:
+                type: string
+              name:
+                type: string
+              name_bn:
+                type: string
+        thanas:
+          type: array
+          items:
+            type: object
+            required:
+            - code
+            - district_code
+            - name
+            - name_bn
+            - is_city
+            properties:
+              code:
+                type: string
+              district_code:
+                type: string
+              name:
+                type: string
+              name_bn:
+                type: string
+              is_city:
+                type: boolean
+      description: Static BD geography dataset (PHASE-5-CONTRACT P5-10).
+    AddressInput:
+      type: object
+      required:
+      - district_code
+      - thana_code
+      - address_line
+      properties:
+        district_code:
+          type: string
+          maxLength: 32
+        thana_code:
+          type: string
+          maxLength: 48
+        area:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        address_line:
+          type: string
+          minLength: 5
+          maxLength: 255
+        landmark:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+        label:
+          type:
+          - string
+          - 'null'
+          enum:
+          - home
+          - office
+          - null
+    Address:
+      type: object
+      required:
+      - division_code
+      - division
+      - district_code
+      - district
+      - thana_code
+      - thana
+      - area
+      - address_line
+      - landmark
+      - label
+      properties:
+        division_code:
+          type: string
+        division:
+          type: string
+        district_code:
+          type: string
+        district:
+          type: string
+        thana_code:
+          type: string
+        thana:
+          type: string
+        area:
+          type:
+          - string
+          - 'null'
+        address_line:
+          type: string
+        landmark:
+          type:
+          - string
+          - 'null'
+        label:
+          type:
+          - string
+          - 'null'
+          enum:
+          - home
+          - office
+          - null
+    ShippingZoneArea:
+      type: object
+      required:
+      - district_code
+      - thana_code
+      - label
+      properties:
+        district_code:
+          type: string
+        thana_code:
+          type:
+          - string
+          - 'null'
+          description: null = whole district
+        label:
+          type: string
+    ShippingZone:
+      type: object
+      required:
+      - id
+      - name
+      - kind
+      - charge_amount
+      - min_days
+      - max_days
+      - is_active
+      - position
+      - areas
+      - area_summary
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 60
+        kind:
+          type: string
+          enum:
+          - custom
+          - fallback
+        charge_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        min_days:
+          type: integer
+          minimum: 0
+          maximum: 30
+        max_days:
+          type: integer
+          minimum: 0
+          maximum: 30
+        is_active:
+          type: boolean
+        position:
+          type: integer
+        areas:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShippingZoneArea'
+        area_summary:
+          type: string
+          example: Dhaka city · 41 thanas
+    ShippingZoneInput:
+      type: object
+      required:
+      - name
+      - kind
+      - charge_amount
+      - min_days
+      - max_days
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        kind:
+          type: string
+          enum:
+          - custom
+          - fallback
+        charge_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        min_days:
+          type: integer
+          minimum: 0
+          maximum: 30
+        max_days:
+          type: integer
+          minimum: 0
+          maximum: 30
+        is_active:
+          type: boolean
+        areas:
+          type: array
+          items:
+            type: object
+            required:
+            - district_code
+            properties:
+              district_code:
+                type: string
+              thana_code:
+                type:
+                - string
+                - 'null'
+          maxItems: 500
+    PickupLocation:
+      type: object
+      required:
+      - id
+      - name
+      - contact_name
+      - contact_phone
+      - district_code
+      - thana_code
+      - district
+      - thana
+      - address_line
+      - is_default
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        contact_name:
+          type:
+          - string
+          - 'null'
+        contact_phone:
+          type:
+          - string
+          - 'null'
+          pattern: ^8801[3-9][0-9]{8}$
+        district_code:
+          type: string
+        thana_code:
+          type: string
+        district:
+          type: string
+        thana:
+          type: string
+        address_line:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PickupLocationInput:
+      type: object
+      required:
+      - name
+      - district_code
+      - thana_code
+      - address_line
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        contact_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        contact_phone:
+          type:
+          - string
+          - 'null'
+        district_code:
+          type: string
+        thana_code:
+          type: string
+        address_line:
+          type: string
+          minLength: 5
+          maxLength: 255
+        is_default:
+          type: boolean
+    ShippingSettings:
+      type: object
+      required:
+      - zones
+      - pickup_locations
+      - free_delivery_over_amount
+      - configured
+      properties:
+        zones:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShippingZone'
+        pickup_locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PickupLocation'
+        free_delivery_over_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 100
+        configured:
+          type: boolean
+    SaveShippingInput:
+      type: object
+      required:
+      - zones
+      - free_delivery_over_amount
+      properties:
+        zones:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShippingZoneInput'
+          minItems: 1
+          maxItems: 30
+        free_delivery_over_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 100
+          maximum: 1000000000
+    ShippingQuote:
+      type: object
+      required:
+      - zone_id
+      - zone_name
+      - min_days
+      - max_days
+      - charge_amount
+      - amount
+      - is_free
+      properties:
+        zone_id:
+          $ref: '#/components/schemas/Ulid'
+        zone_name:
+          type: string
+        min_days:
+          type: integer
+        max_days:
+          type: integer
+        charge_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        is_free:
+          type: boolean
+    CustomerSmsEvent:
+      type: string
+      enum:
+      - order_placed
+      - order_confirmed
+      - order_shipped
+      - order_cancelled
+    StoreCommerceSettings:
+      type: object
+      required:
+      - checkout
+      - order_prefix
+      - next_order_number
+      - notifications
+      properties:
+        checkout:
+          type: object
+          required:
+          - cod_enabled
+          properties:
+            cod_enabled:
+              type: boolean
+        order_prefix:
+          type: string
+          pattern: ^[A-Z]{1,6}$
+        next_order_number:
+          type: string
+          example: GS-1049
+        notifications:
+          type: object
+          required:
+          - new_order_email
+          - sms_language
+          - customer_sms
+          properties:
+            new_order_email:
+              type: boolean
+            sms_language:
+              type: string
+              enum:
+              - bn
+              - en
+            customer_sms:
+              type: object
+              required:
+              - order_placed
+              - order_confirmed
+              - order_shipped
+              - order_cancelled
+              properties:
+                order_placed:
+                  type: boolean
+                order_confirmed:
+                  type: boolean
+                order_shipped:
+                  type: boolean
+                order_cancelled:
+                  type: boolean
+    CouponType:
+      type: string
+      enum:
+      - percentage
+      - fixed
+      - free_shipping
+    CouponStatus:
+      type: string
+      enum:
+      - draft
+      - active
+      - disabled
+    CouponDisplayStatus:
+      type: string
+      enum:
+      - draft
+      - active
+      - disabled
+      - scheduled
+      - expired
+      - used_up
+    Coupon:
+      type: object
+      required:
+      - id
+      - code
+      - type
+      - percent_bps
+      - amount
+      - max_discount_amount
+      - applies_to
+      - categories
+      - products
+      - min_subtotal_amount
+      - usage_limit
+      - usage_per_customer
+      - first_order_only
+      - starts_at
+      - ends_at
+      - status
+      - display_status
+      - stats
+      - share_path
+      - revision
+      - created_by
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        code:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9_-]{2,31}$
+        type:
+          $ref: '#/components/schemas/CouponType'
+        percent_bps:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10000
+        amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        max_discount_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        applies_to:
+          type: string
+          enum:
+          - all
+          - categories
+          - products
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryRef'
+        products:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - name
+            - image
+            - price_min_amount
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              image:
+                oneOf:
+                - $ref: '#/components/schemas/MediaRef'
+                - type: 'null'
+              price_min_amount:
+                type: integer
+                minimum: 0
+                description: Paisa (integer)
+        min_subtotal_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        usage_limit:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        usage_per_customer:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        first_order_only:
+          type: boolean
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          $ref: '#/components/schemas/CouponStatus'
+        display_status:
+          $ref: '#/components/schemas/CouponDisplayStatus'
+        stats:
+          type: object
+          required:
+          - used_count
+          - orders_count
+          - revenue_amount
+          - discount_amount
+          properties:
+            used_count:
+              type: integer
+            orders_count:
+              type: integer
+            revenue_amount:
+              type: integer
+              minimum: 0
+              description: Paisa (integer)
+            discount_amount:
+              type: integer
+              minimum: 0
+              description: Paisa (integer)
+        share_path:
+          type: string
+          example: /discount/WINTER15
+        revision:
+          type: integer
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateCouponInput:
+      type: object
+      required:
+      - code
+      - type
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$
+          description: Stored uppercase
+        type:
+          $ref: '#/components/schemas/CouponType'
+        percent_bps:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10000
+        amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 1000000000
+        max_discount_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        applies_to:
+          type: string
+          enum:
+          - all
+          - categories
+          - products
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 100
+        product_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 100
+        min_subtotal_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+        usage_limit:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        usage_per_customer:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        first_order_only:
+          type: boolean
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          $ref: '#/components/schemas/CouponStatus'
+    UpdateCouponInput:
+      type: object
+      required:
+      - revision
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$
+          description: Stored uppercase
+        type:
+          $ref: '#/components/schemas/CouponType'
+        percent_bps:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10000
+        amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 1000000000
+        max_discount_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        applies_to:
+          type: string
+          enum:
+          - all
+          - categories
+          - products
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 100
+        product_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 100
+        min_subtotal_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000000
+        usage_limit:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        usage_per_customer:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        first_order_only:
+          type: boolean
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          $ref: '#/components/schemas/CouponStatus'
+        revision:
+          type: integer
+    CouponListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - active
+            - scheduled
+            - expired
+            properties:
+              all:
+                type: integer
+              active:
+                type: integer
+              scheduled:
+                type: integer
+              expired:
+                type: integer
+    StorefrontVariant:
+      type: object
+      required:
+      - id
+      - title
+      - option_values
+      - price_amount
+      - compare_at_amount
+      - image_media_id
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+        price_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        image_media_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    StorefrontProduct:
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - description
+      - options
+      - variants
+      - images
+      - price_min_amount
+      - price_max_amount
+      - currency
+      - categories
+      - seo
+      - url_path
+      - is_preview_only
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          oneOf:
+          - $ref: '#/components/schemas/RichTextDoc'
+          - type: 'null'
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductOption'
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontVariant'
+        images:
+          type: array
+          items:
+            type: object
+            required:
+            - media_id
+            - alt
+            - media
+            properties:
+              media_id:
+                $ref: '#/components/schemas/Ulid'
+              alt:
+                type:
+                - string
+                - 'null'
+              media:
+                $ref: '#/components/schemas/StorefrontMedia'
+        price_min_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        price_max_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        currency:
+          type: string
+        categories:
+          type: array
+          items:
+            type: object
+            required:
+            - slug
+            - name
+            properties:
+              slug:
+                type: string
+              name:
+                type: string
+        seo:
+          type: object
+          required:
+          - title
+          - description
+          properties:
+            title:
+              type:
+              - string
+              - 'null'
+            description:
+              type:
+              - string
+              - 'null'
+        url_path:
+          type: string
+          example: /products/jamdani-three-piece
+        is_preview_only:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+      description: 'Exact key set: never cost, SKU, barcode or stock.'
+    StorefrontAvailability:
+      type: object
+      required:
+      - variants
+      properties:
+        variants:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - available
+            - low_stock
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              available:
+                type: boolean
+              low_stock:
+                type:
+                - integer
+                - 'null'
+                minimum: 1
+                description: Only when 0 < available ≤ low-stock threshold (P5-6)
+    StorefrontCategory:
+      type: object
+      required:
+      - slug
+      - name
+      - image
+      - url_path
+      - children
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        url_path:
+          type: string
+          example: /c/sarees
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontCategory'
+    StorefrontCategoryDetail:
+      type: object
+      required:
+      - slug
+      - name
+      - image
+      - url_path
+      - description
+      - ancestors
+      - children
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        url_path:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        ancestors:
+          type: array
+          items:
+            type: object
+            required:
+            - slug
+            - name
+            properties:
+              slug:
+                type: string
+              name:
+                type: string
+        children:
+          type: array
+          items:
+            type: object
+            required:
+            - slug
+            - name
+            - url_path
+            properties:
+              slug:
+                type: string
+              name:
+                type: string
+              url_path:
+                type: string
+    PaymentMethod:
+      type: string
+      enum:
+      - cod
+      - bkash
+      - sslcommerz
+      description: 'Phase 5a: ''cod'' only'
+    StorefrontCommerce:
+      type: object
+      required:
+      - checkout_enabled
+      - payment_methods
+      - free_delivery_over_amount
+      - delivery
+      properties:
+        checkout_enabled:
+          type: boolean
+        payment_methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+        free_delivery_over_amount:
+          type:
+          - integer
+          - 'null'
+        delivery:
+          type: array
+          items:
+            type: object
+            required:
+            - name
+            - charge_amount
+            - min_days
+            - max_days
+            properties:
+              name:
+                type: string
+              charge_amount:
+                type: integer
+                minimum: 0
+                description: Paisa (integer)
+              min_days:
+                type: integer
+              max_days:
+                type: integer
+    CartLine:
+      type: object
+      required:
+      - id
+      - variant_id
+      - product_slug
+      - product_name
+      - variant_title
+      - option_values
+      - image
+      - quantity
+      - unit_price_amount
+      - compare_at_amount
+      - line_amount
+      - issue
+      - max_quantity
+      - low_stock
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        product_slug:
+          type: string
+        product_name:
+          type: string
+        variant_title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+        unit_price_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        line_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        issue:
+          type:
+          - string
+          - 'null'
+          enum:
+          - unavailable
+          - insufficient_stock
+          - null
+        max_quantity:
+          type:
+          - integer
+          - 'null'
+        low_stock:
+          type:
+          - integer
+          - 'null'
+    Cart:
+      type: object
+      required:
+      - lines
+      - lines_count
+      - items_count
+      - currency
+      - coupon
+      - subtotal_amount
+      - discount_amount
+      - savings_amount
+      - estimated_total_amount
+      - free_delivery
+      - can_checkout
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartLine'
+          maxItems: 50
+        lines_count:
+          type: integer
+        items_count:
+          type: integer
+        currency:
+          type: string
+        coupon:
+          oneOf:
+          - type: object
+            required:
+            - code
+            - type
+            - discount_amount
+            - free_shipping
+            properties:
+              code:
+                type: string
+              type:
+                $ref: '#/components/schemas/CouponType'
+              discount_amount:
+                type: integer
+                minimum: 0
+                description: Paisa (integer)
+              free_shipping:
+                type: boolean
+          - type: 'null'
+        subtotal_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        savings_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        estimated_total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        free_delivery:
+          oneOf:
+          - type: object
+            required:
+            - threshold_amount
+            - remaining_amount
+            properties:
+              threshold_amount:
+                type: integer
+                minimum: 0
+                description: Paisa (integer)
+              remaining_amount:
+                type: integer
+                minimum: 0
+                description: Paisa (integer)
+          - type: 'null'
+        can_checkout:
+          type: boolean
+    CartMeta:
+      type: object
+      required: []
+      properties:
+        cart_token:
+          type: string
+          description: Only on the response that created the cart (201). Store in the sp_cart cookie.
+        notices:
+          type: array
+          items:
+            type: string
+    OrderStatus:
+      type: string
+      enum:
+      - pending_payment
+      - pending
+      - confirmed
+      - ready_to_ship
+      - shipped
+      - delivered
+      - returned
+      - cancelled
+    PaymentStatus:
+      type: string
+      enum:
+      - unpaid
+      - partially_paid
+      - paid
+      - partially_refunded
+      - refunded
+    OrderChannel:
+      type: string
+      enum:
+      - website
+      - facebook
+      - instagram
+      - whatsapp
+      - phone
+      - walk_in
+      - landing_page
+      - other
+    CancelReason:
+      type: string
+      enum:
+      - customer_request
+      - fake_order
+      - unreachable
+      - out_of_stock
+      - duplicate
+      - other
+    RefundMethod:
+      type: string
+      enum:
+      - cash
+      - bkash_personal
+      - nagad_personal
+      - bank
+      - other
+    CheckoutInput:
+      type: object
+      required:
+      - contact
+      - shipping_address
+      - payment_method
+      - expected_total_amount
+      properties:
+        contact:
+          type: object
+          required:
+          - name
+          - phone
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 120
+            phone:
+              type: string
+              description: BD mobile; normalised to 8801XXXXXXXXX
+            email:
+              type:
+              - string
+              - 'null'
+              format: email
+              maxLength: 254
+        shipping_address:
+          $ref: '#/components/schemas/AddressInput'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        customer_note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        accepts_marketing:
+          type: boolean
+        expected_total_amount:
+          type: integer
+          minimum: 0
+          description: Total the shopper saw; mismatch → 409 checkout_changed
+    StorefrontOrderLine:
+      type: object
+      required:
+      - product_name
+      - variant_title
+      - quantity
+      - image
+      - unit_price_amount
+      - total_amount
+      properties:
+        product_name:
+          type: string
+        variant_title:
+          type: string
+        quantity:
+          type: integer
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        unit_price_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+    StorefrontOrder:
+      type: object
+      required:
+      - number
+      - status
+      - payment_method
+      - placed_at
+      - customer_name
+      - customer_phone
+      - shipping_address
+      - lines
+      - coupon_code
+      - subtotal_amount
+      - discount_amount
+      - shipping_amount
+      - total_amount
+      - due_amount
+      - currency
+      - delivery
+      properties:
+        number:
+          type: string
+          example: GS-1042
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        placed_at:
+          type: string
+          format: date-time
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontOrderLine'
+        coupon_code:
+          type:
+          - string
+          - 'null'
+        subtotal_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        shipping_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        due_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        currency:
+          type: string
+        delivery:
+          type: object
+          required:
+          - zone_name
+          - min_days
+          - max_days
+          properties:
+            zone_name:
+              type: string
+            min_days:
+              type:
+              - integer
+              - 'null'
+            max_days:
+              type:
+              - integer
+              - 'null'
+    CheckoutResult:
+      type: object
+      required:
+      - order
+      - confirmation_token
+      properties:
+        order:
+          $ref: '#/components/schemas/StorefrontOrder'
+        confirmation_token:
+          type: string
+          description: 24 h; storefront keeps it in the httpOnly sp_order cookie
+    TrackOrderInput:
+      type: object
+      required:
+      - number
+      - phone
+      properties:
+        number:
+          type: string
+          maxLength: 24
+        phone:
+          type: string
+    StorefrontOrderTracking:
+      type: object
+      required:
+      - number
+      - status
+      - placed_at
+      - shipping
+      - lines
+      - total_amount
+      - due_amount
+      - currency
+      - timeline
+      - shipment
+      properties:
+        number:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        placed_at:
+          type: string
+          format: date-time
+        shipping:
+          type: object
+          required:
+          - district
+          - thana
+          properties:
+            district:
+              type: string
+            thana:
+              type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontOrderLine'
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        due_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        currency:
+          type: string
+        timeline:
+          type: array
+          items:
+            type: object
+            required:
+            - status
+            - at
+            properties:
+              status:
+                $ref: '#/components/schemas/OrderStatus'
+              at:
+                type: string
+                format: date-time
+        shipment:
+          oneOf:
+          - type: object
+            required:
+            - carrier_name
+            - tracking_code
+            - tracking_url
+            properties:
+              carrier_name:
+                type:
+                - string
+                - 'null'
+              tracking_code:
+                type:
+                - string
+                - 'null'
+              tracking_url:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+      description: 'Minimised view: no street address, no email (P5-23).'
+    OrderCustomerSummary:
+      type: object
+      required:
+      - id
+      - name
+      - phone
+      - email
+      - orders_count
+      - delivered_orders_count
+      - returned_orders_count
+      - total_spent_amount
+      properties:
+        id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type:
+          - string
+          - 'null'
+        orders_count:
+          type: integer
+        delivered_orders_count:
+          type: integer
+        returned_orders_count:
+          type: integer
+        total_spent_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+      description: Counts are for this shop only (Q23).
+    OrderSummary:
+      type: object
+      required:
+      - id
+      - number
+      - status
+      - payment_status
+      - payment_method
+      - channel
+      - created_via
+      - customer
+      - district
+      - thana
+      - items_count
+      - total_amount
+      - paid_amount
+      - due_amount
+      - currency
+      - coupon_code
+      - tags
+      - placed_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        payment_status:
+          $ref: '#/components/schemas/PaymentStatus'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        channel:
+          $ref: '#/components/schemas/OrderChannel'
+        created_via:
+          type: string
+          enum:
+          - storefront
+          - dashboard
+        customer:
+          $ref: '#/components/schemas/OrderCustomerSummary'
+        district:
+          type: string
+        thana:
+          type: string
+        items_count:
+          type: integer
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        paid_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        due_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        currency:
+          type: string
+        coupon_code:
+          type:
+          - string
+          - 'null'
+        tags:
+          type: array
+          items:
+            type: string
+        placed_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrderItem:
+      type: object
+      required:
+      - id
+      - product_id
+      - variant_id
+      - product_name
+      - variant_title
+      - option_values
+      - sku
+      - image
+      - unit_price_amount
+      - compare_at_amount
+      - unit_cost_amount
+      - quantity
+      - subtotal_amount
+      - discount_amount
+      - total_amount
+      - restocked_quantity
+      - current_stock
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        product_id:
+          type:
+          - string
+          - 'null'
+        variant_id:
+          type:
+          - string
+          - 'null'
+        product_name:
+          type: string
+        variant_title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/MediaRef'
+          - type: 'null'
+        unit_price_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+          description: null for staff (ViewCosts)
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+        subtotal_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        restocked_quantity:
+          type: integer
+        current_stock:
+          oneOf:
+          - type: object
+            required:
+            - available
+            - tracked
+            properties:
+              available:
+                type: integer
+              tracked:
+                type: boolean
+          - type: 'null'
+    OrderEvent:
+      type: object
+      required:
+      - id
+      - type
+      - from_status
+      - to_status
+      - actor
+      - body
+      - meta
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          type: string
+          enum:
+          - placed
+          - status_changed
+          - note
+          - edited
+          - payment
+          - refund
+          - shipment
+          - notification
+          - coupon_released
+        from_status:
+          oneOf:
+          - $ref: '#/components/schemas/OrderStatus'
+          - type: 'null'
+        to_status:
+          oneOf:
+          - $ref: '#/components/schemas/OrderStatus'
+          - type: 'null'
+        actor:
+          type: object
+          required:
+          - type
+          - user
+          properties:
+            type:
+              type: string
+              enum:
+              - user
+              - customer
+              - system
+            user:
+              oneOf:
+              - $ref: '#/components/schemas/UserRef'
+              - type: 'null'
+        body:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+        meta:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+    Payment:
+      type: object
+      required:
+      - id
+      - provider
+      - type
+      - status
+      - amount
+      - currency
+      - method
+      - reference
+      - note
+      - actor
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        provider:
+          type: string
+          enum:
+          - cod
+          - manual
+          - bkash
+          - sslcommerz
+        type:
+          type: string
+          enum:
+          - charge
+          - refund
+        status:
+          type: string
+          enum:
+          - pending
+          - succeeded
+          - failed
+          - cancelled
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+        method:
+          oneOf:
+          - $ref: '#/components/schemas/RefundMethod'
+          - type: 'null'
+        reference:
+          type:
+          - string
+          - 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        actor:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    Shipment:
+      type: object
+      required:
+      - id
+      - provider
+      - carrier_name
+      - tracking_code
+      - tracking_url
+      - status
+      - cod_amount
+      - shipped_at
+      - delivered_at
+      - returned_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        provider:
+          type: string
+          enum:
+          - manual
+          - steadfast
+          - pathao
+          - redx
+        carrier_name:
+          type:
+          - string
+          - 'null'
+        tracking_code:
+          type:
+          - string
+          - 'null'
+        tracking_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+        status:
+          type: string
+          enum:
+          - shipped
+          - delivered
+          - returned
+          - cancelled
+        cod_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        shipped_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        delivered_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        returned_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    Order:
+      allOf:
+      - $ref: '#/components/schemas/OrderSummary'
+      - type: object
+        required:
+        - contact
+        - shipping_address
+        - customer_note
+        - items
+        - events
+        - payments
+        - shipment
+        - subtotal_amount
+        - discount_amount
+        - shipping_amount
+        - shipping_discount_amount
+        - tax_amount
+        - refunded_amount
+        - shipping_zone_name
+        - delivery_min_days
+        - delivery_max_days
+        - shipping_overridden
+        - cancel_reason
+        - timestamps
+        - allowed_transitions
+        - can
+        - revision
+        - created_by
+        properties:
+          contact:
+            type: object
+            required:
+            - name
+            - phone
+            - email
+            properties:
+              name:
+                type: string
+              phone:
+                type: string
+              email:
+                type:
+                - string
+                - 'null'
+          shipping_address:
+            $ref: '#/components/schemas/Address'
+          customer_note:
+            type:
+            - string
+            - 'null'
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/OrderItem'
+          events:
+            type: array
+            items:
+              $ref: '#/components/schemas/OrderEvent'
+          payments:
+            type: array
+            items:
+              $ref: '#/components/schemas/Payment'
+          shipment:
+            oneOf:
+            - $ref: '#/components/schemas/Shipment'
+            - type: 'null'
+          subtotal_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          discount_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          shipping_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          shipping_discount_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          tax_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          refunded_amount:
+            type: integer
+            minimum: 0
+            description: Paisa (integer)
+          shipping_zone_name:
+            type: string
+          delivery_min_days:
+            type:
+            - integer
+            - 'null'
+          delivery_max_days:
+            type:
+            - integer
+            - 'null'
+          shipping_overridden:
+            type: boolean
+          cancel_reason:
+            oneOf:
+            - $ref: '#/components/schemas/CancelReason'
+            - type: 'null'
+          timestamps:
+            type: object
+            required: []
+            properties:
+              confirmed_at:
+                type: string
+                format: date-time
+              shipped_at:
+                type: string
+                format: date-time
+              delivered_at:
+                type: string
+                format: date-time
+              returned_at:
+                type: string
+                format: date-time
+              cancelled_at:
+                type: string
+                format: date-time
+          allowed_transitions:
+            type: array
+            items:
+              $ref: '#/components/schemas/OrderStatus'
+          can:
+            type: object
+            required:
+            - edit
+            - cancel
+            - refund
+            properties:
+              edit:
+                type: boolean
+              cancel:
+                type: boolean
+              refund:
+                type: boolean
+          revision:
+            type: integer
+          created_by:
+            oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+    OrderListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            additionalProperties:
+              type: integer
+            description: 'Keys: ''all'' and every OrderStatus'
+    ManualOrderInput:
+      type: object
+      required:
+      - contact
+      - shipping_address
+      - items
+      - channel
+      properties:
+        contact:
+          type: object
+          required:
+          - name
+          - phone
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 120
+            phone:
+              type: string
+              description: BD mobile; normalised to 8801XXXXXXXXX
+            email:
+              type:
+              - string
+              - 'null'
+              format: email
+              maxLength: 254
+        shipping_address:
+          $ref: '#/components/schemas/AddressInput'
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - variant_id
+            - quantity
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+          minItems: 1
+          maxItems: 50
+        channel:
+          type: string
+          enum:
+          - facebook
+          - instagram
+          - whatsapp
+          - phone
+          - walk_in
+          - landing_page
+          - other
+        payment_method:
+          type: string
+          enum:
+          - cod
+        coupon_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+        shipping_amount_override:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+        customer_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        customer_note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        accepts_marketing:
+          type: boolean
+        notify_customer:
+          type: boolean
+    OrderQuote:
+      type: object
+      required:
+      - lines
+      - zone
+      - coupon_error
+      - subtotal_amount
+      - discount_amount
+      - shipping_amount
+      - total_amount
+      - customer
+      properties:
+        lines:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/OrderItem'
+            - type: object
+              required:
+              - issue
+              properties:
+                issue:
+                  type:
+                  - string
+                  - 'null'
+                  enum:
+                  - unavailable
+                  - insufficient_stock
+                  - null
+          description: OrderItem shape without id/restocked_quantity, plus issue
+        zone:
+          oneOf:
+          - $ref: '#/components/schemas/ShippingQuote'
+          - type: 'null'
+        coupon_error:
+          type:
+          - string
+          - 'null'
+        subtotal_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        shipping_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        total_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer)
+        customer:
+          oneOf:
+          - $ref: '#/components/schemas/OrderCustomerSummary'
+          - type: 'null'
+    UpdateOrderInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        contact:
+          type: object
+          required: []
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 120
+            phone:
+              type: string
+            email:
+              type:
+              - string
+              - 'null'
+              format: email
+        shipping_address:
+          $ref: '#/components/schemas/AddressInput'
+        customer_note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 20
+    ShipOrderInput:
+      type: object
+      required: []
+      properties:
+        carrier_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        tracking_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        tracking_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          maxLength: 500
+          pattern: ^https://
+        notify_customer:
+          type: boolean
+    ReturnOrderInput:
+      type: object
+      required:
+      - restock
+      properties:
+        restock:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - quantity
+            properties:
+              item_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 0
+                maximum: 99
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    CancelOrderInput:
+      type: object
+      required:
+      - reason
+      properties:
+        reason:
+          $ref: '#/components/schemas/CancelReason'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        notify_customer:
+          type: boolean
+    RefundInput:
+      type: object
+      required:
+      - amount
+      - method
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+        method:
+          $ref: '#/components/schemas/RefundMethod'
+        reference:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 255
+    OrderBulkInput:
+      type: object
+      required:
+      - action
+      - ids
+      properties:
+        action:
+          type: string
+          enum:
+          - confirm
+          - ready
+        ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          minItems: 1
+          maxItems: 100
+    OrderBulkResult:
+      type: object
+      required:
+      - action
+      - updated
+      - skipped
+      properties:
+        action:
+          type: string
+          enum:
+          - confirm
+          - ready
+        updated:
+          type: integer
+        skipped:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - reason
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              reason:
+                type: string
+    LaunchItemKey:
+      type: string
+      enum:
+      - products
+      - shipping
+      - payments
+      - contact_phone
+      - policy_pages
+      - first_order
+    LaunchChecklist:
+      type: object
+      required:
+      - status
+      - can_publish
+      - published_at
+      - shop_url
+      - items
+      properties:
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+        can_publish:
+          type: boolean
+        published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        shop_url:
+          type: string
+          format: uri
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - key
+            - required
+            - done
+            - href
+            properties:
+              key:
+                $ref: '#/components/schemas/LaunchItemKey'
+              required:
+                type: boolean
+              done:
+                type: boolean
+              href:
+                type: string
+    OrderDashboard:
+      type: object
+      required:
+      - this_month
+      - waiting
+      - best_sellers
+      - plan
+      properties:
+        this_month:
+          type: object
+          required:
+          - count
+          - sales_amount
+          - delivered_count
+          - returned_count
+          - cancelled_count
+          - delivery_success_rate
+          properties:
+            count:
+              type: integer
+            sales_amount:
+              type: integer
+              minimum: 0
+              description: Paisa (integer)
+            delivered_count:
+              type: integer
+            returned_count:
+              type: integer
+            cancelled_count:
+              type: integer
+            delivery_success_rate:
+              type:
+              - number
+              - 'null'
+              minimum: 0
+              maximum: 1
+        waiting:
+          type: object
+          required:
+          - pending
+          - confirmed
+          - ready_to_ship
+          properties:
+            pending:
+              type: integer
+            confirmed:
+              type: integer
+            ready_to_ship:
+              type: integer
+        best_sellers:
+          type: array
+          items:
+            type: object
+            required:
+            - product_id
+            - name
+            - image
+            - units
+            properties:
+              product_id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              image:
+                oneOf:
+                - $ref: '#/components/schemas/MediaRef'
+                - type: 'null'
+              units:
+                type: integer
+          maxItems: 5
+        plan:
+          type: object
+          required:
+          - used
+          - limit
+          properties:
+            used:
+              type: integer
+            limit:
+              type:
+              - integer
+              - 'null'
