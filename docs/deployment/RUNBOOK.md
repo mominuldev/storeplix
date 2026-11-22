@@ -387,7 +387,7 @@ the API (`sp_resolve_host`, `active` rows only).
 | Key | Production | Notes |
 |---|---|---|
 | `DOMAINS_FAKE` | **`false`** | `true` with `APP_ENV=production` → the API refuses to boot (P6-13) |
-| `CLOUDFLARE_API_TOKEN` | secret manager | Required in production (boot refuses when empty). Never logged, never in a response, `last_check` or audit |
+| `CLOUDFLARE_API_TOKEN` | secret manager | Required in production. Boot does not check it (build steps run without secrets); when empty, every domain check fails with `provider_error` and logs `domains.provider_not_configured`, so check the logs after deploy. Never logged, never in a response, `last_check` or audit |
 | `CLOUDFLARE_ZONE_ID` | the SaaS zone id | Required in production |
 | `CLOUDFLARE_API_BASE` | default `https://api.cloudflare.com/client/v4` | config only |
 | `DOMAINS_CNAME_TARGET` | `customers.storeplix.com` | Shown to merchants; changing it later breaks every merchant's CNAME |

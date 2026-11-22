@@ -73,17 +73,15 @@ final class DomainsServiceProvider extends ServiceProvider
         }
     }
 
-    /** P6-13: DOMAINS_FAKE never in production; production needs the Cloudflare token and zone. */
+    /**
+     * P6-13: DOMAINS_FAKE never in production. Missing Cloudflare credentials are not a boot error (build steps such as
+     * `composer install` / `package:discover` boot without secrets); CloudflareCustomHostnames refuses on first use and
+     * logs `domains.provider_not_configured` (RUNBOOK §8 post-deploy check).
+     */
     public static function assertSafeConfiguration(Application $app): void
     {
-        if (! $app->environment('production')) {
-            return;
-        }
-        if ((bool) config('domains.fake')) {
+        if ((bool) config('domains.fake') && $app->environment('production')) {
             throw new RuntimeException('DOMAINS_FAKE=true is not allowed in production.');
-        }
-        if ((string) config('domains.cloudflare.api_token') === '' || (string) config('domains.cloudflare.zone_id') === '') {
-            throw new RuntimeException('CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID are required in production (custom domains).');
         }
     }
 }

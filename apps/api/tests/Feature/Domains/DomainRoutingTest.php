@@ -233,11 +233,10 @@ class DomainRoutingTest extends TestCase
         try {
             config(['domains.fake' => true, 'domains.cloudflare.api_token' => 't', 'domains.cloudflare.zone_id' => 'z']);
             $this->assertThrowsMessage(fn () => DomainsServiceProvider::assertSafeConfiguration($this->app), 'DOMAINS_FAKE');
-            config(['domains.fake' => false, 'domains.cloudflare.api_token' => '']);
-            $this->assertThrowsMessage(fn () => DomainsServiceProvider::assertSafeConfiguration($this->app), 'CLOUDFLARE_API_TOKEN');
-            config(['domains.cloudflare.api_token' => 't', 'domains.cloudflare.zone_id' => '']);
-            $this->assertThrowsMessage(fn () => DomainsServiceProvider::assertSafeConfiguration($this->app), 'CLOUDFLARE_ZONE_ID');
-            config(['domains.cloudflare.zone_id' => 'z']);
+            // Missing Cloudflare credentials must not block boot (composer install / package:discover run without secrets).
+            config(['domains.fake' => false, 'domains.cloudflare.api_token' => '', 'domains.cloudflare.zone_id' => '']);
+            DomainsServiceProvider::assertSafeConfiguration($this->app);
+            config(['domains.cloudflare.api_token' => 't', 'domains.cloudflare.zone_id' => 'z']);
             DomainsServiceProvider::assertSafeConfiguration($this->app);
         } finally {
             $this->app['env'] = 'testing';
