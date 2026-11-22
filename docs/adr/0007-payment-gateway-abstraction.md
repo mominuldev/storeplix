@@ -33,3 +33,27 @@ idempotency keys. Raw payloads stored with secrets stripped.
   credentials are confirmed by the Figma copy ("Money goes straight to your bKash merchant account", Integrations
   14:980); OPEN-QUESTIONS Q32 records the PO confirmation still needed. Advance payment links (144:46081) use the same
   drivers through a hosted pay page.
+
+## Amendment 2026-11-22 — Phase 5b binding detail (PHASE-5B-CONTRACT §3–§5, P5B-10–P5B-29)
+- **Merchant-owned credentials** (Q32) live in `payment_gateway_accounts`, one row per store and provider, encrypted
+  with a dedicated integration-credentials key (not `APP_KEY`), sandbox/live mode, masked hint only in responses.
+  Base URLs come from config by mode, never from the merchant.
+- **Interface, as built:** `initiate(Payment, InitiationContext): Initiation` (redirect URL), `complete(Payment,
+  array $callback): Verification` (bKash Execute; SSLCommerz Validation API), `verify(Payment): Verification`
+  (bKash Query Payment; SSLCommerz query by `tran_id`), `parseWebhook(account, Request): ?WebhookEvent`,
+  `refund(Payment $charge, int $amount, string $reason): RefundResult`, `refundStatus(Payment $refund)`,
+  `verifyCredentials(account)`. `PaymentManager::driver()` adds `FakeGateway` for local dev and CI.
+- **Paid means verified.** A payment succeeds only when the provider's server-side answer (Execute/Query for bKash,
+  Validation API for SSLCommerz) says completed **and** amount (exact paisa), currency `BDT` and our reference
+  (`merchantInvoiceNumber` / `tran_id` = our payment id) match. Browser returns and IPNs only *trigger* that check.
+  Returns land on the API (signed URLs), never on a storefront route handler.
+- **bKash Tokenized Checkout v2** (`/v2/tokenized-checkout/...`) is the target API; the callback `signature`
+  algorithm and the IPN for tokenized payments are not publicly documented, so a 5-minute reconcile job using Query
+  Payment is the safety net. **SSLCommerz v4** session + IPN + Validation API.
+- `PaymentStateMachine`: charge `pending → succeeded | failed | cancelled`; refund `pending → succeeded | failed`.
+  Every transition is a conditional update (`WHERE status = 'pending'`), so duplicates have no effect.
+- Order effects: a verified payment on `pending_payment` → `confirmed` (Figma 60:14865); an advance on a COD order →
+  `partially_paid`, and the order confirms itself. A payment verified after the hold expired is refunded
+  automatically (default, pending PO Q61).
+- Gateway refunds go through the original gateway (partial allowed where the provider allows it); manual refund
+  records from 5a stay.

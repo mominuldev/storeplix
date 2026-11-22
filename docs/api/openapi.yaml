@@ -1,13 +1,17 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.5.1
+  version: 1.6.0
   description: |
-    Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (payments, couriers, documents) is not specified yet. Binding sources: docs/development/AGENT-CONTRACTS.md,
+    Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     1.5.1 (2026-11-22, QA 5a F-L6): documentation-only alignment with the built and accepted Phase 5a deviations
     (Idempotency-Key format and 400 for a malformed key, zone area clash as 422, confirm also un-packs, manual orders with
     COD off, no-zone delivery charge, dashboard month rule). No shape changes.
+    1.6.0 (2026-11-22, Phase 5b): additive only. New tags payments, couriers, documents, returns, webhooks; widened enums
+    (ShipmentStatus, CancelReason, RefundMethod, CustomerSmsEvent, OrderEvent.type); new optional fields on Payment, Shipment,
+    Order, OrderSummary, CheckoutInput/Result, StorefrontOrder, StorefrontCommerce and store settings. Clients must tolerate new enum values.
+    Storefront limiter (P5B-9): 300/min per store host + shopper IP and 3 000/min per store host.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -37,6 +41,16 @@ tags:
 - name: shipping
 - name: coupons
 - name: orders
+- name: payments
+  description: 'Phase 5b: gateway accounts, payment links (PHASE-5B §4.1, §4.4)'
+- name: couriers
+  description: 'Phase 5b: courier accounts and shipments (PHASE-5B §4.6, §4.7)'
+- name: documents
+  description: 'Phase 5b: invoice and label PDFs (PHASE-5B §4.8)'
+- name: returns
+  description: 'Phase 5b: returns and exchanges (PHASE-5B §4.9)'
+- name: webhooks
+  description: 'Phase 5b: public payment returns and provider webhooks (PHASE-5B §4.3)'
 paths:
   /health:
     get:
@@ -5630,8 +5644,2699 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/payment-gateways:
+    get:
+      tags:
+      - payments
+      summary: List payment gateway accounts
+      operationId: listPaymentGateways
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentGatewayAccount'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/payment-gateways/{provider}:
+    parameters:
+    - $ref: '#/components/parameters/GatewayProviderPath'
+    put:
+      tags:
+      - payments
+      summary: Connect or replace gateway credentials
+      operationId: connectPaymentGateway
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). The API checks the credentials with the provider (bKash Grant Token; SSLCommerz session init) before saving. Audit `integration.connected`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectGatewayInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentGatewayAccount'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`credentials_invalid` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    patch:
+      tags:
+      - payments
+      summary: Enable for checkout / set default
+      operationId: updatePaymentGateway
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGatewayInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentGatewayAccount'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - payments
+      summary: Disconnect a gateway
+      operationId: disconnectPaymentGateway
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). Wipes credentials.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Disconnected
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`gateway_busy` (pending charges or refunds)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/payment-gateways/{provider}/test-payment:
+    parameters:
+    - $ref: '#/components/parameters/GatewayProviderPath'
+    post:
+      tags:
+      - payments
+      summary: Start a test payment
+      operationId: createGatewayTestPayment
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). ৳ 10 sandbox / ৳ 1 live; sets verified_at on success.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/GatewayTestPayment'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch` or `idempotency_key_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/orders/pay:
+    post:
+      tags:
+      - storefront
+      summary: Retry payment or switch to COD
+      operationId: storefrontPayOrder
+      description: Storefront (server-to-server). For a `pending_payment` order while the hold is open (P5B-17). Throttle `checkout`.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/OrderToken'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontPayInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - order
+                    - payment
+                    properties:
+                      order:
+                        $ref: '#/components/schemas/StorefrontOrder'
+                      payment:
+                        oneOf:
+                        - $ref: '#/components/schemas/PaymentInitiation'
+                        - type: 'null'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`payment_not_pending` or idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`payment_method_unavailable` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/payments/{payment}/result:
+    parameters:
+    - $ref: '#/components/parameters/PaymentPath'
+    get:
+      tags:
+      - storefront
+      summary: Payment result (no PII)
+      operationId: storefrontPaymentResult
+      description: Storefront (server-to-server). `private, no-store`. Payment of another store → 404.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontPaymentResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/payment-links/{token}:
+    parameters:
+    - $ref: '#/components/parameters/PayLinkToken'
+    get:
+      tags:
+      - storefront
+      summary: Resolve a payment link
+      operationId: storefrontGetPaymentLink
+      description: Storefront (server-to-server). Unknown, expired, paid and cancelled tokens return the same 404 body. Throttle `pay-link` 20/min per host + IP.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentLinkView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/payment-links/{token}/pay:
+    parameters:
+    - $ref: '#/components/parameters/PayLinkToken'
+    post:
+      tags:
+      - storefront
+      summary: Start paying a link
+      operationId: storefrontPayPaymentLink
+      description: Storefront (server-to-server). Throttle `pay-link`.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentInitiation'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch` or `idempotency_key_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /payments/return/bkash/{payment}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentPath'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - webhooks
+      summary: bKash callback (browser)
+      operationId: bkashReturn
+      description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect. Query `paymentID`, `status` (success|failure|cancel), `signature` are triggers only.
+      security: []
+      parameters:
+      - in: query
+        name: paymentID
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+      responses:
+        '303':
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '403':
+          description: Bad signature (HTML page)
+        '404':
+          description: Unknown payment (HTML page)
+  /payments/return/sslcommerz/{payment}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentPath'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    - in: query
+      name: r
+      required: true
+      schema:
+        type: string
+        enum:
+        - success
+        - fail
+        - cancel
+    get:
+      tags:
+      - webhooks
+      summary: SSLCommerz return (GET)
+      operationId: sslcommerzReturnGet
+      description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect.
+      security: []
+      responses:
+        '303':
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '403':
+          description: Bad signature (HTML page)
+        '404':
+          description: Unknown payment (HTML page)
+    post:
+      tags:
+      - webhooks
+      summary: SSLCommerz return (browser POST)
+      operationId: sslcommerzReturnPost
+      description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect. Form fields `tran_id`, `val_id`, `status` trigger the Validation API.
+      security: []
+      responses:
+        '303':
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '403':
+          description: Bad signature (HTML page)
+        '404':
+          description: Unknown payment (HTML page)
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /webhooks/sslcommerz/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: SSLCommerz IPN webhook
+      operationId: sslcommerzIpn
+      description: IPN (P5B-19). `verify_sign` pre-filter; every IPN is confirmed with the Validation API before any effect.
+      security: []
+      responses:
+        '200':
+          description: Accepted (stored; processed on the `webhooks` queue). Duplicates have no effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          description: Bad bearer/secret; nothing stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /webhooks/bkash/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: bKash IPN webhook
+      operationId: bkashIpn
+      description: AWS-SNS-style notification (VERIFY against sandbox); trigger for Query Payment only. Optional in 5b.
+      security: []
+      responses:
+        '200':
+          description: Accepted (stored; processed on the `webhooks` queue). Duplicates have no effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          description: Bad bearer/secret; nothing stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /webhooks/steadfast/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: Steadfast webhook
+      operationId: steadfastWebhook
+      description: 'Requires `Authorization: Bearer {secret}` (P5B-37; payload VERIFY against sandbox).'
+      security: []
+      responses:
+        '200':
+          description: Accepted (stored; processed on the `webhooks` queue). Duplicates have no effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          description: Bad bearer/secret; nothing stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /webhooks/pathao/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: Pathao webhook
+      operationId: pathaoWebhook
+      description: Requires `X-PATHAO-Signature` = the account secret; must answer 202 within 10 s; acknowledges `webhook_integration`.
+      security: []
+      responses:
+        '202':
+          description: Accepted (stored; processed on the `webhooks` queue). Duplicates have no effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          description: Bad bearer/secret; nothing stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /webhooks/redx/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: RedX webhook
+      operationId: redxWebhook
+      description: Accepted only once the RedX webhook scheme is verified (P5B-37); until then 404.
+      security: []
+      responses:
+        '200':
+          description: Accepted (stored; processed on the `webhooks` queue). Duplicates have no effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          description: Bad bearer/secret; nothing stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+  /stores/{store}/orders/{order}/payment-links:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    get:
+      tags:
+      - payments
+      summary: List payment links of an order
+      operationId: listPaymentLinks
+      description: Order (merchant). O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentLink'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - payments
+      summary: Ask for an advance (payment link)
+      operationId: createPaymentLink
+      description: Order (merchant). O A S (P5B-22, Figma 144:46081).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentLinkInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentLink'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`payment_link_active`, `invalid_state_transition` or idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`gateway_not_connected` or `validation_failed` (`amount` > due)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/payment-links/{link}/resend:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    - $ref: '#/components/parameters/PaymentLinkPath'
+    post:
+      tags:
+      - payments
+      summary: Resend the payment link SMS
+      operationId: resendPaymentLink
+      description: Order (merchant). O A S; 3 per link per hour.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentLink'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Link not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/payment-links/{link}:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    - $ref: '#/components/parameters/PaymentLinkPath'
+    delete:
+      tags:
+      - payments
+      summary: Cancel a payment link
+      operationId: cancelPaymentLink
+      description: Order (merchant). O A S. The order is not affected.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Cancelled
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Already paid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/couriers:
+    get:
+      tags:
+      - couriers
+      summary: List courier accounts
+      operationId: listCouriers
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CourierAccount'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/couriers/{provider}:
+    parameters:
+    - $ref: '#/components/parameters/CourierProviderPath'
+    put:
+      tags:
+      - couriers
+      summary: Connect or replace courier credentials
+      operationId: connectCourier
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). `meta.webhook_secret` is returned once (Steadfast/Pathao).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectCourierInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CourierAccount'
+                  meta:
+                    type: object
+                    required: []
+                    properties:
+                      webhook_secret:
+                        type:
+                        - string
+                        - 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (courier_connections)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`credentials_invalid` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    patch:
+      tags:
+      - couriers
+      summary: Update courier settings
+      operationId: updateCourier
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCourierInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CourierAccount'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - couriers
+      summary: Disconnect a courier
+      operationId: disconnectCourier
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Disconnected
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`courier_busy`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/couriers/{provider}/test:
+    parameters:
+    - $ref: '#/components/parameters/CourierProviderPath'
+    post:
+      tags:
+      - couriers
+      summary: Test the connection
+      operationId: testCourier
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - ok
+                    - checked_at
+                    properties:
+                      ok:
+                        type: boolean
+                      checked_at:
+                        type: string
+                        format: date-time
+                      balance_amount:
+                        type:
+                        - integer
+                        - 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`credentials_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/couriers/{provider}/webhook-secret:
+    parameters:
+    - $ref: '#/components/parameters/CourierProviderPath'
+    post:
+      tags:
+      - couriers
+      summary: Rotate the webhook secret
+      operationId: rotateCourierWebhookSecret
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). The old secret stops working at once; the new one is shown once.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - webhook_url
+                    - webhook_secret
+                    properties:
+                      webhook_url:
+                        type: string
+                        format: uri
+                      webhook_secret:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/couriers/{provider}/areas:
+    parameters:
+    - $ref: '#/components/parameters/CourierProviderPath'
+    get:
+      tags:
+      - couriers
+      summary: Courier area lookup (Pathao, RedX)
+      operationId: listCourierAreas
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). Cached 24 h per account. `meta.suggested` when `district_code`/`thana_code` are sent.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: level
+        required: true
+        schema:
+          type: string
+          enum:
+          - city
+          - zone
+          - area
+      - in: query
+        name: parent_id
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: district_code
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: thana_code
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CourierArea'
+                  meta:
+                    type: object
+                    required: []
+                    properties:
+                      suggested:
+                        type:
+                        - object
+                        - 'null'
+                        required:
+                        - city_id
+                        - zone_id
+                        - area_id
+                        properties:
+                          city_id:
+                            type:
+                            - string
+                            - 'null'
+                          zone_id:
+                            type:
+                            - string
+                            - 'null'
+                          area_id:
+                            type:
+                            - string
+                            - 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/couriers/{provider}/pickup-stores:
+    parameters:
+    - $ref: '#/components/parameters/CourierProviderPath'
+    get:
+      tags:
+      - couriers
+      summary: Courier-side pickup stores (Pathao, RedX)
+      operationId: listCourierPickupStores
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - name
+                      - address
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        address:
+                          type:
+                          - string
+                          - 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/orders/{order}/shipments:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - couriers
+      summary: Book a parcel with a courier
+      operationId: bookShipment
+      description: 'Shipments (PHASE-5B §4.7). O A S unless stated. Order must be confirmed or ready_to_ship. Courier timeout → 201 with status `booking` (reconciled later). `cod_amount` override: O A only.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookShipmentInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Shipment'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`shipment_booked`, `invalid_state_transition` or idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`gateway_not_connected` (courier not connected), `courier_rejected` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments/bulk:
+    post:
+      tags:
+      - couriers
+      summary: Book up to 500 parcels
+      operationId: bulkBookShipments
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Plan feature `bulk_courier_booking`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkBookInput'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShipmentBatch'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipment-batches/{batch}:
+    parameters:
+    - $ref: '#/components/parameters/ShipmentBatchPath'
+    get:
+      tags:
+      - couriers
+      summary: Bulk booking progress
+      operationId: getShipmentBatch
+      description: Shipments (PHASE-5B §4.7). O A S unless stated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShipmentBatch'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments:
+    get:
+      tags:
+      - couriers
+      summary: Shipments list
+      operationId: listShipments
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Figma 39:10347.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[provider]
+        required: false
+        schema:
+          type: string
+        description: 'Comma list: steadfast,pathao,redx,manual'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of ShipmentStatus or groups problems, active, final
+      - in: query
+        name: filter[booked_at][gte]
+        required: false
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[booked_at][lte]
+        required: false
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - -booked_at
+          - -cod
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShipmentSummary'
+                  meta:
+                    $ref: '#/components/schemas/ShipmentListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments/sync:
+    post:
+      tags:
+      - couriers
+      summary: Sync now
+      operationId: syncShipments
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Throttle 1/min per store.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - queued
+                    properties:
+                      queued:
+                        type: integer
+                        minimum: 0
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments/{shipment}:
+    parameters:
+    - $ref: '#/components/parameters/ShipmentPath'
+    get:
+      tags:
+      - couriers
+      summary: Shipment detail
+      operationId: getShipment
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Figma 146:33100.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShipmentDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments/{shipment}/refresh:
+    parameters:
+    - $ref: '#/components/parameters/ShipmentPath'
+    post:
+      tags:
+      - couriers
+      summary: Refresh from the courier
+      operationId: refreshShipment
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Throttle 6/min per shipment.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ShipmentDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/shipments/{shipment}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/ShipmentPath'
+    post:
+      tags:
+      - couriers
+      summary: Cancel a parcel at the courier
+      operationId: cancelShipment
+      description: Shipments (PHASE-5B §4.7). O A S unless stated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                reason:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 255
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Shipment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`courier_cancel_unsupported` or `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/shipments/{shipment}/mark-cancelled:
+    parameters:
+    - $ref: '#/components/parameters/ShipmentPath'
+    post:
+      tags:
+      - couriers
+      summary: Record a parcel cancelled in the courier panel
+      operationId: markShipmentCancelled
+      description: Shipments (PHASE-5B §4.7). O A S unless stated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                note:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 500
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Shipment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/document-templates:
+    get:
+      tags:
+      - documents
+      summary: List document templates
+      operationId: listDocumentTemplates
+      description: Documents (PHASE-5B §4.8). Print O A S; template writes O A (`ManageSettings`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/document-templates/{kind}:
+    parameters:
+    - $ref: '#/components/parameters/DocumentKindPath'
+    put:
+      tags:
+      - documents
+      summary: Save template options
+      operationId: updateDocumentTemplate
+      description: Documents (PHASE-5B §4.8). Print O A S; template writes O A (`ManageSettings`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentTemplateInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DocumentTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/documents:
+    post:
+      tags:
+      - documents
+      summary: Generate a PDF for orders
+      operationId: createDocument
+      description: Documents (PHASE-5B §4.8). Print O A S; template writes O A (`ManageSettings`). Queued; poll the document. ≤ 10 queued per store (409 `conflict`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentInput'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreDocument'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`conflict` (too many queued documents)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/documents/preview:
+    post:
+      tags:
+      - documents
+      summary: HTML preview for the print page
+      operationId: previewDocument
+      description: Documents (PHASE-5B §4.8). Print O A S; template writes O A (`ManageSettings`). Rendered in a sandboxed iframe by the dashboard; throttle 30/min.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentPreviewInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - html
+                    properties:
+                      html:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/documents/{document}:
+    parameters:
+    - $ref: '#/components/parameters/DocumentPath'
+    get:
+      tags:
+      - documents
+      summary: Document status and download URL
+      operationId: getDocument
+      description: Documents (PHASE-5B §4.8). Print O A S; template writes O A (`ManageSettings`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreDocument'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /documents/{document}/download:
+    parameters:
+    - $ref: '#/components/parameters/DocumentPath'
+    - in: query
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - documents
+      summary: Download a PDF (signed, 5 minutes)
+      operationId: downloadDocument
+      description: Public signed URL; `private, no-store`.
+      security: []
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Bad or expired signature
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/orders/{order}/items/quote:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Preview an items edit
+      operationId: quoteOrderItems
+      description: Order changes (PHASE-5B §4.9). O A S. No writes.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditOrderItemsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderItemsQuote'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/items:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    put:
+      tags:
+      - orders
+      summary: Edit items
+      operationId: editOrderItems
+      description: Order changes (PHASE-5B §4.9). O A S (P5B-60–62, Figma 144:46654).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditOrderItemsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+                  meta:
+                    type: object
+                    required: []
+                    properties:
+                      notices:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict`, `invalid_state_transition` or `shipment_booked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`out_of_stock`, `total_below_paid` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/restock:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Restock a returned order
+      operationId: restockReturnedOrder
+      description: Order changes (PHASE-5B §4.9). O A S; order must be `returned` (P5B-69).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestockInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/returns:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - returns
+      summary: Create a return or exchange
+      operationId: createReturn
+      description: Order changes (PHASE-5B §4.9). O A S; delivered orders only.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReturnInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`return_not_allowed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns:
+    get:
+      tags:
+      - returns
+      summary: Returns & exchanges
+      operationId: listReturns
+      description: Order changes (PHASE-5B §4.9). O A S. Figma 39:9900.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[type]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[reason]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[provider]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - -created_at
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReturnSummary'
+                  meta:
+                    $ref: '#/components/schemas/ReturnListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    get:
+      tags:
+      - returns
+      summary: Return detail
+      operationId: getReturn
+      description: Order changes (PHASE-5B §4.9). O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/approve:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Approve a return
+      operationId: approveReturn
+      description: 'Order changes (PHASE-5B §4.9). O A S. '
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveReturnInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/reject:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Reject a return
+      operationId: rejectReturn
+      description: 'Order changes (PHASE-5B §4.9). O A S. '
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectReturnInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/receive:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Mark received and restock
+      operationId: receiveReturn
+      description: Order changes (PHASE-5B §4.9). O A S. Restock writes ledger `order_returned`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiveReturnInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/close:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Close a return
+      operationId: closeReturn
+      description: 'Order changes (PHASE-5B §4.9). O A S. '
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                note:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 500
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/exchange-order:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Create the exchange order
+      operationId: createExchangeOrder
+      description: Order changes (PHASE-5B §4.9). O A S (O A when the difference is negative). Uses manual-order placement and its plan limit (P5B-67).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeOrderInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ExchangeOrderResult'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` or idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`out_of_stock` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/returns/{return}/notes:
+    parameters:
+    - $ref: '#/components/parameters/ReturnPath'
+    post:
+      tags:
+      - returns
+      summary: Add a note
+      operationId: addReturnNote
+      description: Order changes (PHASE-5B §4.9). O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReturnEvent'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /dev/fake-gateway/{payment}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentPath'
+    get:
+      tags:
+      - webhooks
+      summary: Fake hosted payment page (local/testing only)
+      operationId: fakeGatewayPage
+      description: Registered only when `PAYMENTS_FAKE=true` and the environment is not production (P5B-29). HTML page with Pay / Fail / Cancel.
+      security: []
+      responses:
+        '200':
+          description: HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   parameters:
+    GatewayProviderPath:
+      in: path
+      name: provider
+      required: true
+      schema:
+        $ref: '#/components/schemas/GatewayProvider'
+      description: bkash | sslcommerz; anything else → 404
+    CourierProviderPath:
+      in: path
+      name: provider
+      required: true
+      schema:
+        $ref: '#/components/schemas/CourierProvider'
+      description: steadfast | pathao | redx; anything else → 404
+    ShipmentPath:
+      in: path
+      name: shipment
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: shipments.id of this store, else 404
+    ShipmentBatchPath:
+      in: path
+      name: batch
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: shipment_batches.id of this store, else 404
+    PaymentLinkPath:
+      in: path
+      name: link
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: payment_links.id of this order, else 404
+    ReturnPath:
+      in: path
+      name: return
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: return_requests.id of this store, else 404
+    DocumentPath:
+      in: path
+      name: document
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: documents.id of this store, else 404
+    DocumentKindPath:
+      in: path
+      name: kind
+      required: true
+      schema:
+        $ref: '#/components/schemas/DocumentKind'
+      description: Template kind; unknown → 404
+    PaymentPath:
+      in: path
+      name: payment
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: payments.id
+    PayLinkToken:
+      in: path
+      name: token
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9]{12}$
+      description: Payment link token (12 base62 characters)
+    RouteKey:
+      in: path
+      name: route_key
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9]{32}$
+      description: Per-account webhook route key; unknown → 404
+    OrderToken:
+      in: header
+      name: X-Order-Token
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+      description: Confirmation token from the sp_order cookie (P5-23)
+    SignedExpires:
+      in: query
+      name: expires
+      required: true
+      schema:
+        type: integer
+    SignedSignature:
+      in: query
+      name: signature
+      required: true
+      schema:
+        type: string
     StorefrontPreview:
       in: header
       name: X-Storefront-Preview
@@ -6957,10 +9662,42 @@ components:
       type: object
       required: []
       properties:
+        tax:
+          type: object
+          required: []
+          properties:
+            display:
+              type: string
+              enum:
+              - none
+              - included
+            rate_bps:
+              type: integer
+              minimum: 0
+              maximum: 2500
+            bin:
+              type:
+              - string
+              - 'null'
+              pattern: ^[0-9]{9}(-[0-9]{4})?$
+        invoice:
+          type: object
+          required: []
+          properties:
+            footer:
+              type:
+              - string
+              - 'null'
+              maxLength: 300
         checkout:
           type: object
           required: []
           properties:
+            cod_advance:
+              type: string
+              enum:
+              - none
+              - delivery_charge
             cod_enabled:
               type: boolean
         order_prefix:
@@ -10234,6 +12971,8 @@ components:
       - order_confirmed
       - order_shipped
       - order_cancelled
+      - payment_link
+      - order_updated
     StoreCommerceSettings:
       type: object
       required:
@@ -10242,11 +12981,46 @@ components:
       - next_order_number
       - notifications
       properties:
+        tax:
+          type: object
+          required:
+          - display
+          - rate_bps
+          - bin
+          properties:
+            display:
+              type: string
+              enum:
+              - none
+              - included
+            rate_bps:
+              type: integer
+              minimum: 0
+              maximum: 2500
+            bin:
+              type:
+              - string
+              - 'null'
+        invoice:
+          type: object
+          required:
+          - footer
+          properties:
+            footer:
+              type:
+              - string
+              - 'null'
+              maxLength: 300
         checkout:
           type: object
           required:
           - cod_enabled
           properties:
+            cod_advance:
+              type: string
+              enum:
+              - none
+              - delivery_charge
             cod_enabled:
               type: boolean
         order_prefix:
@@ -10857,7 +13631,7 @@ components:
       - cod
       - bkash
       - sslcommerz
-      description: 'Phase 5a: ''cod'' only'
+      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12).'
     StorefrontCommerce:
       type: object
       required:
@@ -10866,6 +13640,11 @@ components:
       - free_delivery_over_amount
       - delivery
       properties:
+        cod_advance:
+          type: string
+          enum:
+          - none
+          - delivery_charge
         checkout_enabled:
           type: boolean
         payment_methods:
@@ -11056,6 +13835,7 @@ components:
           items:
             type: string
     OrderStatus:
+      description: 'pending_payment is live from Phase 5b: → confirmed (verified payment), pending (switched to COD), cancelled (PHASE-5B P5B-14).'
       type: string
       enum:
       - pending_payment
@@ -11094,6 +13874,8 @@ components:
       - out_of_stock
       - duplicate
       - other
+      - payment_timeout
+      - payment_link_expired
     RefundMethod:
       type: string
       enum:
@@ -11102,6 +13884,7 @@ components:
       - nagad_personal
       - bank
       - other
+      - gateway
     CheckoutInput:
       type: object
       required:
@@ -11110,6 +13893,11 @@ components:
       - payment_method
       - expected_total_amount
       properties:
+        advance_gateway:
+          oneOf:
+          - $ref: '#/components/schemas/GatewayProvider'
+          - type: 'null'
+          description: Required for COD when the store sets cod_advance = delivery_charge (else 422 advance_required)
         contact:
           type: object
           required:
@@ -11192,6 +13980,13 @@ components:
       - currency
       - delivery
       properties:
+        payment:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontPaymentState'
+          - type: 'null'
+        paid_amount:
+          type: integer
+          minimum: 0
         number:
           type: string
           example: GS-1042
@@ -11261,6 +14056,11 @@ components:
       - order
       - confirmation_token
       properties:
+        payment:
+          oneOf:
+          - $ref: '#/components/schemas/PaymentInitiation'
+          - type: 'null'
+          description: null for plain COD (PHASE-5B P5B-15)
         order:
           $ref: '#/components/schemas/StorefrontOrder'
         confirmation_token:
@@ -11415,6 +14215,35 @@ components:
       - placed_at
       - updated_at
       properties:
+        shipment:
+          oneOf:
+          - type: object
+            required:
+            - provider
+            - status
+            - consignment_id
+            properties:
+              provider:
+                type: string
+                enum:
+                - manual
+                - steadfast
+                - pathao
+                - redx
+              status:
+                $ref: '#/components/schemas/ShipmentStatus'
+              consignment_id:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        return_status:
+          type: string
+          enum:
+          - none
+          - requested
+          - partially_returned
+          - returned
         id:
           $ref: '#/components/schemas/Ulid'
         number:
@@ -11584,6 +14413,10 @@ components:
           - shipment
           - notification
           - coupon_released
+          - payment_link
+          - items_edited
+          - return
+          - document
         from_status:
           oneOf:
           - $ref: '#/components/schemas/OrderStatus'
@@ -11633,6 +14466,35 @@ components:
       - actor
       - created_at
       properties:
+        purpose:
+          $ref: '#/components/schemas/PaymentPurpose'
+        provider_trx_id:
+          type:
+          - string
+          - 'null'
+          description: bKash trxId / SSLCommerz bank_tran_id
+        refunded_amount:
+          type: integer
+          minimum: 0
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failure_code:
+          type:
+          - string
+          - 'null'
+        payment_link_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        return_request_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        can_refund:
+          type: boolean
         id:
           $ref: '#/components/schemas/Ulid'
         provider:
@@ -11692,6 +14554,69 @@ components:
       - delivered_at
       - returned_at
       properties:
+        courier_account_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        consignment_id:
+          type:
+          - string
+          - 'null'
+        provider_status:
+          type:
+          - string
+          - 'null'
+        attempts:
+          type: integer
+          minimum: 0
+        problem:
+          oneOf:
+          - $ref: '#/components/schemas/ShipmentProblem'
+          - type: 'null'
+        weight_grams:
+          type:
+          - integer
+          - 'null'
+        delivery_fee_amount:
+          type:
+          - integer
+          - 'null'
+        cod_charge_amount:
+          type:
+          - integer
+          - 'null'
+        cod_collected_amount:
+          type:
+          - integer
+          - 'null'
+        last_location:
+          type:
+          - string
+          - 'null'
+        last_event_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        booked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        picked_up_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failure_reason:
+          type:
+          - string
+          - 'null'
         id:
           $ref: '#/components/schemas/Ulid'
         provider:
@@ -11715,12 +14640,7 @@ components:
           - 'null'
           format: uri
         status:
-          type: string
-          enum:
-          - shipped
-          - delivered
-          - returned
-          - cancelled
+          $ref: '#/components/schemas/ShipmentStatus'
         cod_amount:
           type: integer
           minimum: 0
@@ -11769,6 +14689,33 @@ components:
         - revision
         - created_by
         properties:
+          shipments:
+            type: array
+            items:
+              $ref: '#/components/schemas/Shipment'
+          payment_links:
+            type: array
+            items:
+              $ref: '#/components/schemas/PaymentLink'
+          payment_expires_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          invoice_printed_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          label_printed_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          source_order_id:
+            oneOf:
+            - $ref: '#/components/schemas/Ulid'
+            - type: 'null'
           contact:
             type: object
             required:
@@ -12129,6 +15076,9 @@ components:
       required:
       - reason
       properties:
+        refund_to_gateway:
+          type: boolean
+          description: Default true when the order was paid online (P5B-25)
         reason:
           $ref: '#/components/schemas/CancelReason'
         note:
@@ -12144,6 +15094,15 @@ components:
       - amount
       - method
       properties:
+        payment_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+          description: Required when method = gateway; a succeeded online charge of this order (PHASE-5B P5B-24)
+        return_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
         amount:
           type: integer
           minimum: 1
@@ -12338,3 +15297,1773 @@ components:
               type:
               - integer
               - 'null'
+    GatewayProvider:
+      type: string
+      enum:
+      - bkash
+      - sslcommerz
+    CourierProvider:
+      type: string
+      enum:
+      - steadfast
+      - pathao
+      - redx
+    IntegrationMode:
+      type: string
+      enum:
+      - sandbox
+      - live
+    IntegrationStatus:
+      type: string
+      enum:
+      - not_connected
+      - connected
+      - error
+      - disconnected
+    PaymentPurpose:
+      type: string
+      enum:
+      - order
+      - advance
+      - link
+      - exchange
+      - test
+    PaymentGatewayAccount:
+      type: object
+      required:
+      - provider
+      - status
+      - mode
+      - credentials_hint
+      - enabled
+      - is_default
+      - verified_at
+      - last_checked_at
+      - last_error_code
+      - connected_by
+      - connected_at
+      - revision
+      properties:
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        status:
+          $ref: '#/components/schemas/IntegrationStatus'
+        mode:
+          oneOf:
+          - $ref: '#/components/schemas/IntegrationMode'
+          - type: 'null'
+        credentials_hint:
+          type:
+          - string
+          - 'null'
+          description: Masked, e.g. "••••3f9a". Secrets are never returned.
+        enabled:
+          type: boolean
+        is_default:
+          type: boolean
+        verified_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_checked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_error_code:
+          type:
+          - string
+          - 'null'
+        connected_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        connected_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 0
+      description: PHASE-5B P5B-10/11. Absent providers are listed with status not_connected.
+    BkashCredentialsInput:
+      type: object
+      required:
+      - app_key
+      - app_secret
+      - username
+      - password
+      properties:
+        app_key:
+          type: string
+          maxLength: 64
+        app_secret:
+          type: string
+          maxLength: 128
+        username:
+          type: string
+          maxLength: 64
+        password:
+          type: string
+          maxLength: 128
+    SslcommerzCredentialsInput:
+      type: object
+      required:
+      - store_id
+      - store_passwd
+      properties:
+        store_id:
+          type: string
+          maxLength: 64
+        store_passwd:
+          type: string
+          maxLength: 128
+    ConnectGatewayInput:
+      type: object
+      required:
+      - mode
+      - credentials
+      properties:
+        mode:
+          $ref: '#/components/schemas/IntegrationMode'
+        credentials:
+          oneOf:
+          - $ref: '#/components/schemas/BkashCredentialsInput'
+          - $ref: '#/components/schemas/SslcommerzCredentialsInput'
+    UpdateGatewayInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        enabled:
+          type: boolean
+        is_default:
+          type: boolean
+    GatewayTestPayment:
+      type: object
+      required:
+      - payment_id
+      - redirect_url
+      properties:
+        payment_id:
+          $ref: '#/components/schemas/Ulid'
+        redirect_url:
+          type: string
+          format: uri
+    PaymentInitiation:
+      type: object
+      required:
+      - payment_id
+      - provider
+      - status
+      - redirect_url
+      - amount
+      - expires_at
+      properties:
+        payment_id:
+          $ref: '#/components/schemas/Ulid'
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        status:
+          type: string
+          enum:
+          - redirect
+          - initiation_failed
+        redirect_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+        amount:
+          type: integer
+          minimum: 1
+          description: Paisa
+        expires_at:
+          type: string
+          format: date-time
+    StorefrontPaymentState:
+      type: object
+      required:
+      - status
+      - provider
+      - purpose
+      - amount
+      - expires_at
+      - can_retry
+      - can_switch_to_cod
+      properties:
+        status:
+          type: string
+          enum:
+          - pending
+          - succeeded
+          - failed
+          - cancelled
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        purpose:
+          $ref: '#/components/schemas/PaymentPurpose'
+        amount:
+          type: integer
+          minimum: 1
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        can_retry:
+          type: boolean
+        can_switch_to_cod:
+          type: boolean
+    StorefrontPaymentResult:
+      type: object
+      required:
+      - status
+      - order_number
+      - amount
+      - currency
+      - purpose
+      - shop_name
+      properties:
+        status:
+          type: string
+          enum:
+          - pending
+          - succeeded
+          - failed
+          - cancelled
+        order_number:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/PaymentPurpose'
+        shop_name:
+          type: string
+      description: No PII.
+    StorefrontPayInput:
+      type: object
+      required:
+      - payment_method
+      properties:
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+    PaymentLinkAmountKind:
+      type: string
+      enum:
+      - delivery_charge
+      - percent
+      - full
+      - custom
+    PaymentLink:
+      type: object
+      required:
+      - id
+      - order_id
+      - amount_kind
+      - percent_bps
+      - amount
+      - currency
+      - provider
+      - status
+      - url
+      - expires_at
+      - cancel_if_unpaid
+      - sent_via
+      - paid_at
+      - created_by
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        order_id:
+          $ref: '#/components/schemas/Ulid'
+        amount_kind:
+          $ref: '#/components/schemas/PaymentLinkAmountKind'
+        percent_bps:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10000
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        status:
+          type: string
+          enum:
+          - active
+          - paid
+          - expired
+          - cancelled
+        url:
+          type: string
+          format: uri
+          description: https://{primary_host}/pay/{token} (P5B-22)
+        expires_at:
+          type: string
+          format: date-time
+        cancel_if_unpaid:
+          type: boolean
+        sent_via:
+          type: array
+          items:
+            type: string
+            enum:
+            - sms
+        paid_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    CreatePaymentLinkInput:
+      type: object
+      required:
+      - amount_kind
+      - provider
+      - expires_in_minutes
+      - cancel_if_unpaid
+      - send_sms
+      properties:
+        amount_kind:
+          $ref: '#/components/schemas/PaymentLinkAmountKind'
+        percent_bps:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10000
+        amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          description: custom only; ≤ due
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        expires_in_minutes:
+          type: integer
+          enum:
+          - 120
+          - 360
+          - 1440
+          - 2880
+        cancel_if_unpaid:
+          type: boolean
+        send_sms:
+          type: boolean
+    PaymentLinkView:
+      type: object
+      required:
+      - order_number
+      - shop_name
+      - amount
+      - currency
+      - provider
+      - expires_at
+      - status
+      properties:
+        order_number:
+          type: string
+        shop_name:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+        expires_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - active
+    CourierSettings:
+      type: object
+      required:
+      - pickup_location_id
+      - parcel_description
+      - default_weight_grams
+      properties:
+        pickup_location_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        parcel_description:
+          type: string
+          maxLength: 120
+        default_weight_grams:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        pathao_store_id:
+          type:
+          - string
+          - 'null'
+        delivery_type:
+          type: integer
+          enum:
+          - 48
+          - 12
+        redx_pickup_store_id:
+          type:
+          - string
+          - 'null'
+    CourierAccount:
+      type: object
+      required:
+      - provider
+      - status
+      - mode
+      - credentials_hint
+      - is_default
+      - settings
+      - webhook_url
+      - webhook_secret_hint
+      - capabilities
+      - last_synced_at
+      - last_webhook_at
+      - last_error_code
+      - connected_by
+      - connected_at
+      - revision
+      properties:
+        provider:
+          $ref: '#/components/schemas/CourierProvider'
+        status:
+          $ref: '#/components/schemas/IntegrationStatus'
+        mode:
+          oneOf:
+          - $ref: '#/components/schemas/IntegrationMode'
+          - type: 'null'
+        credentials_hint:
+          type:
+          - string
+          - 'null'
+        is_default:
+          type: boolean
+        settings:
+          $ref: '#/components/schemas/CourierSettings'
+        webhook_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+        webhook_secret_hint:
+          type:
+          - string
+          - 'null'
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+            - bulk
+            - cancel
+            - areas
+            - quote
+            - webhook
+        last_synced_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_webhook_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_error_code:
+          type:
+          - string
+          - 'null'
+        connected_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        connected_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 0
+    ConnectCourierInput:
+      type: object
+      required:
+      - mode
+      - credentials
+      properties:
+        mode:
+          $ref: '#/components/schemas/IntegrationMode'
+        credentials:
+          oneOf:
+          - type: object
+            required:
+            - api_key
+            - secret_key
+            properties:
+              api_key:
+                type: string
+                maxLength: 128
+              secret_key:
+                type: string
+                maxLength: 128
+          - type: object
+            required:
+            - client_id
+            - client_secret
+            - username
+            - password
+            properties:
+              client_id:
+                type: string
+                maxLength: 128
+              client_secret:
+                type: string
+                maxLength: 256
+              username:
+                type: string
+                maxLength: 254
+              password:
+                type: string
+                maxLength: 128
+          - type: object
+            required:
+            - access_token
+            properties:
+              access_token:
+                type: string
+                maxLength: 2048
+        settings:
+          type: object
+          description: Partial CourierSettings
+          additionalProperties: true
+    UpdateCourierInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        settings:
+          type: object
+          additionalProperties: true
+        is_default:
+          type: boolean
+    CourierArea:
+      type: object
+      required:
+      - id
+      - name
+      - level
+      - parent_id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        level:
+          type: string
+          enum:
+          - city
+          - zone
+          - area
+        parent_id:
+          type:
+          - string
+          - 'null'
+    ShipmentStatus:
+      type: string
+      enum:
+      - booking
+      - booked
+      - picked_up
+      - in_transit
+      - out_for_delivery
+      - on_hold
+      - delivery_failed
+      - delivered
+      - partially_delivered
+      - returning
+      - returned
+      - cancelled
+      - booking_failed
+      - shipped
+    ShipmentProblem:
+      type: string
+      enum:
+      - delivery_failed
+      - on_hold
+      - returning
+      - unknown
+    ShipmentEvent:
+      type: object
+      required:
+      - id
+      - status
+      - provider_status
+      - description
+      - location
+      - source
+      - occurred_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        status:
+          $ref: '#/components/schemas/ShipmentStatus'
+        provider_status:
+          type:
+          - string
+          - 'null'
+        description:
+          type:
+          - string
+          - 'null'
+        location:
+          type:
+          - string
+          - 'null'
+        source:
+          type: string
+          enum:
+          - webhook
+          - poll
+          - user
+          - system
+        occurred_at:
+          type: string
+          format: date-time
+    ShipmentSummary:
+      allOf:
+      - $ref: '#/components/schemas/Shipment'
+      - type: object
+        required:
+        - order
+        - age_days
+        properties:
+          order:
+            type: object
+            required:
+            - id
+            - number
+            - customer_name
+            - customer_phone
+            - district
+            - thana
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+              customer_name:
+                type: string
+              customer_phone:
+                type: string
+              district:
+                type: string
+              thana:
+                type: string
+          age_days:
+            type: integer
+            minimum: 0
+    ShipmentDetail:
+      allOf:
+      - $ref: '#/components/schemas/ShipmentSummary'
+      - type: object
+        required:
+        - events
+        - money
+        - parcel
+        - can
+        properties:
+          events:
+            type: array
+            items:
+              $ref: '#/components/schemas/ShipmentEvent'
+          money:
+            type: object
+            required:
+            - collect_amount
+            - delivery_fee_amount
+            - cod_charge_amount
+            - net_amount
+            properties:
+              collect_amount:
+                type: integer
+                minimum: 0
+              delivery_fee_amount:
+                type:
+                - integer
+                - 'null'
+                minimum: 0
+              cod_charge_amount:
+                type:
+                - integer
+                - 'null'
+                minimum: 0
+              net_amount:
+                type:
+                - integer
+                - 'null'
+          parcel:
+            type: object
+            required:
+            - items_summary
+            - weight_grams
+            - pickup_location
+            properties:
+              items_summary:
+                type: string
+              weight_grams:
+                type:
+                - integer
+                - 'null'
+              pickup_location:
+                type:
+                - string
+                - 'null'
+          can:
+            type: object
+            required:
+            - cancel
+            - mark_cancelled
+            - refresh
+            properties:
+              cancel:
+                type: boolean
+              mark_cancelled:
+                type: boolean
+              refresh:
+                type: boolean
+    ShipmentListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - kpis
+        - last_synced_at
+        properties:
+          counts:
+            type: object
+            additionalProperties:
+              type: integer
+              minimum: 0
+            description: all, steadfast, pathao, redx, manual
+          kpis:
+            type: object
+            required:
+            - in_transit
+            - out_for_delivery_today
+            - delivered_7d
+            - delivery_rate_7d
+            - problems
+            - cod_held
+            properties:
+              in_transit:
+                type: integer
+              out_for_delivery_today:
+                type: integer
+              delivered_7d:
+                type: integer
+              delivery_rate_7d:
+                type:
+                - number
+                - 'null'
+              problems:
+                type: object
+                required:
+                - total
+                - delivery_failed
+                - on_hold
+                - returning
+                properties:
+                  total:
+                    type: integer
+                  delivery_failed:
+                    type: integer
+                  on_hold:
+                    type: integer
+                  returning:
+                    type: integer
+              cod_held:
+                type: object
+                required:
+                - total_amount
+                - by_provider
+                properties:
+                  total_amount:
+                    type: integer
+                    minimum: 0
+                  by_provider:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - provider
+                      - amount
+                      - parcels
+                      properties:
+                        provider:
+                          $ref: '#/components/schemas/CourierProvider'
+                        amount:
+                          type: integer
+                          minimum: 0
+                        parcels:
+                          type: integer
+                          minimum: 0
+          last_synced_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+    BookShipmentInput:
+      type: object
+      required:
+      - provider
+      properties:
+        provider:
+          $ref: '#/components/schemas/CourierProvider'
+        pickup_location_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        cod_amount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: O A only (P5B-35)
+        weight_grams:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 100000
+        item_description:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 255
+        delivery_type:
+          type: integer
+          enum:
+          - 48
+          - 12
+        area:
+          type:
+          - object
+          - 'null'
+          required:
+          - city_id
+          - zone_id
+          - area_id
+          properties:
+            city_id:
+              type:
+              - string
+              - 'null'
+            zone_id:
+              type:
+              - string
+              - 'null'
+            area_id:
+              type:
+              - string
+              - 'null'
+        remember_area:
+          type: boolean
+    BulkBookInput:
+      type: object
+      required:
+      - provider
+      - order_ids
+      properties:
+        provider:
+          $ref: '#/components/schemas/CourierProvider'
+        order_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          minItems: 1
+          maxItems: 500
+    ShipmentBatch:
+      type: object
+      required:
+      - id
+      - provider
+      - status
+      - total
+      - booked
+      - skipped
+      - failed
+      - results
+      - created_at
+      - finished_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        provider:
+          $ref: '#/components/schemas/CourierProvider'
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - completed
+          - failed
+        total:
+          type: integer
+        booked:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            required:
+            - order_id
+            - order_number
+            - shipment_id
+            - status
+            - reason
+            properties:
+              order_id:
+                $ref: '#/components/schemas/Ulid'
+              order_number:
+                type: string
+              shipment_id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+              status:
+                type: string
+                enum:
+                - booked
+                - skipped
+                - failed
+              reason:
+                type:
+                - string
+                - 'null'
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    DocumentKind:
+      type: string
+      enum:
+      - invoice_a4
+      - receipt_80mm
+      - invoice_a5_two_up
+      - packing_slip
+      - label_4x6
+    DocumentTemplateConfig:
+      type: object
+      required:
+      - show_logo
+      - show_bin
+      - show_product_names
+      - show_prices
+      - show_sku
+      - language
+      - footer_text
+      properties:
+        show_logo:
+          type: boolean
+        show_bin:
+          type: boolean
+        show_product_names:
+          type: boolean
+        show_prices:
+          type: boolean
+        show_sku:
+          type: boolean
+        language:
+          type: string
+          enum:
+          - en
+          - bn
+        footer_text:
+          type:
+          - string
+          - 'null'
+          maxLength: 300
+    DocumentTemplate:
+      type: object
+      required:
+      - kind
+      - config
+      - paper
+      - is_default
+      - revision
+      - updated_at
+      properties:
+        kind:
+          $ref: '#/components/schemas/DocumentKind'
+        config:
+          $ref: '#/components/schemas/DocumentTemplateConfig'
+        paper:
+          type: object
+          required:
+          - width_mm
+          - height_mm
+          - label
+          properties:
+            width_mm:
+              type: number
+            height_mm:
+              type:
+              - number
+              - 'null'
+            label:
+              type: string
+        is_default:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 0
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    UpdateDocumentTemplateInput:
+      type: object
+      required:
+      - config
+      properties:
+        revision:
+          type: integer
+          minimum: 0
+        config:
+          $ref: '#/components/schemas/DocumentTemplateConfig'
+    CreateDocumentInput:
+      type: object
+      required:
+      - kind
+      - order_ids
+      properties:
+        kind:
+          $ref: '#/components/schemas/DocumentKind'
+        order_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          minItems: 1
+          maxItems: 100
+        language:
+          type: string
+          enum:
+          - en
+          - bn
+    DocumentPreviewInput:
+      type: object
+      required:
+      - kind
+      properties:
+        kind:
+          $ref: '#/components/schemas/DocumentKind'
+        config:
+          $ref: '#/components/schemas/DocumentTemplateConfig'
+        order_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    StoreDocument:
+      type: object
+      required:
+      - id
+      - kind
+      - status
+      - orders_count
+      - pages
+      - download_url
+      - expires_at
+      - error_code
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          $ref: '#/components/schemas/DocumentKind'
+        status:
+          type: string
+          enum:
+          - queued
+          - rendering
+          - ready
+          - failed
+          - expired
+        orders_count:
+          type: integer
+          minimum: 1
+        pages:
+          type:
+          - integer
+          - 'null'
+        download_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          description: 5-minute signed URL
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        error_code:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+    EditOrderItemsInput:
+      type: object
+      required:
+      - revision
+      - items
+      - reason
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - quantity
+            properties:
+              id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+              variant_id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+              quantity:
+                type: integer
+                minimum: 0
+                maximum: 99
+          minItems: 1
+          maxItems: 60
+        reason:
+          type: string
+          enum:
+          - customer_request
+          - out_of_stock
+          - wrong_item
+          - other
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        recalculate_shipping:
+          type: boolean
+        shipping_amount_override:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+        notify_customer:
+          type: boolean
+    OrderItemsQuote:
+      type: object
+      required:
+      - lines
+      - subtotal_amount
+      - discount_amount
+      - shipping_amount
+      - total_amount
+      - previous_total_amount
+      - due_amount
+      - due_delta_amount
+      - notices
+      properties:
+        lines:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/OrderItem'
+            - type: object
+              required:
+              - change
+              - issue
+              properties:
+                change:
+                  type: string
+                  enum:
+                  - unchanged
+                  - changed
+                  - added
+                  - removed
+                issue:
+                  type:
+                  - string
+                  - 'null'
+                  enum:
+                  - unavailable
+                  - insufficient_stock
+        subtotal_amount:
+          type: integer
+        discount_amount:
+          type: integer
+        shipping_amount:
+          type: integer
+        total_amount:
+          type: integer
+        previous_total_amount:
+          type: integer
+        due_amount:
+          type: integer
+        due_delta_amount:
+          type: integer
+        notices:
+          type: array
+          items:
+            type: string
+      description: Added lines carry id null (OrderItem.id is then null).
+    RestockInput:
+      type: object
+      required:
+      - lines
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - item_id
+            - quantity
+            properties:
+              item_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+          minItems: 1
+          maxItems: 50
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    ReturnType:
+      type: string
+      enum:
+      - return
+      - exchange
+    ReturnStatus:
+      type: string
+      enum:
+      - requested
+      - approved
+      - received
+      - refunded
+      - exchanged
+      - rejected
+      - closed
+    ReturnReason:
+      type: string
+      enum:
+      - wrong_size
+      - damaged
+      - wrong_item
+      - changed_mind
+      - refused_at_door
+      - other
+    ReturnItem:
+      type: object
+      required:
+      - id
+      - order_item_id
+      - product_name
+      - variant_title
+      - image
+      - quantity
+      - amount
+      - restocked_quantity
+      - exchange_variant
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        order_item_id:
+          $ref: '#/components/schemas/Ulid'
+        product_name:
+          type: string
+        variant_title:
+          type: string
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/MediaRef'
+          - type: 'null'
+        quantity:
+          type: integer
+          minimum: 1
+        amount:
+          type: integer
+          minimum: 0
+        restocked_quantity:
+          type: integer
+          minimum: 0
+        exchange_variant:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - title
+          - price_amount
+          - available
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            title:
+              type: string
+            price_amount:
+              type: integer
+              minimum: 0
+            available:
+              type:
+              - integer
+              - 'null'
+    ReturnSummary:
+      type: object
+      required:
+      - id
+      - number
+      - type
+      - status
+      - reason
+      - source
+      - order
+      - customer
+      - items_preview
+      - requested_amount
+      - refunded_amount
+      - courier
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+          example: RT-0031
+        type:
+          $ref: '#/components/schemas/ReturnType'
+        status:
+          $ref: '#/components/schemas/ReturnStatus'
+        reason:
+          $ref: '#/components/schemas/ReturnReason'
+        source:
+          type: string
+          enum:
+          - merchant
+          - courier
+        order:
+          type: object
+          required:
+          - id
+          - number
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            number:
+              type: string
+        customer:
+          type: object
+          required:
+          - name
+          - phone
+          properties:
+            name:
+              type: string
+            phone:
+              type: string
+        items_preview:
+          type: array
+          items:
+            type: object
+            required:
+            - product_name
+            - variant_title
+            - quantity
+            properties:
+              product_name:
+                type: string
+              variant_title:
+                type: string
+              quantity:
+                type: integer
+        requested_amount:
+          type: integer
+          minimum: 0
+        refunded_amount:
+          type: integer
+          minimum: 0
+        courier:
+          type:
+          - string
+          - 'null'
+          enum:
+          - steadfast
+          - pathao
+          - redx
+          - manual
+        created_at:
+          type: string
+          format: date-time
+    ReturnEvent:
+      type: object
+      required:
+      - id
+      - type
+      - from_status
+      - to_status
+      - actor
+      - body
+      - meta
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          type: string
+          enum:
+          - created
+          - status_changed
+          - note
+          - refund
+          - restock
+        from_status:
+          oneOf:
+          - $ref: '#/components/schemas/ReturnStatus'
+          - type: 'null'
+        to_status:
+          oneOf:
+          - $ref: '#/components/schemas/ReturnStatus'
+          - type: 'null'
+        actor:
+          type: object
+          required:
+          - type
+          - user
+          properties:
+            type:
+              type: string
+              enum:
+              - user
+              - customer
+              - system
+            user:
+              oneOf:
+              - $ref: '#/components/schemas/UserRef'
+              - type: 'null'
+        body:
+          type:
+          - string
+          - 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ReturnRequest:
+      allOf:
+      - $ref: '#/components/schemas/ReturnSummary'
+      - type: object
+        required:
+        - customer_note
+        - pickup_tracking_code
+        - checks
+        - items
+        - events
+        - exchange_order
+        - price_difference_amount
+        - allowed_transitions
+        - revision
+        properties:
+          customer_note:
+            type:
+            - string
+            - 'null'
+          pickup_tracking_code:
+            type:
+            - string
+            - 'null'
+          checks:
+            type: object
+            required: []
+            properties:
+              tags_intact:
+                type: boolean
+              unused:
+                type: boolean
+              original_packaging:
+                type: boolean
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/ReturnItem'
+          events:
+            type: array
+            items:
+              $ref: '#/components/schemas/ReturnEvent'
+          exchange_order:
+            type:
+            - object
+            - 'null'
+            required:
+            - id
+            - number
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+          price_difference_amount:
+            type:
+            - integer
+            - 'null'
+          allowed_transitions:
+            type: array
+            items:
+              $ref: '#/components/schemas/ReturnStatus'
+          revision:
+            type: integer
+            minimum: 1
+    CreateReturnInput:
+      type: object
+      required:
+      - type
+      - reason
+      - lines
+      properties:
+        type:
+          $ref: '#/components/schemas/ReturnType'
+        reason:
+          $ref: '#/components/schemas/ReturnReason'
+        customer_note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - order_item_id
+            - quantity
+            properties:
+              order_item_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+              exchange_variant_id:
+                oneOf:
+                - $ref: '#/components/schemas/Ulid'
+                - type: 'null'
+          minItems: 1
+          maxItems: 50
+    ApproveReturnInput:
+      type: object
+      required: []
+      properties:
+        pickup_tracking_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    RejectReturnInput:
+      type: object
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+    ReceiveReturnInput:
+      type: object
+      required:
+      - checks
+      - lines
+      properties:
+        checks:
+          type: object
+          required:
+          - tags_intact
+          - unused
+          - original_packaging
+          properties:
+            tags_intact:
+              type: boolean
+            unused:
+              type: boolean
+            original_packaging:
+              type: boolean
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - restock_quantity
+            properties:
+              return_item_id:
+                $ref: '#/components/schemas/Ulid'
+              order_item_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+              restock_quantity:
+                type: integer
+                minimum: 0
+                maximum: 99
+          minItems: 1
+          maxItems: 50
+    ExchangeOrderInput:
+      type: object
+      required: []
+      properties:
+        shipping_amount_override:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+        send_payment_link:
+          type:
+          - object
+          - 'null'
+          required:
+          - provider
+          - expires_in_minutes
+          properties:
+            provider:
+              $ref: '#/components/schemas/GatewayProvider'
+            expires_in_minutes:
+              type: integer
+              enum:
+              - 120
+              - 360
+              - 1440
+              - 2880
+    ExchangeOrderResult:
+      type: object
+      required:
+      - return
+      - order
+      - payment_link
+      properties:
+        return:
+          $ref: '#/components/schemas/ReturnRequest'
+        order:
+          $ref: '#/components/schemas/Order'
+        payment_link:
+          oneOf:
+          - $ref: '#/components/schemas/PaymentLink'
+          - type: 'null'
+    ReturnListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - kpis
+        properties:
+          counts:
+            type: object
+            additionalProperties:
+              type: integer
+              minimum: 0
+          kpis:
+            type: object
+            required:
+            - open
+            - return_rate_30d
+            - money_lost_amount
+            - restocked_units_month
+            properties:
+              open:
+                type: integer
+              return_rate_30d:
+                type:
+                - number
+                - 'null'
+              money_lost_amount:
+                type: integer
+                minimum: 0
+              restocked_units_month:
+                type: integer
+                minimum: 0
+    NoteInput:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    WebhookAck:
+      type: object
+      required:
+      - received
+      properties:
+        received:
+          type: boolean

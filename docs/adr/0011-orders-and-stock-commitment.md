@@ -39,3 +39,18 @@ oversells under concurrency and one order state machine that both the storefront
 - Decrement `on_hand` at placement (Shopify-style): simpler, but cancellations then need ledger reversals and the
   "held for orders" figure disappears.
 - Reserve on add-to-cart with a TTL: lets bots lock stock; rejected (ADR 0006).
+
+## Amendment 2026-11-22 — Phase 5b (PHASE-5B-CONTRACT P5B-14–P5B-16, P5B-36, P5B-60–P5B-71)
+- **`pending_payment` is live.** Online checkout creates the order in `pending_payment` with stock committed and
+  `payment_expires_at` = placement + 30 min (Q35). Allowed: `pending_payment → confirmed` (verified payment),
+  `→ pending` (shopper switches to COD), `→ cancelled` (expired, or merchant). `payments:expire` re-queries the
+  gateway before cancelling and releasing stock.
+- **Lock order extends to payments:** order row → payments (by id) → inventories by `variant_id` → coupon → store
+  counter. Payment verification locks the order first.
+- **Courier sync drives status:** courier `picked_up` → `shipped` (stock leaves `on_hand`), `delivered` →
+  `delivered`, `returned` → `returned` with no automatic restock; `POST /orders/{order}/restock` restocks later.
+- **Edit items** (pending, confirmed, ready_to_ship, no active courier booking) re-commits stock by difference under
+  the same lock order and re-prices through `OrderPlacementService`; unchanged lines keep their snapshot prices.
+- **Post-delivery returns and exchanges** don't change the order status; they live in `return_requests` with their
+  own state machine and set `orders.return_status`. Receiving a return restocks through `InventoryService::restock`
+  (ledger `order_returned`).
