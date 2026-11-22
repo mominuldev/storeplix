@@ -22,6 +22,8 @@ export const cancelReasonLabels: Record<CancelReason, string> = {
   out_of_stock: 'Out of stock',
   duplicate: 'Duplicate order',
   other: 'Other',
+  payment_timeout: 'Not paid in time',
+  payment_link_expired: 'Payment link expired',
 };
 
 export const refundMethodLabels: Record<RefundMethod, string> = {
@@ -30,6 +32,7 @@ export const refundMethodLabels: Record<RefundMethod, string> = {
   nagad_personal: 'Nagad (personal)',
   bank: 'Bank transfer',
   other: 'Other',
+  gateway: 'Back to bKash / card',
 };
 
 /** Status tabs of Orders 7:276 (In transit = `shipped`). */

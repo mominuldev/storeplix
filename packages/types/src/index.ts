@@ -196,7 +196,7 @@ export interface AuditLog {
 }
 export interface AuditLogFilters {
   action?: string; actor_id?: string; subject_id?: string;
-  /** server allowlist; Phase 5 adds 'order' | 'coupon' | 'shipping' | 'store' */
+  /** server allowlist; Phase 5 adds 'order' | 'coupon' | 'shipping' | 'store'; 5b 'payment_gateway' | 'courier' | 'shipment' | 'return' */
   subject_type?: string;
   created_from?: string; created_to?: string; page?: number; per_page?: number;
 }  // api-client maps these to filter[...] query params
@@ -371,6 +371,7 @@ export const ROLE_CAN = {
   manage_marketing: ['owner', 'admin'], // coupons (P5-21)
   manage_refunds: ['owner', 'admin'],   // refunds, cancelling paid orders
   manage_settings: ['owner', 'admin'],  // shipping, checkout, notifications, publish
+  manage_integrations: ['owner', 'admin'], // gateways, couriers (5b)
 } as const satisfies Record<string, readonly TenantRole[]>;
 
 // ---------- Catalog (Phase 4) ----------
@@ -644,15 +645,18 @@ export interface ShippingQuote {
 }
 
 // ---------- Store settings additions ----------
-export type CustomerSmsEvent = 'order_placed' | 'order_confirmed' | 'order_shipped' | 'order_cancelled';
+export type CustomerSmsEvent = 'order_placed' | 'order_confirmed' | 'order_shipped' | 'order_cancelled' | 'payment_link' | 'order_updated';
 export interface StoreCommerceSettings {
-  checkout: { cod_enabled: boolean };
+  checkout: { cod_enabled: boolean; /** 5b */ cod_advance: 'none' | 'delivery_charge' };
   order_prefix: string;                      // effective prefix
   next_order_number: string;                 // "GS-1049"
   notifications: {
     new_order_email: boolean; sms_language: 'bn' | 'en';
     customer_sms: Record<CustomerSmsEvent, boolean>;
   };
+  /** 5b */
+  tax: { display: 'none' | 'included'; rate_bps: number; bin: string | null };
+  invoice: { footer: string | null };
 }
 
 // ---------- Coupons ----------
@@ -721,6 +725,8 @@ export interface StorefrontCommerce {
   checkout_enabled: boolean; payment_methods: PaymentMethod[];
   free_delivery_over_amount: number | null;
   delivery: { name: string; charge_amount: number; min_days: number; max_days: number }[];
+  /** 5b */
+  cod_advance: 'none' | 'delivery_charge';
 }
 
 // ---------- Cart ----------
@@ -741,11 +747,13 @@ export interface Cart {
 export interface CartMeta { cart_token?: string; notices?: string[] }
 
 // ---------- Checkout / storefront orders ----------
-export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz';   // 5a: 'cod' only
+export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz';
 export interface CheckoutInput {
   contact: { name: string; phone: string; email?: string | null };
   shipping_address: AddressInput; payment_method: PaymentMethod;
   customer_note?: string | null; accepts_marketing?: boolean; expected_total_amount: number;
+  /** 5b: COD order with the delivery charge paid in advance */
+  advance_gateway?: GatewayProvider | null;
 }
 export interface StorefrontOrderLine {
   product_name: string; variant_title: string; quantity: number; image: StorefrontMedia | null;
@@ -757,8 +765,10 @@ export interface StorefrontOrder {
   lines: StorefrontOrderLine[]; coupon_code: string | null;
   subtotal_amount: number; discount_amount: number; shipping_amount: number; total_amount: number;
   due_amount: number; currency: string; delivery: { zone_name: string; min_days: number | null; max_days: number | null };
+  /** 5b */
+  payment: StorefrontPaymentState | null; paid_amount: number;
 }
-export interface CheckoutResult { order: StorefrontOrder; confirmation_token: string }
+export interface CheckoutResult { order: StorefrontOrder; confirmation_token: string; /** 5b */ payment: PaymentInitiation | null }
 export interface TrackOrderInput { number: string; phone: string }
 export interface StorefrontOrderTracking {
   number: string; status: OrderStatus; placed_at: string;
@@ -772,9 +782,9 @@ export interface StorefrontOrderTracking {
 export type OrderStatus = 'pending_payment' | 'pending' | 'confirmed' | 'ready_to_ship' | 'shipped' | 'delivered' | 'returned' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'partially_refunded' | 'refunded';
 export type OrderChannel = 'website' | 'facebook' | 'instagram' | 'whatsapp' | 'phone' | 'walk_in' | 'landing_page' | 'other';
-export type CancelReason = 'customer_request' | 'fake_order' | 'unreachable' | 'out_of_stock' | 'duplicate' | 'other';
+export type CancelReason = 'customer_request' | 'fake_order' | 'unreachable' | 'out_of_stock' | 'duplicate' | 'other' | 'payment_timeout' | 'payment_link_expired';
 export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  pending_payment: [], pending: ['confirmed', 'cancelled'], confirmed: ['ready_to_ship', 'shipped', 'cancelled'],
+  pending_payment: ['confirmed', 'pending', 'cancelled'], pending: ['confirmed', 'cancelled'], confirmed: ['ready_to_ship', 'shipped', 'cancelled'],
   ready_to_ship: ['shipped', 'confirmed', 'cancelled'], shipped: ['delivered', 'returned'],
   delivered: [], returned: [], cancelled: [],
 };
@@ -789,6 +799,9 @@ export interface OrderSummary {
   customer: OrderCustomerSummary; district: string; thana: string;
   items_count: number; total_amount: number; paid_amount: number; due_amount: number; currency: string;
   coupon_code: string | null; tags: string[]; placed_at: string; updated_at: string;
+  /** 5b */
+  shipment: { provider: Shipment['provider']; status: ShipmentStatus; consignment_id: string | null } | null;
+  return_status: OrderReturnStatus;
 }
 export interface OrderItem {
   id: string; product_id: string | null; variant_id: string | null;
@@ -800,21 +813,31 @@ export interface OrderItem {
   current_stock: { available: number; tracked: boolean } | null;   // "43 in stock"; null when variant deleted
 }
 export interface OrderEvent {
-  id: string; type: 'placed' | 'status_changed' | 'note' | 'edited' | 'payment' | 'refund' | 'shipment' | 'notification' | 'coupon_released';
+  id: string; type: 'placed' | 'status_changed' | 'note' | 'edited' | 'payment' | 'refund' | 'shipment' | 'notification' | 'coupon_released'
+    | 'payment_link' | 'items_edited' | 'return' | 'document';
   from_status: OrderStatus | null; to_status: OrderStatus | null;
   actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null };
   body: string | null; meta: Record<string, unknown>; created_at: string;
 }
 export interface Payment {
-  id: string; provider: 'cod' | 'manual' | 'bkash' | 'sslcommerz'; type: 'charge' | 'refund';
+  id: string; provider: PaymentProvider; type: 'charge' | 'refund';
   status: 'pending' | 'succeeded' | 'failed' | 'cancelled'; amount: number; currency: string;
   method: RefundMethod | null; reference: string | null; note: string | null;
   actor: UserRef | null; created_at: string;
+  /** 5b */
+  purpose: PaymentPurpose; provider_trx_id: string | null; refunded_amount: number;
+  expires_at: string | null; failure_code: string | null; payment_link_id: string | null;
+  return_request_id: string | null; can_refund: boolean;
 }
 export interface Shipment {
-  id: string; provider: 'manual' | 'steadfast' | 'pathao' | 'redx'; carrier_name: string | null;
-  tracking_code: string | null; tracking_url: string | null; status: 'shipped' | 'delivered' | 'returned' | 'cancelled';
+  id: string; provider: 'manual' | CourierProvider; carrier_name: string | null;
+  tracking_code: string | null; tracking_url: string | null; status: ShipmentStatus;
   cod_amount: number; shipped_at: string | null; delivered_at: string | null; returned_at: string | null;
+  /** 5b */
+  consignment_id: string | null; provider_status: string | null; attempts: number; problem: ShipmentProblem | null;
+  weight_grams: number | null; delivery_fee_amount: number | null; cod_charge_amount: number | null;
+  cod_collected_amount: number | null; last_location: string | null; last_event_at: string | null;
+  booked_at: string | null; picked_up_at: string | null; cancelled_at: string | null; failure_reason: string | null;
 }
 export interface Order extends OrderSummary {
   contact: { name: string; phone: string; email: string | null };
@@ -828,11 +851,17 @@ export interface Order extends OrderSummary {
   allowed_transitions: OrderStatus[];                      // already filtered by role
   can: { edit: boolean; cancel: boolean; refund: boolean };
   revision: number; created_by: UserRef | null;
+  /** 5b */
+  shipments: Shipment[]; payment_expires_at: string | null;
+  payment_links: PaymentLink[]; invoice_printed_at: string | null; label_printed_at: string | null;
+  source_order_id: string | null;
 }
 export interface OrderListFilters {
   status?: OrderStatus[]; payment_status?: PaymentStatus[]; channel?: OrderChannel[]; district_code?: string;
   customer_id?: string; coupon_id?: string; placed_from?: string; placed_to?: string; q?: string;
   sort?: '-placed_at' | 'placed_at' | '-total'; page?: number; per_page?: number;
+  /** 5b */
+  printed?: 'invoice' | 'label'; not_printed?: 'invoice' | 'label';
 }
 export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus, number> }
 export interface ManualOrderInput extends Omit<CheckoutInput, 'expected_total_amount' | 'payment_method'> {
@@ -852,9 +881,9 @@ export interface UpdateOrderInput {
 }
 export interface ShipOrderInput { carrier_name?: string | null; tracking_code?: string | null; tracking_url?: string | null; notify_customer?: boolean }
 export interface ReturnOrderInput { restock: { item_id: string; quantity: number }[]; note?: string | null }
-export interface CancelOrderInput { reason: CancelReason; note?: string | null; notify_customer?: boolean }
-export type RefundMethod = 'cash' | 'bkash_personal' | 'nagad_personal' | 'bank' | 'other';
-export interface RefundInput { amount: number; method: RefundMethod; reference?: string | null; note?: string | null }
+export interface CancelOrderInput { reason: CancelReason; note?: string | null; notify_customer?: boolean; /** 5b */ refund_to_gateway?: boolean }
+export type RefundMethod = 'cash' | 'bkash_personal' | 'nagad_personal' | 'bank' | 'other' | 'gateway';
+export interface RefundInput { amount: number; method: RefundMethod; reference?: string | null; note?: string | null; /** 5b */ payment_id?: string | null; return_id?: string | null }
 export interface OrderBulkInput { action: 'confirm' | 'ready'; ids: string[] }
 export interface OrderBulkResult { action: 'confirm' | 'ready'; updated: number; skipped: { id: string; reason: string }[] }
 
@@ -874,4 +903,207 @@ export interface OrderDashboard {
   waiting: { pending: number; confirmed: number; ready_to_ship: number };
   best_sellers: { product_id: string; name: string; image: MediaRef | null; units: number }[];
   plan: { used: number; limit: number | null };
+}
+
+// ==================== Phase 5b: online money, couriers, documents, order changes (PHASE-5B-CONTRACT §9) ====================
+// Note: `ReturnType` below shadows TypeScript's global ReturnType<T> inside this module only; this file never uses the global.
+// ---------- Integrations (shared) ----------
+export type GatewayProvider = 'bkash' | 'sslcommerz';
+export type CourierProvider = 'steadfast' | 'pathao' | 'redx';
+export type IntegrationMode = 'sandbox' | 'live';
+export type IntegrationStatus = 'not_connected' | 'connected' | 'error' | 'disconnected';
+
+// ---------- Payment gateways ----------
+export interface PaymentGatewayAccount {
+  provider: GatewayProvider; status: IntegrationStatus; mode: IntegrationMode | null;
+  credentials_hint: string | null;            // "••••3f9a"; never the secret
+  enabled: boolean; is_default: boolean;
+  verified_at: string | null; last_checked_at: string | null; last_error_code: string | null;
+  connected_by: UserRef | null; connected_at: string | null; revision: number;
+}
+export type BkashCredentialsInput = { app_key: string; app_secret: string; username: string; password: string };
+export type SslcommerzCredentialsInput = { store_id: string; store_passwd: string };
+export interface ConnectGatewayInput { mode: IntegrationMode; credentials: BkashCredentialsInput | SslcommerzCredentialsInput }
+export interface UpdateGatewayInput { revision: number; enabled?: boolean; is_default?: boolean }
+export interface GatewayTestPayment { payment_id: string; redirect_url: string }
+
+// ---------- Payments (extends 5a) ----------
+export type PaymentProvider = 'cod' | 'manual' | GatewayProvider;
+export type PaymentPurpose = 'order' | 'advance' | 'link' | 'exchange' | 'test';
+export interface PaymentInitiation {
+  payment_id: string; provider: GatewayProvider;
+  status: 'redirect' | 'initiation_failed';
+  redirect_url: string | null; amount: number; expires_at: string;
+}
+export interface StorefrontPaymentState {
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+  provider: GatewayProvider; purpose: PaymentPurpose; amount: number;
+  expires_at: string | null;                  // order hold end (pending_payment only)
+  can_retry: boolean; can_switch_to_cod: boolean;
+}
+export interface StorefrontPaymentResult {
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+  order_number: string; amount: number; currency: string; purpose: PaymentPurpose; shop_name: string;
+}
+export interface StorefrontPayInput { payment_method: PaymentMethod }
+
+// ---------- Payment links ----------
+export type PaymentLinkAmountKind = 'delivery_charge' | 'percent' | 'full' | 'custom';
+export interface PaymentLink {
+  id: string; order_id: string; amount_kind: PaymentLinkAmountKind; percent_bps: number | null;
+  amount: number; currency: string; provider: GatewayProvider;
+  status: 'active' | 'paid' | 'expired' | 'cancelled';
+  url: string;                                // https://{primary_host}/pay/{token}
+  expires_at: string; cancel_if_unpaid: boolean; sent_via: ('sms')[];
+  paid_at: string | null; created_by: UserRef | null; created_at: string;
+}
+export interface CreatePaymentLinkInput {
+  amount_kind: PaymentLinkAmountKind; percent_bps?: number | null; amount?: number | null;
+  provider: GatewayProvider; expires_in_minutes: 120 | 360 | 1440 | 2880;
+  cancel_if_unpaid: boolean; send_sms: boolean;
+}
+export interface PaymentLinkView {
+  order_number: string; shop_name: string; amount: number; currency: string;
+  provider: GatewayProvider; expires_at: string; status: 'active';
+}
+
+// ---------- Couriers ----------
+export interface CourierSettings {
+  pickup_location_id: string | null; parcel_description: string; default_weight_grams: number;
+  pathao_store_id?: string | null; delivery_type?: 48 | 12; redx_pickup_store_id?: string | null;
+}
+export interface CourierAccount {
+  provider: CourierProvider; status: IntegrationStatus; mode: IntegrationMode | null;
+  credentials_hint: string | null; is_default: boolean; settings: CourierSettings;
+  webhook_url: string | null; webhook_secret_hint: string | null;
+  capabilities: ('bulk' | 'cancel' | 'areas' | 'quote' | 'webhook')[];
+  last_synced_at: string | null; last_webhook_at: string | null; last_error_code: string | null;
+  connected_by: UserRef | null; connected_at: string | null; revision: number;
+}
+export interface ConnectCourierInput {
+  mode: IntegrationMode;
+  credentials: { api_key: string; secret_key: string }
+    | { client_id: string; client_secret: string; username: string; password: string }
+    | { access_token: string };
+  settings?: Partial<CourierSettings>;
+}
+export interface UpdateCourierInput { revision: number; settings?: Partial<CourierSettings>; is_default?: boolean }
+export interface CourierArea { id: string; name: string; level: 'city' | 'zone' | 'area'; parent_id: string | null }
+
+// ---------- Shipments (extends 5a Shipment) ----------
+export type ShipmentStatus =
+  | 'booking' | 'booked' | 'picked_up' | 'in_transit' | 'out_for_delivery' | 'on_hold' | 'delivery_failed'
+  | 'delivered' | 'partially_delivered' | 'returning' | 'returned' | 'cancelled' | 'booking_failed' | 'shipped';
+export type ShipmentProblem = 'delivery_failed' | 'on_hold' | 'returning' | 'unknown';
+export type OrderReturnStatus = 'none' | 'requested' | 'partially_returned' | 'returned';
+export interface ShipmentEvent {
+  id: string; status: ShipmentStatus; provider_status: string | null; description: string | null;
+  location: string | null; source: 'webhook' | 'poll' | 'user' | 'system'; occurred_at: string;
+}
+export interface ShipmentSummary extends Shipment {
+  order: { id: string; number: string; customer_name: string; customer_phone: string; district: string; thana: string };
+  age_days: number;
+}
+export interface ShipmentDetail extends ShipmentSummary {
+  events: ShipmentEvent[];
+  money: { collect_amount: number; delivery_fee_amount: number | null; cod_charge_amount: number | null; net_amount: number | null };
+  parcel: { items_summary: string; weight_grams: number | null; pickup_location: string | null };
+  can: { cancel: boolean; mark_cancelled: boolean; refresh: boolean };
+}
+export interface ShipmentListMeta extends PaginationMeta {
+  counts: Record<'all' | CourierProvider | 'manual', number>;
+  kpis: {
+    in_transit: number; out_for_delivery_today: number; delivered_7d: number; delivery_rate_7d: number | null;
+    problems: { total: number; delivery_failed: number; on_hold: number; returning: number };
+    cod_held: { total_amount: number; by_provider: { provider: CourierProvider; amount: number; parcels: number }[] };
+  };
+  last_synced_at: string | null;
+}
+export interface ShipmentListFilters {
+  provider?: (CourierProvider | 'manual')[]; status?: (ShipmentStatus | 'problems' | 'active' | 'final')[];
+  booked_from?: string; booked_to?: string; q?: string; sort?: '-booked_at' | '-cod'; page?: number; per_page?: number;
+}
+export interface BookShipmentInput {
+  provider: CourierProvider; pickup_location_id?: string | null; cod_amount?: number | null;
+  weight_grams?: number | null; item_description?: string | null; note?: string | null; delivery_type?: 48 | 12;
+  area?: { city_id: string | null; zone_id: string | null; area_id: string | null } | null; remember_area?: boolean;
+}
+export interface ShipmentBatch {
+  id: string; provider: CourierProvider; status: 'queued' | 'running' | 'completed' | 'failed';
+  total: number; booked: number; skipped: number; failed: number;
+  results: { order_id: string; order_number: string; shipment_id: string | null; status: 'booked' | 'skipped' | 'failed'; reason: string | null }[];
+  created_at: string; finished_at: string | null;
+}
+
+// ---------- Documents ----------
+export type DocumentKind = 'invoice_a4' | 'receipt_80mm' | 'invoice_a5_two_up' | 'packing_slip' | 'label_4x6';
+export interface DocumentTemplateConfig {
+  show_logo: boolean; show_bin: boolean; show_product_names: boolean; show_prices: boolean; show_sku: boolean;
+  language: 'en' | 'bn'; footer_text: string | null;
+}
+export interface DocumentTemplate {
+  kind: DocumentKind; config: DocumentTemplateConfig; paper: { width_mm: number; height_mm: number | null; label: string };
+  is_default: boolean; revision: number; updated_at: string | null;
+}
+export interface CreateDocumentInput { kind: DocumentKind; order_ids: string[]; language?: 'en' | 'bn' }
+export interface StoreDocument {
+  id: string; kind: DocumentKind; status: 'queued' | 'rendering' | 'ready' | 'failed' | 'expired';
+  orders_count: number; pages: number | null; download_url: string | null; expires_at: string | null;
+  error_code: string | null; created_at: string;
+}
+
+// ---------- Order changes ----------
+export type EditItemsReason = 'customer_request' | 'out_of_stock' | 'wrong_item' | 'other';
+export interface EditOrderItemsInput {
+  revision: number; items: { id?: string | null; variant_id?: string | null; quantity: number }[];
+  reason: EditItemsReason; note?: string | null; recalculate_shipping?: boolean;
+  shipping_amount_override?: number | null; notify_customer?: boolean;
+}
+export interface OrderItemsQuote {
+  lines: (Omit<OrderItem, 'id' | 'restocked_quantity'> & { id: string | null; change: 'unchanged' | 'changed' | 'added' | 'removed'; issue: CartLineIssue | null })[];
+  subtotal_amount: number; discount_amount: number; shipping_amount: number; total_amount: number;
+  previous_total_amount: number; due_amount: number; due_delta_amount: number; notices: string[];
+}
+export interface RestockInput { lines: { item_id: string; quantity: number }[]; note?: string | null }
+export type ReturnType = 'return' | 'exchange';
+export type ReturnStatus = 'requested' | 'approved' | 'received' | 'refunded' | 'exchanged' | 'rejected' | 'closed';
+export type ReturnReason = 'wrong_size' | 'damaged' | 'wrong_item' | 'changed_mind' | 'refused_at_door' | 'other';
+export interface ReturnItem {
+  id: string; order_item_id: string; product_name: string; variant_title: string; image: MediaRef | null;
+  quantity: number; amount: number; restocked_quantity: number;
+  exchange_variant: { id: string; title: string; price_amount: number; available: number | null } | null;
+}
+export interface ReturnSummary {
+  id: string; number: string; type: ReturnType; status: ReturnStatus; reason: ReturnReason; source: 'merchant' | 'courier';
+  order: { id: string; number: string }; customer: { name: string; phone: string };
+  items_preview: { product_name: string; variant_title: string; quantity: number }[];
+  requested_amount: number; refunded_amount: number; courier: CourierProvider | 'manual' | null; created_at: string;
+}
+export interface ReturnEvent {
+  id: string; type: 'created' | 'status_changed' | 'note' | 'refund' | 'restock';
+  from_status: ReturnStatus | null; to_status: ReturnStatus | null;
+  actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null }; body: string | null; meta: Record<string, unknown>; created_at: string;
+}
+export interface ReturnRequest extends ReturnSummary {
+  customer_note: string | null; pickup_tracking_code: string | null;
+  checks: { tags_intact?: boolean; unused?: boolean; original_packaging?: boolean };
+  items: ReturnItem[]; events: ReturnEvent[]; exchange_order: { id: string; number: string } | null;
+  price_difference_amount: number | null;     // exchange: new total − credit
+  allowed_transitions: ReturnStatus[]; revision: number;
+}
+export interface CreateReturnInput {
+  type: ReturnType; reason: ReturnReason; customer_note?: string | null;
+  lines: { order_item_id: string; quantity: number; exchange_variant_id?: string | null }[];
+}
+export interface ReceiveReturnInput {
+  checks: { tags_intact: boolean; unused: boolean; original_packaging: boolean };
+  lines: { return_item_id?: string; order_item_id?: string; restock_quantity: number; quantity?: number }[];
+}
+export interface ReturnListMeta extends PaginationMeta {
+  counts: Record<'open' | ReturnStatus, number>;
+  kpis: { open: number; return_rate_30d: number | null; money_lost_amount: number; restocked_units_month: number };
+}
+export interface ExchangeOrderInput {
+  shipping_amount_override?: number | null;
+  send_payment_link?: { provider: GatewayProvider; expires_in_minutes: 120 | 360 | 1440 | 2880 } | null;
 }

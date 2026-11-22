@@ -37,6 +37,8 @@ export function smsPreview(event: CustomerSmsEvent, lang: 'bn' | 'en', shop: str
       order_confirmed: `${shop}: আপনার অর্ডার ${s.number} কনফার্ম হয়েছে।`,
       order_shipped: `${shop}: অর্ডার ${s.number} ${s.carrier} এর মাধ্যমে পাঠানো হয়েছে। ${s.due} টাকা প্রস্তুত রাখুন। ট্র্যাক: ${s.track}`,
       order_cancelled: `${shop}: অর্ডার ${s.number} বাতিল করা হয়েছে।`,
+      payment_link: `${shop}: অর্ডার ${s.number} নিশ্চিত করতে ${s.due} টাকা পরিশোধ করুন: ${s.track}`,
+      order_updated: `${shop}: অর্ডার ${s.number} আপডেট হয়েছে। নতুন মোট ${s.total} টাকা।`,
     }[event];
   }
   return {
@@ -44,5 +46,7 @@ export function smsPreview(event: CustomerSmsEvent, lang: 'bn' | 'en', shop: str
     order_confirmed: `${shop}: Order ${s.number} is confirmed.`,
     order_shipped: `${shop}: Order ${s.number} sent with ${s.carrier}. Keep Tk ${s.due} ready. Track: ${s.track}`,
     order_cancelled: `${shop}: Order ${s.number} has been cancelled.`,
+    payment_link: `${shop}: Pay Tk ${s.due} to confirm order ${s.number}: ${s.track}`,
+    order_updated: `${shop}: Order ${s.number} was updated. New total Tk ${s.total}.`,
   }[event];
 }

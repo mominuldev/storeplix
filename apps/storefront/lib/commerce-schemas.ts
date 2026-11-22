@@ -258,6 +258,8 @@ const CommerceSchema = z.object({
     }),
     30,
   ),
+  // 5b: sent once advance payments ship (5b-2); until then the API omits it.
+  cod_advance: z.enum(['none', 'delivery_charge']).catch('none'),
 });
 
 /** Optional on the wire (rolling deploys): missing/invalid → null and the UI hides commerce extras. */
@@ -394,6 +396,9 @@ const OrderSchema = z.object({
       max_days: z.number().int().min(0).max(30).nullable().catch(null),
     })
     .catch({ zone_name: '', min_days: null, max_days: null }),
+  // 5b: online payments (5b-2). SF parses `payment` properly in 5b-2; until then COD orders carry none.
+  payment: z.null().catch(null),
+  paid_amount: amount.catch(0),
 }) satisfies z.ZodType<StorefrontOrder, unknown>;
 
 export function parseStorefrontOrder(v: unknown): StorefrontOrder | null {

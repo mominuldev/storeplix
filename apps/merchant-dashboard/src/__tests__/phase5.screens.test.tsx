@@ -275,7 +275,7 @@ describe('Settings', () => {
   });
 
   it('payments: COD is the only active control', async () => {
-    const fetchMock = signedIn('owner', { 'GET /stores/S1/settings': settingsWithCommerce(), 'PATCH /stores/S1/settings': settingsWithCommerce({ checkout: { cod_enabled: false } }) });
+    const fetchMock = signedIn('owner', { 'GET /stores/S1/settings': settingsWithCommerce(), 'PATCH /stores/S1/settings': settingsWithCommerce({ checkout: { cod_enabled: false, cod_advance: 'none' } }) });
     renderApp(<AppRoutes />, { route: '/settings/payments' });
     await userEvent.click(await screen.findByRole('switch', { name: 'Cash on delivery' }, SLOW));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/settings').filter((c) => c[1].method === 'PATCH')).toHaveLength(1));

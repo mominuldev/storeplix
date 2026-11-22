@@ -183,6 +183,7 @@ describe('geo, commerce, errors', () => {
     expect(parseCommerce(undefined)).toBeNull();
     expect(parseCommerce({ checkout_enabled: true, payment_methods: ['cod', 'paypal'], free_delivery_over_amount: 300000, delivery: [{ name: 'Inside Dhaka', charge_amount: 7000, min_days: 1, max_days: 2 }] })).toEqual({
       checkout_enabled: true, payment_methods: ['cod'], free_delivery_over_amount: 300000, delivery: [{ name: 'Inside Dhaka', charge_amount: 7000, min_days: 1, max_days: 2 }],
+      cod_advance: 'none', // 5b field defaults while the API doesn't send it
     });
   });
 

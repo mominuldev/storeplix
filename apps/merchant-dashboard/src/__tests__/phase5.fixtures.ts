@@ -17,10 +17,12 @@ export const geo: BdGeo = {
 };
 
 export const commerce: StoreCommerceSettings = {
-  checkout: { cod_enabled: true },
+  checkout: { cod_enabled: true, cod_advance: 'none' },
   order_prefix: 'MU',
   next_order_number: 'MU-1049',
-  notifications: { new_order_email: true, sms_language: 'bn', customer_sms: { order_placed: true, order_confirmed: false, order_shipped: true, order_cancelled: true } },
+  notifications: { new_order_email: true, sms_language: 'bn', customer_sms: { order_placed: true, order_confirmed: false, order_shipped: true, order_cancelled: true, payment_link: true, order_updated: true } },
+  tax: { display: 'none', rate_bps: 0, bin: null },
+  invoice: { footer: null },
 };
 
 export const settingsWithCommerce = (c: Partial<StoreCommerceSettings> = {}) => jsonResponse(200, { data: settingsFixture({ commerce: { ...commerce, ...c } }) });
@@ -48,6 +50,8 @@ export function orderSummary(o: Partial<OrderSummary> = {}): OrderSummary {
     tags: [],
     placed_at: new Date(Date.now() - 120_000).toISOString(),
     updated_at: new Date().toISOString(),
+    shipment: null,
+    return_status: 'none',
     ...o,
   };
 }
@@ -71,7 +75,8 @@ export function order(o: Partial<Order> = {}): Order {
     events: [
       { id: 'E1', type: 'placed', from_status: null, to_status: 'pending', actor: { type: 'customer', user: null }, body: null, meta: {}, created_at: new Date().toISOString() },
     ],
-    payments: [{ id: 'PAY1', provider: 'cod', type: 'charge', status: 'pending', amount: 177_000, currency: 'BDT', method: null, reference: null, note: null, actor: null, created_at: new Date().toISOString() }],
+    payments: [{ id: 'PAY1', provider: 'cod', type: 'charge', status: 'pending', amount: 177_000, currency: 'BDT', method: null, reference: null, note: null, actor: null, created_at: new Date().toISOString(),
+      purpose: 'order', provider_trx_id: null, refunded_amount: 0, expires_at: null, failure_code: null, payment_link_id: null, return_request_id: null, can_refund: false }],
     shipment: null,
     subtotal_amount: 170_000,
     discount_amount: 0,
@@ -89,6 +94,12 @@ export function order(o: Partial<Order> = {}): Order {
     can: { edit: true, cancel: true, refund: true },
     revision: 1,
     created_by: null,
+    shipments: [],
+    payment_expires_at: null,
+    payment_links: [],
+    invoice_printed_at: null,
+    label_printed_at: null,
+    source_order_id: null,
     ...o,
   };
 }
