@@ -5,8 +5,9 @@
 --   psql -v ON_ERROR_STOP=1 -U storeplix_owner -d storeplix -f database/sql/rls-emergency-off.sql
 -- The SECURITY DEFINER functions and the GUC helpers STAY (QA 5b-1 F-L6): a running app with TENANCY_RLS=true keeps
 -- resolving storefront hosts through them, so there is no outage before the config change. Then set
--- TENANCY_RLS=false and restart web + workers at a calm moment. Re-enable later by re-running the policy migration
--- (`migrate:rollback --step=…` + `migrate`), which recreates the policies of every table in the list.
+-- TENANCY_RLS=false and restart web + workers at a calm moment. Re-enable later with
+-- `php artisan tenancy:rls-enable` (as the owner; idempotent, keeps data), then TENANCY_RLS=true and restart.
+-- Never re-enable through `migrate:rollback`: later migrations sit on top of the policy migration (RUNBOOK §7.2).
 --
 -- The table list must equal RlsTables::TENANT (RlsEmergencyScriptTest). Tables of later increments that do not exist
 -- yet are skipped (to_regclass).
@@ -513,6 +514,83 @@ BEGIN
     DROP POLICY IF EXISTS tenant_isolation ON "documents";
     ALTER TABLE "documents" NO FORCE ROW LEVEL SECURITY;
     ALTER TABLE "documents" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: payment_gateway_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.payment_gateway_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "payment_gateway_accounts";
+    ALTER TABLE "payment_gateway_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "payment_gateway_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: payment_links
+DO $$
+BEGIN
+  IF to_regclass('public.payment_links') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "payment_links";
+    ALTER TABLE "payment_links" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "payment_links" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: webhook_events
+DO $$
+BEGIN
+  IF to_regclass('public.webhook_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "webhook_events";
+    ALTER TABLE "webhook_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "webhook_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: courier_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.courier_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "courier_accounts";
+    ALTER TABLE "courier_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "courier_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: shipment_events
+DO $$
+BEGIN
+  IF to_regclass('public.shipment_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "shipment_events";
+    ALTER TABLE "shipment_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "shipment_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: courier_area_mappings
+DO $$
+BEGIN
+  IF to_regclass('public.courier_area_mappings') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "courier_area_mappings";
+    ALTER TABLE "courier_area_mappings" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "courier_area_mappings" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
+-- table: shipment_batches
+DO $$
+BEGIN
+  IF to_regclass('public.shipment_batches') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "shipment_batches";
+    ALTER TABLE "shipment_batches" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "shipment_batches" DISABLE ROW LEVEL SECURITY;
   END IF;
 END
 $$;

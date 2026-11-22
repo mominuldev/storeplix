@@ -4,11 +4,13 @@ import {
   paymentStatusMeta,
   returnStatusMeta,
   returnTypeMeta,
+  shipmentStatusMeta,
   type CouponDisplayStatus,
   type OrderStatus,
   type PaymentStatus,
   type ReturnStatus,
   type ReturnType,
+  type ShipmentStatus,
 } from '../lib/status';
 import { Badge } from './Badge';
 
@@ -56,6 +58,16 @@ export function ReturnTypeBadge({ type, className }: { type: ReturnType; classNa
   const m = returnTypeMeta[type];
   return (
     <Badge tone={m.tone} className={className}>
+      {m.label}
+    </Badge>
+  );
+}
+
+/** Phase 5b-3 Shipments 39:10347. Unknown values (enums widen, API-CONVENTIONS §1) fall back to a neutral label. */
+export function ShipmentStatusBadge({ status, className }: { status: ShipmentStatus; className?: string }) {
+  const m = shipmentStatusMeta[status] ?? { label: String(status).replace(/_/g, ' '), tone: 'neutral' as const };
+  return (
+    <Badge tone={m.tone} dot className={className}>
       {m.label}
     </Badge>
   );

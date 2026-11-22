@@ -1,0 +1,19 @@
+{
+  "_source": "docs",
+  "_doc": "https://documenter.getpostman.com/view/26211192/2sAYJ1mhpk",
+  "status": 200,
+  "message": "Consignment has been created successfully.",
+  "consignment": {
+    "consignment_id": 1424107,
+    "invoice": "01JDXK0000000000000000SHIP",
+    "tracking_code": "15BAEB8A",
+    "recipient_name": "Rafi Ahmed",
+    "recipient_phone": "01711000001",
+    "recipient_address": "House 12, Road 7A, Dhanmondi, Dhaka",
+    "cod_amount": 1770,
+    "status": "in_review",
+    "note": "Order SP-1001.",
+    "created_at": "2026-11-22T07:05:31.000000Z",
+    "updated_at": "2026-11-22T07:05:31.000000Z"
+  }
+}

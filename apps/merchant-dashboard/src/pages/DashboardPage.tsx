@@ -137,7 +137,10 @@ function CatalogCard({ query }: { query: ReturnType<typeof useDashboard> }) {
   );
 }
 
-/** "Needs you today" 10:958 — Confirm / Pack orders (Phase 5a), Restock (10:1011) and "Add your first product". */
+/**
+ * "Needs you today" 10:958 — Confirm / Pack orders (Phase 5a), unpaid online orders (5b §10), Restock (10:1011) and
+ * "Add your first product", plus 5b-3 "Book N parcels" (`waiting.to_book`) and "N delivery problems" (`shipments.problems`).
+ */
 function TodayCard({ summary, loading, failed }: { summary: DashboardSummary | undefined; loading: boolean; failed: boolean }) {
   const restock = summary ? summary.inventory.low_stock_variants + summary.inventory.out_of_stock_variants : 0;
   const waiting = summary?.orders?.waiting;
@@ -146,6 +149,37 @@ function TodayCard({ summary, loading, failed }: { summary: DashboardSummary | u
       ? [
           { key: 'confirm', to: '/orders?status=pending', icon: <CheckCircle2 />, tone: 'bg-brand-50 text-brand-600', title: `Confirm ${plural(waiting.pending, 'order')}`, hint: 'Call or message to confirm', count: waiting.pending as number | null },
           { key: 'pack', to: '/orders?status=confirmed', icon: <PackageCheck />, tone: 'bg-info-bg text-info', title: `Pack ${plural(waiting.confirmed, 'order')}`, hint: 'Confirmed and ready to pack', count: waiting.confirmed as number | null },
+          {
+            key: 'unpaid',
+            to: '/orders?status=pending_payment',
+            icon: <Wallet />,
+            tone: 'bg-warning-bg text-warning',
+            title: `${plural(waiting.pending_payment, 'unpaid online order')}`,
+            hint: 'Cancelled on their own if not paid in time',
+            count: waiting.pending_payment as number | null,
+          },
+          {
+            key: 'book',
+            to: '/shipments',
+            icon: <Truck />,
+            tone: 'bg-info-bg text-info',
+            title: `Book ${plural(waiting.to_book, 'parcel')}`,
+            hint: 'Confirmed orders without a courier yet',
+            count: waiting.to_book as number | null,
+          },
+        ]
+      : []),
+    ...(summary?.orders?.shipments
+      ? [
+          {
+            key: 'problems',
+            to: '/shipments?status=problems&range=all',
+            icon: <AlertTriangle />,
+            tone: 'bg-danger-bg text-danger',
+            title: plural(summary.orders.shipments.problems, 'delivery problem'),
+            hint: 'Failed, on hold or coming back',
+            count: summary.orders.shipments.problems as number | null,
+          },
         ]
       : []),
     ...(summary && !summary.setup.has_products
@@ -191,9 +225,13 @@ function TodayCard({ summary, loading, failed }: { summary: DashboardSummary | u
   );
 }
 
-/** Orders waiting 10:1115: pending / confirmed / ready to ship → filtered order lists. */
+/**
+ * Orders waiting 10:1115: pending / confirmed / ready to ship → filtered order lists. 5b §10 adds "Awaiting payment"
+ * (`pending_payment`).
+ */
 function OrdersWaiting({ orders }: { orders: OrderDashboard }) {
   const rows = [
+    { label: 'Awaiting payment', status: 'pending_payment', n: orders.waiting.pending_payment },
     { label: 'Waiting to confirm', status: 'pending', n: orders.waiting.pending },
     { label: 'Confirmed, not packed', status: 'confirmed', n: orders.waiting.confirmed },
     { label: 'Packed, ready to ship', status: 'ready_to_ship', n: orders.waiting.ready_to_ship },

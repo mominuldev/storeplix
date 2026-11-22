@@ -85,7 +85,9 @@ Binding API/type contract: `docs/development/PHASE-4-CONTRACT.md` (4.7 is a stri
 | 4.8 ✅ | Mobile merchant layouts (2:5) | WEB | Key screens responsive per Figma |
 
 ## Phase 5 — Commerce (cart, checkout, orders, payments, shipping)
-Binding contract: `docs/development/PHASE-5-CONTRACT.md`. Split into two build cycles (P5-1, Q31 accepted by the PO
+Binding contracts: `docs/development/PHASE-5-CONTRACT.md` (5a) and `docs/development/PHASE-5B-CONTRACT.md` (5b).
+**Status 2026-11-22:** 5a shipped; all five 5b increments built and QA-gated (5b-2/5b-3 on fake drivers only); Phase 5
+closes after the blockers listed under "5b" below. Split into two build cycles (P5-1, Q31 accepted by the PO
 2026-11-22); see "Phase 5 cycles" below the table. The AC column is the original roadmap AC; where 5a narrows it
 (e.g. "merge on login", stock "reservation" → commitment), the contract wins.
 | # | Task | Owner | AC |
@@ -105,8 +107,8 @@ Binding contract: `docs/development/PHASE-5-CONTRACT.md`. Split into two build c
 | 5.13 | Onboarding 08 You're live `52:765`: publish store (draft → active) with go-live checklist | API/WEB | Publish revalidates host; Coming soon disappears; platform URL shown |
 
 ### Phase 5 cycles
-**5a — Sell with cash on delivery** (PHASE-5-CONTRACT §0–§15, binding; built on branch `phase-5-commerce`, in QA
-review → `docs/reviews/phase-5a-qa.md`):
+**5a — Sell with cash on delivery** ✅ (PHASE-5-CONTRACT §0–§15, binding; built on branch `phase-5-commerce`, QA review
+`docs/reviews/phase-5a-qa.md`; shipped to `main`, which 5b branched from at `ffc3bf0`):
 | Task | 5a scope |
 |---|---|
 | 5.1 | Storefront catalog API + PDP `/products/{slug}`, PLP `/c/{slug}`, search, categories, availability (no cost/SKU/exact stock) |
@@ -119,16 +121,42 @@ review → `docs/reviews/phase-5a-qa.md`):
 | 5.12 (part) | Onboarding 06 delivery charges + pickup address; 07 cash on delivery. Courier and gateway connect cards shown disabled |
 | 5.13 | Launch checklist, `POST /stores/{store}/publish`, onboarding 08 "You're live" |
 
-**5b — Online money and couriers** (PHASE-5-CONTRACT §16, outline; binding only after its own contract revision once
-the 5a review passes, sandbox accounts exist and the PO answers the 5b questions). In this order:
-| Order | Task | 5b scope |
-|---|---|---|
-| 1 | 5.10 | **Postgres RLS first**, before any online-payment code merges: `storeplix_app` role without BYPASSRLS, `FORCE ROW LEVEL SECURITY` on every tenant table, explicit admin path for pre-tenant lookups, CI with `TENANCY_RLS` on and off |
-| 2 | 5.6 | Payments: bKash Tokenized Checkout + SSLCommerz (merchant-owned credentials), webhooks, `pending_payment` with a hold TTL, advance payment links, gateway refunds |
-| 3 | 5.8 | Couriers: Steadfast first, then Pathao, then RedX; booking, webhooks + polling, Shipments pages |
-| 4 | 5.9 | Invoice and label PDFs (JSON-configured templates; engine must shape Bangla) |
-| 5 | 5.12 (rest) | Onboarding 06 courier connect and 07 gateway connect cards enabled |
-| 6 | 5.7 (rest) | Order "Edit items" (re-commit, re-price) and post-delivery returns/exchanges; customer accounts and cart merge only if Q14 says "accounts" |
+**5b — Online money and couriers.** Binding contract: `docs/development/PHASE-5B-CONTRACT.md` (2026-11-22; PO
+accepted the Q45–Q63 defaults the same day). Branch `phase-5b-online-money`. Built in five increments, each with its
+own QA gate (`docs/reviews/phase-5b-*-qa.md`). Status on 2026-11-22:
+| Increment | Task | 5b scope | Status |
+|---|---|---|---|
+| 5b-1 Isolation | 5.10 + limiter | **Postgres RLS first**: `storeplix_app` without BYPASSRLS, `FORCE ROW LEVEL SECURITY` on every tenant table (52 after 5b-3), definer functions / `pgsql_admin` for pre-tenant paths, GUC lifecycle, CI job `api-rls`; per-shopper `storefront` limit (300/min per host + IP, 3 000/min per host) | ✅ **Built and QA-gated** (`phase-5b-1-qa.md`: PASS; F-M1 keyless-client limiter and F-L2 `tenant_users` policy split fixed afterwards) |
+| 5b-2 Payments | 5.6, 5.12 (07) | bKash Tokenized Checkout + SSLCommerz (merchant-owned credentials), `pending_payment` with 30-min hold, advance delivery charge at checkout, payment links (2 h default), signed returns + IPN, gateway refunds, Settings → Payments, onboarding 07 | ✅ **Built and QA-gated on the fake gateway** (`phase-5b-2-qa.md`, 18/18 e2e; F-2 exchange-link amount resolved by the PO decision of 2026-11-22, OPEN-QUESTIONS Q65). ⏳ **Sandbox certification pending accounts** (contract §16) |
+| 5b-3 Couriers | 5.8, 5.12 (06) | Steadfast, Pathao, RedX drivers; single + bulk booking, signed webhooks + 15-min poll, Shipments list/detail, courier connect/manage, onboarding 06, `/track` courier status | ✅ **Built and QA-gated on the fake courier** (`phase-5b-3-qa.md`; its open H-1 `/track` status and M-1 390 px overflow are fixed in `e95393f`). ⏳ **Certification against courier test accounts pending** (contract §16) |
+| 5b-4 Documents | 5.9 | A4 invoice, 80 mm receipt, A5 two-up, packing slip, 4×6 label PDFs (Gotenberg 9.1.0, Bangla shaping), JSON templates, Invoices & labels page, VAT display + BIN | ✅ **Built and QA-gated** (`phase-5b-4-5b-5-qa.md`: pass, real Gotenberg, 100 labels in 1.3 s) |
+| 5b-5 Order changes | 5.7 (rest) | Edit items (re-commit, re-price), post-delivery returns and exchanges (RT-n), restock after courier return. Customer accounts / cart merge not in 5b (Q58) | ✅ **Built and QA-gated** (`phase-5b-4-5b-5-qa.md`: pass) |
+
+**Remaining blockers for closing Phase 5b** (no Phase 6 work starts from this list):
+1. **Sandbox / test-account certification** (contract §13 "sandbox certification", §16), each run with
+   `phase5b.sandbox.spec.ts` and a public HTTPS tunnel (`PUBLIC_API_URL`), replacing the docs-based fixtures
+   (`"_source": "docs"`) with recordings and resolving every **VERIFY** point:
+   - bKash: sandbox `app_key`, `app_secret`, `username`, `password` and the **live base URL** (from bKash PGW support);
+   - SSLCommerz: sandbox `store_id` / `store_passwd` (self-serve); partial refund support (Q48);
+   - Steadfast: a merchant account with API access. **Steadfast documents no sandbox** (one base URL for both modes,
+     `config/couriers.php`), so certification means real test parcels on a live account that are cancelled in the
+     Steadfast panel (needs a PO decision, OPEN-QUESTIONS Q68);
+   - Pathao: sandbox client credentials + test store; RedX: API access token and webhook docs (RedX is poll-only until
+     its webhook is verified).
+2. **CI not yet run on GitHub** for the edited `e2e.yml` (fake-driver env, migrations as `pgsql_owner`), the
+   `api-documents` job and the RLS-on race loops; compose `queue-webhooks` / `queue-documents` / `scheduler` only
+   checked with `docker compose config`.
+3. ~~QA open items (OPEN-QUESTIONS Q66, Q67)~~: resolved 2026-11-22 (unique e2e shopper IPs; full API suite green as
+   the app role with RLS on).
+4. **WEB gaps found by ARCH** (small): courier detail built as a dialog without the event log, recent shipments
+   and "This month" (FIGMA-INDEX Phase 5b); QA 5b-4/5 L-1 (Edit items name truncation at 390 px). Fixed since: the
+   dashboard "Book N parcels" / "N delivery problems" tasks, the percent-advance preview (floors like the API), and
+   Steadfast connections are live-only (no sandbox exists).
+5. **ARCH follow-ups** (contract §18): DATABASE-DESIGN §5.2, FIGMA-INDEX, this roadmap and OPEN-QUESTIONS are done;
+   API-CONVENTIONS (§4.0 codes, limiter values, webhook paths), SECURITY.md (T1/T5 updates, T28, T29) and
+   MULTI-TENANCY §9 (as built) are being updated in parallel; the deployment runbook (DB roles, Gotenberg, egress IP
+   for SSLCommerz live refunds) is still to write.
+6. Merge of `phase-5b-online-money` to `main` after the above.
 
 ## Phase 6 — Custom domains
 | # | Task | Owner | AC |

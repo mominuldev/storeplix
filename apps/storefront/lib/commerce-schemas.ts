@@ -6,6 +6,8 @@ import type {
   CartLine,
   CartMeta,
   OrderStatus,
+  PaymentInitiation,
+  PaymentLinkView,
   PaymentMethod,
   ShippingQuote,
   StorefrontAvailability,
@@ -15,11 +17,13 @@ import type {
   StorefrontMedia,
   StorefrontOrder,
   StorefrontOrderLine,
-  StorefrontOrderTracking,
+  StorefrontPaymentResult,
+  StorefrontPaymentState,
   StorefrontProduct,
   StorefrontProductCard,
   StorefrontVariant,
 } from '@storeplix/types';
+import type { CourierTrackStatus, StorefrontTracking } from './tracking';
 import { normalizeRichText } from './rich-text';
 import { cleanText } from './text';
 import { parseProductCard, parseStorefrontMedia } from './storefront-schemas';
@@ -65,6 +69,12 @@ function lenientArray<T>(item: z.ZodType<T, unknown>, max: number) {
 const ORDER_STATUSES = ['pending_payment', 'pending', 'confirmed', 'ready_to_ship', 'shipped', 'delivered', 'returned', 'cancelled'] as const;
 const orderStatus = z.enum(ORDER_STATUSES);
 const paymentMethod = z.enum(['cod', 'bkash', 'sslcommerz']);
+const gatewayProvider = z.enum(['bkash', 'sslcommerz']);
+const paymentStatus = z.enum(['pending', 'succeeded', 'failed', 'cancelled']);
+const paymentPurpose = z.enum(['order', 'advance', 'link', 'exchange', 'test']);
+/** Payment ids are ULIDs (26 chars, any case on the wire). */
+export const PAYMENT_ID_RE = /^[0-9A-Za-z]{26}$/;
+const paymentId = z.string().regex(PAYMENT_ID_RE);
 
 // ---------- API error envelope ----------
 export interface ParsedApiError {
@@ -396,8 +406,8 @@ const OrderSchema = z.object({
       max_days: z.number().int().min(0).max(30).nullable().catch(null),
     })
     .catch({ zone_name: '', min_days: null, max_days: null }),
-  // 5b: online payments (5b-2). SF parses `payment` properly in 5b-2; until then COD orders carry none.
-  payment: z.null().catch(null),
+  // 5b-2: state of the order's latest online payment (null for plain COD).
+  payment: z.unknown().optional().transform((v) => parsePaymentState(v)),
   paid_amount: amount.catch(0),
 }) satisfies z.ZodType<StorefrontOrder, unknown>;
 
@@ -406,12 +416,124 @@ export function parseStorefrontOrder(v: unknown): StorefrontOrder | null {
   return r.success ? r.data : null;
 }
 
-export function parseCheckoutResult(v: unknown): { order: StorefrontOrder; confirmation_token: string } | null {
+export interface ParsedCheckoutResult {
+  order: StorefrontOrder;
+  confirmation_token: string;
+  payment: PaymentInitiation | null;
+}
+
+export function parseCheckoutResult(v: unknown): ParsedCheckoutResult | null {
   if (!isObject(v)) return null;
   const order = parseStorefrontOrder(v.order);
   const token = typeof v.confirmation_token === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(v.confirmation_token) ? v.confirmation_token : null;
-  return order && token ? { order, confirmation_token: token } : null;
+  if (!order || !token) return null;
+  // `payment` is null for plain COD; a present-but-unusable initiation fails the payload (the
+  // shopper would otherwise land on a COD thank-you for an order that waits for payment).
+  if (v.payment === undefined || v.payment === null) return { order, confirmation_token: token, payment: null };
+  const payment = parsePaymentInitiation(v.payment);
+  return payment ? { order, confirmation_token: token, payment } : null;
 }
+
+// ---------- payments (5b-2, PHASE-5B-CONTRACT §4.2) ----------
+
+/**
+ * Gateway URL we send the browser to. Absolute https only (http only outside production, for the
+ * local fake gateway), no credentials, ≤ 2 000 chars. Anything else → null (treated as a failed
+ * initiation, never followed).
+ */
+export function safeGatewayUrl(v: unknown, allowHttp = process.env.NODE_ENV !== 'production'): string | null {
+  if (typeof v !== 'string' || v.length > 2000) return null;
+  try {
+    const u = new URL(v);
+    const okProtocol = u.protocol === 'https:' || (allowHttp && u.protocol === 'http:');
+    return okProtocol && !u.username && !u.password && u.hostname ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+const PaymentInitiationSchema = z
+  .object({
+    payment_id: paymentId,
+    provider: gatewayProvider,
+    status: z.enum(['redirect', 'initiation_failed']),
+    redirect_url: z.unknown().optional().transform((u) => safeGatewayUrl(u)),
+    amount,
+    expires_at: isoDate,
+  })
+  .transform((p): PaymentInitiation => (p.status === 'redirect' && !p.redirect_url ? { ...p, status: 'initiation_failed', redirect_url: null } : p));
+
+/** `PaymentInitiation` (checkout, `orders/pay`, `payment-links/{token}/pay`). */
+export function parsePaymentInitiation(v: unknown): PaymentInitiation | null {
+  const r = PaymentInitiationSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
+const PaymentStateSchema = z.object({
+  status: paymentStatus,
+  provider: gatewayProvider,
+  purpose: paymentPurpose.catch('order'),
+  amount,
+  expires_at: isoDate.nullable().catch(null),
+  can_retry: z.boolean().catch(false),
+  can_switch_to_cod: z.boolean().catch(false),
+}) satisfies z.ZodType<StorefrontPaymentState, unknown>;
+
+/** `StorefrontOrder.payment`; null when absent or unusable (rendered as a COD order). */
+export function parsePaymentState(v: unknown): StorefrontPaymentState | null {
+  const r = PaymentStateSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
+/** `POST /storefront/orders/pay` → `{ order, payment }` (`payment: null` after a switch to COD). */
+export function parseOrderPayResult(v: unknown): { order: StorefrontOrder; payment: PaymentInitiation | null } | null {
+  if (!isObject(v)) return null;
+  const order = parseStorefrontOrder(v.order);
+  if (!order) return null;
+  if (v.payment === undefined || v.payment === null) return { order, payment: null };
+  const payment = parsePaymentInitiation(v.payment);
+  return payment ? { order, payment } : null;
+}
+
+const PaymentResultSchema = z.object({
+  status: paymentStatus,
+  order_number: OrderNumber,
+  amount,
+  currency,
+  purpose: paymentPurpose.catch('order'),
+  shop_name: text(120),
+}) satisfies z.ZodType<StorefrontPaymentResult, unknown>;
+
+/** `GET /storefront/payments/{payment}/result` (no PII). */
+export function parsePaymentResult(v: unknown): StorefrontPaymentResult | null {
+  const r = PaymentResultSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
+const PaymentLinkViewSchema = z.object({
+  order_number: OrderNumber,
+  shop_name: z.unknown().optional().transform((v) => cleanText(v, 120) ?? ''),
+  amount: amount.refine((a) => a > 0),
+  currency,
+  provider: gatewayProvider,
+  expires_at: isoDate,
+  status: z.literal('active'),
+}) satisfies z.ZodType<PaymentLinkView, unknown>;
+
+/** `GET /storefront/payment-links/{token}`; anything but an active link → null (invalid page). */
+export function parsePaymentLinkView(v: unknown): PaymentLinkView | null {
+  const r = PaymentLinkViewSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
+/** Payment-link tokens: 12 base62 chars (P5B-22); a small range for forward compatibility. */
+export const PAY_LINK_TOKEN_RE = /^[A-Za-z0-9]{10,64}$/;
+
+const COURIER_TRACK_STATUSES = [
+  'booking', 'booked', 'picked_up', 'in_transit', 'out_for_delivery', 'on_hold', 'delivery_failed', 'delivered',
+  'partially_delivered', 'returning', 'returned', 'cancelled', 'booking_failed', 'shipped',
+] as const satisfies readonly CourierTrackStatus[];
+const courierTrackStatus = z.enum(COURIER_TRACK_STATUSES);
 
 const TrackingSchema = z.object({
   number: OrderNumber,
@@ -442,12 +564,18 @@ const TrackingSchema = z.object({
             return null;
           }
         }),
+      // 5b-3 (§11 `/track`): courier status + time only. Unknown keys (rider name/phone, location, raw
+      // provider payloads) are stripped by the object schema and never reach the page.
+      status: courierTrackStatus.nullable().optional().catch(null).transform((x) => x ?? null),
+      status_at: isoDate.nullable().optional().catch(null).transform((x) => x ?? null),
+      checked_at: isoDate.nullable().optional().catch(null).transform((x) => x ?? null),
+      events: lenientArray(z.object({ status: courierTrackStatus, at: isoDate }), 30),
     })
     .nullable()
     .catch(null),
-}) satisfies z.ZodType<StorefrontOrderTracking, unknown>;
+}) satisfies z.ZodType<StorefrontTracking, unknown>;
 
-export function parseTracking(v: unknown): StorefrontOrderTracking | null {
+export function parseTracking(v: unknown): StorefrontTracking | null {
   const r = TrackingSchema.safeParse(v);
   return r.success ? r.data : null;
 }

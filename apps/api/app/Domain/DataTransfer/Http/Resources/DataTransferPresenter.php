@@ -19,9 +19,11 @@ final class DataTransferPresenter
     /** @return array<string, mixed> */
     public static function import(DataImport $import): array
     {
-        $summary = $import->summary === null ? null : array_map('intval', array_intersect_key(
-            $import->summary + array_fill_keys(self::SUMMARY_KEYS, 0), array_flip(self::SUMMARY_KEYS),
-        ));
+        // Contract key order on every database (Postgres jsonb reorders keys, sqlite keeps insertion order).
+        $summary = $import->summary === null ? null : array_map(
+            fn (string $key) => (int) ($import->summary[$key] ?? 0),
+            array_combine(self::SUMMARY_KEYS, self::SUMMARY_KEYS),
+        );
 
         return [
             'id' => $import->id,

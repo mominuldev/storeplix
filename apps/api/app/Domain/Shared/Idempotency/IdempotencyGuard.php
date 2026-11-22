@@ -65,14 +65,17 @@ class IdempotencyGuard
         return $response;
     }
 
-    /** sha256 of the canonical body (+ the cart token hash for checkout, + the route path). */
+    /** sha256 of the canonical body (+ the cart / order token hash, + the route path). */
     private function hash(Request $request): string
     {
         $body = $request->json()->all();
         self::ksortRecursive($body);
         $cart = (string) $request->header('X-Cart-Token', '');
+        // 5b-2: /storefront/orders/pay is per order (X-Order-Token): one key can't replay another order's answer.
+        $orderToken = (string) $request->header('X-Order-Token', '');
 
-        return hash('sha256', $request->method().' '.$request->path()."\n".json_encode($body)."\n".($cart !== '' ? hash('sha256', $cart) : ''));
+        return hash('sha256', $request->method().' '.$request->path()."\n".json_encode($body)."\n".($cart !== '' ? hash('sha256', $cart) : '')
+            .($orderToken !== '' ? "\n".hash('sha256', $orderToken) : ''));
     }
 
     private function claim(string $storeId, string $scope, string $key, string $hash): IdempotencyKey|JsonResponse

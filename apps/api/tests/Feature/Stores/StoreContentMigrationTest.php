@@ -15,6 +15,17 @@ class StoreContentMigrationTest extends TestCase
 {
     use DatabaseMigrations;
 
+    /** Skip before DatabaseMigrations runs migrate:fresh, which the RLS app role can't do (it owns no tables). */
+    protected function setUpTraits()
+    {
+        if ($this->rlsActive()) {
+            // Migrations only ever run as the schema owner. Covered on sqlite and in the owner-run api-postgres job.
+            $this->markTestSkipped('Rolls migrations back and forth: runs as the schema owner only (not with TENANCY_RLS as the app role).');
+        }
+
+        return parent::setUpTraits();
+    }
+
     public function test_migration_moves_theme_into_store_themes_and_ensure_content_is_idempotent(): void
     {
         [, $tenant] = $this->merchant();

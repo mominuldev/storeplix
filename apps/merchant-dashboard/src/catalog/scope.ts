@@ -18,6 +18,7 @@ export function useStoreScope() {
     canManageMarketing: can.manageMarketing(role),
     canManageRefunds: can.manageRefunds(role),
     canManageSettings: can.manageSettings(role),
+    canManageIntegrations: can.manageIntegrations(role),
   };
 }
 
@@ -48,4 +49,11 @@ export const keys = {
   return: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'return', id] as const,
   document: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'document', id] as const,
   documentTemplates: (s: Scope) => [s.tenantId, s.storeId, 'document-templates'] as const,
+  paymentGateways: (s: Scope) => [s.tenantId, s.storeId, 'payment-gateways'] as const,
+  // 5b-3 shipments (WEB-2)
+  shipments: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'shipments'] as const) : ([s.tenantId, s.storeId, 'shipments', filters] as const)),
+  shipment: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'shipment', id] as const,
+  shipmentBatch: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'shipment-batch', id] as const,
+  couriers: (s: Scope) => [s.tenantId, s.storeId, 'couriers'] as const,
+  courierPickupStores: (s: Scope, provider: string) => [s.tenantId, s.storeId, 'couriers', provider, 'pickup-stores'] as const,
 };

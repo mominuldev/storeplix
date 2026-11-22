@@ -1,0 +1,8 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "Zone list fetched.",
+  "type": "success",
+  "code": 200,
+  "data": {"data": [{"zone_id": 298, "zone_name": "Dhanmondi"}, {"zone_id": 299, "zone_name": "Mirpur"}]}
+}

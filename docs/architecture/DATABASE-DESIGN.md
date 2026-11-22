@@ -19,7 +19,7 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1). Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2). Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
 | Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
@@ -232,6 +232,7 @@ district varchar(80) · postal_code varchar(10) · country char(2) · is_default
 > `order_status_history`, `payments`, `shipping_orders` and `idempotency_keys` entries below are superseded by §5.1
 > (migrations `2026_05_01_*`, PHASE-5-CONTRACT §2). `shipping_methods` became `shipping_zones`; `order_status_history`
 > became `order_events`; `shipping_orders` became `shipments` (5b widens it). Kept below as the Phase 0 design record.
+> The Phase 0 `payment_gateway_accounts` and `webhook_events` entries are likewise superseded by §5.2 (Phase 5b, as built).
 
 ### carts
 id PK · tenant_id · store_id FK(t) · customer_id FK(t) null · token_hash char(64) (sha256 of opaque cart token) ·
@@ -335,6 +336,7 @@ change) and `store_id`; **FK(s)** = `(tenant_id, store_id) → stores(tenant_id,
 `(tenant_id, store_id, col) → t(tenant_id, store_id, id)`. Parents expose `U(tenant_id, id)` and
 `U(tenant_id, store_id, id)`. Timestamps are `timestamptz`. Money is `bigint` paisa. Enum and range **CHECKs are
 Postgres-only** (the app validates on both drivers); partial unique indexes are created on Postgres **and** sqlite.
+Phase 5b alters `orders`, `payments`, `shipments`, `order_items`, `order_events` and `store_settings`: see §5.2.
 
 ```mermaid
 erDiagram
@@ -516,6 +518,213 @@ smallint null · response_body text null (**encrypted** cast) · locked_until ti
 expires_at timestamptz (24 h). No `updated_at`. **U(store_id, scope, key)**. IX(expires_at). `idempotency:prune`
 hourly. Store-level only in 5a (no tenant-level rows yet).
 
+## 5.2 Phase 5b tables (as built)
+Source: `apps/api/database/migrations/2026_06_01_000100` … `001800`; binding detail in PHASE-5B-CONTRACT §2–§3,
+ADR 0012 (RLS). Notation and conventions as §5.1 (tenant_id FK tenants CASCADE, FK(s), FK3, `U(tenant_id, id)`,
+bigint paisa, Postgres-only CHECKs, partial uniques on both drivers). Contract rows `001900` (`store_counters` key
+`returns`) and `002000` (plans) need no migration: the counter key is created on first use, and `courier_connections`
+/ `bulk_courier_booking` already existed in `PlanSeeder`.
+
+```mermaid
+erDiagram
+  STORES ||--o{ PAYMENT_GATEWAY_ACCOUNTS : "connects (bkash, sslcommerz)"
+  PAYMENT_GATEWAY_ACCOUNTS ||--o{ PAYMENTS : "charges via"
+  ORDERS ||--o{ PAYMENT_LINKS : "asks advance"
+  PAYMENT_LINKS ||--o{ PAYMENTS : "paid by"
+  STORES ||--o{ WEBHOOK_EVENTS : receives
+  STORES ||--o{ COURIER_ACCOUNTS : "connects (steadfast, pathao, redx)"
+  PICKUP_LOCATIONS ||--o{ COURIER_ACCOUNTS : "picks up from"
+  COURIER_ACCOUNTS ||--o{ SHIPMENTS : books
+  SHIPMENTS ||--o{ SHIPMENT_EVENTS : timeline
+  STORES ||--o{ COURIER_AREA_MAPPINGS : remembers
+  STORES ||--o{ SHIPMENT_BATCHES : "bulk books"
+  ORDERS ||--o{ RETURN_REQUESTS : "returned / exchanged"
+  RETURN_REQUESTS ||--o{ RETURN_ITEMS : lines
+  ORDER_ITEMS ||--o{ RETURN_ITEMS : "returned from"
+  RETURN_REQUESTS ||--o{ RETURN_EVENTS : timeline
+  RETURN_REQUESTS ||--o{ PAYMENTS : "refunded by"
+  RETURN_REQUESTS |o--o| ORDERS : "exchange order"
+  ORDERS |o--o{ ORDERS : "source_order_id (exchange)"
+  STORES ||--o{ DOCUMENT_TEMPLATES : "print options"
+  STORES ||--o{ DOCUMENTS : "generated PDFs"
+```
+
+### Row-level security (5b-1, migrations 000100, 000110)
+- **Forced RLS on every table with `tenant_id`** (52 tables after 5b-3; the single list is
+  `App\Domain\Tenancy\Database\RlsTables::TENANT`). Each gets `ENABLE` + `FORCE ROW LEVEL SECURITY` and policy
+  `tenant_isolation FOR ALL TO storeplix_app USING (tenant_id = app_current_tenant()::bpchar) WITH CHECK (same)`. The
+  GUC is cast to `bpchar` so the `char(26)` column keeps its `(tenant_id, …)` indexes. GUC unset → no rows, inserts
+  rejected. 000100 enables the 40 pre-5b tables; **every 5b table enables RLS in its own create migration**
+  (`RlsPolicies::enable`) and is listed in `RlsTables::TENANT` in the same change. `RlsCoverageTest` and the `api-rls`
+  CI catalogue step fail on any `tenant_id` table without a forced policy.
+- **Special policies** (instead of `tenant_isolation`):
+  - `tenant_users` (split by 000110, QA 5b-1 F-L2): SELECT `tenant_id = current tenant OR user_id = app_current_user()`;
+    INSERT / UPDATE / DELETE only in the current tenant.
+  - `audit_logs`: SELECT current tenant; INSERT `tenant_id IS NULL OR current tenant`. The app role has no
+    UPDATE/DELETE grant (append-only).
+  - `sms_messages`: INSERT as `audit_logs`; SELECT **and** UPDATE `current tenant OR (tenant_id IS NULL AND no tenant
+    set)`. SELECT matches UPDATE because Postgres applies SELECT policies to an UPDATE's `WHERE` (OTP status updates).
+- **Helper functions:** `app_current_tenant()`, `app_current_user()` (GUCs `app.tenant_id`, `app.user_id`; `''` =
+  unset), `STABLE`.
+- **SECURITY DEFINER functions** (owned by the migrating role `storeplix_owner`, `SET search_path = public, pg_temp`,
+  `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE TO storeplix_app`), ids only:
+  | Function | Returns | Used by |
+  |---|---|---|
+  | `sp_resolve_host(p_host text)` | `(tenant_id, store_id)` of an `active` domain of a non-suspended store | storefront host resolution |
+  | `sp_invitation_by_token(p_hash text)` | `(invitation_id, tenant_id)` | invitation show/accept |
+  | `sp_store_slug_taken(p_slug text)` | `boolean` | global slug uniqueness (P5B-8) |
+  | `sp_payment_owner(p_payment text)` | `(tenant_id, store_id)` | signed payment-return URLs |
+  | `sp_route_key_owner(p_provider text, p_key text)` | `(tenant_id, store_id, account_id)` from `payment_gateway_accounts` **or** `courier_accounts` where `route_key` and `provider` match | public webhook paths. Created by 000200 (gateways only), replaced by 000700 (gateways ∪ couriers) |
+- Rollback of 000100 drops the policies but **keeps** the functions (QA 5b-1 F-L6): a running app with `TENANCY_RLS=true`
+  still calls them. `database/sql/rls-emergency-off.sql` lists exactly `RlsTables::TENANT`.
+- Roles (created outside migrations, `infrastructure/docker/postgres/initdb/01-roles.sql`): `storeplix_owner`
+  (schema owner, BYPASSRLS, runs migrations as `--database=pgsql_owner`), `storeplix_app` (NOBYPASSRLS, DML; web and
+  queue workers), `storeplix_admin` (BYPASSRLS, DML; console, scheduler discovery, `withoutTenancy()`).
+
+### Changes to existing tables
+- **payments** (000300): + `purpose varchar(16) default 'order'` CHECK IN (`order`,`advance`,`link`,`exchange`,`test`) ·
+  `gateway_account_id char(26) null` FK3(payment_gateway_accounts) NO ACTION · `payment_link_id char(26) null`
+  FK3(payment_links) (added by 000500) · `provider_trx_id varchar(64) null` · `refunded_amount bigint default 0` CHECK
+  `>= 0 AND <= amount` · `expires_at timestamptz null` · `failure_code varchar(48) null` · `attempt smallint default 1`
+  CHECK `>= 1` · `return_request_id char(26) null` FK3(return_requests) (FK added by 001200; whichever of 000300 / 001200
+  runs first adds the column). **`order_id` becomes nullable** with CHECK `purpose = 'test' OR order_id IS NOT NULL`
+  (gateway test charges have no order). `method` CHECK + `gateway`. Partial **U(store_id, provider, provider_trx_id)
+  WHERE provider_trx_id IS NOT NULL AND type = 'charge'** (one gateway transaction pays one charge); partial
+  **U(order_id) WHERE type = 'charge' AND status = 'pending' AND provider IN ('bkash','sslcommerz')** (one open online
+  attempt per order). IX(tenant_id, status, expires_at). IX(tenant_id, store_id, gateway_account_id). IX(tenant_id,
+  store_id, return_request_id). `raw` holds provider responses scrubbed by `PayloadScrubber`.
+- **orders** (000400): + `payment_expires_at timestamptz null` (30-min hold of `pending_payment`, which is now in use) ·
+  `return_status varchar(24) default 'none'` CHECK IN (`none`,`requested`,`partially_returned`,`returned`) ·
+  `source_order_id char(26) null` FK3(orders) NO ACTION (exchange orders) · `invoice_printed_at`, `label_printed_at
+  timestamptz null`. `cancel_reason` CHECK + `payment_timeout`, `payment_link_expired`. Partial
+  `IX(tenant_id, status, payment_expires_at) WHERE status = 'pending_payment'`. IX(tenant_id, store_id,
+  invoice_printed_at). IX(tenant_id, store_id, label_printed_at).
+- **order_items** (000400): + **U(tenant_id, store_id, id)** so `return_items` can use FK3.
+- **shipments** (000800): + `courier_account_id char(26) null` FK3(courier_accounts) NO ACTION · `consignment_id
+  varchar(64) null` · `provider_status varchar(48) null` · `attempts smallint default 0` · `weight_grams int null` CHECK
+  `BETWEEN 1 AND 100000` · `delivery_fee_amount`, `cod_charge_amount`, `cod_collected_amount bigint null` (CHECK `>= 0`) ·
+  `cod_overridden boolean default false` · `last_event_at`, `last_synced_at`, `booked_at`, `picked_up_at`,
+  `cancelled_at`, `settled_at timestamptz null` · `last_location varchar(120) null` · `failure_reason varchar(255) null` ·
+  `problem varchar(24) null` CHECK IN (`delivery_failed`,`on_hold`,`returning`,`unknown`) · `idempotency_key
+  varchar(64) null` · `raw jsonb null` (scrubbed) · `batch_id char(26) null` (soft ref to `shipment_batches`: composite
+  FKs can't `SET NULL`). `status` CHECK widened to `booking, booked, picked_up, in_transit, out_for_delivery, on_hold,
+  delivery_failed, delivered, partially_delivered, returning, returned, cancelled, booking_failed, shipped` (`shipped`
+  stays for 5a manual shipments). The 5a `U(order_id) WHERE status <> 'cancelled'` is replaced by
+  **U(order_id) WHERE status NOT IN ('cancelled','booking_failed')**; partial **U(store_id, provider, consignment_id)
+  WHERE consignment_id IS NOT NULL**; partial **U(store_id, idempotency_key) WHERE idempotency_key IS NOT NULL**.
+  IX(tenant_id, store_id, status, booked_at). IX(tenant_id, provider, last_synced_at).
+- **store_settings** (001700): + `cod_advance varchar(16) default 'none'` CHECK IN (`none`,`delivery_charge`) ·
+  `tax_display varchar(16) default 'none'` CHECK IN (`none`,`included`) · `tax_rate_bps int default 0` CHECK `BETWEEN 0
+  AND 2500` · `tax_bin varchar(16) null` (format checked by the app) · `invoice_footer varchar(300) null`.
+  `customer_sms` backfilled with `payment_link: true`, `order_updated: true` (existing keys keep their values).
+- **order_events** (001800): `type` CHECK + `payment_link`, `items_edited`, `return`, `document` (Postgres only; the
+  down migration re-adds the narrow CHECK `NOT VALID` so history survives).
+- **store_counters**: new key `returns` (RT-n per store, from 1). No migration.
+
+### payment_gateway_accounts [S] (000200, 5b-2)
+id PK · tenant_id · store_id FK(s) CASCADE · provider varchar(16) `CHECK IN ('bkash','sslcommerz')` · mode varchar(8)
+`CHECK IN ('sandbox','live')` · status varchar(16) `CHECK IN ('connected','error','disconnected')` · credentials text
+(encrypted JSON via the dedicated `IntegrationCredentials` encrypter, never `APP_KEY`; never returned or logged) ·
+credentials_hint varchar(16) null · enabled boolean default false (CHECK `status = 'connected' OR NOT enabled`) ·
+is_default boolean default false · route_key char(32) **U** (global; webhook path key) · verified_at,
+last_checked_at timestamptz null · last_error_code varchar(48) null · connected_by FK users null SET NULL ·
+**connected_at timestamptz null** (not in the contract table; backs `PaymentGatewayAccount.connected_at` in
+types/openapi) · revision int default 1 · timestamps. U(tenant_id, id). U(tenant_id, store_id, id).
+**U(store_id, provider)**. Partial **U(store_id) WHERE is_default**.
+
+### payment_links [S] (000500, 5b-2)
+id PK · tenant_id · store_id FK(s) · order_id FK3(orders) CASCADE · token_hash char(64) **U** (sha256 of the 12-char
+token) · token_encrypted text (Copy link / Resend; the raw token is never stored in plain text) · amount_kind
+varchar(16) `CHECK IN ('delivery_charge','percent','full','custom')` · percent_bps int null CHECK `BETWEEN 1 AND
+10000` · amount bigint CHECK `> 0` · provider varchar(16) `CHECK IN ('bkash','sslcommerz')` · status varchar(16)
+default `'active'` `CHECK IN ('active','paid','expired','cancelled')` · expires_at timestamptz · cancel_if_unpaid
+boolean · sent_via jsonb default `'[]'` · paid_at, cancelled_at timestamptz null · created_by FK users null SET NULL ·
+timestamps. U(tenant_id, id). U(tenant_id, store_id, id). Partial **U(order_id) WHERE status = 'active'** (one active
+link per order). IX(tenant_id, status, expires_at). IX(tenant_id, store_id, order_id).
+`percent` amount = `intdiv(due × percent_bps, 10 000)` (floored to the paisa; see OPEN-QUESTIONS Q64).
+
+### webhook_events [S] (000600, 5b-2; reused by 5b-3)
+id PK · tenant_id · store_id FK(s) CASCADE · provider varchar(16) `CHECK IN ('bkash','sslcommerz','steadfast','pathao',
+'redx')` · account_id char(26) (soft ref to a gateway or courier account) · event_id varchar(128) · event_type
+varchar(64) null · payload jsonb (scrubbed) · status varchar(16) default `'received'` `CHECK IN ('received','processed',
+'ignored','failed')` · attempts smallint default 0 · error_code varchar(48) null · received_at timestamptz ·
+processed_at timestamptz null. No `created_at`/`updated_at`. U(tenant_id, id). **U(tenant_id, provider, event_id)**
+(replays are no-ops, S24). IX(tenant_id, provider, received_at). The tenant is resolved **before** the insert
+(`sp_route_key_owner`), so `tenant_id` is NOT NULL (the Phase 0 sketch had it nullable). Retention 90 days
+(`webhooks:prune`).
+
+### courier_accounts [S] (000700, 5b-3)
+id PK · tenant_id · store_id FK(s) CASCADE · provider varchar(16) `CHECK IN ('steadfast','pathao','redx')` · mode
+varchar(8) `CHECK IN ('sandbox','live')` · status varchar(16) `CHECK IN ('connected','error','disconnected')` ·
+credentials text (IntegrationCredentials) · credentials_hint varchar(16) null · webhook_secret_hash char(64) null ·
+webhook_secret_encrypted text null (Pathao compares the plain value) · route_key char(32) **U** · settings jsonb default
+`'{}'` (booking rules, P5B-32) · pickup_location_id char(26) null FK3(pickup_locations) **RESTRICT** · is_default
+boolean default false · last_synced_at, last_webhook_at, last_checked_at timestamptz null · last_error_code varchar(48)
+null · connected_by FK users null SET NULL · connected_at timestamptz null (like gateways; not in the contract table) ·
+revision int default 1 · timestamps. U(tenant_id, id). U(tenant_id, store_id, id). **U(store_id, provider)**. Partial
+**U(store_id) WHERE is_default**. IX(tenant_id, store_id, status).
+
+### shipment_events [S] (000900, 5b-3; append-only)
+id PK · tenant_id · store_id FK(s) CASCADE · shipment_id FK3(shipments) CASCADE · status varchar(24) · provider_status
+varchar(48) null · description varchar(255) null · location varchar(120) null · source varchar(8) `CHECK IN
+('webhook','poll','user','system')` · occurred_at timestamptz · created_at timestamptz default now(). No `updated_at`.
+U(tenant_id, id). IX(tenant_id, store_id, shipment_id, occurred_at). Partial **U(shipment_id, provider_status,
+occurred_at) WHERE provider_status IS NOT NULL** (a webhook and a poll of the same courier event write one row).
+The storefront `/track` exposes only `status` + time, never description/location (rider data).
+
+### courier_area_mappings [S] (001000, 5b-3)
+tenant_id · store_id FK(s) CASCADE · provider varchar(16) `CHECK IN ('steadfast','pathao','redx')` · district_code
+varchar(32) · thana_code varchar(48) default `''` (`''` = whole district) · provider_city_id, provider_zone_id,
+provider_area_id varchar(32) null · label varchar(160) · timestamps. No `id`. **PK(store_id, provider, district_code,
+thana_code)**. IX(tenant_id, store_id, provider).
+
+### shipment_batches [S] (001100, 5b-3)
+id PK · tenant_id · store_id FK(s) CASCADE · provider varchar(16) `CHECK IN ('steadfast','pathao','redx')` · status
+varchar(16) default `'queued'` `CHECK IN ('queued','running','completed','failed')` · total, booked, skipped, failed
+smallint default 0 (CHECK `>= 0`) · results jsonb default `'[]'` (`[{order_id, shipment_id?, status, reason?}]`) ·
+created_by FK users null SET NULL · started_at, finished_at timestamptz null · timestamps. U(tenant_id, id).
+U(tenant_id, store_id, id). IX(tenant_id, store_id, created_at).
+
+### return_requests [S] (001200, 5b-5)
+id PK · tenant_id · store_id FK(s) CASCADE · order_id FK3(orders) NO ACTION · number varchar(24) (`RT-n`) · sequence
+bigint · type varchar(16) `CHECK IN ('return','exchange')` · status varchar(16) `CHECK IN ('requested','approved',
+'received','refunded','exchanged','rejected','closed')` · reason varchar(24) `CHECK IN ('wrong_size','damaged',
+'wrong_item','changed_mind','refused_at_door','other')` · source varchar(16) default `'merchant'` `CHECK IN
+('merchant','courier')` · customer_note varchar(500) null · pickup_tracking_code varchar(64) null · checks jsonb
+default `'{}'` (served in a fixed key order) · requested_amount, refunded_amount bigint default 0 (CHECK `>= 0`) ·
+exchange_order_id char(26) null FK3(orders) NO ACTION · reject_reason varchar(255) null · approved_at, received_at,
+closed_at timestamptz null · created_by FK users null SET NULL · revision int default 1 · timestamps. U(tenant_id, id).
+U(tenant_id, store_id, id). **U(store_id, number)**. **U(store_id, sequence)**. IX(tenant_id, store_id, status,
+created_at). IX(tenant_id, store_id, order_id). Adds FK `payments.return_request_id` → FK3(return_requests).
+
+### return_items [S] (001300, 5b-5)
+id PK · tenant_id · store_id · return_request_id FK3(return_requests) CASCADE · order_item_id FK3(order_items) NO
+ACTION · quantity smallint CHECK `BETWEEN 1 AND 99` · exchange_variant_id char(26) null (soft ref) ·
+exchange_variant_title varchar(130) null · restocked_quantity smallint default 0 CHECK `BETWEEN 0 AND quantity` ·
+amount bigint CHECK `>= 0` (= floor(line total × quantity / line quantity)) · timestamps. U(tenant_id, id).
+IX(tenant_id, store_id, return_request_id). IX(tenant_id, store_id, order_item_id).
+
+### return_events [S] (001400, 5b-5; append-only like order_events)
+id PK · tenant_id · store_id · return_request_id FK3(return_requests) CASCADE · type varchar(24) `CHECK IN ('created',
+'status_changed','note','refund','restock')` · from_status, to_status varchar(16) null · actor_type varchar(16) `CHECK
+IN ('user','customer','system')` · actor_user_id FK users null SET NULL · body varchar(1000) null · meta jsonb default
+`'{}'` · created_at timestamptz default now(). No `updated_at`, no `U(tenant_id, id)` (nothing references it).
+IX(tenant_id, store_id, return_request_id, created_at).
+
+### document_templates [S] (001500, 5b-4)
+id PK · tenant_id · store_id FK(s) CASCADE · kind varchar(24) `CHECK IN ('invoice_a4','receipt_80mm',
+'invoice_a5_two_up','packing_slip','label_4x6')` · config jsonb (validated JSON options; no merchant HTML) · revision
+int default 1 · updated_by FK users null SET NULL · timestamps. U(tenant_id, id). **U(store_id, kind)**. Defaults apply
+when no row exists.
+
+### documents [S] (001600, 5b-4)
+id PK · tenant_id · store_id FK(s) CASCADE · kind varchar(24) (same CHECK as templates) · order_ids jsonb (≤ 100
+ULIDs) · language varchar(2) default `'en'` `CHECK IN ('en','bn')` · status varchar(16) default `'queued'` `CHECK IN
+('queued','rendering','ready','failed','expired')` · pages smallint null · file_path varchar(255) null (private disk,
+tenant prefix) · bytes int null · error_code varchar(48) null · expires_at timestamptz null (24 h) · created_by FK users
+null SET NULL · timestamps. U(tenant_id, id). IX(tenant_id, store_id, created_at). IX(status, expires_at)
+(`documents:prune`; deliberately not tenant-led, it is a platform sweep run on `pgsql_admin`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -529,9 +738,9 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Automations (140:30335) | `automations(tenant_id, trigger, conditions jsonb, actions jsonb, is_active)`, `automation_runs(automation_id, subject_id, status, log)` | 8+ |
 | Expenses (144:41613) | `expense_categories(tenant_id, name)`, `expenses(tenant_id, category_id, amount, currency, spent_at, note, receipt_media_id)` | 8 |
 | Suppliers / purchasing / transfers (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `suppliers`, `purchase_orders`, `purchase_order_items(received_qty)`, `stock_transfers`, `stock_transfer_items` | 8+ |
-| Invoice & label templates (44:16156) | `document_templates(tenant_id, type invoice/label, config jsonb)` — JSON config, no HTML from merchants | 5 |
+| Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `customers.risk_flags`, `order_risk_checks(order_id, provider, score, result jsonb)` | 8 |
-| Integrations (32:5329–5331) | `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` (generalizes `payment_gateway_accounts`) | 5–8 |
+| Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |
 
 ## 7. Migration & operations rules
 - One migration per table/change; forward-only after merge; zero-downtime pattern (add nullable → backfill job → constrain).
@@ -539,5 +748,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
   `$table->foreign(['tenant_id','product_id'])->references(['tenant_id','id'])->on('products')`.
 - Seed data idempotent (`updateOrCreate`), dev seed per AGENT-CONTRACTS.md.
 - Backups: PITR (WAL archiving) daily base backup, 14-day retention; monthly restore drill (Phase 9).
-- RLS (MULTI-TENANCY §9) policies use `tenant_id` only; `store_id` isolation is app-level + composite FKs.
+- RLS (MULTI-TENANCY §9, ADR 0012; on since 5b-1, §5.2) policies use `tenant_id` only; `store_id` isolation is
+  app-level + composite FKs. Every new table with `tenant_id` enables forced RLS in its own create migration and is
+  added to `RlsTables::TENANT` in the same change; migrations run as `storeplix_owner` (`--database=pgsql_owner`).
 - Tenant export/deletion: all tenant data reachable via `tenant_id`; hard delete job deletes in FK order after 30-day grace.

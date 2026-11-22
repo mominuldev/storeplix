@@ -11,7 +11,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Tests\Support\CommerceFixtures;
 use Tests\TestCase;
 
@@ -51,7 +50,7 @@ class GoLiveDashboardTest extends TestCase
         Carbon::setTestNow('2026-11-22 08:00:00');
         $this->api($h, 'POST', "/api/v1/stores/{$store->id}/publish")->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.id', $store->id);
         Bus::assertDispatched(RevalidateStorefront::class);
-        $this->assertTrue(DB::table('audit_logs')->where('action', 'store.published')->exists());
+        $this->assertTrue($this->platformTable('audit_logs')->where('action', 'store.published')->exists());
         $this->api($h, 'GET', "/api/v1/stores/{$store->id}/launch-checklist")->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.published_at', '2026-11-22T08:00:00Z')->assertJsonPath('data.can_publish', true);
         Carbon::setTestNow('2026-11-23 08:00:00');
@@ -105,7 +104,8 @@ class GoLiveDashboardTest extends TestCase
                 'count' => 5, 'sales_amount' => (3000 + 13000) + (1000 + 13000), 'delivered_count' => 2, 'returned_count' => 1,
                 'cancelled_count' => 1, 'delivery_success_rate' => 0.6667,
             ])
-            ->assertJsonPath('data.orders.waiting', ['pending' => 1, 'confirmed' => 1, 'ready_to_ship' => 0])
+            ->assertJsonPath('data.orders.waiting', ['pending' => 1, 'confirmed' => 1, 'ready_to_ship' => 0, 'pending_payment' => 0, 'to_book' => 1])
+            ->assertJsonPath('data.orders.shipments', ['problems' => 0])
             ->assertJsonPath('data.orders.best_sellers.0.product_id', $p['id'])
             ->assertJsonPath('data.orders.best_sellers.0.units', 7)
             ->assertJsonPath('data.orders.plan.used', 5);

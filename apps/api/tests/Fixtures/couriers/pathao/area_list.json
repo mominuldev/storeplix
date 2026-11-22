@@ -1,0 +1,8 @@
+{
+  "_source": "docs",
+  "_doc": "https://merchant.pathao.com/courier/developer-api (VERIFY against sandbox)",
+  "message": "Area list fetched.",
+  "type": "success",
+  "code": 200,
+  "data": {"data": [{"area_id": 37, "area_name": "Dhanmondi 27", "home_delivery_available": true, "pickup_available": true}]}
+}

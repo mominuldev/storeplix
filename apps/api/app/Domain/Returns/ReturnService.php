@@ -12,6 +12,9 @@ use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\OrderPlacementService;
 use App\Domain\Orders\OrderTimeline;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\PaymentLinkService;
+use App\Domain\Payments\PaymentService;
 use App\Domain\Returns\Models\ReturnEvent;
 use App\Domain\Returns\Models\ReturnItem;
 use App\Domain\Returns\Models\ReturnRequest;
@@ -31,6 +34,9 @@ use Illuminate\Validation\ValidationException;
  */
 class ReturnService
 {
+    /** The payment link exchange() created for the new order (P5B-67), for the response. */
+    public ?PaymentLink $lastLink = null;
+
     public function __construct(
         private readonly InventoryService $inventory,
         private readonly OrderPlacementService $placement,
@@ -363,7 +369,8 @@ class ReturnService
     public function exchange(ReturnRequest $return, array $input, ?User $user, ?string $role, ?string $idempotencyKey): array
     {
         $created = null;
-        $result = $this->locked($return, function (Order $o, ReturnRequest $r) use ($input, $user, $role, $idempotencyKey, &$created) {
+        $link = null;
+        $result = $this->locked($return, function (Order $o, ReturnRequest $r) use ($input, $user, $role, $idempotencyKey, &$created, &$link) {
             if ($r->type !== 'exchange' || $r->exchange_order_id !== null) {
                 throw new ApiException(409, 'invalid_state_transition', 'This return has no exchange to create.');
             }
@@ -400,11 +407,26 @@ class ReturnService
             if ($difference < 0 && ! Permission::ManageRefunds->grantedTo($role)) {
                 throw new ApiException(403, 'forbidden', 'Only owners and managers can create an exchange that needs a refund.');
             }
-            if (($input['send_payment_link'] ?? null) !== null && $difference > 0) {
-                // 5b-2 seam: payment links need a connected gateway; none can be connected before 5b-2 ships.
-                throw new ApiException(422, 'gateway_not_connected', 'Connect bKash or SSLCommerz to send a payment link.', [
-                    'send_payment_link.provider' => ['This payment method isn’t connected.'],
-                ]);
+            // Product decision (2026-11-22): the link charges ONLY the price difference of the goods (exchange items
+            // at current price − the returned lines' credit), capped at the due; delivery stays cash on delivery.
+            $priceDifference = min($order->subtotal_amount - $credit, $order->dueAmount());
+            if (($input['send_payment_link'] ?? null) !== null && $priceDifference > 0) {
+                // P5B-67: positive difference → a payment link (custom amount, SMS).
+                // Resolved lazily: PaymentLinkService → PaymentService → OrderService → this service.
+                $provider = (string) $input['send_payment_link']['provider'];
+                if (PaymentService::usableProviders($o->store_id) === [] || ! in_array($provider, PaymentService::usableProviders($o->store_id), true)) {
+                    throw new ApiException(422, 'gateway_not_connected', 'Connect and turn on this payment method to send a payment link.', [
+                        'send_payment_link.provider' => ['This payment method isn’t connected.'],
+                    ]);
+                }
+                $link = app(PaymentLinkService::class)->create($order, [
+                    'amount_kind' => 'custom',
+                    'amount' => $priceDifference,
+                    'provider' => $provider,
+                    'expires_in_minutes' => (int) $input['send_payment_link']['expires_in_minutes'],
+                    'cancel_if_unpaid' => false,
+                    'send_sms' => true,
+                ], $user);
             }
 
             $from = $r->status;
@@ -422,6 +444,7 @@ class ReturnService
             return $r;
         });
         $this->placement->notifyPlaced($created, null);
+        $this->lastLink = $link;
 
         return [$result, $created];
     }

@@ -106,8 +106,8 @@ class PageTest extends TestCase
         $this->withHeaders($headers)->patchJson($url, ['revision' => 1, 'title' => 'Stale'])
             ->assertStatus(409)->assertJsonPath('error.code', 'revision_conflict');
 
-        $this->assertSame(['changes' => ['title', 'status', 'seo.title', 'seo.description']], AuditLog::query()->where('action', 'page.updated')->latest('id')->first()->meta);
-        $this->assertTrue(AuditLog::query()->where('action', 'page.published')->where('subject_type', 'store_page')->exists());
+        $this->assertSame(['changes' => ['title', 'status', 'seo.title', 'seo.description']], $this->platformQuery(AuditLog::class)->where('action', 'page.updated')->latest('id')->first()->meta);
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'page.published')->where('subject_type', 'store_page')->exists());
 
         // Delete → 204; the footer link stays and resolves as page_missing.
         $this->withHeaders($headers)->deleteJson($url)->assertNoContent();
@@ -115,7 +115,7 @@ class PageTest extends TestCase
         $footer = collect($this->withHeaders($headers)->getJson("/api/v1/stores/{$store->id}/navigation")->json('data'))->firstWhere('handle', 'footer');
         $this->assertSame('page_missing', end($footer['items'])['link_status']);
         $this->assertNull(end($footer['items'])['href']);
-        $this->assertTrue(AuditLog::query()->where('action', 'page.deleted')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'page.deleted')->exists());
     }
 
     public function test_list_filters_and_search(): void

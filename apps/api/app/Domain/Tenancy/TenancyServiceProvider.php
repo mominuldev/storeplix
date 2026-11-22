@@ -38,6 +38,10 @@ class TenancyServiceProvider extends ServiceProvider
         });
 
         $this->bootRowLevelSecurity();
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([Console\EnableRowLevelSecurity::class]);
+        }
     }
 
     /** PHASE-5B-CONTRACT §2.2 / §2.5 (all inert unless TENANCY_RLS=true on Postgres). */

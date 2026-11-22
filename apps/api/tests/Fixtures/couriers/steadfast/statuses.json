@@ -1,0 +1,6 @@
+{
+  "_source": "docs",
+  "_doc": "https://documenter.getpostman.com/view/26211192/2sAYJ1mhpk",
+  "_doc2": "delivery statuses, steadfast-it package list",
+  "statuses": ["pending", "delivered_approval_pending", "partial_delivered_approval_pending", "cancelled_approval_pending", "unknown_approval_pending", "delivered", "partial_delivered", "cancelled", "hold", "in_review", "unknown"]
+}

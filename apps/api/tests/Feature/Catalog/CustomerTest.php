@@ -73,7 +73,7 @@ class CustomerTest extends TestCase
         $this->api($staffAH, 'DELETE', "{$url}/{$c['id']}")->assertForbidden();
         $this->api($ownerH, 'DELETE', "{$url}/{$c['id']}")->assertNoContent();
         $this->api($ownerH, 'GET', "{$url}/{$c['id']}")->assertNotFound();
-        $this->assertTrue(AuditLog::query()->where('action', 'customer.deleted')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'customer.deleted')->exists());
         // The phone is free again.
         $this->api($ownerH, 'POST', $url, ['name' => 'A again', 'phone' => '01712345678'])->assertCreated();
         $this->assertSame(1, Customer::withoutTenancy()->where('store_id', $store->id)->count());

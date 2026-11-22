@@ -3,12 +3,15 @@ import { cache } from 'react';
 import { headers } from 'next/headers';
 import type {
   BdGeo,
+  PaymentInitiation,
+  PaymentLinkView,
+  PaymentMethod,
   ShippingQuote,
   StorefrontAvailability,
   StorefrontCategory,
   StorefrontCategoryDetail,
   StorefrontOrder,
-  StorefrontOrderTracking,
+  StorefrontPaymentResult,
   StorefrontProduct,
 } from '@storeplix/types';
 import { serverEnv } from './env';
@@ -27,6 +30,10 @@ import {
   parseCategoryTree,
   parseCheckoutResult,
   parseGeo,
+  parseOrderPayResult,
+  parsePaymentInitiation,
+  parsePaymentLinkView,
+  parsePaymentResult,
   parseProductPage,
   parseShippingQuote,
   parseStorefrontOrder,
@@ -37,6 +44,7 @@ import {
   type ProductPage,
 } from './commerce-schemas';
 import { commerceMockFetch, commerceMockEnabled } from './commerce-mock';
+import type { StorefrontTracking } from './tracking';
 
 /**
  * Server-to-server client for the Phase 5a storefront API (PHASE-5-CONTRACT §3.2–3.4). Every call
@@ -188,6 +196,44 @@ export function fetchConfirmation(host: string, orderToken: string, previewToken
   return request(host, '/storefront/orders/confirmation', { cache: { kind: 'no-store' }, orderToken, previewToken, clientIp }, parseStorefrontOrder);
 }
 
-export function postTrack(host: string, number: string, phone: string, previewToken: string | null, clientIp: string | null): Promise<ApiResult<StorefrontOrderTracking>> {
+export function postTrack(host: string, number: string, phone: string, previewToken: string | null, clientIp: string | null): Promise<ApiResult<StorefrontTracking>> {
   return request(host, '/storefront/orders/track', { cache: { kind: 'no-store' }, method: 'POST', body: { number, phone }, previewToken, clientIp }, parseTracking);
+}
+
+// ---------- online payments (5b-2, PHASE-5B-CONTRACT §4.2; all no-store + shopper IP) ----------
+export interface ShopperCall {
+  host: string;
+  previewToken: string | null;
+  clientIp: string | null;
+}
+
+const shopperCall = (c: ShopperCall, extra: Partial<CommerceCall> = {}): CommerceCall => ({
+  cache: { kind: 'no-store' },
+  previewToken: c.previewToken,
+  clientIp: c.clientIp,
+  ...extra,
+});
+
+/** Retry an online payment or switch to COD from the thank-you / payment-result page (P5B-17). */
+export function postOrderPay(
+  c: ShopperCall,
+  orderToken: string,
+  idempotencyKey: string,
+  paymentMethod: PaymentMethod,
+): Promise<ApiResult<{ order: StorefrontOrder; payment: PaymentInitiation | null }>> {
+  return request(c.host, '/storefront/orders/pay', shopperCall(c, { method: 'POST', body: { payment_method: paymentMethod }, orderToken, idempotencyKey }), parseOrderPayResult);
+}
+
+/** Status of one payment (no PII), for the result pages and `/api/payment-status`. */
+export function fetchPaymentResult(c: ShopperCall, paymentId: string): Promise<ApiResult<StorefrontPaymentResult>> {
+  return request(c.host, `/storefront/payments/${encodeURIComponent(paymentId)}/result`, shopperCall(c), parsePaymentResult);
+}
+
+/** Active payment link view; unknown/expired/paid/cancelled are one identical 404 (P5B-23). */
+export function fetchPaymentLink(c: ShopperCall, token: string): Promise<ApiResult<PaymentLinkView>> {
+  return request(c.host, `/storefront/payment-links/${encodeURIComponent(token)}`, shopperCall(c), parsePaymentLinkView);
+}
+
+export function postPaymentLinkPay(c: ShopperCall, token: string, idempotencyKey: string): Promise<ApiResult<PaymentInitiation>> {
+  return request(c.host, `/storefront/payment-links/${encodeURIComponent(token)}/pay`, shopperCall(c, { method: 'POST', idempotencyKey }), parsePaymentInitiation);
 }

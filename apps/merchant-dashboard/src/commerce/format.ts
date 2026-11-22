@@ -32,12 +32,14 @@ export const refundMethodLabels: Record<RefundMethod, string> = {
   nagad_personal: 'Nagad (personal)',
   bank: 'Bank transfer',
   other: 'Other',
-  gateway: 'Back to bKash / card',
+  gateway: 'Back through the gateway',
 };
 
 /** Status tabs of Orders 7:276 (In transit = `shipped`). */
 export const orderTabs: { value: 'all' | OrderStatus; label: string }[] = [
   { value: 'all', label: 'All' },
+  // 5b-2 (§10): online checkout holds the order in `pending_payment` for 30 min.
+  { value: 'pending_payment', label: 'Awaiting payment' },
   { value: 'pending', label: 'Pending' },
   { value: 'confirmed', label: 'Confirmed' },
   { value: 'ready_to_ship', label: 'Ready to ship' },

@@ -97,3 +97,59 @@ describe('Phase 5b documents', () => {
     expect(call(3).url.pathname).toBe('/api/v1/stores/S1/document-templates/label_4x6');
   });
 });
+
+describe('Phase 5b-2 payment gateways', () => {
+  it('connect PUTs mode + credentials to the provider path', async () => {
+    const { client, call } = setup(json(200, { data: { provider: 'bkash', status: 'connected', credentials_hint: '••••3f9a' } }));
+    const res = await client.paymentGateways.connect('S1', 'bkash', { mode: 'sandbox', credentials: { app_key: 'k', app_secret: 's', username: 'u', password: 'p' } });
+    expect(call().method).toBe('PUT');
+    expect(call().url.pathname).toBe('/api/v1/stores/S1/payment-gateways/bkash');
+    expect(call().body).toEqual({ mode: 'sandbox', credentials: { app_key: 'k', app_secret: 's', username: 'u', password: 'p' } });
+    expect(res.credentials_hint).toBe('••••3f9a');
+  });
+
+  it('update PATCHes revision + enabled; testPayment sends the Idempotency-Key; disconnect DELETEs', async () => {
+    const { client, call } = setup(() => json(200, { data: { payment_id: 'P1', redirect_url: 'https://pay.test/x' } }));
+    await client.paymentGateways.update('S1', 'sslcommerz', { revision: 2, enabled: true, is_default: true });
+    expect(call(0).method).toBe('PATCH');
+    expect(call(0).body).toEqual({ revision: 2, enabled: true, is_default: true });
+    const t = await client.paymentGateways.testPayment('S1', 'bkash', 'idem-1');
+    expect(call(1).url.pathname).toBe('/api/v1/stores/S1/payment-gateways/bkash/test-payment');
+    expect(call(1).headers['Idempotency-Key']).toBe('idem-1');
+    expect(t.redirect_url).toBe('https://pay.test/x');
+  });
+
+  it('disconnect DELETEs and surfaces 409 gateway_busy', async () => {
+    const { client, call } = setup(json(409, { error: { code: 'gateway_busy', message: 'Pending payments' } }));
+    await expect(client.paymentGateways.disconnect('S1', 'bkash')).rejects.toMatchObject({ status: 409, code: 'gateway_busy' });
+    expect(call().method).toBe('DELETE');
+  });
+});
+
+describe('Phase 5b-2 payment links and gateway refunds', () => {
+  it('create POSTs the input with an Idempotency-Key', async () => {
+    const { client, call } = setup(json(201, { data: { id: 'L1', url: 'https://shop.test/pay/abc' } }));
+    const input = { amount_kind: 'percent' as const, percent_bps: 2500, provider: 'bkash' as const, expires_in_minutes: 120 as const, cancel_if_unpaid: true, send_sms: true };
+    await client.paymentLinks.create('S1', 'O1', input, 'idem-2');
+    expect(call().url.pathname).toBe('/api/v1/stores/S1/orders/O1/payment-links');
+    expect(call().headers['Idempotency-Key']).toBe('idem-2');
+    expect(call().body).toEqual(input);
+  });
+
+  it('resend POSTs and cancel DELETEs the link', async () => {
+    const { client, call } = setup(() => json(200, { data: { id: 'L1' } }));
+    await client.paymentLinks.resend('S1', 'O1', 'L1');
+    expect(call(0).url.pathname).toBe('/api/v1/stores/S1/orders/O1/payment-links/L1/resend');
+    await client.paymentLinks.cancel('S1', 'O1', 'L1');
+    expect(call(1).method).toBe('DELETE');
+    expect(call(1).url.pathname).toBe('/api/v1/stores/S1/orders/O1/payment-links/L1');
+  });
+
+  it('gateway refund sends method gateway + payment_id; cancel carries refund_to_gateway', async () => {
+    const { client, call } = setup(() => json(201, { data: { id: 'R1', status: 'pending' } }));
+    await client.orders.refund('S1', 'O1', { amount: 50000, method: 'gateway', payment_id: 'P1' }, 'idem-3');
+    expect(call(0).body).toEqual({ amount: 50000, method: 'gateway', payment_id: 'P1' });
+    await client.orders.cancel('S1', 'O1', { reason: 'customer_request', refund_to_gateway: true });
+    expect(call(1).body).toMatchObject({ refund_to_gateway: true });
+  });
+});

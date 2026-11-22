@@ -389,8 +389,16 @@ async function mailpitLink(to: string, pathPrefix: string): Promise<string | nul
 /**
  * Runs PHP in `php artisan tinker` (local apps/api, or `docker compose exec api` when E2E_ARTISAN=docker).
  * Test cleanup / fixture setup only; callers validate their inputs before interpolating them.
+ *
+ * Phase 5b-1: on Postgres the app connects as `storeplix_app` under RLS, and tinker has no tenant context, so
+ * raw `DB::table()` reads would see nothing and writes would be refused. Test-only code therefore runs on the
+ * `pgsql_admin` connection (BYPASSRLS, the platform path) whenever the default connection is pgsql. No-op on sqlite.
  */
+const TINKER_PRELUDE =
+  "if (config('database.default') === 'pgsql' && config('database.connections.pgsql_admin.username')) { Illuminate\\Support\\Facades\\DB::setDefaultConnection('pgsql_admin'); } ";
+
 export function tinker(code: string): string {
+  code = TINKER_PRELUDE + code;
   const docker = process.env.E2E_ARTISAN === 'docker';
   const [bin, args] = docker
     ? ['docker', ['compose', 'exec', '-T', 'api', 'php', 'artisan', 'tinker', `--execute=${code}`]]

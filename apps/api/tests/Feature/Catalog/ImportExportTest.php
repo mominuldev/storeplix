@@ -142,7 +142,8 @@ class ImportExportTest extends TestCase
         $this->assertSame(['eid', 'jamdani'], $jamdani['tags']);
         $this->assertSame('Three-piece', $jamdani['categories'][0]['name']);
         $this->assertSame('active', $jamdani['status']);
-        $this->assertSame([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Soft cotton']]]], $jamdani['description']['content']);
+        // assertEquals: same tree, key order free (Postgres jsonb reorders object keys).
+        $this->assertEquals([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Soft cotton']]]], $jamdani['description']['content']);
         $this->assertSame(1, Category::withoutTenancy()->where('store_id', $store->id)->where('name', 'Missing')->count());
         $ledger = InventoryMovement::withoutTenancy()->where('reason', 'import')->count();
         $this->assertSame(3, $ledger);

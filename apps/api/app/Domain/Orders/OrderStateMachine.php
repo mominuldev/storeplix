@@ -8,13 +8,14 @@ use App\Domain\Tenancy\Authorization\Permission;
 
 /**
  * P5-17 / ADR 0011. The only allowed status changes; everything else is 409 invalid_state_transition.
- * `pending_payment` is reserved for 5b; delivered, returned and cancelled are final in 5a.
+ * 5b-2 (P5B-14, amends P5-17): `pending_payment` → confirmed (verified payment, actor system), → pending (shopper
+ * switches to COD), → cancelled (hold expired, or a merchant cancel). Merchants may only cancel it.
  */
 final class OrderStateMachine
 {
     /** @var array<string, list<string>> mirrors ORDER_TRANSITIONS in @storeplix/types */
     public const TRANSITIONS = [
-        Order::PENDING_PAYMENT => [],
+        Order::PENDING_PAYMENT => [Order::CONFIRMED, Order::PENDING, Order::CANCELLED],
         Order::PENDING => [Order::CONFIRMED, Order::CANCELLED],
         Order::CONFIRMED => [Order::READY_TO_SHIP, Order::SHIPPED, Order::CANCELLED],
         Order::READY_TO_SHIP => [Order::SHIPPED, Order::CONFIRMED, Order::CANCELLED],
@@ -36,11 +37,16 @@ final class OrderStateMachine
         }
     }
 
-    /** Allowed next statuses for the current role (staff can't cancel a paid or part-paid order, P5-21). */
+    /**
+     * Allowed next statuses for the current role (staff can't cancel a paid or part-paid order, P5-21). An unpaid
+     * online order only confirms itself (payment) or moves to COD (shopper): merchants see `cancelled` only.
+     */
     public static function allowedFor(Order $order, ?string $role): array
     {
+        $next = $order->status === Order::PENDING_PAYMENT ? [Order::CANCELLED] : (self::TRANSITIONS[$order->status] ?? []);
+
         return array_values(array_filter(
-            self::TRANSITIONS[$order->status] ?? [],
+            $next,
             fn (string $to) => $to !== Order::CANCELLED || $order->paid_amount === 0 || Permission::ManageRefunds->grantedTo($role),
         ));
     }

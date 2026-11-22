@@ -1,0 +1,9 @@
+{
+  "_source": "docs",
+  "_doc": "https://documenter.getpostman.com/view/26211192/2sAYJ1mhpk",
+  "status": 400,
+  "message": "Validation failed",
+  "errors": {
+    "recipient_phone": ["The recipient phone must be 11 characters. <script>x</script>"]
+  }
+}

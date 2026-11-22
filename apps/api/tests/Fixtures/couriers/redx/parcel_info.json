@@ -1,0 +1,19 @@
+{
+  "_source": "docs",
+  "_doc": "RedX OpenAPI v1.0.0-beta mirrored on apis.io (VERIFY against sandbox)",
+  "parcel": {
+    "tracking_id": "20A316UTJZ0P",
+    "customer_address": "House 12, Road 7A",
+    "delivery_area": "Dhanmondi",
+    "delivery_area_id": 1,
+    "charge": 60,
+    "customer_name": "Rafi Ahmed",
+    "customer_phone": "01711000001",
+    "cash_collection_amount": "1770",
+    "parcel_weight": 500,
+    "merchant_invoice_id": "01JDXK0000000000000000SHIP",
+    "status": "delivered",
+    "instruction": "",
+    "created_at": "2026-11-22T07:05:31.000Z"
+  }
+}

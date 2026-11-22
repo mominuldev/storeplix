@@ -145,6 +145,7 @@ States everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352
 | Mobile (page 2:5) | Orders `31:4886`, Order detail `32:309`, Create order `32:6124`, OrderCard `30:3171`, tab bar Orders `30:3059` | |
 
 ### Deferred Phase 5 frames (contract §11)
+5a record. What Phase 5b built from these frames, and what stays deferred, is in "Phase 5b" below.
 | Area | Frames | Goes to |
 |---|---|---|
 | Orders | Request advance payment `144:46081`, Bulk book courier `39:18808`, Unfinished orders `39:9461`, Returns & exchanges `39:9900`, Return detail `146:32329` | 5b / Phase 8 |
@@ -152,3 +153,40 @@ States everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352
 | Integrations | List `14:980`, Connect bKash `32:3770`, Steadfast disconnect `32:4182`, courier detail tabs `22:1181`, `29:1814`, `29:2562`, `31:2231`, `31:2905`, `31:3581`, Pathao `152:34534` | 5b / Phase 8 |
 | Marketing | Overview `66:19179`, SMS & WhatsApp campaigns `70:19774`, Abandoned cart recovery `71:20614` | Phase 8 |
 | Settings | Policies & legal pages extras `87:25694` | Later |
+
+## Phase 5b — online money, couriers, documents, order changes (PHASE-5B-CONTRACT §10, §11, §14)
+Frames as cited in the contract and in the app code comments (`apps/merchant-dashboard/src`, `apps/storefront`).
+**Built** = shipped in 5b (fake gateway/courier drivers; real providers pending sandbox certification). **Partly** =
+the frame is used but some of its elements are deferred. **Deferred** = recorded, not built (contract §14). States
+everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352`.
+
+### Merchant dashboard
+| Screen / route | Frame(s) | Status | Not built (→ where) |
+|---|---|---|---|
+| Integrations `/integrations` (section `32:5329`) | `14:980` | **Built** (5b-2/5b-3): chips All / Connected / Couriers / Payments; Steadfast, Pathao, RedX, bKash, SSLCommerz cards | Paperfly, CarryBee, Nagad, EPS, aamarPay, PayStation, Marketing & tracking, Messaging, AI, Developer banner: hidden (later 5.x drivers, Phase 7/8) |
+| Connect gateway wizard (dialog) | `32:3770` (wizard frame `32:4105`) | **Built** (5b-2): 4-step rail, Sandbox/Live, test payment, go live | Setup guide link |
+| Courier connect + manage (section `32:5330`) | Overview `22:1181`, Status webhook `31:2905`, Pathao `152:34534`; wizard frame `32:4105` | **Partly** (5b-3). Built **as a dialog** on the wizard frame, not as the `/integrations/couriers/:provider` page of §10: Connection card (masked keys, Edit keys, Test connection, Disconnect), Booking rules (Pickup from, Cash to collect = due, parcel description, default weight; Pathao store / delivery type / item type; RedX pickup store), webhook URL + Bearer/secret with Rotate (shown once) | Recent shipments, "This month" column, webhook event log and 24 h counts, status-mapping table (not in 5b); Book automatically / Print label after booking `29:1814` (Q62, Phase 8); Fraud check `29:2562` (Phase 8, Q23); COD & payouts `31:2231` (Q49, Phase 7); Activity log `31:3581`; Connection health; Send test event; Steadfast disconnect frame `32:4182` not referenced |
+| Shipments `/shipments` (section `41:12365`) | `39:10347` | **Built** (5b-3): Sync now, Book parcels, KPI tiles incl. COD held by couriers, Needs attention (Call customer), courier chips, filters, table, bulk Print labels / manifest CSV | Reschedule, Request return, View payouts |
+| Bulk book courier | `39:18808` | **Built** (5b-3): bulk dialog (≤ 500) and the single-order "Book with {courier}" variant | — |
+| Shipment detail `/shipments/:id` | `146:33100` | **Built** (5b-3): stepper, tracking timeline + Refresh, parcel and COD cards, Print label, Open in courier, Cancel / Mark cancelled | Call rider, rider card, risk badge, Change address or COD, Ask to hold (Phase 8) |
+| Order detail additions `/orders/:id` | `33:3676` | **Built** (5b-2/3/4/5): courier card (Book with …), Payments card (online charges, links, gateway refund), Invoice button, Create return, Edit items link | Risky banner, Delivery record (Phase 8, Q23) |
+| Ask for an advance (dialog) | `144:46081` | **Built** (5b-2): Delivery charge / Part payment % / Full / Custom, gateway, expiry 2 h–48 h, SMS preview, cancel-if-unpaid, Copy link instead; active-link banner | — |
+| Edit order · Edit items `/orders/:id/edit` | `144:46654` | **Built** (5b-5): lines, add product (Create order picker `39:14382`), What changes quote, reason, SMS toggle; read-only banner when booked | Scan barcode; courier COD update after booking (Q56) |
+| Returns & exchanges `/returns` | `39:9900`, detail panel `146:32329` | **Built** (5b-5): KPI tiles, status tabs, table, side panel (approve/reject/receive with checks + restock, refund, exchange order + difference link, timeline) | Customer photos / shopper-initiated returns (Q57), courier return pickup, Return policy (Phase 8) |
+| Invoices & labels `/orders/print` | `39:10790`; templates section `44:16156`: A4 `42:11175`, 80 mm `42:12238`, A5 two-up `42:13193`, packing slip `44:12097`, labels Steadfast `137:30097` / Pathao `44:13094` / RedX `44:14203` | **Built** (5b-4): Not printed / Printed today, template cards, sandboxed preview, print settings, Print N / Download PDF. The three label frames are one `label_4x6` layout whose header shows the shipment's courier | Printer select, Edit templates (free layout), VAT on top (Q52) |
+| Settings → Payments & checkout `/settings/payments` | `60:14865` | **Partly** (5b-2): COD, Advance delivery charge (`cod_advance`), full online payment per gateway, connected gateways list | 2 % online discount, advance rules list, WhatsApp link, order form fields, OTP, settlement text (Phase 8) |
+| Settings → Taxes & invoices `/settings/invoices` | `60:16858` | **Built** (5b-4): VAT display (none / prices include VAT) + rate, BIN, invoice footer | VAT added on top (Q52) |
+| Onboarding 06 Delivery `/onboarding/delivery` | `50:604`, card `45:8086` | **Built** (5b-3): courier Connect opens the courier dialog; Connected ✓ state; copy "Book parcels and track them here" | "COD settled in 48 h" claim not used |
+| Onboarding 07 Get paid `/onboarding/payments` | `52:564` | **Built** (5b-2): "Collect delivery charge in advance" toggle, bKash / SSLCommerz Connect → `32:3770`, checkout preview | EPS card hidden |
+| Dashboard `/` | `10:600`; Needs you today `10:958`, Orders waiting `10:1115` | **Built** (5b): "Awaiting payment", "N unpaid online orders", "Book N parcels" (`to_book`), "N delivery problems" (`shipments.problems`) | Courier performance `10:1061`, Money flow `10:1085` (Phase 7.4) |
+| Mobile (page 2:5) | Orders `31:4886`, Order detail `32:309`, OrderCard `30:3171` | **Built**: cards stacked; Shipments / Returns / Edit items responsive at 390 px (no dedicated mobile frames) | — |
+| Deferred, unchanged | Unfinished orders `39:9461`, Fake order guard `39:11233`, Developer API keys/webhooks `144:40725` | **Deferred** (Phase 8) | |
+
+### Storefront (theme "Gallery")
+| Route | Frame(s) | Status |
+|---|---|---|
+| `/checkout` (payment section) | `1:11591`, mobile `1:11690` / `32:5087` | **Built** (5b-2): COD, bKash, "Card or mobile banking" (SSLCommerz), advance delivery charge option |
+| `/checkout/payment-result` | reuses thank-you `1:11788` | **Built** (5b-2): paid / pending (polling) / failed with retry and "Pay on delivery instead" |
+| `/checkout/thank-you` | `1:11788`, mobile `33:5751` | **Built**: payment status line, retry / switch to COD |
+| `/pay/[token]`, `/pay/result` | none in Figma: composed from checkout / thank-you components | **Built** (5b-2), `noindex` |
+| `/track` | `1:11959`, mobile `33:5864` | **Built** (5b-3): courier status and times only (no rider data) |

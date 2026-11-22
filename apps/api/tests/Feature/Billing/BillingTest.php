@@ -38,7 +38,7 @@ class BillingTest extends TestCase
         $sub = Subscription::withoutTenancy()->where('tenant_id', $tenantId)->sole();
         $this->assertSame('trialing', $sub->status);
         $this->assertTrue($sub->trial_ends_at->equalTo(now()->addDays(14)));
-        $this->assertTrue(AuditLog::query()->where('tenant_id', $tenantId)->where('action', 'subscription.trial_started')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('tenant_id', $tenantId)->where('action', 'subscription.trial_started')->exists());
     }
 
     public function test_subscription_and_features_endpoints_by_role(): void
@@ -75,7 +75,7 @@ class BillingTest extends TestCase
         $this->assertNotNull($sub->current_period_end);
         $this->assertFalse(FeatureGate::allows($tenant, Feature::CustomDomain));
         $this->assertSame(50, FeatureGate::limit($tenant, Limit::OrdersPerMonth));
-        $this->assertTrue(AuditLog::query()->where('tenant_id', $tenant->id)->where('action', 'subscription.trial_ended')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('tenant_id', $tenant->id)->where('action', 'subscription.trial_ended')->exists());
 
         $this->expectException(FeatureNotInPlan::class);
         FeatureGate::assertAllows($tenant, Feature::CustomDomain);

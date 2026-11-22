@@ -1,0 +1,10 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.sslcommerz.com/doc/v4/#initiate-the-refund",
+  "APIConnect": "DONE",
+  "bank_tran_id": "2611221016020LZvlXBRe6Y9vR",
+  "trans_id": "{tran_id}",
+  "refund_ref_id": "5c76e0fbc0e14",
+  "status": "processing",
+  "errorReason": ""
+}

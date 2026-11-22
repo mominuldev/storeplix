@@ -1,0 +1,5 @@
+{
+  "_source": "docs",
+  "_doc": "RedX OpenAPI v1.0.0-beta mirrored on apis.io (VERIFY against sandbox)",
+  "statuses": ["pickup-pending", "ready-for-delivery", "delivery-in-progress", "delivered", "agent-hold", "agent-returning", "returned", "agent-area-change"]
+}

@@ -1,0 +1,12 @@
+{
+  "_source": "docs",
+  "_doc": "steadfast-it Laravel package README (VERIFY against sandbox)",
+  "notification_type": "delivery_status",
+  "consignment_id": 1424107,
+  "invoice": "01JDXK0000000000000000SHIP",
+  "cod_amount": 1770.00,
+  "status": "Delivered",
+  "delivery_charge": 60.00,
+  "tracking_message": "Your parcel has been delivered",
+  "updated_at": "2026-11-23 12:45:30"
+}

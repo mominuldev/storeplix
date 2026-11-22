@@ -91,7 +91,7 @@ class CategoryTest extends TestCase
         $this->api($h, 'DELETE', "{$url}/{$leaf}")->assertNoContent();
         $this->api($h, 'GET', "{$url}/{$leaf}")->assertNotFound();
         $this->assertSame(0, ProductCategory::withoutTenancy()->where('product_id', $product['id'])->count());
-        $this->assertTrue(AuditLog::query()->where('action', 'category.deleted')->exists());
+        $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'category.deleted')->exists());
         // The slug is free again.
         $this->api($h, 'POST', $url, ['name' => 'Leaf'])->assertCreated()->assertJsonPath('data.slug', 'leaf');
     }

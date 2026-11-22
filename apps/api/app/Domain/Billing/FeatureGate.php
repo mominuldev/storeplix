@@ -7,6 +7,7 @@ use App\Domain\Billing\Exceptions\PlanLimitReached;
 use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Sms\Models\SmsMessage;
@@ -43,7 +44,7 @@ final class FeatureGate
     /**
      * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29);
      * orders_per_month = orders placed this calendar month in the store timezone, any status (P5-27);
-     * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26). Other limits return 0 until their module exists.
+     * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26); courier_connections = connected courier accounts (P5B-31). Other limits return 0 until their module exists.
      */
     public static function usage(Tenant $tenant, Limit $limit): int
     {
@@ -53,6 +54,9 @@ final class FeatureGate
             Limit::OrdersPerMonth => app(TenantContext::class)->run($tenant, fn () => Order::query()->where('placed_at', '>=', self::monthStart())->count()),
             Limit::SmsPerMonth => app(TenantContext::class)->run($tenant, fn () => SmsMessage::query()->where('tenant_id', $tenant->getKey())
                 ->whereIn('purpose', SmsTemplates::EVENTS)->where('status', '<>', 'failed')->where('created_at', '>=', self::monthStart())->count()),
+            // 5b-3 (P5B-31): connected (or erroring) courier accounts; disconnected rows don't count.
+            Limit::CourierConnections => app(TenantContext::class)->run($tenant, fn () => CourierAccount::query()
+                ->whereIn('status', [CourierAccount::CONNECTED, CourierAccount::ERROR])->count()),
             default => 0,
         };
     }

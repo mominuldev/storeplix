@@ -1,0 +1,16 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.bka.sh/docs/query-payment",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "paymentID": "TR0011ON1565154754797",
+  "mode": "0011",
+  "payerReference": "01770618575",
+  "paymentCreateTime": "2026-11-22T10:15:30:123 GMT+0600",
+  "transactionStatus": "Initiated",
+  "amount": "{amount}",
+  "currency": "BDT",
+  "intent": "sale",
+  "merchantInvoiceNumber": "{merchantInvoiceNumber}",
+  "userVerificationStatus": "Incomplete"
+}

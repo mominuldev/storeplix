@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.6.0
+  version: 1.6.1
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -12,6 +12,14 @@ info:
     (ShipmentStatus, CancelReason, RefundMethod, CustomerSmsEvent, OrderEvent.type); new optional fields on Payment, Shipment,
     Order, OrderSummary, CheckoutInput/Result, StorefrontOrder, StorefrontCommerce and store settings. Clients must tolerate new enum values.
     Storefront limiter (P5B-9): 300/min per store host + shopper IP and 3 000/min per store host.
+    1.6.1 (2026-11-22, Phase 5b as built): documentation alignment, additive only. OrderDashboard `waiting.pending_payment`,
+    `waiting.to_book`, `shipments.problems`; StorefrontOrderTracking `shipment.{status,status_at,checked_at,events}`;
+    orders list `filter[has_shipment]`, `filter[printed]`, `filter[not_printed]`; CourierSettings bounds (weight 100–20 000 g,
+    Pathao 500–10 000; parcel_description ≤ 120 with only `{items}`/`{order_no}`); connect-courier `meta.webhook_secret`
+    always present; missing-account answers (couriers 404; gateway PATCH/test 422 `gateway_not_connected`, disconnect 404);
+    one signed SSLCommerz return URL (`r` optional); payment webhooks never 401, courier webhooks 401 `unauthenticated`;
+    exchange `send_payment_link` = `custom` link for the goods price difference. Testing-only `/dev/*` routes are not part of
+    this spec (API-CONVENTIONS §10.3). Limiters and 5b error codes: API-CONVENTIONS §3, §8, §10.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -4868,6 +4876,33 @@ paths:
         schema:
           $ref: '#/components/schemas/Ulid'
       - in: query
+        name: filter[has_shipment]
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+        description: 5b-3. `1` = has an active shipment (not `cancelled` / `booking_failed`), `0` = has none.
+      - in: query
+        name: filter[printed]
+        required: false
+        schema:
+          type: string
+          enum:
+          - invoice
+          - label
+        description: 5b-4. Printed since the start of today (store timezone).
+      - in: query
+        name: filter[not_printed]
+        required: false
+        schema:
+          type: string
+          enum:
+          - invoice
+          - label
+        description: 5b-4. Never printed.
+      - in: query
         name: filter[placed_at][gte]
         required: false
         schema:
@@ -5735,7 +5770,7 @@ paths:
       - payments
       summary: Enable for checkout / set default
       operationId: updatePaymentGateway
-      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`).
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). No account (never connected or disconnected) → 422 `gateway_not_connected`, as is enabling / making default an account without a passed credential check or a configured live URL.
       security:
       - sessionCookie: []
       parameters:
@@ -5768,7 +5803,11 @@ paths:
         '409':
           $ref: '#/components/responses/RevisionConflict'
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          description: '`gateway_not_connected` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
     delete:
@@ -5776,7 +5815,7 @@ paths:
       - payments
       summary: Disconnect a gateway
       operationId: disconnectPaymentGateway
-      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). Wipes credentials.
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). Wipes credentials. No account or already disconnected → 404.
       security:
       - sessionCookie: []
       parameters:
@@ -5807,7 +5846,7 @@ paths:
       - payments
       summary: Start a test payment
       operationId: createGatewayTestPayment
-      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). ৳ 10 sandbox / ৳ 1 live; sets verified_at on success.
+      description: Payment gateways (PHASE-5B §4.1). Reads O A S; writes O A (`ManageIntegrations`). ৳ 10 sandbox / ৳ 1 live; sets verified_at on success. Account missing or not connected → 422 `gateway_not_connected`. Inline throttle 20/min (API-CONVENTIONS §8). The gateway returns the shopper to the merchant app `/settings/payments?test_payment={payment_id}`.
       security:
       - sessionCookie: []
       parameters:
@@ -5845,7 +5884,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          description: '`gateway_not_connected`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
         '502':
@@ -6055,7 +6098,7 @@ paths:
       - webhooks
       summary: bKash callback (browser)
       operationId: bkashReturn
-      description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect. Query `paymentID`, `status` (success|failure|cancel), `signature` are triggers only.
+      description: Gateway browser return (public, Laravel temporary signed URL valid 26 h, no tenant header; throttle `payment-returns` 60/min per IP). The first `expires`/`signature` in the raw query string is the API's (bKash appends its own `signature`). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect; unknown payment, wrong provider or not a charge → 404 HTML page. Query `paymentID`, `status` (success|failure|cancel), `signature` are triggers only.
       security: []
       parameters:
       - in: query
@@ -6069,8 +6112,14 @@ paths:
         schema:
           type: string
       responses:
+        '200':
+          description: HTML "Thank you" page (the store has no primary domain to redirect to)
+          content:
+            text/html:
+              schema:
+                type: string
         '303':
-          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id} (`/pay/result?payment=` for link payments; test payments go to the merchant app `/settings/payments?test_payment={id}`).
           headers:
             Location:
               schema:
@@ -6087,7 +6136,8 @@ paths:
     - $ref: '#/components/parameters/SignedSignature'
     - in: query
       name: r
-      required: true
+      required: false
+      description: Optional outcome hint, outside the signature. The API gives SSLCommerz ONE signed URL for success_url, fail_url and cancel_url; the outcome comes from the POSTed `status` and is always verified server-side.
       schema:
         type: string
         enum:
@@ -6102,8 +6152,14 @@ paths:
       description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect.
       security: []
       responses:
+        '200':
+          description: HTML "Thank you" page (the store has no primary domain to redirect to)
+          content:
+            text/html:
+              schema:
+                type: string
         '303':
-          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id} (`/pay/result?payment=` for link payments; test payments go to the merchant app `/settings/payments?test_payment={id}`).
           headers:
             Location:
               schema:
@@ -6121,8 +6177,14 @@ paths:
       description: Gateway browser return (public, signed URL, no tenant header). Verifies server-side (P5B-16) and redirects only to the store's primary host. Invalid or expired signature → 403 HTML page without redirect. Form fields `tran_id`, `val_id`, `status` trigger the Validation API.
       security: []
       responses:
+        '200':
+          description: HTML "Thank you" page (the store has no primary domain to redirect to)
+          content:
+            text/html:
+              schema:
+                type: string
         '303':
-          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id}
+          description: Redirect to https://{primary_host}/checkout/payment-result?payment={id} (`/pay/result?payment=` for link payments; test payments go to the merchant app `/settings/payments?test_payment={id}`).
           headers:
             Location:
               schema:
@@ -6147,7 +6209,7 @@ paths:
       - webhooks
       summary: SSLCommerz IPN webhook
       operationId: sslcommerzIpn
-      description: IPN (P5B-19). `verify_sign` pre-filter; every IPN is confirmed with the Validation API before any effect.
+      description: IPN (P5B-19). Public; the 32-char route key resolves the account; throttle `webhooks` (600/min per route key, 300/min per IP). `verify_sign` is a pre-filter only (a bad one is stored as ignored, still 200); every IPN is confirmed with the Validation API before any effect. Never 401; unknown route key → 404.
       security: []
       responses:
         '200':
@@ -6156,12 +6218,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WebhookAck'
-        '401':
-          description: Bad bearer/secret; nothing stored
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -6185,7 +6241,7 @@ paths:
       - webhooks
       summary: bKash IPN webhook
       operationId: bkashIpn
-      description: AWS-SNS-style notification (VERIFY against sandbox); trigger for Query Payment only. Optional in 5b.
+      description: AWS-SNS-style notification (VERIFY against sandbox); trigger for Query Payment only, so any body is acknowledged with 200. `SubscriptionConfirmation` is confirmed only for an https `sns.<region>.amazonaws.com` SubscribeURL. Optional in 5b. Never 401; unknown route key → 404.
       security: []
       responses:
         '200':
@@ -6194,12 +6250,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WebhookAck'
-        '401':
-          description: Bad bearer/secret; nothing stored
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -6223,7 +6273,7 @@ paths:
       - webhooks
       summary: Steadfast webhook
       operationId: steadfastWebhook
-      description: 'Requires `Authorization: Bearer {secret}` (P5B-37; payload VERIFY against sandbox).'
+      description: 'Requires `Authorization: Bearer {secret}` (sha256 + hash_equals; P5B-37; payload VERIFY against sandbox). Unknown route key or a key of another provider → 404 before any secret check; bad secret → 401 `unauthenticated`. An authenticated but unreadable payload is acknowledged and not stored.'
       security: []
       responses:
         '200':
@@ -6233,7 +6283,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebhookAck'
         '401':
-          description: Bad bearer/secret; nothing stored
+          description: '`unauthenticated` (missing or wrong secret); nothing stored'
           content:
             application/json:
               schema:
@@ -6261,7 +6311,7 @@ paths:
       - webhooks
       summary: Pathao webhook
       operationId: pathaoWebhook
-      description: Requires `X-PATHAO-Signature` = the account secret; must answer 202 within 10 s; acknowledges `webhook_integration`.
+      description: Requires `X-PATHAO-Signature` = the account secret; answers 202 (with Pathao's `X-Pathao-Merchant-Webhook-Integration-Secret` header) within 10 s; acknowledges the `webhook_integration` test event without storing it. Unknown route key → 404 before any secret check; bad secret → 401 `unauthenticated`.
       security: []
       responses:
         '202':
@@ -6271,7 +6321,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebhookAck'
         '401':
-          description: Bad bearer/secret; nothing stored
+          description: '`unauthenticated` (missing or wrong secret); nothing stored'
           content:
             application/json:
               schema:
@@ -6299,7 +6349,7 @@ paths:
       - webhooks
       summary: RedX webhook
       operationId: redxWebhook
-      description: Accepted only once the RedX webhook scheme is verified (P5B-37); until then 404.
+      description: Accepted only once the RedX webhook scheme is verified (P5B-37); as built the driver declares no webhook support, so every call → 404.
       security: []
       responses:
         '200':
@@ -6309,7 +6359,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebhookAck'
         '401':
-          description: Bad bearer/secret; nothing stored
+          description: '`unauthenticated` (missing or wrong secret); nothing stored'
           content:
             application/json:
               schema:
@@ -6536,7 +6586,7 @@ paths:
       - couriers
       summary: Connect or replace courier credentials
       operationId: connectCourier
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). `meta.webhook_secret` is returned once (Steadfast/Pathao).
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). `meta.webhook_secret` is always present; it carries the new secret once (Steadfast/Pathao, first connect or connect after a disconnect) and is `null` for RedX and for a reconnect that keeps the existing secret. Inline throttle 20/min.
       security:
       - sessionCookie: []
       parameters:
@@ -6557,12 +6607,14 @@ paths:
                 type: object
                 required:
                 - data
+                - meta
                 properties:
                   data:
                     $ref: '#/components/schemas/CourierAccount'
                   meta:
                     type: object
-                    required: []
+                    required:
+                    - webhook_secret
                     properties:
                       webhook_secret:
                         type:
@@ -6599,7 +6651,7 @@ paths:
       - couriers
       summary: Update courier settings
       operationId: updateCourier
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). A provider with no connected account (none, or `disconnected`) → 404.
       security:
       - sessionCookie: []
       parameters:
@@ -6640,7 +6692,7 @@ paths:
       - couriers
       summary: Disconnect a courier
       operationId: disconnectCourier
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). A provider with no connected account (none, or `disconnected`) → 404.
       security:
       - sessionCookie: []
       parameters:
@@ -6671,7 +6723,7 @@ paths:
       - couriers
       summary: Test the connection
       operationId: testCourier
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). A provider with no connected account (none, or `disconnected`) → 404. A rejection marks the account `error`. Inline throttle 20/min.
       security:
       - sessionCookie: []
       parameters:
@@ -6730,7 +6782,7 @@ paths:
       - couriers
       summary: Rotate the webhook secret
       operationId: rotateCourierWebhookSecret
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). The old secret stops working at once; the new one is shown once.
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). The old secret stops working at once; the new one is shown once. A provider with no connected account (none, or `disconnected`) → 404. Also 404 for RedX (no webhook support yet). Inline throttle 20/min.
       security:
       - sessionCookie: []
       parameters:
@@ -6773,7 +6825,7 @@ paths:
       - couriers
       summary: Courier area lookup (Pathao, RedX)
       operationId: listCourierAreas
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). Cached 24 h per account. `meta.suggested` when `district_code`/`thana_code` are sent.
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). Cached 24 h per account. `meta.suggested` when `district_code`/`thana_code` are sent. A provider with no connected account (none, or `disconnected`) → 404. A courier refusal → 422 `validation_failed` on the query field. Inline throttle 120/min.
       security:
       - sessionCookie: []
       parameters:
@@ -6866,7 +6918,7 @@ paths:
       - couriers
       summary: Courier-side pickup stores (Pathao, RedX)
       operationId: listCourierPickupStores
-      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`).
+      description: Couriers (PHASE-5B §4.6). Reads O A S; writes O A (`ManageIntegrations`). A provider with no connected account (none, or `disconnected`) → 404. Steadfast returns []. Inline throttle 30/min.
       security:
       - sessionCookie: []
       parameters:
@@ -8118,7 +8170,7 @@ paths:
       - returns
       summary: Create the exchange order
       operationId: createExchangeOrder
-      description: Order changes (PHASE-5B §4.9). O A S (O A when the difference is negative). Uses manual-order placement and its plan limit (P5B-67).
+      description: Order changes (PHASE-5B §4.9). O A S (O A when the difference is negative; staff → 403 `forbidden`). Uses manual-order placement and its plan limit (P5B-67). With `send_payment_link` and a positive price difference the API creates a `custom` payment link (SMS sent, `cancel_if_unpaid` false) for the goods price difference only (exchange items at current price − the returned lines' credit, capped at the order's due); delivery stays cash on delivery. No link (`payment_link` null) when the difference is ≤ 0. Provider not connected/enabled → 422 `gateway_not_connected` on `send_payment_link.provider`.
       security:
       - sessionCookie: []
       parameters:
@@ -8168,7 +8220,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
-          description: '`out_of_stock` or `validation_failed`'
+          description: '`out_of_stock`, `gateway_not_connected` (send_payment_link.provider) or `validation_failed`'
           content:
             application/json:
               schema:
@@ -8217,25 +8269,6 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
-  /dev/fake-gateway/{payment}:
-    parameters:
-    - $ref: '#/components/parameters/PaymentPath'
-    get:
-      tags:
-      - webhooks
-      summary: Fake hosted payment page (local/testing only)
-      operationId: fakeGatewayPage
-      description: Registered only when `PAYMENTS_FAKE=true` and the environment is not production (P5B-29). HTML page with Pay / Fail / Cancel.
-      security: []
-      responses:
-        '200':
-          description: HTML
-          content:
-            text/html:
-              schema:
-                type: string
-        '404':
-          $ref: '#/components/responses/NotFound'
 components:
   parameters:
     GatewayProviderPath:
@@ -14142,6 +14175,10 @@ components:
             - carrier_name
             - tracking_code
             - tracking_url
+            - status
+            - status_at
+            - checked_at
+            - events
             properties:
               carrier_name:
                 type:
@@ -14155,6 +14192,37 @@ components:
                 type:
                 - string
                 - 'null'
+              status:
+                description: 5b-3 (§11). Normalised courier status of the order's newest non-cancelled shipment.
+                oneOf:
+                - $ref: '#/components/schemas/ShipmentStatus'
+                - type: 'null'
+              status_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+                description: Time of the latest courier event (else delivered / returned / shipped / booked time).
+              checked_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+                description: The later of the last poll and the last webhook-delivered event.
+              events:
+                type: array
+                description: Newest first. Status and time only — never courier descriptions, locations or rider data.
+                items:
+                  type: object
+                  required:
+                  - status
+                  - at
+                  properties:
+                    status:
+                      $ref: '#/components/schemas/ShipmentStatus'
+                    at:
+                      type: string
+                      format: date-time
           - type: 'null'
       description: 'Minimised view: no street address, no email (P5-23).'
     OrderCustomerSummary:
@@ -15217,6 +15285,7 @@ components:
       required:
       - this_month
       - waiting
+      - shipments
       - best_sellers
       - plan
       properties:
@@ -15257,6 +15326,8 @@ components:
           - pending
           - confirmed
           - ready_to_ship
+          - pending_payment
+          - to_book
           properties:
             pending:
               type: integer
@@ -15264,6 +15335,22 @@ components:
               type: integer
             ready_to_ship:
               type: integer
+            pending_payment:
+              type: integer
+              description: 5b-2. Orders awaiting online payment (inside their 30-minute hold).
+            to_book:
+              type: integer
+              description: 5b-3. `confirmed` / `ready_to_ship` orders with no active shipment (none, or only `cancelled` /
+                `booking_failed` ones).
+        shipments:
+          type: object
+          description: 5b-3.
+          required:
+          - problems
+          properties:
+            problems:
+              type: integer
+              description: Non-final shipments the courier flagged (`problem` = delivery_failed, on_hold, returning, unknown).
         best_sellers:
           type: array
           items:
@@ -15713,11 +15800,15 @@ components:
           - type: 'null'
         parcel_description:
           type: string
+          minLength: 1
           maxLength: 120
+          pattern: ^(?:[^{}]|\{items\}|\{order_no\})*$
+          description: Template; only the `{items}` and `{order_no}` placeholders are allowed (other braces → 422).
         default_weight_grams:
           type: integer
-          minimum: 1
-          maximum: 100000
+          minimum: 100
+          maximum: 20000
+          description: Grams. Pathao accepts 500–10 000 (422 outside); Steadfast and RedX 100–20 000.
         pathao_store_id:
           type:
           - string
@@ -15818,7 +15909,9 @@ components:
       - credentials
       properties:
         mode:
-          $ref: '#/components/schemas/IntegrationMode'
+          description: Steadfast has no sandbox, so only `live` is accepted for it (422 on `mode` otherwise). Pathao and RedX accept `sandbox` or `live`.
+          allOf:
+            - $ref: '#/components/schemas/IntegrationMode'
         credentials:
           oneOf:
           - type: object
@@ -16990,6 +17083,7 @@ components:
           type:
           - object
           - 'null'
+          description: Creates a `custom` link for the goods price difference only (see the operation description).
           required:
           - provider
           - expires_in_minutes

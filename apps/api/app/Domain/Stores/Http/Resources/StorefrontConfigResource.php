@@ -7,6 +7,7 @@ use App\Domain\Media\MediaMaps;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Navigation\NavigationService;
 use App\Domain\Pages\Models\StorePage;
+use App\Domain\Payments\PaymentService;
 use App\Domain\Shipping\Models\ShippingZone;
 use App\Domain\Shipping\ShippingService;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
@@ -80,11 +81,13 @@ class StorefrontConfigResource extends JsonResource
 
         return [
             'checkout_enabled' => $this->status === Store::STATUS_ACTIVE,
-            'payment_methods' => ($settings?->cod_enabled ?? true) ? ['cod'] : [],
+            // 5b-2 (P5B-12): COD (if enabled) + every connected and enabled gateway; P5B-13 advance rule.
+            'payment_methods' => [...(($settings?->cod_enabled ?? true) ? ['cod'] : []), ...PaymentService::usableProviders($this->id)],
             'free_delivery_over_amount' => $settings?->free_delivery_over_amount !== null ? (int) $settings->free_delivery_over_amount : null,
             'delivery' => array_map(fn (ShippingZone $z) => [
                 'name' => $z->name, 'charge_amount' => $z->charge_amount, 'min_days' => $z->min_days, 'max_days' => $z->max_days,
             ], $zones),
+            'cod_advance' => $settings?->cod_advance === 'delivery_charge' ? 'delivery_charge' : 'none',
         ];
     }
 

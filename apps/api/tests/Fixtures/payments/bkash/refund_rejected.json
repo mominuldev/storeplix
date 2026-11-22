@@ -1,0 +1,6 @@
+{
+  "_source": "docs",
+  "_doc": "https://developer.bka.sh/docs/refund (error: amount over maxRefundableAmount)",
+  "statusCode": "2071",
+  "statusMessage": "Refund amount exceeds the maximum refundable amount"
+}

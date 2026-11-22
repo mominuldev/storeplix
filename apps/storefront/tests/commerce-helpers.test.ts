@@ -5,7 +5,7 @@ import { catalogApiQuery, catalogHref, pageList, parseCatalogState } from '@/lib
 import { districtsOf, formatBdPhone, mapDetailsToFields, normalizeBdPhone, thanasOf, toCheckoutInput, validateCheckoutForm } from '@/lib/checkout-form';
 import { findVariant, optionState, paisaToDecimal, productJsonLd, richTextPlain, toPdpVariants } from '@/lib/pdp';
 import { serializeJsonLd } from '@/lib/json-ld';
-import { trackingSteps } from '@/lib/tracking';
+import { courierStatus, formatDhakaClock, trackingSteps } from '@/lib/tracking';
 import { policyLinks } from '@/lib/policy-pages';
 import { errorMessage } from '@/lib/commerce-messages';
 
@@ -181,6 +181,28 @@ describe('tracking timeline', () => {
     const steps = trackingSteps({ status: 'shipped', placed_at: '2026-11-22T10:00:00Z', timeline: [{ status: 'confirmed', at: '2026-11-22T11:00:00Z' }, { status: 'shipped', at: '2026-11-23T09:00:00Z' }] });
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'current', 'todo']);
     expect(steps[0]!.at).toBe('2026-11-22T10:00:00Z');
+  });
+
+  it('shows the courier status and its time on the courier step (5b-3)', () => {
+    const timeline = [{ status: 'confirmed' as const, at: '2026-11-22T11:00:00Z' }, { status: 'shipped' as const, at: '2026-11-23T03:00:00Z' }];
+    const shipment = { carrier_name: 'Steadfast', tracking_code: 'SF-1', tracking_url: null, status: 'out_for_delivery' as const, status_at: '2026-11-23T05:20:00Z', checked_at: '2026-11-23T05:42:00Z', events: [] };
+    const steps = trackingSteps({ status: 'shipped', placed_at: '2026-11-22T10:00:00Z', timeline, shipment });
+    expect(steps[3]).toEqual({ key: 'shipped', title: 'Out for delivery', at: '2026-11-23T05:20:00Z', state: 'current' });
+    // booked/booking/unknown keep the generic title and the order's shipped time
+    const booked = trackingSteps({ status: 'shipped', placed_at: '2026-11-22T10:00:00Z', timeline, shipment: { ...shipment, status: 'booked' } });
+    expect([booked[3]!.title, booked[3]!.at]).toEqual(['With the courier', '2026-11-23T03:00:00Z']);
+    // manual shipment (no courier fields) behaves as before
+    expect(trackingSteps({ status: 'shipped', placed_at: '2026-11-22T10:00:00Z', timeline, shipment: { carrier_name: 'Sundarban', tracking_code: null, tracking_url: null } })[3]!.title).toBe('With the courier');
+    // delivered orders ignore the courier label
+    expect(trackingSteps({ status: 'delivered', placed_at: '2026-11-22T10:00:00Z', timeline, shipment })[3]!.title).toBe('With the courier');
+  });
+
+  it('falls back to the newest courier event when the status field is absent', () => {
+    const s = { carrier_name: null, tracking_code: null, tracking_url: null, events: [{ status: 'in_transit' as const, at: '2026-11-23T04:00:00Z' }, { status: 'picked_up' as const, at: '2026-11-23T01:00:00Z' }] };
+    expect(courierStatus(s)).toEqual({ status: 'in_transit', at: '2026-11-23T04:00:00Z' });
+    expect(courierStatus(null)).toBeNull();
+    expect(formatDhakaClock('2026-11-23T05:42:00Z')).toBe('11:42 am');
+    expect(formatDhakaClock('nope')).toBeUndefined();
   });
 
   it('ends with a stopped step for cancelled orders', () => {

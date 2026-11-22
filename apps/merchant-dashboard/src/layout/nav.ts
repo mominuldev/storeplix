@@ -37,12 +37,13 @@ export const mainNav: NavEntry[] = [
     label: 'Orders',
     to: '/orders',
     icon: ShoppingBag,
-    // 5b §10: Returns and Invoices & labels (5b-4/5b-5). Shipments arrives with couriers (5b-3); Unfinished orders and
+    // 5b §10: Returns, Shipments (5b-3) and Invoices & labels (Figma sidebar order 39:10347). Unfinished orders and
     // Fake order guard stay hidden.
     children: [
       { label: 'All orders', to: '/orders' },
       { label: 'Create order', to: '/orders/new' },
       { label: 'Returns', to: '/returns' },
+      { label: 'Shipments', to: '/shipments' },
       { label: 'Invoices & labels', to: '/orders/print' },
     ],
   },
@@ -77,6 +78,7 @@ export const mainNav: NavEntry[] = [
       { label: 'Shop settings', to: '/online-store/shop-settings' },
     ],
   },
+  // 5b §10: top-level Integrations (payments live in 5b-2, couriers in 5b-3).
   { label: 'Integrations', to: '/integrations', icon: Plug },
   { label: 'Staff', to: '/staff', icon: UserCheck },
   { label: 'Settings', to: '/settings', icon: Settings },

@@ -74,7 +74,7 @@ class NotificationsTest extends TestCase
         [, $variant] = $this->stocked($h, $store, 1000, 50);
         $this->api($h, 'PATCH', "/api/v1/stores/{$store->id}/settings", ['notifications' => ['sms_language' => 'en', 'new_order_email' => false, 'customer_sms' => ['order_placed' => false]]])->assertOk()
             ->assertJsonPath('data.commerce.notifications.sms_language', 'en')
-            ->assertJsonPath('data.commerce.notifications.customer_sms', ['order_placed' => false, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true]);
+            ->assertJsonPath('data.commerce.notifications.customer_sms', ['order_placed' => false, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true, 'payment_link' => true]);
         $id = $this->manual($h, $store, $this->manualBody($variant, 1, ['notify_customer' => false]))->json('data.id');
         $this->assertCount(0, $this->sms());
         Mail::assertNotSent(NewOrderMerchantMail::class);
@@ -205,10 +205,12 @@ class NotificationsTest extends TestCase
     {
         // A 40-character shop name with a typical host renders untouched.
         $typical = ['first_name' => 'Farhana', 'shop' => str_repeat('S', 40), 'number' => 'GS-1042', 'total' => '12,500',
-            'due' => '12,500', 'carrier' => 'Steadfast', 'track_url' => 'https://gallery.storeplix.com/track'];
+            'due' => '12,500', 'carrier' => 'Steadfast', 'track_url' => 'https://gallery.storeplix.com/track',
+            'amount' => '12,500', 'url' => 'https://gallery.storeplix.com/pay/AbCdEfGh1234'];
         // Worst case: long buyer name, long carrier, long host, big amounts.
         $extreme = ['first_name' => str_repeat('ন', 20), 'shop' => str_repeat('S', 40), 'number' => 'ABCDEF-1234567', 'total' => '1,000,000',
-            'due' => '1,000,000', 'carrier' => str_repeat('C', 30), 'track_url' => 'https://'.str_repeat('a', 40).'.storeplix.com/track'];
+            'due' => '1,000,000', 'carrier' => str_repeat('C', 30), 'track_url' => 'https://'.str_repeat('a', 40).'.storeplix.com/track',
+            'amount' => '1,000,000', 'url' => 'https://'.str_repeat('a', 40).'.storeplix.com/pay/AbCdEfGh1234'];
         foreach (['bn', 'en'] as $language) {
             foreach (SmsTemplates::EVENTS as $event) {
                 $text = SmsTemplates::render($event, $language, $typical);
@@ -218,7 +220,7 @@ class NotificationsTest extends TestCase
                 $this->assertLessThanOrEqual(201, mb_strlen($worst), "{$language}.{$event} (extreme): ".mb_strlen($worst));
                 $this->assertStringNotContainsString('{', $worst);
                 if (str_contains($worst, 'https://')) {
-                    $this->assertStringContainsString($extreme['track_url'], $worst);
+                    $this->assertStringContainsString($event === 'payment_link' ? $extreme['url'] : $extreme['track_url'], $worst);
                 }
             }
         }

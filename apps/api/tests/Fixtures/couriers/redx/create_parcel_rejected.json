@@ -1,0 +1,6 @@
+{
+  "_source": "docs",
+  "_doc": "RedX OpenAPI v1.0.0-beta mirrored on apis.io (VERIFY against sandbox)",
+  "message": "Invalid delivery area",
+  "errors": {"delivery_area_id": ["The selected delivery area id is invalid."]}
+}

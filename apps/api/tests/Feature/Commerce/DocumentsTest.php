@@ -222,7 +222,7 @@ class DocumentsTest extends TestCase
     {
         Carbon::setTestNow('2026-11-22 10:00:00');
         [, $tenant, $store] = $this->liveShop('snap');
-        $store->forceFill(['name' => 'Snapshot Shop'])->save();
+        $this->inTenant($tenant, fn () => $store->forceFill(['name' => 'Snapshot Shop'])->save());
         $renderer = app(DocumentRenderer::class);
         foreach (TemplateConfig::KINDS as $kind) {
             foreach (['en', 'bn'] as $language) {

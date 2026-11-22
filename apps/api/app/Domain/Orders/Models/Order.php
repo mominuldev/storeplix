@@ -172,7 +172,8 @@ class Order extends Model
 
     public function shipment(): HasOne
     {
-        return $this->hasOne(Shipment::class)->where('status', '<>', 'cancelled');
+        // 5b-3 (§4.7): the active shipment = the newest one not cancelled / booking_failed (eager loads keep the first row per order).
+        return $this->hasOne(Shipment::class)->whereNotIn('status', ['cancelled', 'booking_failed'])->orderByDesc('created_at')->orderByDesc('id');
     }
 
     public function customer(): BelongsTo

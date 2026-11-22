@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 import { trackOrder, type TrackState } from '@/app/actions/commerce';
 import { formatMoney } from '@/lib/format';
-import { formatDhakaTime, trackingSteps, TRACK_HEADLINES } from '@/lib/tracking';
+import { formatDhakaClock, formatDhakaTime, trackingSteps, TRACK_HEADLINES } from '@/lib/tracking';
 import { Icon } from '../components/icon';
 import { OrderTimeline } from './order-timeline';
 import { Notice } from './ui';
@@ -86,6 +86,12 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
             </div>
           </dl>
           <OrderTimeline steps={trackingSteps(t).map((s) => ({ key: s.key, title: s.title, detail: formatDhakaTime(s.at), state: s.state }))} />
+          {t.status === 'shipped' && formatDhakaClock(t.shipment?.checked_at) ? (
+            <p className="type-body-s flex items-start gap-2 text-ink-muted" data-sp-courier-checked>
+              <Icon name="info" size={16} />
+              <span>Courier status is checked with the courier directly and shown with the time we last checked: {formatDhakaClock(t.shipment?.checked_at)}.</span>
+            </p>
+          ) : null}
           {t.shipment?.tracking_url ? (
             <a href={t.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="type-label-s flex items-center gap-2 self-start text-brand hover:underline">
               Open the courier&apos;s tracking page

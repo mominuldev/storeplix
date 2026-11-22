@@ -34,7 +34,7 @@ class StoreSettingsTest extends TestCase
                 'seo' => ['title', 'description', 'share_image', 'hide_from_search'],
                 'commerce' => [
                     'checkout' => ['cod_enabled', 'cod_advance'], 'order_prefix', 'next_order_number', 'tax' => ['display', 'rate_bps', 'bin'], 'invoice' => ['footer'],
-                    'notifications' => ['new_order_email', 'sms_language', 'customer_sms' => ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated']],
+                    'notifications' => ['new_order_email', 'sms_language', 'customer_sms' => ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link']],
                 ],
                 'updated_at',
             ]])

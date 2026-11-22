@@ -5,6 +5,7 @@ namespace App\Domain\Tenancy\Support;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\DataTransfer\Models\DataExport;
 use App\Domain\DataTransfer\Models\DataImport;
@@ -12,6 +13,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
+use App\Domain\Payments\Models\PaymentGatewayAccount;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
@@ -49,6 +51,8 @@ class AuditLogger
         Customer::class => 'customer',
         DataImport::class => 'data_import',
         DataExport::class => 'data_export',
+        PaymentGatewayAccount::class => 'payment_gateway',
+        CourierAccount::class => 'courier',
     ];
 
     public function __construct(

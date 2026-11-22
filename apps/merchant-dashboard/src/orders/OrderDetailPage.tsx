@@ -1,8 +1,8 @@
 import { isApiError } from '@storeplix/api-client';
-import type { Order, OrderStatus } from '@storeplix/types';
+import type { CourierProvider, Order, OrderStatus, Payment } from '@storeplix/types';
 import { Avatar, Badge, Button, buttonVariants, cn, Menu, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ChevronDown, Clock, MapPin, MessageCircle, Phone, Printer, Store, Truck } from 'lucide-react';
+import { ChevronDown, Clock, MapPin, MessageCircle, Phone, Printer, Store } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { formatBdt, formatCount } from '../catalog/format';
@@ -10,7 +10,9 @@ import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, StateCard } from '../catalog/states';
 import { Thumb } from '../catalog/ui';
 import { dateTime, waLink } from '../catalog/format';
-import { cancelReasonLabels, daysRange, localPhone, orderChannelLabels, ordinal, refundMethodLabels, transitionLabels } from '../commerce/format';
+import { cancelReasonLabels, daysRange, localPhone, orderChannelLabels, ordinal, transitionLabels } from '../commerce/format';
+import { activeLink, LINK_STATUSES, onlineRefundable, paymentMethodLabel, timeLeft } from '../payments/gateways';
+import { ActiveLinkBanner, AskAdvanceDialog, GatewayRefundDialog, PaymentsCardBody } from './payments';
 import { useCommerceInvalidate, useOrder } from '../commerce/queries';
 import { api } from '../lib/api';
 import { LoadingState } from '../online-store/components/Shell';
@@ -20,14 +22,18 @@ import { documentKindLabels } from '../documents/labels';
 import { usePrintJob } from '../documents/usePrintJob';
 import { orderReturnStatusLabels } from '../returns/labels';
 import { CancelOrderDialog, CreateReturnDialog, RefundDialog, RestockDialog, ReturnOrderDialog, ShipOrderDialog } from './actions';
+import { BookShipmentDialog } from '../shipments/BookShipmentDialog';
+import { OrderCourierCard } from '../shipments/OrderCourierCard';
 import { handleOrderError, ITEM_EDIT_STATUSES, useQuickTransition } from './transitions';
 import { eventToEntry } from './timeline';
 
 // Figma Order detail 33:3676 (mobile 32:309). Contract §9: actions from `allowed_transitions`, Items, Payments,
 // Shipping, Timeline with notes, Customer card (this shop only), Delivery address with Edit, Order details and tags.
 // 5b (PHASE-5B §10): Invoice + other prints (documents), Edit items link, Create return (delivered), Restock
-// (courier-returned). Not built: next-step advance banner, Assigned to, Delivery record / fraud (Phase 8), Block this
-// number, campaign field; courier booking and payment links are 5b-2/5b-3.
+// (courier-returned). 5b-2: Payments card with online charges, links and gateway refunds, Ask for an advance (144:46081),
+// active-link banner, awaiting-payment banner, cancel with "Refund ৳N to {gateway}". Not built: Assigned to, Delivery
+// record / fraud (Phase 8), Block this number, campaign field. 5b-3: courier card in Shipping (book with a connected
+// courier, or the active parcel with status and tracking), ship dialog offers "Book with {courier}".
 
 export function OrderDetailPage() {
   const { orderId } = useParams();
@@ -49,7 +55,7 @@ export function OrderDetailPage() {
   return <OrderView order={query.data} />;
 }
 
-type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | 'restock' | 'createReturn' | null;
+type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | 'restock' | 'createReturn' | 'advance' | 'book' | null;
 
 export function Card({ title, actions, children, className, label }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; label?: string }) {
   return (
@@ -77,6 +83,12 @@ function OrderView({ order }: { order: Order }) {
   const invalidate = useCommerceInvalidate();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [note, setNote] = useState('');
+  const [refundCharge, setRefundCharge] = useState<Payment | null>(null);
+  const [bookWith, setBookWith] = useState<CourierProvider | undefined>(undefined);
+  const openBook = (p?: CourierProvider) => {
+    setBookWith(p);
+    setDialog('book');
+  };
   const settings = useQuery({ queryKey: settingsKey(scope.storeId ?? undefined), queryFn: () => api.stores.getSettings(scope.storeId!), enabled: !!scope.storeId, retry: false });
   const sms = settings.data?.commerce?.notifications.customer_sms;
   const quick = useQuickTransition();
@@ -108,8 +120,9 @@ function OrderView({ order }: { order: Order }) {
   const primary = forward.find((t) => !(order.status === 'ready_to_ship' && t === 'confirmed'));
   const canCancel = order.allowed_transitions.includes('cancelled') && order.can.cancel;
   const editable = order.can.edit;
-  const refunds = order.payments.filter((p) => p.type === 'refund');
-  const charge = order.payments.find((p) => p.type === 'charge');
+  const link = activeLink(order);
+  const canAskAdvance = LINK_STATUSES.includes(order.status) && order.due_amount > 0 && !link;
+  const online = onlineRefundable(order.payments);
   const c = order.customer;
   const addr = order.shipping_address;
   const print = usePrintJob();
@@ -195,6 +208,13 @@ function OrderView({ order }: { order: Order }) {
         </div>
       </div>
 
+      {order.status === 'pending_payment' && (
+        <p role="status" className="rounded-card border border-warning bg-warning-bg px-4 py-3 text-body text-text-primary">
+          Waiting for the customer to pay online{order.payment_expires_at ? ` · ${timeLeft(order.payment_expires_at)}` : ''}. The order confirms itself when the payment arrives; if it doesn’t, it’s cancelled and the stock goes back.
+        </p>
+      )}
+      {link && <ActiveLinkBanner order={order} link={link} />}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="flex flex-col gap-5">
           <Card
@@ -241,7 +261,7 @@ function OrderView({ order }: { order: Order }) {
               <div className="flex items-center justify-between rounded-md bg-surface-subtle px-3 py-2.5 text-body">
                 <span className="text-text-secondary">Paid {formatBdt(order.paid_amount)}</span>
                 <span className="font-semibold text-text-primary">
-                  {order.status === 'cancelled' || order.status === 'returned' ? 'Nothing due' : `Due on delivery ${formatBdt(order.due_amount)}`}
+                  {order.status === 'cancelled' || order.status === 'returned' ? 'Nothing due' : order.due_amount <= 0 ? 'Paid in full' : `Due on delivery ${formatBdt(order.due_amount)}`}
                 </span>
               </div>
             </dl>
@@ -250,56 +270,45 @@ function OrderView({ order }: { order: Order }) {
           <Card
             title="Payments"
             actions={
-              order.can.refund && order.paid_amount - order.refunded_amount > 0 ? (
-                <Button size="sm" variant="secondary" onClick={() => setDialog('refund')}>
-                  Record refund
-                </Button>
-              ) : undefined
+              <span className="flex flex-wrap justify-end gap-2">
+                {canAskAdvance && (
+                  <Button size="sm" variant="secondary" onClick={() => setDialog('advance')}>
+                    Ask for an advance
+                  </Button>
+                )}
+                {order.can.refund && order.paid_amount - order.refunded_amount > 0 && (
+                  <Button size="sm" variant="secondary" onClick={() => setDialog('refund')}>
+                    Record refund
+                  </Button>
+                )}
+              </span>
             }
           >
-            <ul className="flex flex-col gap-2">
-              <li className="flex items-center gap-3 rounded-lg border border-border-default p-3">
-                <span className="flex size-9 items-center justify-center rounded-control bg-surface-subtle text-text-secondary">
-                  <Truck aria-hidden className="size-4" />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-body font-semibold text-text-primary">Cash on delivery</span>
-                  <span className="text-caption text-text-muted">Collected by you or your courier at the door</span>
-                </span>
-                <span className="text-body font-semibold text-text-primary">{formatBdt(charge?.amount ?? order.total_amount)}</span>
-                <span className="text-caption text-text-muted">{charge ? paymentState(charge.status) : ''}</span>
-              </li>
-              {refunds.map((r) => (
-                <li key={r.id} className="flex items-center gap-3 rounded-lg border border-border-default p-3">
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-body font-semibold text-text-primary">Refund · {r.method ? refundMethodLabels[r.method] : 'Manual'}</span>
-                    <span className="truncate text-caption text-text-muted">{[r.reference ? `Ref ${r.reference}` : null, r.actor?.name, dateTime(r.created_at), r.note].filter(Boolean).join(' · ')}</span>
-                  </span>
-                  <span className="text-body font-semibold text-text-primary">− {formatBdt(r.amount)}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="text-caption text-text-muted">Online payments and advance payment links are coming soon.</p>
+            <PaymentsCardBody order={order} onRefundCharge={setRefundCharge} />
           </Card>
 
           <Card title="Shipping">
             <dl className="grid gap-3 sm:grid-cols-3">
               <Field label="Zone" value={`${order.shipping_zone_name}${order.delivery_min_days !== null ? ` · ${daysRange(order.delivery_min_days, order.delivery_max_days)}` : ''}`} />
-              <Field label="Courier" value={order.shipment?.carrier_name ?? '—'} />
-              <Field
-                label="Tracking"
-                value={
-                  order.shipment?.tracking_url ? (
-                    <a href={order.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="text-brand-600 hover:underline">
-                      {order.shipment.tracking_code ?? 'Open tracking'}
-                    </a>
-                  ) : (
-                    (order.shipment?.tracking_code ?? '—')
-                  )
-                }
-              />
+              {order.shipment?.provider === 'manual' && (
+                <>
+                  <Field label="Courier" value={order.shipment.carrier_name ?? '—'} />
+                  <Field
+                    label="Tracking"
+                    value={
+                      order.shipment.tracking_url ? (
+                        <a href={order.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="text-brand-600 hover:underline">
+                          {order.shipment.tracking_code ?? 'Open tracking'}
+                        </a>
+                      ) : (
+                        (order.shipment.tracking_code ?? '—')
+                      )
+                    }
+                  />
+                </>
+              )}
             </dl>
-            {!order.shipment && <p className="text-caption text-text-muted">Not shipped yet. Booking couriers from Store Plix is coming soon.</p>}
+            <OrderCourierCard order={order} onBook={openBook} />
             {order.cancel_reason && <p className="text-caption text-danger">Cancelled: {cancelReasonLabels[order.cancel_reason]}</p>}
           </Card>
 
@@ -376,7 +385,7 @@ function OrderView({ order }: { order: Order }) {
           <Card title="Order details">
             <dl className="flex flex-col gap-2">
               <Row label="Source" value={orderChannelLabels[order.channel]} />
-              <Row label="Payment" value="Cash on delivery" />
+              <Row label="Payment" value={paymentMethodLabel(order.payment_method)} />
               {order.coupon_code && <Row label="Coupon" value={order.coupon_code} />}
               {order.timestamps.shipped_at && <Row label="Shipped" value={dateTime(order.timestamps.shipped_at)} />}
               {order.timestamps.delivered_at && <Row label="Delivered" value={dateTime(order.timestamps.delivered_at)} />}
@@ -388,18 +397,19 @@ function OrderView({ order }: { order: Order }) {
         </div>
       </div>
 
-      {dialog === 'cancel' && <CancelOrderDialog open order={target} smsDefault={sms?.order_cancelled ?? true} onClose={() => setDialog(null)} />}
-      {dialog === 'ship' && <ShipOrderDialog open order={target} smsDefault={sms?.order_shipped ?? true} onClose={() => setDialog(null)} />}
+      {dialog === 'cancel' && (
+        <CancelOrderDialog open order={target} smsDefault={sms?.order_cancelled ?? true} onlineRefund={online.amount > 0 && online.provider ? online : undefined} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'advance' && <AskAdvanceDialog order={order} onClose={() => setDialog(null)} />}
+      {refundCharge && <GatewayRefundDialog order={order} payment={refundCharge} onClose={() => setRefundCharge(null)} />}
+      {dialog === 'ship' && <ShipOrderDialog open order={target} smsDefault={sms?.order_shipped ?? true} onClose={() => setDialog(null)} onBookCourier={openBook} />}
+      {dialog === 'book' && <BookShipmentDialog order={order} provider={bookWith} onClose={() => setDialog(null)} />}
       {dialog === 'return' && <ReturnOrderDialog open order={order} onClose={() => setDialog(null)} />}
       {dialog === 'refund' && <RefundDialog open order={order} onClose={() => setDialog(null)} />}
       {dialog === 'restock' && <RestockDialog open order={order} onClose={() => setDialog(null)} />}
       {dialog === 'createReturn' && <CreateReturnDialog open order={order} onClose={() => setDialog(null)} />}
     </>
   );
-}
-
-function paymentState(s: 'pending' | 'succeeded' | 'failed' | 'cancelled'): string {
-  return s === 'pending' ? 'At delivery' : s === 'succeeded' ? 'Collected' : s === 'cancelled' ? 'Not collected' : 'Failed';
 }
 
 function Field({ label, value }: { label: string; value: ReactNode }) {

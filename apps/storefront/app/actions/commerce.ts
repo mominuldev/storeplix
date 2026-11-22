@@ -2,11 +2,14 @@
 
 import { cookies } from 'next/headers';
 import { refresh } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import type { StorefrontOrderTracking } from '@storeplix/types';
+import type { StorefrontTracking } from '@/lib/tracking';
 import {
   addCartItem,
   deleteCoupon,
+  postOrderPay,
+  postPaymentLinkPay,
   getProduct,
   listProducts,
   postCheckout,
@@ -17,9 +20,10 @@ import {
   type ApiResult,
   type CartCall,
 } from '@/lib/commerce-api';
-import { clearCartCookie, getCommerceContext, setCartCookie, setOrderCookie } from '@/lib/commerce-context';
+import { clearCartCookie, getCommerceContext, getOrderToken, setCartCookie, setOrderCookie } from '@/lib/commerce-context';
 import { COUPON_CODE_RE, FLASH_COOKIE, PENDING_COUPON_COOKIE, commerceCookieOptions } from '@/lib/commerce-request';
-import type { CartEnvelope } from '@/lib/commerce-schemas';
+import { PAY_LINK_TOKEN_RE, type CartEnvelope } from '@/lib/commerce-schemas';
+import { isGateway, isPaymentMethod } from '@/lib/payments';
 import { errorMessage } from '@/lib/commerce-messages';
 import { IDEMPOTENCY_KEY_RE, mapDetailsToFields, normalizeBdPhone, toCheckoutInput, validateCheckoutForm, type FieldErrors } from '@/lib/checkout-form';
 import { catalogApiQuery, parseCatalogState } from '@/lib/catalog-query';
@@ -194,7 +198,7 @@ export type CheckoutState = {
 };
 
 /** Codes after which the same key must not be reused (the API decided; the body will change). */
-const ROTATE_KEY = new Set(['checkout_changed', 'idempotency_key_mismatch', 'validation_failed', 'coupon_invalid', 'payment_method_unavailable', 'store_not_live', 'idempotency_key_required']);
+const ROTATE_KEY = new Set(['checkout_changed', 'idempotency_key_mismatch', 'validation_failed', 'coupon_invalid', 'payment_method_unavailable', 'advance_required', 'store_not_live', 'idempotency_key_required']);
 
 export async function placeOrder(prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   const sentKey = String(formData.get('idempotency_key') ?? '');
@@ -208,10 +212,22 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
   if (!ctx) return { status: 'error', message: NOT_OPEN, fieldErrors: {}, idempotencyKey: key };
   if (!ctx.call.cartToken) return { status: 'redirect', redirect: '/cart', message: null, fieldErrors: {}, idempotencyKey: key };
 
-  const r = await postCheckout(ctx.call, key, toCheckoutInput(form.data, expected.data));
+  const rawMethod = formData.get('payment_method');
+  const rawAdvance = formData.get('advance_gateway');
+  const method = rawMethod === null || rawMethod === '' ? 'cod' : rawMethod;
+  if (!isPaymentMethod(method) || (rawAdvance !== null && rawAdvance !== '' && !isGateway(rawAdvance))) {
+    return { status: 'error', message: 'Choose how you want to pay.', fieldErrors: {}, idempotencyKey: key };
+  }
+  const advanceGateway = isGateway(rawAdvance) ? rawAdvance : null;
+
+  const r = await postCheckout(ctx.call, key, toCheckoutInput(form.data, expected.data, { method, advanceGateway }));
   if (r.ok) {
     await setOrderCookie(ctx.store.host, r.data.confirmation_token);
     await clearCartCookie();
+    // Online payment or advance (P5B-15, §5.3): straight to the gateway. The URL was validated at
+    // the boundary (absolute https). `initiation_failed` lands on the thank-you page with Retry.
+    const payment = r.data.payment;
+    if (payment?.status === 'redirect' && payment.redirect_url) redirect(payment.redirect_url);
     return { status: 'redirect', redirect: '/checkout/thank-you', message: null, fieldErrors: {}, idempotencyKey: crypto.randomUUID() };
   }
 
@@ -232,6 +248,7 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
         idempotencyKey: nextKey,
       };
     case 'coupon_invalid':
+    case 'payment_method_unavailable':
       refresh();
       return { status: 'changed', message: errorMessage(r), fieldErrors: {}, idempotencyKey: nextKey };
     case 'validation_failed': {
@@ -245,6 +262,68 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
   }
 }
 
+// ---------- online payments: retry / switch to COD / payment links (5b-2, P5B-17, P5B-23) ----------
+export type PayActionResult =
+  | { ok: true; redirect: '/checkout/thank-you' }
+  | { ok: false; message: string; idempotencyKey: string; invalid?: boolean };
+
+const PayOrderInput = z.object({
+  method: z.enum(['cod', 'bkash', 'sslcommerz']),
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_RE),
+});
+
+/** Codes after which the same Idempotency-Key must not be sent again. */
+const PAY_KEEP_KEY = new Set(['network_error', 'idempotency_key_in_use', 'rate_limited', 'http_429']);
+const payKey = (code: string, key: string) => (PAY_KEEP_KEY.has(code) ? key : crypto.randomUUID());
+const initiationFailed = (provider: string) => `${provider === 'bkash' ? 'bKash' : 'The payment service'} isn't responding right now. Try again in a minute.`;
+
+/**
+ * "Try again" / "Pay on delivery instead" for the shopper's own order (`sp_order`). An online
+ * method redirects to the gateway; COD returns the thank-you target.
+ */
+export async function payOrder(input: { method: string; idempotencyKey: string }): Promise<PayActionResult> {
+  const parsed = PayOrderInput.safeParse(input);
+  const fallbackKey = crypto.randomUUID();
+  if (!parsed.success) return { ok: false, message: 'Choose how you want to pay.', idempotencyKey: fallbackKey };
+  const { method, idempotencyKey: key } = parsed.data;
+  const ctx = await getCommerceContext();
+  if (!ctx) return { ok: false, message: NOT_OPEN, idempotencyKey: key };
+  const orderToken = await getOrderToken();
+  if (!orderToken) return { ok: false, message: "We can't find your order on this device. Use Track order to check it.", idempotencyKey: key };
+
+  const r = await postOrderPay(ctx.call, orderToken, key, method);
+  if (r.ok) {
+    const payment = r.data.payment;
+    if (payment === null) return { ok: true, redirect: '/checkout/thank-you' };
+    if (payment.status === 'redirect' && payment.redirect_url) redirect(payment.redirect_url);
+    return { ok: false, message: initiationFailed(payment.provider), idempotencyKey: crypto.randomUUID() };
+  }
+  if (r.code === 'payment_not_pending' || r.code === 'payment_method_unavailable') refresh();
+  return { ok: false, message: errorMessage(r), idempotencyKey: payKey(r.code, key) };
+}
+
+const PayLinkInput = z.object({
+  token: z.string().regex(PAY_LINK_TOKEN_RE),
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_RE),
+});
+
+/** Pay page button: start the gateway payment for a merchant payment link and redirect to it. */
+export async function payLink(input: { token: string; idempotencyKey: string }): Promise<PayActionResult> {
+  const parsed = PayLinkInput.safeParse(input);
+  if (!parsed.success) return { ok: false, invalid: true, message: "This payment link isn't valid any more.", idempotencyKey: crypto.randomUUID() };
+  const { token, idempotencyKey: key } = parsed.data;
+  const ctx = await getCommerceContext();
+  if (!ctx) return { ok: false, message: NOT_OPEN, idempotencyKey: key };
+
+  const r = await postPaymentLinkPay(ctx.call, token, key);
+  if (r.ok) {
+    if (r.data.status === 'redirect' && r.data.redirect_url) redirect(r.data.redirect_url);
+    return { ok: false, message: initiationFailed(r.data.provider), idempotencyKey: crypto.randomUUID() };
+  }
+  if (r.status === 404) return { ok: false, invalid: true, message: "This payment link isn't valid any more.", idempotencyKey: crypto.randomUUID() };
+  return { ok: false, message: errorMessage(r), idempotencyKey: payKey(r.code, key) };
+}
+
 // ---------- order tracking ----------
 /** `values` echo what was typed so the form keeps it after React's post-action reset. */
 type TrackValues = { values: { number: string; phone: string } };
@@ -252,7 +331,7 @@ export type TrackState =
   | { status: 'idle' }
   | ({ status: 'invalid'; fieldErrors: { number?: string; phone?: string } } & TrackValues)
   | ({ status: 'not_found' | 'error'; message: string } & TrackValues)
-  | ({ status: 'found'; tracking: StorefrontOrderTracking } & TrackValues);
+  | ({ status: 'found'; tracking: StorefrontTracking } & TrackValues);
 
 export async function trackOrder(_prev: TrackState, formData: FormData): Promise<TrackState> {
   const number = String(formData.get('number') ?? '').trim().toUpperCase();

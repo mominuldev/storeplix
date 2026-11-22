@@ -74,6 +74,6 @@ class DemoSeeder extends Seeder
 
         Artisan::call('stores:ensure-content', ['--store' => 'demo']);
 
-        $this->call([DemoCatalogSeeder::class, DemoCommerceSeeder::class]);
+        $this->call([DemoCatalogSeeder::class, DemoCommerceSeeder::class, DemoPaymentsSeeder::class, DemoCouriersSeeder::class]);
     }
 }

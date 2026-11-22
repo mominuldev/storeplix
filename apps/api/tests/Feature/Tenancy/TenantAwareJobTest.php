@@ -44,7 +44,8 @@ class TenantAwareJobTest extends TestCase
         $this->assertSame([$tenantA->id, $tenantB->id], $payloadTenants);
 
         $this->assertFalse($this->tenancy()->has());
-        $this->artisan('queue:work', ['--stop-when-empty' => true, '--tries' => 1])->assertExitCode(0);
+        // --memory: in a full-suite run the test process is past the worker's 128 MB default (exit 12).
+        $this->artisan('queue:work', ['--stop-when-empty' => true, '--tries' => 1, '--memory' => 1024])->assertExitCode(0);
 
         $this->assertSame([
             ['tenant' => $tenantA->id, 'slugs' => ['alpha']],

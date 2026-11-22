@@ -57,3 +57,26 @@ export const returnTypeMeta: Record<ReturnType, { label: string; tone: BadgeTone
   return: { label: 'Return', tone: 'neutral' },
   exchange: { label: 'Exchange', tone: 'brand' },
 };
+
+// Phase 5b-3 shipments (Figma Shipments 39:10347): Out for delivery brand, Failed attempt danger, In transit info,
+// On hold / Returning warning, Delivered success. Mirrors ShipmentStatus in @storeplix/types.
+export type ShipmentStatus =
+  | 'booking' | 'booked' | 'picked_up' | 'in_transit' | 'out_for_delivery' | 'on_hold' | 'delivery_failed'
+  | 'delivered' | 'partially_delivered' | 'returning' | 'returned' | 'cancelled' | 'booking_failed' | 'shipped';
+
+export const shipmentStatusMeta: Record<ShipmentStatus, { label: string; tone: BadgeTone }> = {
+  booking: { label: 'Booking…', tone: 'neutral' },
+  booked: { label: 'Booked', tone: 'brand' },
+  picked_up: { label: 'Picked up', tone: 'info' },
+  in_transit: { label: 'In transit', tone: 'info' },
+  shipped: { label: 'Shipped', tone: 'info' },
+  out_for_delivery: { label: 'Out for delivery', tone: 'brand' },
+  on_hold: { label: 'On hold', tone: 'warning' },
+  delivery_failed: { label: 'Failed attempt', tone: 'danger' },
+  delivered: { label: 'Delivered', tone: 'success' },
+  partially_delivered: { label: 'Partly delivered', tone: 'success' },
+  returning: { label: 'Returning', tone: 'warning' },
+  returned: { label: 'Returned', tone: 'danger' },
+  cancelled: { label: 'Cancelled', tone: 'neutral' },
+  booking_failed: { label: 'Booking failed', tone: 'danger' },
+};

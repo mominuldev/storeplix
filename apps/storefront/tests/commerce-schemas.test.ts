@@ -170,6 +170,39 @@ describe('orders', () => {
     expect(parseTracking({ ...base, shipment: { carrier_name: null, tracking_code: null, tracking_url: 'http://x.com' } })!.shipment!.tracking_url).toBeNull();
     expect(parseTracking({ ...base, shipment: { carrier_name: null, tracking_code: null, tracking_url: 'https://steadfast.com.bd/t/1' } })!.shipment!.tracking_url).toBe('https://steadfast.com.bd/t/1');
   });
+
+  it('tracking: courier status + time only, rider data stripped, bad values dropped (5b-3 §11)', () => {
+    const base = { number: 'DE-1042', status: 'shipped', placed_at: '2026-11-22T10:00:00Z', shipping: { district: 'Dhaka', thana: 'Dhanmondi' }, lines: [], total_amount: 8000, due_amount: 8000, currency: 'BDT', timeline: [] };
+    const t = parseTracking({
+      ...base,
+      shipment: {
+        carrier_name: 'Steadfast',
+        tracking_code: 'SF-7731042',
+        tracking_url: 'https://steadfast.com.bd/t/SF-7731042',
+        status: 'out_for_delivery',
+        status_at: '2026-11-23T05:20:00Z',
+        checked_at: '2026-11-23T05:42:00Z',
+        rider: { name: 'Karim', phone: '01711111111' },
+        events: [
+          { status: 'booked', at: '2026-11-22T12:00:00Z', provider_status: 'in_review', location: 'Mirpur hub', rider_phone: '01711111111' },
+          { status: 'out_for_delivery', at: '2026-11-23T05:20:00Z', description: 'Rider Karim 01711111111' },
+          { status: 'teleported', at: '2026-11-23T05:21:00Z' },
+          { status: 'in_transit', at: 'not a date' },
+        ],
+      },
+    })!;
+    expect(t.shipment).toMatchObject({ status: 'out_for_delivery', status_at: '2026-11-23T05:20:00Z', checked_at: '2026-11-23T05:42:00Z' });
+    expect(t.shipment!.events).toEqual([
+      { status: 'booked', at: '2026-11-22T12:00:00Z' },
+      { status: 'out_for_delivery', at: '2026-11-23T05:20:00Z' },
+    ]);
+    const json = JSON.stringify(t);
+    for (const leak of ['Karim', '01711111111', 'Mirpur hub', 'in_review', 'rider']) expect(json).not.toContain(leak);
+    // An API without the 5b-3 fields (manual shipment) still parses; unknown status → null, not a failure.
+    const manual = parseTracking({ ...base, shipment: { carrier_name: 'Sundarban', tracking_code: null, tracking_url: null } })!;
+    expect(manual.shipment).toMatchObject({ status: null, status_at: null, checked_at: null, events: [] });
+    expect(parseTracking({ ...base, shipment: { carrier_name: null, tracking_code: null, tracking_url: null, status: 'beamed', status_at: 'x' } })!.shipment).toMatchObject({ status: null, status_at: null });
+  });
 });
 
 describe('geo, commerce, errors', () => {
