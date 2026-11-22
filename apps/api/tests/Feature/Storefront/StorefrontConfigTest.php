@@ -38,7 +38,7 @@ class StorefrontConfigTest extends TestCase
         $response = $this->config('demo.storeplix.test')->assertOk();
 
         $response->assertExactJsonStructure(['data' => [
-            'store' => ['id', 'name', 'slug', 'primary_host', 'status', 'currency', 'logo_url', 'favicon_url', 'icons' => ['apple_touch', 'icon_192', 'icon_512']],
+            'store' => ['id', 'name', 'slug', 'primary_host', 'redirect_host', 'status', 'currency', 'logo_url', 'favicon_url', 'icons' => ['apple_touch', 'icon_192', 'icon_512']],
             'contact' => ['phone', 'email', 'whatsapp', 'support_hours'],
             'social' => ['facebook', 'instagram', 'youtube'],
             'preview',
@@ -158,6 +158,7 @@ class StorefrontConfigTest extends TestCase
             'hostname' => 'Shop.Example.com',
             'type' => StoreDomain::TYPE_CUSTOM,
             'status' => StoreDomain::STATUS_ACTIVE,
+            'verification_token' => str_repeat('a', 52), // Phase 6 CHECK: custom rows carry a token
         ]));
 
         $this->config('shop.example.com')->assertOk()->assertJsonPath('data.store.id', $store->id);

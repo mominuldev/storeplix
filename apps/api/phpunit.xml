@@ -32,6 +32,9 @@
         <env name="REVALIDATE_SECRET" value="" force="true"/>
         <server name="REVALIDATE_SECRET" value="" force="true"/>
         <env name="SMS_DRIVER" value="fake"/>
+        <!-- Phase 6: fake DNS + fake provider (CI never calls Cloudflare or a public DoH resolver). -->
+        <env name="DOMAINS_FAKE" value="true"/>
+        <env name="DOMAINS_ASK_KEY" value="test-ask-key-0123456789abcdef0123"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>

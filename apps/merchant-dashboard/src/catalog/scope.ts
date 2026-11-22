@@ -19,6 +19,7 @@ export function useStoreScope() {
     canManageRefunds: can.manageRefunds(role),
     canManageSettings: can.manageSettings(role),
     canManageIntegrations: can.manageIntegrations(role),
+    canManageDomains: can.manageDomains(role),
   };
 }
 
@@ -56,4 +57,7 @@ export const keys = {
   shipmentBatch: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'shipment-batch', id] as const,
   couriers: (s: Scope) => [s.tenantId, s.storeId, 'couriers'] as const,
   courierPickupStores: (s: Scope, provider: string) => [s.tenantId, s.storeId, 'couriers', provider, 'pickup-stores'] as const,
+  // Phase 6 §8 custom domains
+  domains: (s: Scope) => [s.tenantId, s.storeId, 'domains'] as const,
+  domain: (s: Scope, id?: string) => (id === undefined ? ([s.tenantId, s.storeId, 'domain'] as const) : ([s.tenantId, s.storeId, 'domain', id] as const)),
 };

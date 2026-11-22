@@ -42,6 +42,12 @@ export interface StorefrontConfig {
     icons?: { apple_touch: string | null; icon_192: string | null; icon_512: string | null };
     /** canonical host */
     primary_host: string;
+    /**
+     * Phase 6 (P6-15): the primary host, set only when this request's host is not the primary, the request is not a
+     * valid preview, and the primary or this host is a custom domain (platform hosts never redirect to a platform
+     * primary). The storefront permanently redirects to it. Optional for rolling deploys.
+     */
+    redirect_host?: string | null;
   };
   /** Public contact only — never the business address. Optional for rolling deploys. */
   contact?: StoreContact;
@@ -171,7 +177,9 @@ export interface UpdateStoreSettingsInput {
 export type FeatureKey =
   | 'custom_domain' | 'all_couriers' | 'bulk_courier_booking' | 'fake_order_guard' | 'sms_automation'
   | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks';
-export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month';
+export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
+  /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
+  | 'custom_domains';
 export interface Plan {
   id: string; code: 'free' | 'starter' | 'growth' | (string & {}); name: string;
   price_amount: number; currency: string; interval: 'month' | 'year';
@@ -375,6 +383,7 @@ export const ROLE_CAN = {
   manage_refunds: ['owner', 'admin'],   // refunds, cancelling paid orders
   manage_settings: ['owner', 'admin'],  // shipping, checkout, notifications, publish
   manage_integrations: ['owner', 'admin'], // gateways, couriers (5b)
+  manage_domains: ['owner', 'admin'],   // custom domains (Phase 6)
 } as const satisfies Record<string, readonly TenantRole[]>;
 
 // ---------- Catalog (Phase 4) ----------
@@ -1120,3 +1129,69 @@ export interface ExchangeOrderInput {
   shipping_amount_override?: number | null;
   send_payment_link?: { provider: GatewayProvider; expires_in_minutes: 120 | 360 | 1440 | 2880 } | null;
 }
+
+// ==================== Phase 6: custom domains (PHASE-6-CONTRACT §6) ====================
+export type DomainType = 'platform' | 'custom';
+export type DomainFailureCode =
+  | 'txt_missing' | 'txt_mismatch' | 'cname_missing' | 'cname_mismatch' | 'dns_error' | 'verification_timeout'
+  | 'provider_error' | 'provider_blocked' | 'provider_moved' | 'ssl_validation_failed' | 'ssl_timeout' | 'ssl_lost'
+  | 'suspended';
+export type DnsRecordStatus = 'pending' | 'ok' | 'missing' | 'mismatch';
+export interface DomainDnsRecord {
+  purpose: 'ownership' | 'routing';
+  type: 'TXT' | 'CNAME';
+  /** FQDN, e.g. "_storeplix-verify.shop.acme.com" */
+  name: string;
+  /** relative to the registrable domain: "@", "shop", "_storeplix-verify.shop" */
+  name_relative: string;
+  /** "sp-verify=<token>" or the CNAME target */
+  value: string;
+  status: DnsRecordStatus;
+  /** values the resolvers returned at the last check (≤ 5, each ≤ 255 chars) */
+  found: string[];
+}
+export type DomainSslStatus = 'none' | 'pending' | 'active' | 'failed';
+export interface StoreDomain {
+  id: string;
+  /** lowercase ASCII (punycode) */
+  hostname: string;
+  /** Unicode form for display (equals hostname for ASCII names) */
+  display_hostname: string;
+  type: DomainType;
+  status: DomainStatus;
+  is_primary: boolean;
+  is_apex: boolean;
+  /** status === 'active' and the store is not suspended */
+  routable: boolean;
+  /** [] for platform rows */
+  dns_records: DomainDnsRecord[];
+  ssl_status: DomainSslStatus;
+  verification_started_at: string | null;
+  verified_at: string | null;
+  activated_at: string | null;
+  status_changed_at: string | null;
+  last_checked_at: string | null;
+  next_check_at: string | null;
+  /** the 72 h / 24 h / 7-day deadline that applies now, else null */
+  deadline_at: string | null;
+  failure_code: DomainFailureCode | null;
+  failure_message: string | null;
+  /** include role, type, status and plan; all false for staff */
+  can_recheck: boolean;
+  can_make_primary: boolean;
+  can_remove: boolean;
+  created_at: string;
+  updated_at: string;
+}
+export interface AddDomainInput { hostname: string }
+export interface DomainListMeta {
+  /** e.g. "customers.storeplix.com" */
+  cname_target: string;
+  /** "_storeplix-verify" */
+  txt_prefix: string;
+  can_add: boolean;
+  feature_enabled: boolean;
+  limit: { used: number; max: number | null };
+}
+/** GET /internal/domains/allowed (6.5, server-to-server only) */
+export interface DomainAllowed { allowed: true }

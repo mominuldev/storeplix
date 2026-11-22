@@ -148,6 +148,9 @@ import type {
   ShipmentListFilters,
   ShipmentListMeta,
   ShipmentSummary,
+  AddDomainInput,
+  DomainListMeta,
+  StoreDomain,
 } from '@storeplix/types';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
@@ -1003,6 +1006,33 @@ export function createApiClient(options: ApiClientOptions) {
       /** Sanitised HTML for the sandboxed preview iframe (throttle 30/min). */
       preview: (storeId: string, input: { kind: DocumentKind; config?: DocumentTemplateConfig; order_id?: string | null }, opts?: Pick<RequestOptions, 'signal'>) =>
         request<{ html: string }>(`${store(storeId)}/documents/preview`, { method: 'POST', body: input, signal: opts?.signal }),
+    },
+
+    /**
+     * Phase 6 §4.1 custom domains. Reads O A S; writes O A (`ManageDomains`, 403 for staff). Errors: add → 402
+     * `feature_not_in_plan` | `plan_limit_reached`, 422 `domain_invalid` | `domain_reserved` | `domain_taken`; verify → 409
+     * `platform_domain_locked` | `invalid_state_transition`, 429 with `retryAfter` (6/min, 30/hour per domain); primary →
+     * 409 `domain_not_active`, 402; remove → 409 `platform_domain_locked`. Another store's id → 404.
+     */
+    domains: {
+      /** Platform rows first, then custom by `created_at`; `meta` carries the CNAME target, plan state and limit. */
+      list: async (storeId: string): Promise<{ data: StoreDomain[]; meta: DomainListMeta }> =>
+        listOf<StoreDomain, DomainListMeta>(`${store(storeId)}/domains`, undefined, {
+          cname_target: '',
+          txt_prefix: '_storeplix-verify',
+          can_add: false,
+          feature_enabled: false,
+          limit: { used: 0, max: 0 },
+        }),
+      /** 201 `pending_verification` with `dns_records` filled; the first check is queued. */
+      add: (storeId: string, input: AddDomainInput) => request<StoreDomain>(`${store(storeId)}/domains`, { method: 'POST', body: { hostname: input.hostname } }),
+      get: (storeId: string, id: string, opts?: Pick<RequestOptions, 'signal'>) => request<StoreDomain>(`${store(storeId)}/domains/${enc(id)}`, { signal: opts?.signal }),
+      /** "Check now": a synchronous check; returns the updated row (provider/DNS errors come back as `failure_code`, never 502). */
+      recheck: (storeId: string, id: string) => request<StoreDomain>(`${store(storeId)}/domains/${enc(id)}/verify`, { method: 'POST' }),
+      /** Returns the whole list (old and new primary changed). */
+      makePrimary: (storeId: string, id: string) => request<StoreDomain[]>(`${store(storeId)}/domains/${enc(id)}/primary`, { method: 'POST' }),
+      /** 204; when it was the primary, the slug platform address becomes primary again. */
+      remove: (storeId: string, id: string) => request<void>(`${store(storeId)}/domains/${enc(id)}`, { method: 'DELETE' }),
     },
 
     /** Phase 5a §3.8 go-live. Publish → 409 `launch_blocked` with `details.<item_key>`. */

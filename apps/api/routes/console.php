@@ -30,3 +30,8 @@ Schedule::command('webhooks:prune')->daily();
 // Phase 5b-3: couriers (P5B-38 poll every 15 min, P5B-33 unknown booking outcomes every 2 min).
 Schedule::command('couriers:sync')->everyFifteenMinutes()->withoutOverlapping();
 Schedule::command('couriers:reconcile-bookings')->everyTwoMinutes()->withoutOverlapping();
+
+// Phase 6: custom domains (PHASE-6 §2.2, §11; discovery on the platform connection, one tenant job each).
+Schedule::command('domains:check')->everyMinute()->withoutOverlapping();
+Schedule::command('domains:reconcile-provider')->dailyAt('03:30')->timezone('Asia/Dhaka')->withoutOverlapping()
+    ->when(fn () => ! config('domains.fake'));

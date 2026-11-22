@@ -169,6 +169,20 @@ jobs:
       - name: security
         run: php artisan test --group=security
 
+      # Phase 6 (PHASE-6-CONTRACT §10, §12.2): the `domains` group must exist and pass on sqlite, and the committed
+      # Public Suffix List snapshot must be present (HostnameInput never downloads it at runtime or in CI).
+      - name: domains group + PSL snapshot
+        run: |
+          psl=resources/data/public_suffix_list.dat
+          [ -s "$psl" ] || { echo "::error::$psl missing (php artisan domains:update-psl, then commit it)"; exit 1; }
+          grep -q '===BEGIN ICANN DOMAINS===' "$psl" || { echo "::error::$psl is not a Public Suffix List"; exit 1; }
+          grep -q '===BEGIN PRIVATE DOMAINS===' "$psl" || { echo "::error::$psl lacks the private section (P6-4)"; exit 1; }
+          mkdir -p build
+          php artisan test --group=domains --log-junit build/domains.xml
+          ran=$(grep -o 'tests="[0-9]*"' build/domains.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "domains tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'domains'"; exit 1; }
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -260,6 +274,13 @@ jobs:
           DB_DATABASE: storeplix_test
           # Per-test in-memory cache, as locally: the job's Redis cache is never reset between tests, so
           # rate-limit counters piled up and later tests got 429. The race tests (shared Redis) run in api-perf.
+          CACHE_STORE: array
+      # Phase 6: partial unique primary, CHECK constraints, timestamptz conversion only behave for real on Postgres.
+      - name: domains (postgres)
+        run: php artisan test --group=domains --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
           CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
@@ -373,7 +394,9 @@ jobs:
             test_plan_limit_race \
             test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
             test_concurrent_ipn_and_return_apply_the_payment_once \
-            test_concurrent_bookings_create_one_shipment; do
+            test_concurrent_bookings_create_one_shipment \
+            test_concurrent_make_primary_keeps_one_primary \
+            test_concurrent_remove_and_make_primary_do_not_deadlock; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -570,10 +593,16 @@ jobs:
             test_plan_limit_race \
             test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
             test_concurrent_ipn_and_return_apply_the_payment_once \
-            test_concurrent_bookings_create_one_shipment; do
+            test_concurrent_bookings_create_one_shipment \
+            test_concurrent_make_primary_keeps_one_primary \
+            test_concurrent_remove_and_make_primary_do_not_deadlock; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
+      # Phase 6 (PHASE-6-CONTRACT §10, §12.2): definer functions sp_domain_claim_state / sp_domain_allowed (B17, B18),
+      # the `ask` endpoint, domains:check discovery and the domain isolation tests with RLS on.
+      - name: domains (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" domains lenient --group=domains --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

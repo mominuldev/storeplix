@@ -1,7 +1,8 @@
 import 'server-only';
 import { cache } from 'react';
-import { notFound } from 'next/navigation';
-import { getRequestHost } from './request-host';
+import { notFound, permanentRedirect } from 'next/navigation';
+import { getRedirectablePath, getRequestHost } from './request-host';
+import { primaryRedirectTarget } from './primary-host';
 import { getPreviewToken } from './preview';
 import { storeMode, type StoreMode } from './store-mode';
 
@@ -30,11 +31,33 @@ export const findCurrentStore = cache(async (): Promise<CurrentStore | null> => 
   return { host, mode: storeMode(result.config), config: result.config, theme, themeConfig };
 });
 
-/** Current store or the branded "Store not found" 404. */
+/**
+ * Current store or the branded "Store not found" 404. Every page, layout and generateMetadata of the
+ * (store) segment goes through here, so a non-primary host is permanently redirected (308) to the
+ * same path + query on the primary before anything renders (PHASE-6-CONTRACT P6-15, §7).
+ */
 export async function requireCurrentStore(): Promise<CurrentStore> {
   const store = await findCurrentStore();
   if (!store) notFound();
+  await redirectToPrimaryIfNeeded(store);
   return store;
+}
+
+/** Absolute URL on the primary host for this GET/HEAD request, or null = serve it here. */
+export async function primaryRedirectFor(store: CurrentStore): Promise<string | null> {
+  if (!store.config.store.redirect_host) return null;
+  return primaryRedirectTarget({
+    redirectHost: store.config.store.redirect_host,
+    requestHost: store.host,
+    preview: store.mode === 'preview',
+    path: await getRedirectablePath(),
+  });
+}
+
+/** 308 to the primary host when the API set `redirect_host` and this is a GET/HEAD page request. */
+export async function redirectToPrimaryIfNeeded(store: CurrentStore): Promise<void> {
+  const target = await primaryRedirectFor(store);
+  if (target) permanentRedirect(target);
 }
 
 export function storeCssVars(store: CurrentStore) {

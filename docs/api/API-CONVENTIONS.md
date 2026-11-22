@@ -118,6 +118,20 @@ Reused codes: `payment_method_unavailable` (checkout and `orders/pay` with a met
 - Courier area lookups that the courier refuses answer `422 validation_failed` on the offending query field, not
   `courier_rejected`.
 
+**Phase 6 codes** (PHASE-6-CONTRACT §4.0, custom domains):
+| HTTP | code | When |
+|---|---|---|
+| 404 | `domain_not_allowed` | `GET /internal/domains/allowed`: host not allowed, unknown or malformed (identical body for all) |
+| 409 | `domain_not_active` | make primary a domain that isn't `active` |
+| 409 | `platform_domain_locked` | remove or re-check a platform subdomain (`{slug}.storeplix.com`) |
+| 422 | `domain_invalid` | not a usable public hostname: syntax, scheme/path/port, IP literal, single label, a public suffix itself, special-use TLD, invalid IDN (`details.hostname`) |
+| 422 | `domain_reserved` | the platform domain or a subdomain of it, `storeplix.com`, the CNAME target, a configured reserved suffix |
+| 422 | `domain_taken` | the hostname is on this store already or held by another store and not reclaimable (PHASE-6 P6-6) |
+Reused: `feature_not_in_plan` / `plan_limit_reached` (402: `custom_domain` feature, `custom_domains` limit),
+`invalid_state_transition` (re-check a suspended domain), `unauthenticated` (`ask` without a valid key),
+`rate_limited`. The domain re-check never answers 502: resolver/provider errors are recorded on the row
+(`failure_code`) and the request still returns 200.
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
@@ -178,6 +192,9 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | Payment-link resend (`POST …/payment-links/{link}/resend`, in code) | link (tenant-prefixed cache key) | 3/hour |
 | Shipment refresh (`POST /stores/{store}/shipments/{shipment}/refresh`, in code) | shipment | 6/min |
 | Shipments sync (`POST /stores/{store}/shipments/sync`, in code) | store | 1/min |
+| `domains` (Phase 6: `POST`/`DELETE` under `/stores/{store}/domains…`) | tenant + user | 30/min |
+| Domain re-check (`POST …/domains/{domain}/verify`, in code) | domain (tenant-prefixed cache key) | 6/min **and** 30/hour |
+| `domains-ask` (`GET /internal/domains/allowed`) | request IP | 1 200/min |
 | Inline `throttle:N,1` (5b) | Laravel default signature: **the user id** (public routes: domain + IP) | gateway connect, gateway test-payment, courier connect / test / webhook-secret, `shipments/bulk`: 20/min; `documents/preview`, courier `pickup-stores`: 30/min; courier `areas`: 120/min; signed `documents/{document}/download`, `dev/*`: 60/min |
 Auth routes (login, register, password reset, OTP send/verify) use per-route limiters; their exact values are
 maintained in `apps/api/README.md` (the table above is indicative). Responses include `X-RateLimit-Limit`,
@@ -262,9 +279,18 @@ provider or not a charge → **404** HTML page. Redirect targets come only from 
 
 ### 10.3 Testing-only dev endpoints
 `POST /dev/payments/{payment}/expire-now`, `GET /dev/fake-gateway/{payment}` + `POST …/{pay|fail|cancel}` (signed),
-`POST /dev/shipments/{shipment}/advance`: registered **only outside production** (`APP_ENV != production`) and answer
-**404** unless `PAYMENTS_FAKE=true` (payments) or `COURIERS_FAKE=true` (shipments). They exist for e2e and local
+`POST /dev/shipments/{shipment}/advance`, and (Phase 6) `POST /dev/domains/{domain}/dns`, `…/provider`, `…/age`:
+registered **only outside production** (`APP_ENV != production`) and answer **404** unless `PAYMENTS_FAKE=true`
+(payments), `COURIERS_FAKE=true` (shipments) or `DOMAINS_FAKE=true` (domains; PHASE-6-CONTRACT §4.4). They exist for e2e and local
 work, are never linked from the apps, and are **not** part of `openapi.yaml`.
+### 10.4 Internal endpoints (Phase 6)
+`/api/v1/internal/*` is server-to-server only and must not be routed by the public Nginx (RUNBOOK §9). Today:
+`GET /internal/domains/allowed?domain={host}&key={DOMAINS_ASK_KEY}` (Caddy on-demand TLS `ask`, PHASE-6 P6-17): 200
+`{data:{allowed:true}}` or 404 `domain_not_allowed`; bad/missing key → 401 `unauthenticated`. The key is a query
+parameter only because Caddy can't send headers; access logs for this path must drop the query string. No tenant
+header, no session, `Cache-Control: no-store`. Cloudflare for SaaS is poll-only in Phase 6: there is no
+`/webhooks/cloudflare/*` route (OPEN-QUESTIONS Q74).
+
 **Outbound** (Phase 8, Developer section): events `order.created|updated|paid|cancelled`, `product.*`, `inventory.low`,
 `customer.created`. Body `{ id, type, created_at, tenant_id, data }`. Headers `X-StorePlix-Event`, `X-StorePlix-Delivery`,
 `X-StorePlix-Signature: t=<unix>,v1=<hex hmac_sha256(secret, t + "." + body)>`; receivers reject if |now − t| > 300 s.

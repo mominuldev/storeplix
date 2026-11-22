@@ -29,6 +29,7 @@ const BrandStylePage = lazy(() => import('./online-store/BrandStylePage').then((
 const NavigationPage = lazy(() => import('./online-store/navigation/NavigationPage').then((m) => ({ default: m.NavigationPage })));
 const OverviewPage = lazy(() => import('./online-store/OverviewPage').then((m) => ({ default: m.OverviewPage })));
 const PagesPage = lazy(() => import('./online-store/pages/PagesPage').then((m) => ({ default: m.PagesPage })));
+const DomainsPage = lazy(() => import('./online-store/domains/DomainsPage'));
 const SeoPage = lazy(() => import('./online-store/SeoPage').then((m) => ({ default: m.SeoPage })));
 const ThemesPage = lazy(() => import('./online-store/ThemesPage').then((m) => ({ default: m.ThemesPage })));
 const ThemeEditorPage = lazy(() => import('./online-store/editor/ThemeEditorPage'));
@@ -65,7 +66,7 @@ const LivePage = lazy(() => import('./onboarding/LivePage'));
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 
 /** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
-const onlineStoreRoutes = ['/online-store', '/online-store/seo'];
+const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
@@ -152,6 +153,8 @@ export function AppRoutes() {
                   </Suspense>
                 }
               />
+              <Route path="/online-store/domains" element={lazyEl(<DomainsPage />)} />
+              <Route path="/online-store/domains/:domainId" element={lazyEl(<DomainsPage />)} />
               <Route
                 path="/online-store/seo"
                 element={

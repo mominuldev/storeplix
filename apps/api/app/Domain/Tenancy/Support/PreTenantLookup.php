@@ -60,6 +60,52 @@ class PreTenantLookup
         return $row === null ? null : ['invitation_id' => (string) $row->id, 'tenant_id' => (string) $row->tenant_id];
     }
 
+    /**
+     * B17 (Phase 6, P6-6): who holds a hostname, across tenants (add-domain uniqueness and reclaim). Ids only.
+     *
+     * @return array{tenant_id: string, store_id: string, domain_id: string, status: string, status_changed_at: string|null, unproven_since: string|null}|null
+     */
+    public function domainClaimState(string $host): ?array
+    {
+        if ($this->rls->enabled()) {
+            $row = DB::selectOne('select tenant_id, store_id, domain_id, status, status_changed_at, unproven_since from sp_domain_claim_state(?)', [$host]);
+
+            return $row === null ? null : [
+                'tenant_id' => trim((string) $row->tenant_id), 'store_id' => trim((string) $row->store_id),
+                'domain_id' => trim((string) $row->domain_id), 'status' => (string) $row->status,
+                'status_changed_at' => $row->status_changed_at !== null ? (string) $row->status_changed_at : null,
+                'unproven_since' => $row->unproven_since !== null ? (string) $row->unproven_since : null,
+            ];
+        }
+
+        $row = StoreDomain::withoutTenancy()->where('hostname', $host)->first(['id', 'tenant_id', 'store_id', 'status', 'status_changed_at', 'unproven_since']);
+
+        return $row === null ? null : [
+            'tenant_id' => (string) $row->tenant_id, 'store_id' => (string) $row->store_id, 'domain_id' => (string) $row->id,
+            'status' => (string) $row->status, 'status_changed_at' => $row->status_changed_at?->toIso8601String(),
+            'unproven_since' => $row->unproven_since?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * B18 (Phase 6, P6-17): may a certificate be issued for this host? `verified` / `ssl_provisioning` / `active`
+     * custom rows and `active` platform rows of a store that is not suspended.
+     */
+    public function domainAllowed(string $host): bool
+    {
+        if ($this->rls->enabled()) {
+            return (bool) DB::selectOne('select sp_domain_allowed(?) as allowed', [$host])?->allowed;
+        }
+
+        $domain = StoreDomain::withoutTenancy()->where('hostname', $host)
+            ->where(fn ($q) => $q->where('status', StoreDomain::STATUS_ACTIVE)->orWhere(fn ($c) => $c->where('type', StoreDomain::TYPE_CUSTOM)
+                ->whereIn('status', [StoreDomain::STATUS_VERIFIED, StoreDomain::STATUS_SSL_PROVISIONING])))
+            ->first(['tenant_id', 'store_id']);
+
+        return $domain !== null && Store::withoutTenancy()->whereKey($domain->store_id)->where('tenant_id', $domain->tenant_id)
+            ->where('status', '!=', Store::STATUS_SUSPENDED)->exists();
+    }
+
     /** B5 / P5B-8: store slugs are unique across all tenants. */
     public function storeSlugTaken(string $slug): bool
     {

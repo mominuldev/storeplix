@@ -112,6 +112,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=notifications --tries=3 --backoff=10,60 --timeout=60', 'queue-notifications');
         // Phase 5b-4: PDF rendering (mirrors compose `queue-documents`, PHASE-5B §17).
         DevCommands::artisan('queue:listen --queue=documents --tries=2 --timeout=150', 'queue-documents');
+        // Phase 6: custom domain checks (mirrors compose `queue-domains`, PHASE-6 §11).
+        DevCommands::artisan('queue:listen --queue=domains --tries=3 --timeout=90', 'queue-domains');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }

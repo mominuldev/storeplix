@@ -113,6 +113,9 @@ IX(status). IX(owner_user_id).
 id PK · code varchar(40) **U** · name · price_amount bigint · currency char(3) · interval varchar(16)
 `CHECK IN ('month','year')` · trial_days smallint · limits jsonb (`{"products":100,"staff":2,"custom_domain":true,...}`) ·
 features jsonb · is_active boolean · sort smallint · timestamps.
+As built: `limits` keys `orders_per_month`, `staff_seats`, `products`, `courier_connections`, `sms_per_month`, and from
+Phase 6 `custom_domains` (Free 0, Starter 2, Growth 5; migration `2026_07_01_000300`); `custom_domain` is a **feature**
+(Starter+), not a limit.
 
 ### themes (platform registry mirror)
 id PK · code varchar(40) **U** (`classic`, `minimal`) · name · latest_version varchar(16) · is_active ·
@@ -139,12 +142,26 @@ can be enabled later by dropping `U(tenant_id)`.
 `CHECK (slug ~ '^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$')`.
 
 ### store_domains
-id PK · tenant_id · store_id FK(t) stores CASCADE · hostname varchar(253) (normalized) · type
+Phase 1 built a minimal table (id, tenant_id, store_id FK(t) CASCADE, hostname **U**, type, status, is_primary,
+verification_token, verified_at, timestamps; RLS forced since 5b-1). **Phase 6** (PHASE-6-CONTRACT §3.1, migration
+`2026_07_01_000100_extend_store_domains`, forward-only) brings it to:
+
+id PK · tenant_id · store_id FK(t) stores CASCADE · hostname varchar(253) (lowercase ASCII/punycode, no trailing dot;
+CHECK `hostname = lower(hostname)`) · display_hostname varchar(253) null (Unicode, informational) · type
 `CHECK IN ('platform','custom')` · is_primary boolean · status `CHECK IN ('pending_verification','verification_failed','verified','ssl_provisioning','active','expired','suspended')` ·
-verification_token varchar(64) · verification_method `CHECK IN ('txt','cname','http')` · verified_at, ssl_issued_at,
-ssl_expires_at, last_checked_at timestamptz null · check_attempts int default 0 · failure_reason varchar(255) null ·
-provider_hostname_id varchar(64) null (Cloudflare custom hostname id) · timestamps.
-**U(hostname)** (global — one host maps to one store). Partial **U(store_id) WHERE is_primary**. IX(status, last_checked_at).
+verification_token varchar(64) (52-char base32; CHECK `type = 'platform' OR verification_token IS NOT NULL`) ·
+verification_started_at, verified_at, activated_at, status_changed_at, last_checked_at, next_check_at, first_failed_at
+timestamptz null · check_attempts int default 0 · failure_code varchar(48) null · failure_message varchar(255) null ·
+last_check jsonb null (per-record DNS observations, resolver outcome; no secrets) · provider varchar(16) null
+`CHECK IN ('cloudflare','fake')` · provider_hostname_id varchar(64) null (Cloudflare custom hostname id) ·
+provider_status, ssl_status varchar(32) null (raw provider values) · created_by FK users nullOnDelete · timestamps
+(timestamptz). CHECK `type = 'custom' OR status = 'active'`; CHECK `NOT is_primary OR status = 'active'`.
+**U(hostname)** (global — one host maps to one store). Partial **U(store_id) WHERE is_primary**. `U(tenant_id, id)`,
+`U(tenant_id, store_id, id)`. Partial U(provider_hostname_id) WHERE not null. `IX(next_check_at) WHERE next_check_at
+IS NOT NULL` (platform scheduler, read only via `pgsql_admin`; deliberate exception to tenant-led indexes).
+`IX(tenant_id, store_id, type)`. Pre-tenant lookups: `sp_resolve_host` (storefront, `active` only),
+`sp_domain_claim_state` (add/reclaim), `sp_domain_allowed` (`ask` endpoint). The verification method is always TXT
+(ownership) + CNAME/flattened (routing); Cloudflare's own DCV is HTTP and not stored. No soft deletes.
 
 ### store_settings (1:1 store)
 id PK · tenant_id · store_id FK(t) **U** · contact_email citext null · contact_phone · address jsonb ·

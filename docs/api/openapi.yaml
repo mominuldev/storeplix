@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.6.1
+  version: 1.7.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -20,6 +20,11 @@ info:
     one signed SSLCommerz return URL (`r` optional); payment webhooks never 401, courier webhooks 401 `unauthenticated`;
     exchange `send_payment_link` = `custom` link for the goods price difference. Testing-only `/dev/*` routes are not part of
     this spec (API-CONVENTIONS §10.3). Limiters and 5b error codes: API-CONVENTIONS §3, §8, §10.
+    1.7.0 (2026-11-22, Phase 6, PHASE-6-CONTRACT.md): additive only. New tags domains and internal; merchant domain
+    endpoints under /stores/{store}/domains (list, add, show, re-check, make primary, remove); internal
+    GET /internal/domains/allowed (Caddy `ask` allowlist); StorefrontConfig.store.redirect_host (P6-15); LimitKey gains
+    custom_domains. New error codes domain_invalid, domain_reserved, domain_taken (422), domain_not_active,
+    platform_domain_locked (409), domain_not_allowed (404). Testing-only /dev/domains/* routes are not part of this spec.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -59,6 +64,10 @@ tags:
   description: 'Phase 5b: returns and exchanges (PHASE-5B §4.9)'
 - name: webhooks
   description: 'Phase 5b: public payment returns and provider webhooks (PHASE-5B §4.3)'
+- name: domains
+  description: 'Phase 6: custom domains (PHASE-6 §4.1)'
+- name: internal
+  description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
   /health:
     get:
@@ -8269,6 +8278,281 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/domains:
+    get:
+      tags:
+      - domains
+      summary: List the store's domains
+      operationId: listDomains
+      description: Domains (PHASE-6 §4.1). Reads O A S. Platform rows first, then custom rows by `created_at`. `meta` carries the CNAME target, the TXT prefix and the plan state for the Connect button.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoreDomain'
+                  meta:
+                    $ref: '#/components/schemas/DomainListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - domains
+      summary: Connect a custom domain
+      operationId: addDomain
+      description: Domains (PHASE-6 §4.1, P6-4–P6-7). Writes O A (`ManageDomains`). Normalises the hostname (IDN → punycode, PSL), checks reserved and taken hosts (a stale `verification_failed`/`expired` row of another store older than 7 days is released first, P6-6), gates on the `custom_domain` feature and the `custom_domains` limit, creates a `pending_verification` row with its DNS records and queues the first check. Throttle `domains` (30/min per tenant + user).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddDomainInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (custom_domain) or `plan_limit_reached` (custom_domains)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`domain_invalid`, `domain_reserved`, `domain_taken` or `validation_failed` (details.hostname)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/domains/{domain}:
+    parameters:
+    - $ref: '#/components/parameters/DomainPath'
+    get:
+      tags:
+      - domains
+      summary: Show a domain with its DNS records and last check
+      operationId: getDomain
+      description: Domains (PHASE-6 §4.1). Reads O A S.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - domains
+      summary: Remove a custom domain
+      operationId: removeDomain
+      description: Domains (PHASE-6 §4.1, P6-8, P6-14). Writes O A. Stops routing at once; the Cloudflare custom hostname is deleted by a job. Removing the primary moves the primary back to the store's platform subdomain. Platform rows → 409 `platform_domain_locked`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`platform_domain_locked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/domains/{domain}/verify:
+    parameters:
+    - $ref: '#/components/parameters/DomainPath'
+    post:
+      tags:
+      - domains
+      summary: Check the domain now (re-check)
+      operationId: recheckDomain
+      description: Domains (PHASE-6 §2, §4.1). Writes O A. Runs the check for the current status synchronously and returns the updated row; from `verification_failed` or `expired` it first moves to `pending_verification` with a new 72 h window. Resolver or provider errors are recorded on the row (`failure_code` `dns_error` / `provider_error`) and still answer 200 (never 502). In-code limit 6/min and 30/hour per domain → 429 with `retry_after`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`platform_domain_locked` (platform row) or `invalid_state_transition` (suspended)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/domains/{domain}/primary:
+    parameters:
+    - $ref: '#/components/parameters/DomainPath'
+    post:
+      tags:
+      - domains
+      summary: Make this domain the primary
+      operationId: makeDomainPrimary
+      description: Domains (PHASE-6 P6-8, P6-15). Writes O A. Only an `active` domain (custom or platform). Demotes the old primary and promotes this one in one transaction, then revalidates every host of the store; when the primary is a custom domain, every other host permanently redirects to it. A custom domain needs the `custom_domain` feature (402). Returns the whole list.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoreDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (custom_domain)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`domain_not_active`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /internal/domains/allowed:
+    get:
+      tags:
+      - internal
+      summary: May a certificate be issued for this host? (Caddy on-demand TLS `ask`)
+      operationId: domainAllowed
+      description: 'Internal allowlist (PHASE-6 P6-17, roadmap 6.5). Server-to-server only, never exposed through the public Nginx. No tenant header, no session. 200 only for a host whose row is `verified`, `ssl_provisioning` or `active` (custom) or `active` (platform) in a store that is not suspended; every other host (unknown, malformed, pending, failed, expired, suspended) → 404 `domain_not_allowed` with a byte-identical body. The key is a query parameter because Caddy''s `ask` cannot send headers; it is never logged. Throttle `domains-ask` 1 200/min per IP. `Cache-Control: no-store`.'
+      security: []
+      parameters:
+      - in: query
+        name: domain
+        required: true
+        schema:
+          type: string
+          maxLength: 253
+      - in: query
+        name: key
+        required: true
+        schema:
+          type: string
+        description: DOMAINS_ASK_KEY (constant-time compare; empty server config → always 401)
+      responses:
+        '200':
+          description: Allowed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DomainAllowed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          description: '`domain_not_allowed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
     GatewayProviderPath:
@@ -8456,6 +8740,13 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: ULID; must belong to the X-Tenant-Id tenant, else 404 `not_found`.
+    DomainPath:
+      in: path
+      name: domain
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: store_domains.id of this store, else 404 `not_found`
     PagePath:
       in: path
       name: page
@@ -8806,6 +9097,244 @@ components:
       - active
       - expired
       - suspended
+    DomainType:
+      type: string
+      enum:
+      - platform
+      - custom
+    DomainFailureCode:
+      type: string
+      description: PHASE-6 §2.4. Clients must tolerate new values.
+      enum:
+      - txt_missing
+      - txt_mismatch
+      - cname_missing
+      - cname_mismatch
+      - dns_error
+      - verification_timeout
+      - provider_error
+      - provider_blocked
+      - provider_moved
+      - ssl_validation_failed
+      - ssl_timeout
+      - ssl_lost
+      - suspended
+    DnsRecordStatus:
+      type: string
+      enum:
+      - pending
+      - ok
+      - missing
+      - mismatch
+    DomainSslStatus:
+      type: string
+      enum:
+      - none
+      - pending
+      - active
+      - failed
+    DomainDnsRecord:
+      type: object
+      required:
+      - purpose
+      - type
+      - name
+      - name_relative
+      - value
+      - status
+      - found
+      properties:
+        purpose:
+          type: string
+          enum:
+          - ownership
+          - routing
+        type:
+          type: string
+          enum:
+          - TXT
+          - CNAME
+        name:
+          type: string
+          description: FQDN, e.g. `_storeplix-verify.shop.acme.com`
+        name_relative:
+          type: string
+          description: Relative to the registrable domain (`@`, `shop`, `_storeplix-verify.shop`)
+        value:
+          type: string
+          description: '`sp-verify=<token>` (TXT) or the CNAME target'
+        status:
+          $ref: '#/components/schemas/DnsRecordStatus'
+        found:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            maxLength: 255
+          description: Values the resolvers returned at the last check
+    StoreDomain:
+      type: object
+      description: PHASE-6 §6. Never exposes provider ids or raw provider statuses.
+      required:
+      - id
+      - hostname
+      - display_hostname
+      - type
+      - status
+      - is_primary
+      - is_apex
+      - routable
+      - dns_records
+      - ssl_status
+      - verification_started_at
+      - verified_at
+      - activated_at
+      - status_changed_at
+      - last_checked_at
+      - next_check_at
+      - deadline_at
+      - failure_code
+      - failure_message
+      - can_recheck
+      - can_make_primary
+      - can_remove
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        hostname:
+          type: string
+          maxLength: 253
+          description: Lowercase ASCII (punycode), no trailing dot
+        display_hostname:
+          type: string
+          description: Unicode form for display
+        type:
+          $ref: '#/components/schemas/DomainType'
+        status:
+          $ref: '#/components/schemas/DomainStatus'
+        is_primary:
+          type: boolean
+        is_apex:
+          type: boolean
+        routable:
+          type: boolean
+          description: status `active` and the store is not suspended
+        dns_records:
+          type: array
+          description: Empty for platform rows
+          items:
+            $ref: '#/components/schemas/DomainDnsRecord'
+        ssl_status:
+          $ref: '#/components/schemas/DomainSslStatus'
+        verification_started_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        verified_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        activated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status_changed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_checked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        next_check_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        deadline_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: The 72 h / 24 h / 7-day deadline that applies now
+        failure_code:
+          oneOf:
+          - $ref: '#/components/schemas/DomainFailureCode'
+          - type: 'null'
+        failure_message:
+          type:
+          - string
+          - 'null'
+          maxLength: 255
+        can_recheck:
+          type: boolean
+        can_make_primary:
+          type: boolean
+        can_remove:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AddDomainInput:
+      type: object
+      required:
+      - hostname
+      additionalProperties: false
+      properties:
+        hostname:
+          type: string
+          maxLength: 300
+          description: Bare hostname (Unicode or ASCII); no scheme, path or port
+          example: shop.acme.com
+    DomainListMeta:
+      type: object
+      required:
+      - cname_target
+      - txt_prefix
+      - can_add
+      - feature_enabled
+      - limit
+      properties:
+        cname_target:
+          type: string
+          example: customers.storeplix.com
+        txt_prefix:
+          type: string
+          example: _storeplix-verify
+        can_add:
+          type: boolean
+        feature_enabled:
+          type: boolean
+        limit:
+          type: object
+          required:
+          - used
+          - max
+          properties:
+            used:
+              type: integer
+            max:
+              type:
+              - integer
+              - 'null'
+    DomainAllowed:
+      type: object
+      required:
+      - allowed
+      properties:
+        allowed:
+          type: boolean
+          const: true
     Store:
       type: object
       required:
@@ -9033,6 +9562,14 @@ components:
             primary_host:
               type: string
               description: Canonical host (store_domains.is_primary); used for canonical URLs, sitemap and robots.
+            redirect_host:
+              type:
+              - string
+              - 'null'
+              description: Phase 6 (P6-15). The primary host, set only when the request host (X-Storefront-Host) is not the
+                primary, the request is not a valid preview, and the primary or the request host is a custom domain (platform
+                hosts never redirect to a platform primary); the storefront then permanently redirects GET page requests to the
+                same path on this host (308; robots/sitemap 301). Optional on the wire for rolling deploys.
             status:
               type: string
               enum:
@@ -9926,6 +10463,7 @@ components:
       - products
       - courier_connections
       - sms_per_month
+      - custom_domains
     Plan:
       type: object
       required:

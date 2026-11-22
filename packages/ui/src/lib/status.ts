@@ -80,3 +80,28 @@ export const shipmentStatusMeta: Record<ShipmentStatus, { label: string; tone: B
   cancelled: { label: 'Cancelled', tone: 'neutral' },
   booking_failed: { label: 'Booking failed', tone: 'danger' },
 };
+
+// Phase 6 custom domains (PHASE-6-CONTRACT §8; Figma V3 Domains 2042:47403 — "Almost there"/"Pending" warning,
+// "Live · SSL on" success). Mirrors DomainStatus / DnsRecordStatus in @storeplix/types.
+export type DomainStatusValue =
+  | 'pending_verification' | 'verification_failed' | 'verified' | 'ssl_provisioning' | 'active' | 'expired' | 'suspended';
+
+export const domainStatusMeta: Record<DomainStatusValue, { label: string; tone: BadgeTone }> = {
+  pending_verification: { label: 'Waiting for DNS', tone: 'warning' },
+  verified: { label: 'Securing', tone: 'info' },
+  ssl_provisioning: { label: 'Securing', tone: 'info' },
+  active: { label: 'Connected', tone: 'success' },
+  verification_failed: { label: 'Failed', tone: 'danger' },
+  expired: { label: 'Disconnected', tone: 'danger' },
+  suspended: { label: 'Suspended', tone: 'danger' },
+};
+
+export type DnsRecordStatusValue = 'pending' | 'ok' | 'missing' | 'mismatch';
+
+/** Per-record status chip in the DNS table (2042:48145 "Found", 2042:48171 "Not found yet"). */
+export const dnsRecordStatusMeta: Record<DnsRecordStatusValue, { label: string; tone: BadgeTone; symbol: string }> = {
+  ok: { label: 'Found', tone: 'success', symbol: '✓' },
+  pending: { label: 'Not checked yet', tone: 'neutral', symbol: '…' },
+  missing: { label: 'Not found yet', tone: 'warning', symbol: '✗' },
+  mismatch: { label: 'Doesn’t match', tone: 'danger', symbol: '≠' },
+};

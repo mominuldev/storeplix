@@ -1,0 +1,5 @@
+{"_source": "docs", "Status": 0, "TC": false, "RD": true, "RA": true, "AD": false, "CD": false,
+ "Question": [{"name": "shop.acme.com.", "type": 1}],
+ "Answer": [{"name": "shop.acme.com.", "type": 5, "TTL": 300, "data": "edge.acme.net."},
+            {"name": "edge.acme.net.", "type": 5, "TTL": 300, "data": "customers.storeplix.test."},
+            {"name": "customers.storeplix.test.", "type": 1, "TTL": 300, "data": "192.0.2.10"}]}

@@ -7,6 +7,7 @@ import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
 import { normalizeHost } from './host';
 import { previewClientIp } from './preview-client-ip';
+import { parseRedirectHost } from './primary-host';
 import { sanitizeImageUrl } from './sanitize';
 import {
   isPageSlug,
@@ -46,6 +47,8 @@ const StorefrontConfigSchema = z.object({
     }),
     // Canonical host; '' = unknown (the request host is used instead).
     primary_host: z.preprocess((v) => normalizeHost(typeof v === 'string' ? v : null) ?? '', z.string()),
+    // Phase 6 (P6-15): primary host to permanently redirect to; optional on the wire. Invalid → null.
+    redirect_host: z.unknown().optional().transform(parseRedirectHost),
   }),
   contact: nullableObject({
     phone: nullableString(32),
@@ -128,15 +131,30 @@ async function fetchStorefrontConfig(host: string, previewToken: string | null):
   const body: unknown = await res.json().catch(() => null);
   const parsed = z.object({ data: StorefrontConfigSchema }).safeParse(body);
   if (!parsed.success) throw new StorefrontApiError('Storefront API returned an invalid config payload');
-  const config = parsed.data.data;
+  return { status: 'found', config: finalizeConfig(parsed.data.data, host, previewToken) };
+}
+
+/**
+ * Request-specific fixes on a parsed config: the request host stands in for a
+ * missing primary; preview needs a token; a preview or a redirect to the request host itself never
+ * redirects (no loops even if the API got it wrong).
+ */
+function finalizeConfig(
+  config: z.infer<typeof StorefrontConfigSchema>,
+  host: string,
+  previewToken: string | null,
+): RawStorefrontConfig {
+  // Preview can only be granted for a request that actually carried a token (defence in depth).
+  const preview = previewToken !== null && config.preview;
+  const redirect = config.store.redirect_host;
   return {
-    status: 'found',
-    config: {
-      ...config,
-      store: { ...config.store, primary_host: config.store.primary_host || host },
-      // Preview can only be granted for a request that actually carried a token (defence in depth).
-      preview: previewToken !== null && config.preview,
+    ...config,
+    store: {
+      ...config.store,
+      primary_host: config.store.primary_host || host,
+      redirect_host: preview || redirect === host ? null : redirect,
     },
+    preview,
   };
 }
 

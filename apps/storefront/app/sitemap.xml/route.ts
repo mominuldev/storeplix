@@ -1,8 +1,8 @@
-import { findCurrentStore } from '@/lib/store';
+import { findCurrentStore, primaryRedirectFor } from '@/lib/store';
 import { getStorefrontPageIndex } from '@/lib/storefront-api';
 import { getCategoryTree, listProducts } from '@/lib/commerce-api';
 import { isIndexable } from '@/lib/seo';
-import { SITEMAP_MAX_URLS, sitemapResponse } from '@/lib/seo-files';
+import { SITEMAP_MAX_URLS, primaryRedirectResponse, sitemapResponse } from '@/lib/seo-files';
 import type { StorefrontCategory } from '@storeplix/types';
 
 export const dynamic = 'force-dynamic';
@@ -21,9 +21,14 @@ async function allProducts(host: string, room: number): Promise<Array<{ slug: st
   return out.slice(0, room);
 }
 
-/** Per-host sitemap: home, published pages, visible categories, public products; empty unless live. */
+/**
+ * Per-host sitemap: home, published pages, visible categories, public products; empty unless live.
+ * A non-primary host answers 301 to the primary's sitemap.
+ */
 export async function GET() {
   const store = await findCurrentStore();
+  const target = store ? await primaryRedirectFor(store) : null;
+  if (target) return primaryRedirectResponse(target);
   if (!store || !isIndexable(store.mode, store.config.seo)) return sitemapResponse(store);
   const [pages, tree] = await Promise.all([getStorefrontPageIndex(store.host), getCategoryTree(store.host)]);
   const categories = flatten(tree);

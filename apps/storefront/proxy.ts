@@ -10,6 +10,7 @@ import {
 } from './lib/preview-token';
 import { parseEditorOrigins } from './lib/editor-origins';
 import { isLocalDevHost } from './lib/seo';
+import { STOREFRONT_PATH_HEADER, redirectablePath } from './lib/primary-host';
 
 /**
  * Tenant resolution edge: normalize the request host, reject malformed hosts with 400, and hand
@@ -20,6 +21,10 @@ import { isLocalDevHost } from './lib/seo';
  * `sp_preview` cookie and the visitor is redirected to the same URL without the param, so the token
  * doesn't linger in the address bar, history or Referer headers. `&embed=1` (dashboard editor
  * iframe) sets the cookie `SameSite=None; Secure; Partitioned` plus `sp_embed=1`.
+ *
+ * Primary-domain redirects (PHASE-6-CONTRACT §7): the path + query of a GET/HEAD page request goes
+ * to server components in STOREFRONT_PATH_HEADER so they can rebuild the URL on the primary host.
+ * The header is always overwritten or deleted here; POSTs (Server Actions) and `/api/*` never get it.
  *
  * Framing: only responses to a request carrying `sp_preview` may be framed, and only by the exact
  * STOREFRONT_EDITOR_ORIGINS; everything else sends `frame-ancestors 'none'` + `X-Frame-Options: DENY`.
@@ -39,6 +44,9 @@ export function proxy(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(STOREFRONT_HOST_HEADER, host);
+  const path = redirectablePath(request.method, request.nextUrl.pathname, request.nextUrl.search);
+  if (path !== null) requestHeaders.set(STOREFRONT_PATH_HEADER, path);
+  else requestHeaders.delete(STOREFRONT_PATH_HEADER);
   const res = NextResponse.next({ request: { headers: requestHeaders } });
   setFramingHeaders(res, sanitizePreviewToken(request.cookies.get(PREVIEW_COOKIE)?.value) !== null);
   if (isPrivateCommercePath(request.nextUrl.pathname)) res.headers.set('Cache-Control', 'private, no-store');

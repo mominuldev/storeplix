@@ -16,6 +16,9 @@ const tabs: ({ label: string; to: string; end?: boolean } | { label: string; dis
   { label: 'Landing pages', disabled: true },
   { label: 'Navigation', to: '/online-store/navigation' },
   { label: 'Popups', disabled: true },
+  'divider',
+  // Phase 6 §8: Domains joins the section nav.
+  { label: 'Domains', to: '/online-store/domains' },
 ];
 
 const pill = 'shrink-0 rounded-md px-3.5 py-[7px] text-[13px] leading-[18px] whitespace-nowrap outline-none focus-visible:shadow-focus';

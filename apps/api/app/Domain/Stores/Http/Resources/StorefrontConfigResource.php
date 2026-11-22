@@ -12,7 +12,9 @@ use App\Domain\Shipping\Models\ShippingZone;
 use App\Domain\Shipping\ShippingService;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Models\StoreSetting;
+use App\Domain\Stores\Services\ResolvedStorefront;
 use App\Domain\Themes\Http\Resources\ThemeConfigPresenter;
 use App\Domain\Themes\Models\StoreTheme;
 use App\Domain\Themes\ThemeConfigValidator;
@@ -44,6 +46,7 @@ class StorefrontConfigResource extends JsonResource
                 'name' => $this->name,
                 'slug' => $this->slug,
                 'primary_host' => $this->primaryDomain?->hostname,
+                'redirect_host' => $this->redirectHost($request, $preview),
                 'status' => $this->status, // 'active' | 'draft' (suspended never resolves)
                 'currency' => $this->currency,
                 'logo_url' => MediaPresenter::url($settings?->logo, ['w320']),
@@ -72,6 +75,22 @@ class StorefrontConfigResource extends JsonResource
             'media' => MediaMaps::storefront(ThemeConfigValidator::mediaIds($theme)),
             'commerce' => $this->commerce($settings),
         ];
+    }
+
+    /**
+     * Phase 6 (P6-15): the primary host when the request host is not the primary, the request is not a valid preview,
+     * and the primary or the request host is a custom domain. Platform hosts never redirect to a platform primary.
+     */
+    private function redirectHost(Request $request, bool $preview): ?string
+    {
+        $resolved = $request->attributes->get(ResolveStorefront::ATTRIBUTE);
+        $primary = $this->primaryDomain;
+        if ($preview || $primary === null || ! $resolved instanceof ResolvedStorefront || $resolved->hostname === $primary->hostname) {
+            return null;
+        }
+        $requestType = StoreDomain::query()->where('store_id', $this->id)->where('hostname', $resolved->hostname)->value('type');
+
+        return $primary->type === StoreDomain::TYPE_CUSTOM || $requestType === StoreDomain::TYPE_CUSTOM ? $primary->hostname : null;
     }
 
     /** StorefrontCommerce (Phase 5 §3.2): PDP delivery box, cart and footer "Pay with". */
