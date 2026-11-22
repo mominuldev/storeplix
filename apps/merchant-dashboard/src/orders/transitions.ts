@@ -49,3 +49,10 @@ export function refundAmountError(amount: number | null, refundable: number): st
   if (amount > refundable) return `You can refund up to ${formatBdt(refundable)}.`;
   return null;
 }
+
+/** P5B-60: items can change before shipping, never while a courier parcel is active (Q56). */
+export const ITEM_EDIT_STATUSES: Order['status'][] = ['pending', 'confirmed', 'ready_to_ship'];
+export function activeCourierShipment(order: Order) {
+  const s = order.shipment;
+  return s && s.provider !== 'manual' && s.status !== 'cancelled' && s.status !== 'booking_failed' ? s : null;
+}

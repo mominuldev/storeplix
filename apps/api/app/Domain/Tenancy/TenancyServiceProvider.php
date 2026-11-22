@@ -7,6 +7,7 @@ use Illuminate\Auth\Events\Authenticated;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Database\Events\ConnectionEstablished;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
@@ -49,6 +50,10 @@ class TenancyServiceProvider extends ServiceProvider
 
         // New connection, reconnect, forked race child: re-apply the current tenant + user.
         Event::listen(ConnectionEstablished::class, fn (ConnectionEstablished $e) => $rls()->connected($e->connection, $e->connectionName));
+
+        // QA 5b-1 F-L1: a rollback (or rollback to a savepoint) restores the GUC values of the transaction start, e.g.
+        // `set(A)` inside a transaction that then rolls back. Re-apply the current state so it never drifts.
+        Event::listen(TransactionRolledBack::class, fn (TransactionRolledBack $e) => $rls()->rolledBack($e->connectionName));
 
         // B2: app.user_id follows the signed-in user (session guard events; SetDatabaseUser covers auth:sanctum).
         Event::listen(Authenticated::class, fn (Authenticated $e) => $rls()->setUser((string) $e->user->getAuthIdentifier()));

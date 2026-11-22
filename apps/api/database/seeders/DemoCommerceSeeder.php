@@ -8,9 +8,12 @@ use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Geo\AddressValidator;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Notifications\OrderNotifier;
 use App\Domain\Orders\OrderPlacementService;
 use App\Domain\Orders\OrderService;
+use App\Domain\Returns\Models\ReturnRequest;
+use App\Domain\Returns\ReturnService;
 use App\Domain\Shipping\Models\PickupLocation;
 use App\Domain\Shipping\ShippingService;
 use App\Domain\Stores\Models\Store;
@@ -20,7 +23,8 @@ use Illuminate\Database\Seeder;
 
 /**
  * Phase 5a demo commerce for store "demo" (idempotent): default delivery zones, one pickup address, coupons WELCOME10
- * and FREEDELIVERY, and 6 manual orders across statuses (tagged `demo-seed`; other orders on the store are left alone).
+ * and FREEDELIVERY, 6 manual orders across statuses (tagged `demo-seed`; other orders on the store are left alone),
+ * and (5b-5) one approved return on the delivered order.
  * Orders go through the real placement / state-machine services, with notifications muted.
  */
 class DemoCommerceSeeder extends Seeder
@@ -37,7 +41,7 @@ class DemoCommerceSeeder extends Seeder
         ['bamboo-meal-set', 1, 'walk_in', 'Farhana Rahman', '01556120987', 'narayanganj', 'narayanganj-narayanganj-sadar', null, 'cancelled'],
     ];
 
-    public function run(TenantContext $context, ShippingService $shipping, CouponService $coupons, OrderPlacementService $placement, OrderService $orders, AddressValidator $addresses): void
+    public function run(TenantContext $context, ShippingService $shipping, CouponService $coupons, OrderPlacementService $placement, OrderService $orders, AddressValidator $addresses, ReturnService $returns): void
     {
         $store = Store::withoutTenancy()->where('slug', 'demo')->first();
         if ($store === null) {
@@ -46,7 +50,7 @@ class DemoCommerceSeeder extends Seeder
         $ownerId = TenantUser::query()->where('tenant_id', $store->tenant_id)->where('role', TenantUser::ROLE_OWNER)->value('user_id');
         $user = $ownerId ? User::query()->find($ownerId) : null;
 
-        $context->run($store->tenant_id, function () use ($store, $user, $shipping, $coupons, $placement, $orders, $addresses) {
+        $context->run($store->tenant_id, function () use ($store, $user, $shipping, $coupons, $placement, $orders, $addresses, $returns) {
             $shipping->provisionDefaults($store);
             if (! PickupLocation::query()->where('store_id', $store->id)->exists()) {
                 $shipping->createPickup($store, ['name' => 'Demo warehouse', 'contact_name' => 'Demo Merchant', 'contact_phone' => '01700000000',
@@ -61,45 +65,74 @@ class DemoCommerceSeeder extends Seeder
                 }
             }
 
-            if (Order::query()->where('store_id', $store->id)->whereJsonContains('tags', self::TAG)->exists()) {
-                return;
+            if (! Order::query()->where('store_id', $store->id)->whereJsonContains('tags', self::TAG)->exists()) {
+                $this->orders($store, $user, $placement, $orders, $addresses);
             }
-            OrderNotifier::muted(function () use ($store, $user, $placement, $orders, $addresses) {
-                foreach (self::ORDERS as [$slug, $quantity, $channel, $name, $phone, $district, $thana, $code, $final]) {
-                    $variant = Product::query()->where('store_id', $store->id)->where('slug', $slug)->first()?->variants()->where('is_enabled', true)->first();
-                    if ($variant === null) {
-                        continue;
-                    }
-                    $order = $placement->manual($store, [
-                        'items' => [['variant_id' => $variant->id, 'quantity' => $quantity]],
-                        'channel' => $channel,
-                        'contact' => ['name' => $name, 'phone' => '88'.$phone, 'email' => null],
-                        'address' => $addresses->snapshot(['district_code' => $district, 'thana_code' => $thana, 'address_line' => 'House 7, Road 3']),
-                        'payment_method' => 'cod',
-                        'coupon_code' => $code,
-                        'notify' => false,
-                        'user' => $user,
-                    ]);
-                    Order::query()->whereKey($order->id)->update(['tags' => json_encode([self::TAG])]);
-                    $path = match ($final) {
-                        'confirmed' => ['confirm'],
-                        'ready_to_ship' => ['confirm', 'ready'],
-                        'shipped' => ['confirm', 'ready', 'ship'],
-                        'delivered' => ['confirm', 'ship', 'deliver'],
-                        'cancelled' => ['cancel'],
-                        default => [],
-                    };
-                    foreach ($path as $step) {
-                        match ($step) {
-                            'confirm' => $orders->confirm($order, $user, false),
-                            'ready' => $orders->ready($order, $user),
-                            'ship' => $orders->ship($order, ['carrier_name' => 'Steadfast', 'tracking_code' => 'SF'.$order->sequence], $user, false),
-                            'deliver' => $orders->deliver($order, $user),
-                            'cancel' => $orders->cancel($order, 'customer_request', null, false, $user, TenantUser::ROLE_OWNER),
-                        };
-                    }
+            $this->demoReturn($store, $user, $returns);
+        });
+    }
+
+    /**
+     * Phase 5b-5: one approved return (RT-0001, 1 unit, "wrong size") on the delivered demo order. Idempotent: skipped
+     * when the store has any return.
+     */
+    private function demoReturn(Store $store, ?User $user, ReturnService $returns): void
+    {
+        if (ReturnRequest::query()->where('store_id', $store->id)->exists()) {
+            return;
+        }
+        $order = Order::query()->where('store_id', $store->id)->where('status', Order::DELIVERED)
+            ->whereJsonContains('tags', self::TAG)->orderBy('sequence')->first();
+        $item = $order ? OrderItem::query()->where('order_id', $order->id)->orderBy('position')->first() : null;
+        if ($item === null) {
+            return;
+        }
+        $return = $returns->create($order, [
+            'type' => 'return',
+            'reason' => 'wrong_size',
+            'customer_note' => 'Too small for a 2-year-old.',
+            'lines' => [['order_item_id' => $item->id, 'quantity' => 1]],
+        ], $user);
+        $returns->approve($return, 'RTN-DEMO-1', 'Customer will drop it at the Mirpur office.', $user);
+    }
+
+    private function orders(Store $store, ?User $user, OrderPlacementService $placement, OrderService $orders, AddressValidator $addresses): void
+    {
+        OrderNotifier::muted(function () use ($store, $user, $placement, $orders, $addresses) {
+            foreach (self::ORDERS as [$slug, $quantity, $channel, $name, $phone, $district, $thana, $code, $final]) {
+                $variant = Product::query()->where('store_id', $store->id)->where('slug', $slug)->first()?->variants()->where('is_enabled', true)->first();
+                if ($variant === null) {
+                    continue;
                 }
-            });
+                $order = $placement->manual($store, [
+                    'items' => [['variant_id' => $variant->id, 'quantity' => $quantity]],
+                    'channel' => $channel,
+                    'contact' => ['name' => $name, 'phone' => '88'.$phone, 'email' => null],
+                    'address' => $addresses->snapshot(['district_code' => $district, 'thana_code' => $thana, 'address_line' => 'House 7, Road 3']),
+                    'payment_method' => 'cod',
+                    'coupon_code' => $code,
+                    'notify' => false,
+                    'user' => $user,
+                ]);
+                Order::query()->whereKey($order->id)->update(['tags' => json_encode([self::TAG])]);
+                $path = match ($final) {
+                    'confirmed' => ['confirm'],
+                    'ready_to_ship' => ['confirm', 'ready'],
+                    'shipped' => ['confirm', 'ready', 'ship'],
+                    'delivered' => ['confirm', 'ship', 'deliver'],
+                    'cancelled' => ['cancel'],
+                    default => [],
+                };
+                foreach ($path as $step) {
+                    match ($step) {
+                        'confirm' => $orders->confirm($order, $user, false),
+                        'ready' => $orders->ready($order, $user),
+                        'ship' => $orders->ship($order, ['carrier_name' => 'Steadfast', 'tracking_code' => 'SF'.$order->sequence], $user, false),
+                        'deliver' => $orders->deliver($order, $user),
+                        'cancel' => $orders->cancel($order, 'customer_request', null, false, $user, TenantUser::ROLE_OWNER),
+                    };
+                }
+            }
         });
     }
 }

@@ -8,4 +8,5 @@ return [
     'order_confirmed' => '{shop}: আপনার অর্ডার {number} কনফার্ম হয়েছে।',
     'order_shipped' => '{shop}: অর্ডার {number} {carrier} এর মাধ্যমে পাঠানো হয়েছে। {due} টাকা প্রস্তুত রাখুন। ট্র্যাক: {track_url}',
     'order_cancelled' => '{shop}: অর্ডার {number} বাতিল করা হয়েছে।',
+    'order_updated' => '{shop}: আপনার অর্ডার {number} আপডেট হয়েছে। নতুন মোট {total} টাকা, ডেলিভারির সময় দিতে হবে {due} টাকা।',
 ];

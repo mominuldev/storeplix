@@ -60,6 +60,8 @@ class UpdateStoreSettingsRequest extends FormRequest
             $in['order_prefix'] = strtoupper(trim($in['order_prefix']));
         }
 
+        $trim('tax', 'bin', fn ($v) => $v === '' ? null : $v);
+        $trim('invoice', 'footer', fn ($v) => $v === '' ? null : $v);
         $trim('seo', 'title', fn ($v) => $v === '' ? null : $v);
         $trim('seo', 'description', fn ($v) => $v === '' ? null : $v);
 
@@ -69,7 +71,10 @@ class UpdateStoreSettingsRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return ['order_prefix.regex' => 'Use 1–6 letters (A–Z).'];
+        return [
+            'order_prefix.regex' => 'Use 1–6 letters (A–Z).',
+            'tax.bin.regex' => 'Enter the 9-digit BIN (or 9 digits, a dash and 4 digits).',
+        ];
     }
 
     public function rules(): array
@@ -140,8 +145,16 @@ class UpdateStoreSettingsRequest extends FormRequest
             'notifications' => ['sometimes', 'array:new_order_email,sms_language,customer_sms'],
             'notifications.new_order_email' => ['sometimes', 'boolean:strict'],
             'notifications.sms_language' => ['sometimes', 'string', 'in:bn,en'],
-            'notifications.customer_sms' => ['sometimes', 'array:order_placed,order_confirmed,order_shipped,order_cancelled'],
+            'notifications.customer_sms' => ['sometimes', 'array:order_placed,order_confirmed,order_shipped,order_cancelled,order_updated'],
             'notifications.customer_sms.*' => ['boolean:strict'],
+            // Phase 5b (P5B-56, Figma 60:16858): VAT display + BIN and the invoice footer. Display only: totals and
+            // tax_amount never change.
+            'tax' => ['sometimes', 'array:display,rate_bps,bin'],
+            'tax.display' => ['sometimes', 'string', 'in:none,included'],
+            'tax.rate_bps' => ['sometimes', 'integer:strict', 'min:0', 'max:2500'],
+            'tax.bin' => ['sometimes', 'nullable', 'string', 'regex:/^[0-9]{9}(-[0-9]{4})?$/'],
+            'invoice' => ['sometimes', 'array:footer'],
+            'invoice.footer' => ['sometimes', 'nullable', 'string', 'max:300', 'regex:/^[^\x00-\x09\x0B-\x1F\x7F]*$/u'],
         ];
     }
 

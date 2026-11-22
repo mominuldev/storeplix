@@ -1,11 +1,11 @@
-import type { CustomerSmsEvent, StoreSettings } from '@storeplix/types';
+import type { CustomerSmsEvent, StoreSettings, UpdateStoreSettingsInput } from '@storeplix/types';
 import { Badge, Button, cn, Input, SegmentedControl, Spinner, Toggle } from '@storeplix/ui';
 import { Banknote, CreditCard, Mail, Wallet } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock } from '../catalog/states';
 import { FormAlert } from '../onboarding/AuthShell';
-import { smsPreview, useSaveSettings, useStoreSettings } from './commerceSettings';
+import { smsPreview, useSaveSettings, useStoreSettings, vatIncluded } from './commerceSettings';
 import { SettingsCard } from './SettingsLayout';
 
 // Settings → Payments & checkout 60:14865, Notifications 60:15863, Taxes & invoices 60:16858 (Phase 5a parts).
@@ -158,7 +158,7 @@ export function NotificationsSettingsPage() {
   );
 }
 
-/** Taxes & invoices 60:16858: invoice numbering prefix only (VAT and footer are 5b). */
+/** Taxes & invoices 60:16858: prefix (5a) + VAT display, BIN and invoice footer (5b P5B-56). VAT on top is deferred (Q52). */
 export function InvoicesSettingsPage() {
   return <Gate>{(s) => <InvoicesForm key={s.updated_at} settings={s} />}</Gate>;
 }
@@ -195,9 +195,86 @@ function InvoicesForm({ settings }: { settings: StoreSettings }) {
           Next invoice will be <strong className="text-text-primary">{valid ? `${prefix}-${seq}` : settings.commerce.next_order_number}</strong>
         </p>
       </SettingsCard>
-      <SettingsCard title="VAT and invoice footer" description="Add VAT and a footer to printed invoices.">
-        <Badge className="self-start">Coming soon</Badge>
-      </SettingsCard>
+      <VatCard settings={settings} disabled={!canManageSettings} />
+      <FooterCard settings={settings} disabled={!canManageSettings} />
     </>
+  );
+}
+
+// `UpdateStoreSettingsInput` in @storeplix/types doesn't list `tax` / `invoice` yet; openapi 1.6.0 does.
+type TaxSettingsInput = UpdateStoreSettingsInput & {
+  tax?: { display?: 'none' | 'included'; rate_bps?: number; bin?: string | null };
+  invoice?: { footer?: string | null };
+};
+
+const BIN_RE = /^[0-9]{9}(-[0-9]{4})?$/;
+
+function VatCard({ settings, disabled }: { settings: StoreSettings; disabled: boolean }) {
+  const save = useSaveSettings('VAT settings saved.');
+  const tax = settings.commerce.tax ?? { display: 'none', rate_bps: 0, bin: null };
+  const [on, setOn] = useState(tax.display === 'included');
+  const [rate, setRate] = useState(tax.rate_bps ? String(tax.rate_bps / 100) : '5');
+  const [bin, setBin] = useState(tax.bin ?? '');
+  const rateBps = Math.round(Number(rate) * 100);
+  const rateOk = /^\d{1,2}(\.\d{1,2})?$/.test(rate.trim()) && rateBps >= 0 && rateBps <= 2500;
+  const binOk = !bin.trim() || BIN_RE.test(bin.trim());
+  const dirty = on !== (tax.display === 'included') || (on && (rateBps !== tax.rate_bps || (bin.trim() || null) !== tax.bin)) || (!on && (bin.trim() || null) !== tax.bin);
+  const sample = 225_000;
+  return (
+    <SettingsCard title="VAT" description="Only needed if your business is VAT-registered with NBR.">
+      <ToggleRow title="Show VAT on invoices" hint="Adds your BIN and a “Prices include VAT” line to every invoice." disabled={disabled}>
+        <Toggle label="Show VAT on invoices" checked={on} disabled={disabled} onChange={setOn} />
+      </ToggleRow>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input id="vat-bin" label="BIN (Business Identification Number)" placeholder="004567891-0101" value={bin} maxLength={14} disabled={disabled} error={binOk ? undefined : 'Use 9 digits, or 9 digits, a dash and 4 digits.'} onChange={(e) => setBin(e.target.value)} />
+        {on && <Input id="vat-rate" label="VAT rate (%)" inputMode="decimal" value={rate} disabled={disabled} error={rateOk ? undefined : 'Enter a rate from 0 to 25 %.'} onChange={(e) => setRate(e.target.value)} />}
+      </div>
+      {on && rateOk && (
+        <p className="rounded-md bg-surface-subtle px-3 py-2 text-body text-text-secondary">
+          Prices already include VAT. Example: a ৳ 2,250 order shows “includes VAT ৳ {(vatIncluded(sample, rateBps) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}” on the invoice. Order totals don’t change.
+        </p>
+      )}
+      {!disabled && (
+        <Button
+          className="self-start"
+          disabled={!dirty || !binOk || (on && !rateOk)}
+          loading={save.isPending}
+          onClick={() => save.mutate({ tax: on ? { display: 'included', rate_bps: rateBps, bin: bin.trim() || null } : { display: 'none', bin: bin.trim() || null } } as TaxSettingsInput)}
+        >
+          Save VAT
+        </Button>
+      )}
+    </SettingsCard>
+  );
+}
+
+function FooterCard({ settings, disabled }: { settings: StoreSettings; disabled: boolean }) {
+  const save = useSaveSettings('Invoice footer saved.');
+  const initial = settings.commerce.invoice?.footer ?? '';
+  const [footer, setFooter] = useState(initial);
+  return (
+    <SettingsCard title="Invoice footer" description="Printed at the bottom of A4 and 80 mm invoices. Bangla works.">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="invoice-footer" className="text-body font-medium text-text-primary">
+          Footer note
+        </label>
+        <textarea
+          id="invoice-footer"
+          rows={3}
+          maxLength={300}
+          disabled={disabled}
+          value={footer}
+          placeholder="ধন্যবাদ! পণ্য হাতে পেয়ে চেক করে নিন।"
+          onChange={(e) => setFooter(e.target.value)}
+          className="rounded-md border border-border-default px-3 py-2 text-body outline-none focus:border-brand-600 disabled:bg-surface-subtle"
+        />
+        <span className="text-caption text-text-muted">{footer.length}/300</span>
+      </div>
+      {!disabled && (
+        <Button className="self-start" disabled={footer === initial} loading={save.isPending} onClick={() => save.mutate({ invoice: { footer: footer.trim() || null } } as TaxSettingsInput)}>
+          Save footer
+        </Button>
+      )}
+    </SettingsCard>
   );
 }

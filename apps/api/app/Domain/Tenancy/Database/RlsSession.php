@@ -85,6 +85,22 @@ final class RlsSession
         $this->write($this->openConnection());
     }
 
+    /**
+     * TransactionRolledBack on the app connection: Postgres restored the GUCs of the (sub)transaction start; write the
+     * current TenantContext / user again. A dead connection is ignored (ConnectionEstablished re-applies on reconnect).
+     */
+    public function rolledBack(string $name): void
+    {
+        if ($name !== $this->connectionName()) {
+            return;
+        }
+        try {
+            $this->write($this->openConnection());
+        } catch (\Throwable) {
+            // the connection is broken; the next connect applies the current state
+        }
+    }
+
     /** ConnectionEstablished (new connection, reconnect, forked child): apply the current state + role check. */
     public function connected(Connection $connection, string $name): void
     {
@@ -121,6 +137,13 @@ final class RlsSession
 
         if ($app === $owner) {
             throw new RlsMisconfiguredException('TENANCY_RLS=true but DB_USERNAME is the schema owner (set DB_OWNER_USERNAME to a different role).');
+        }
+
+        // QA 5b-1 F-L3: pgsql_admin falls back to DB_USERNAME when DB_ADMIN_USERNAME is unset. Under RLS that is the
+        // app role, so console / scheduler / platform paths would silently see no rows. Refuse instead.
+        $admin = config('database.connections.'.config('tenancy.admin_connection').'.username');
+        if ($admin === $app) {
+            throw new RlsMisconfiguredException('TENANCY_RLS=true but the platform connection uses the app role (set DB_ADMIN_USERNAME to the BYPASSRLS platform role).');
         }
     }
 

@@ -63,6 +63,11 @@ use Illuminate\Support\Carbon;
  * @property string|null $created_by
  * @property string|null $ip
  * @property string|null $user_agent
+ * @property Carbon|null $payment_expires_at
+ * @property string $return_status
+ * @property string|null $source_order_id
+ * @property Carbon|null $invoice_printed_at
+ * @property Carbon|null $label_printed_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -98,11 +103,15 @@ class Order extends Model
 
     public const MAX_ITEMS = 50;
 
+    /** Post-delivery return state (P5B-68), derived by ReturnService. */
+    public const RETURN_STATUSES = ['none', 'requested', 'partially_returned', 'returned'];
+
     protected $fillable = [];
 
     protected $hidden = ['confirmation_token_hash'];
 
     protected $attributes = [
+        'return_status' => 'none',
         'payment_status' => 'unpaid', 'tags' => '[]', 'revision' => 1, 'shipping_overridden' => false,
         'subtotal_amount' => 0, 'discount_amount' => 0, 'shipping_amount' => 0, 'shipping_discount_amount' => 0,
         'tax_amount' => 0, 'total_amount' => 0, 'paid_amount' => 0, 'refunded_amount' => 0,
@@ -125,6 +134,9 @@ class Order extends Model
             'delivered_at' => 'datetime',
             'returned_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'payment_expires_at' => 'datetime',
+            'invoice_printed_at' => 'datetime',
+            'label_printed_at' => 'datetime',
         ];
         foreach (['subtotal', 'discount', 'shipping', 'shipping_discount', 'tax', 'total', 'paid', 'refunded'] as $money) {
             $casts["{$money}_amount"] = 'integer';
@@ -151,6 +163,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class)->orderBy('created_at')->orderBy('id');
+    }
+
+    public function shipments(): HasMany
+    {
+        return $this->hasMany(Shipment::class)->orderBy('created_at')->orderBy('id');
     }
 
     public function shipment(): HasOne

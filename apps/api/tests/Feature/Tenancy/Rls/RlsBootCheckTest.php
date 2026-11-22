@@ -16,13 +16,14 @@ use Tests\TestCase;
 #[Group('security')]
 class RlsBootCheckTest extends TestCase
 {
-    private function rlsOnPostgres(string $app, string $owner): RlsSession
+    private function rlsOnPostgres(string $app, string $owner, string $admin = 'storeplix_admin'): RlsSession
     {
         config([
             'tenancy.rls' => true,
             'database.default' => 'pgsql',
             'database.connections.pgsql.username' => $app,
             'database.connections.pgsql_owner.username' => $owner,
+            'database.connections.pgsql_admin.username' => $admin,
         ]);
         $this->app->detectEnvironment(fn () => 'production');
 
@@ -34,6 +35,15 @@ class RlsBootCheckTest extends TestCase
         $this->expectException(RlsMisconfiguredException::class);
 
         $this->rlsOnPostgres('storeplix_owner', 'storeplix_owner')->assertNotOwner();
+    }
+
+    /** QA 5b-1 F-L3: DB_ADMIN_USERNAME unset → pgsql_admin = the app role → platform code would see nothing. */
+    public function test_rls_with_the_app_role_as_platform_user_refuses_to_boot(): void
+    {
+        $this->expectException(RlsMisconfiguredException::class);
+        $this->expectExceptionMessage('DB_ADMIN_USERNAME');
+
+        $this->rlsOnPostgres('storeplix_app', 'storeplix_owner', 'storeplix_app')->assertNotOwner();
     }
 
     public function test_rls_with_a_separate_app_role_boots_and_reroutes_platform_queries(): void

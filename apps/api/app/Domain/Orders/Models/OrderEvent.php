@@ -33,7 +33,7 @@ class OrderEvent extends Model
 
     public const UPDATED_AT = null;
 
-    public const TYPES = ['placed', 'status_changed', 'note', 'edited', 'payment', 'refund', 'shipment', 'notification', 'coupon_released'];
+    public const TYPES = ['placed', 'status_changed', 'note', 'edited', 'payment', 'refund', 'shipment', 'notification', 'coupon_released', 'payment_link', 'items_edited', 'return', 'document'];
 
     protected $fillable = [];
 

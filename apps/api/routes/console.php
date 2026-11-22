@@ -16,3 +16,6 @@ Schedule::command('data:expire-exports')->hourly();
 Schedule::command('carts:prune')->daily();
 Schedule::command('idempotency:prune')->hourly();
 Schedule::command('orders:expire-confirmation-tokens')->daily();
+
+// Phase 5b-4: generated invoices / labels live 24 h.
+Schedule::command('documents:prune')->hourly();

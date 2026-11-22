@@ -14,6 +14,7 @@ use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Models\Shipment;
 use App\Domain\Orders\Notifications\OrderNotifier;
+use App\Domain\Returns\ReturnService;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Shared\Support\Phone;
@@ -39,6 +40,7 @@ class OrderService
         private readonly AuditLogger $audit,
         private readonly AddressValidator $addresses,
         private readonly ZoneResolver $zones,
+        private readonly ReturnService $returns,
     ) {}
 
     public function confirm(Order $order, ?User $user, ?bool $notify = null): Order
@@ -168,6 +170,60 @@ class OrderService
         }, $note);
     }
 
+    /**
+     * P5B-69: restock a courier-returned order (`returned`, no automatic restock), cumulative up to the shipped
+     * quantity. Ledger `order_returned`; one `return` event (action restock); revision++.
+     *
+     * @param  list<array{item_id: string, quantity: int}>  $lines
+     */
+    public function restock(Order $order, array $lines, ?string $note, ?User $user): Order
+    {
+        return DB::transaction(function () use ($order, $lines, $note, $user) {
+            /** @var Order $o */
+            $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if ($o->status !== Order::RETURNED) {
+                throw new ApiException(409, 'invalid_state_transition', 'Only returned orders can be restocked here.');
+            }
+            $items = OrderItem::query()->where('order_id', $o->id)->get()->keyBy('id');
+            $errors = [];
+            $wanted = [];
+            foreach ($lines as $i => $line) {
+                $item = $items[strtolower($line['item_id'])] ?? null;
+                if ($item === null) {
+                    $errors["lines.{$i}.item_id"] = ['Unknown item.'];
+
+                    continue;
+                }
+                $max = $item->quantity - $item->restocked_quantity - ($wanted[$item->id] ?? 0);
+                if ((int) $line['quantity'] > $max) {
+                    $errors["lines.{$i}.quantity"] = [$max > 0 ? "You can restock at most {$max}." : 'Everything was already restocked.'];
+
+                    continue;
+                }
+                $wanted[$item->id] = ($wanted[$item->id] ?? 0) + (int) $line['quantity'];
+            }
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
+            $ledger = [];
+            $meta = [];
+            foreach ($wanted as $itemId => $quantity) {
+                $item = $items[$itemId];
+                OrderItem::query()->whereKey($itemId)->update(['restocked_quantity' => $item->restocked_quantity + $quantity, 'updated_at' => now()]);
+                if ($item->tracked && $item->variant_id !== null) {
+                    $ledger[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity];
+                }
+                $meta[] = ['item_id' => $itemId, 'product_name' => $item->product_name, 'variant_title' => $item->variant_title, 'quantity' => $quantity];
+            }
+            $this->inventory->restock($o->store_id, $ledger, $o->id, $user?->getKey(), $note !== null ? mb_substr($note, 0, 255) : null);
+            $o->revision++;
+            $o->save();
+            OrderTimeline::record($o, 'return', $user, $note, ['action' => 'restock', 'lines' => $meta, 'units' => array_sum(array_column($meta, 'quantity'))]);
+
+            return $o;
+        });
+    }
+
     public function cancel(Order $order, string $reason, ?string $note, ?bool $notify, ?User $user, ?string $role): Order
     {
         $paid = false;
@@ -215,7 +271,11 @@ class OrderService
      * Manual refund record (P5-18). Amount ≤ paid − refunded. Idempotency-Key handled by the route middleware; the
      * payments unique key is the final guard.
      *
-     * @param  array{amount: int, method: string, reference?: string|null, note?: string|null}  $input
+     * 5b-5: `return_id` links the refund to a return of this order (P5B-66): bounded by what is left on the return,
+     * and the return moves to `refunded` when a received return is refunded in full. Gateway refunds (5b-2, method
+     * `gateway`) plug in here: same order lock, same ReturnService assert → record pair.
+     *
+     * @param  array{amount: int, method: string, reference?: string|null, note?: string|null, return_id?: string|null}  $input
      */
     public function refund(Order $order, array $input, ?string $idempotencyKey, ?User $user): Payment
     {
@@ -229,6 +289,7 @@ class OrderService
                     : 'Nothing has been paid on this order yet.';
                 throw new ApiException(422, 'refund_exceeds_paid', $message, ['amount' => [$message]]);
             }
+            $return = ($input['return_id'] ?? null) !== null ? $this->returns->assertRefundable($o, (string) $input['return_id'], (int) $input['amount']) : null;
             $charge = Payment::query()->where('order_id', $o->id)->where('type', 'charge')->where('status', 'succeeded')->orderBy('created_at')->first();
             $payment = new Payment;
             $payment->store_id = $o->store_id;
@@ -244,7 +305,11 @@ class OrderService
             $payment->parent_payment_id = $charge?->id;
             $payment->idempotency_key = $idempotencyKey;
             $payment->actor_user_id = $user?->getKey();
+            $payment->return_request_id = $return?->id;
             $payment->save();
+            if ($return !== null) {
+                $this->returns->recordRefund($return, $payment, $user);
+            }
 
             $o->refunded_amount += $payment->amount;
             $o->payment_status = $o->refunded_amount >= $o->paid_amount ? 'refunded' : 'partially_refunded';
@@ -256,7 +321,7 @@ class OrderService
                     'total_spent_amount' => DB::raw("CASE WHEN total_spent_amount >= {$amount} THEN total_spent_amount - {$amount} ELSE 0 END"),
                 ]);
             }
-            OrderTimeline::record($o, 'refund', $user, $payment->note, ['amount' => $payment->amount, 'method' => $payment->method, 'payment_id' => $payment->id]);
+            OrderTimeline::record($o, 'refund', $user, $payment->note, ['amount' => $payment->amount, 'method' => $payment->method, 'payment_id' => $payment->id] + ($return !== null ? ['return_id' => $return->id, 'return_number' => $return->number] : []));
             $this->audit->log('order.refunded', $o, ['amount' => $payment->amount, 'method' => $payment->method], $user);
 
             return $payment;

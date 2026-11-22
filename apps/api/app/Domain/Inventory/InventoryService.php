@@ -288,11 +288,13 @@ class InventoryService
     }
 
     /**
-     * Puts returned units back on hand (ledger `order_returned`).
+     * Puts returned units back on hand (ledger `order_returned`). The ledger reference is the order, or the given one
+     * (5b-5: a return request, `['type' => 'return', 'id' => …]`).
      *
      * @param  list<array{variant_id: string, quantity: int}>  $lines
+     * @param  array{type: string, id: string}|null  $reference
      */
-    public function restock(string $storeId, array $lines, string $orderId, ?string $actorId, ?string $note = null): void
+    public function restock(string $storeId, array $lines, string $orderId, ?string $actorId, ?string $note = null, ?array $reference = null): void
     {
         $lines = array_values(array_filter($lines, fn (array $l) => $l['quantity'] > 0));
         if ($lines === []) {
@@ -307,7 +309,7 @@ class InventoryService
             }
             $onHand = $row->on_hand + $quantity;
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
-            $movements[] = $this->movementRow($storeId, $variantId, $quantity, $onHand, 'order_returned', $note, 'order', $orderId, $actorId);
+            $movements[] = $this->movementRow($storeId, $variantId, $quantity, $onHand, 'order_returned', $note, $reference['type'] ?? 'order', $reference['id'] ?? $orderId, $actorId);
         }
         $this->insertMovements($movements);
     }

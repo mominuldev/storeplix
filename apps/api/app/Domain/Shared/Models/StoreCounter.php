@@ -22,7 +22,9 @@ class StoreCounter extends Model
 
     public const ORDERS = 'orders';
 
-    public const START = [self::ORDERS => 1001];
+    public const RETURNS = 'returns';
+
+    public const START = [self::ORDERS => 1001, self::RETURNS => 1];
 
     public $incrementing = false;
 

@@ -44,6 +44,7 @@ class SendOrderSms implements ShouldQueue
         public readonly string $orderId,
         public readonly string $event,
         public readonly ?string $carrier = null,
+        public readonly ?string $ref = null,
     ) {}
 
     public function handle(SmsGateway $gateway, TenantContext $context): void
@@ -52,7 +53,7 @@ class SendOrderSms implements ShouldQueue
         if ($order === null) {
             return;
         }
-        $lock = Cache::lock("order-sms:{$order->id}:{$this->event}", 120);
+        $lock = Cache::lock("order-sms:{$order->id}:{$this->event}:{$this->ref}", 120);
         if (! $lock->get()) {
             $this->release(30); // another copy is sending right now; check again later (dedupe skips it)
 
@@ -75,7 +76,7 @@ class SendOrderSms implements ShouldQueue
         $planned = DB::transaction(function () use ($order, $store, $language, $context) {
             /** @var Order $locked */
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
-            if (self::alreadySent($locked->id, $this->event)) {
+            if (self::alreadySent($locked->id, $this->event, $this->ref)) {
                 return null;
             }
             if ($locked->status === Order::CANCELLED && $this->event !== 'order_cancelled') {
@@ -128,13 +129,14 @@ class SendOrderSms implements ShouldQueue
         $message->update(['status' => 'sent', 'provider_message_id' => $result->message_id]);
         OrderTimeline::record($order, 'notification', null, 'SMS sent: '.SmsTemplates::LABELS[$this->event], [
             'channel' => 'sms', 'event' => $this->event, 'status' => 'sent', 'sms_message_id' => $message->id, 'language' => $language,
-        ]);
+        ] + ($this->ref !== null ? ['ref' => $this->ref] : []));
     }
 
-    public static function alreadySent(string $orderId, string $event): bool
+    public static function alreadySent(string $orderId, string $event, ?string $ref = null): bool
     {
         return OrderEvent::query()->where('order_id', $orderId)->where('type', 'notification')->get()
-            ->contains(fn (OrderEvent $e) => ($e->meta['channel'] ?? null) === 'sms' && ($e->meta['event'] ?? null) === $event && ($e->meta['status'] ?? null) === 'sent');
+            ->contains(fn (OrderEvent $e) => ($e->meta['channel'] ?? null) === 'sms' && ($e->meta['event'] ?? null) === $event
+                && ($e->meta['status'] ?? null) === 'sent' && ($e->meta['ref'] ?? null) === $ref);
     }
 
     public function attempts(): int

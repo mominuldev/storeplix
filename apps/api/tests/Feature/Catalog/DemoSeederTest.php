@@ -8,6 +8,7 @@ use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Media\Models\Media;
 use App\Domain\Orders\Models\Order;
+use App\Domain\Returns\Models\ReturnRequest;
 use App\Domain\Shipping\Models\PickupLocation;
 use App\Domain\Shipping\Models\ShippingZone;
 use Database\Seeders\DatabaseSeeder;
@@ -38,5 +39,8 @@ class DemoSeederTest extends TestCase
             Order::withoutTenancy()->orderBy('status')->pluck('status')->all(),
         );
         $this->assertSame(['DE-1001', 'DE-1006'], [Order::withoutTenancy()->min('number'), Order::withoutTenancy()->max('number')]);
+        // Phase 5b-5: one approved return on the delivered order
+        $this->assertSame([['RT-0001', 'approved']], ReturnRequest::withoutTenancy()->get(['number', 'status'])->map(fn ($r) => [$r->number, $r->status])->all());
+        $this->assertSame('requested', Order::withoutTenancy()->where('status', 'delivered')->value('return_status'));
     }
 }

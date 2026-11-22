@@ -38,7 +38,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
 
 function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean }) {
   const { pathname } = useLocation();
-  const inSection = item.to !== '/' && pathname.startsWith(item.to);
+  const inSection = item.to !== '/' && (pathname.startsWith(item.to) || !!item.children?.some((c) => pathname.startsWith(c.to)));
   const [expanded, setExpanded] = useState(inSection);
   const { canBulkData } = useStoreScope();
   const Icon = item.icon;

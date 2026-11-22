@@ -271,7 +271,10 @@ function SummaryRow({ label, value, className }: { label: string; value: string;
   );
 }
 
-function ProductsCard({ lines, setLines, error, issueFor }: { lines: Line[]; setLines: (fn: (l: Line[]) => Line[]) => void; error?: string; issueFor: (variantId: string) => string | null }) {
+type Variant = Product['variants'][number];
+
+/** Product search + variant pick (Create order 39:14382); reused by Edit items 144:46654. */
+export function ProductPicker({ onAdd, idPrefix = 'co' }: { onAdd: (product: Product, variant: Variant) => void; idPrefix?: string }) {
   const scope = useStoreScope();
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
@@ -286,32 +289,15 @@ function ProductsCard({ lines, setLines, error, issueFor }: { lines: Line[]; set
     queryFn: () => api.products.get(scope.storeId!, picking!),
     enabled: !!scope.storeId && !!picking,
   });
-
   const add = (p: Product, variantId: string) => {
     const v = p.variants.find((x) => x.id === variantId);
     if (!v) return;
-    setLines((ls) =>
-      ls.some((l) => l.variant_id === v.id)
-        ? ls.map((l) => (l.variant_id === v.id ? { ...l, quantity: Math.min(99, l.quantity + 1) } : l))
-        : [
-            ...ls,
-            {
-              variant_id: v.id,
-              quantity: 1,
-              product_name: p.name,
-              variant_title: v.title,
-              price_amount: v.price_amount,
-              image: p.images.find((i) => i.media_id === v.image_media_id)?.media ?? p.image,
-              available: v.track_inventory && !v.allow_backorder ? v.inventory.available : null,
-            },
-          ].slice(0, 50),
-    );
+    onAdd(p, v);
     setPicking(null);
     setSearch('');
   };
-
   return (
-    <Card title={`Products · ${lines.length}`} label="Products">
+    <>
       <div className="relative">
         <SearchBox value={search} onChange={setSearch} placeholder="Search by name or SKU" label="Search products" />
         {debounced.trim() && !picking && (
@@ -340,12 +326,38 @@ function ProductsCard({ lines, setLines, error, issueFor }: { lines: Line[]; set
           {product.isPending ? (
             <span className="text-caption text-text-muted">Loading variants…</span>
           ) : product.data ? (
-            <VariantPicker product={product.data} onPick={(id) => add(product.data!, id)} onCancel={() => setPicking(null)} />
+            <VariantPicker product={product.data} idPrefix={idPrefix} onPick={(id) => add(product.data!, id)} onCancel={() => setPicking(null)} />
           ) : (
             <span className="text-caption text-danger">We couldn’t load this product.</span>
           )}
         </div>
       )}
+    </>
+  );
+}
+
+function ProductsCard({ lines, setLines, error, issueFor }: { lines: Line[]; setLines: (fn: (l: Line[]) => Line[]) => void; error?: string; issueFor: (variantId: string) => string | null }) {
+  const add = (p: Product, v: Variant) =>
+    setLines((ls) =>
+      ls.some((l) => l.variant_id === v.id)
+        ? ls.map((l) => (l.variant_id === v.id ? { ...l, quantity: Math.min(99, l.quantity + 1) } : l))
+        : [
+            ...ls,
+            {
+              variant_id: v.id,
+              quantity: 1,
+              product_name: p.name,
+              variant_title: v.title,
+              price_amount: v.price_amount,
+              image: p.images.find((i) => i.media_id === v.image_media_id)?.media ?? p.image,
+              available: v.track_inventory && !v.allow_backorder ? v.inventory.available : null,
+            },
+          ].slice(0, 50),
+    );
+
+  return (
+    <Card title={`Products · ${lines.length}`} label="Products">
+      <ProductPicker onAdd={add} />
       {error && (
         <p role="alert" className="text-caption text-danger">
           {error}
@@ -405,7 +417,7 @@ function ProductsCard({ lines, setLines, error, issueFor }: { lines: Line[]; set
   );
 }
 
-function VariantPicker({ product, onPick, onCancel }: { product: Product; onPick: (variantId: string) => void; onCancel: () => void }) {
+function VariantPicker({ product, onPick, onCancel, idPrefix }: { product: Product; onPick: (variantId: string) => void; onCancel: () => void; idPrefix: string }) {
   const enabled = useMemo(() => product.variants.filter((v) => v.is_enabled), [product]);
   const [variantId, setVariantId] = useState(enabled[0]?.id ?? '');
   if (enabled.length === 0) return <span className="text-caption text-danger">{product.name} has no variants for sale.</span>;
@@ -414,7 +426,7 @@ function VariantPicker({ product, onPick, onCancel }: { product: Product; onPick
     <div className="flex flex-wrap items-end gap-2">
       <span className="w-full text-body font-semibold text-text-primary">{product.name}</span>
       {enabled.length > 1 ? (
-        <Select id="co-variant" label="Variant" value={variantId} onChange={(e) => setVariantId(e.target.value)} containerClassName="flex-1">
+        <Select id={`${idPrefix}-variant`} label="Variant" value={variantId} onChange={(e) => setVariantId(e.target.value)} containerClassName="flex-1">
           {enabled.map((v) => (
             <option key={v.id} value={v.id}>
               {v.title} · {formatBdt(v.price_amount)}

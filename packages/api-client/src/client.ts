@@ -114,10 +114,26 @@ import type {
   ShippingSettings,
   UpdateCouponInput,
   UpdateOrderInput,
+  CreateDocumentInput,
+  CreateReturnInput,
+  DocumentKind,
+  DocumentTemplate,
+  DocumentTemplateConfig,
+  EditOrderItemsInput,
+  ExchangeOrderInput,
+  OrderItemsQuote,
+  PaymentLink,
+  ReceiveReturnInput,
+  RestockInput,
+  ReturnEvent,
+  ReturnListMeta,
+  ReturnRequest,
+  ReturnSummary,
+  StoreDocument,
 } from '@storeplix/types';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -478,6 +494,11 @@ export function createApiClient(options: ApiClientOptions) {
   const emptyOrderCounts = (): OrderListMeta['counts'] => ({
     all: 0, pending_payment: 0, pending: 0, confirmed: 0, ready_to_ship: 0, shipped: 0, delivered: 0, returned: 0, cancelled: 0,
   });
+  const emptyReturnMeta = (): ReturnListMeta => ({
+    ...emptyPage(),
+    counts: { open: 0, requested: 0, approved: 0, received: 0, refunded: 0, exchanged: 0, rejected: 0, closed: 0 },
+    kpis: { open: 0, return_rate_30d: null, money_lost_amount: 0, restocked_units_month: 0 },
+  });
   const store = (storeId: string) => `/stores/${enc(storeId)}`;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -818,6 +839,57 @@ export function createApiClient(options: ApiClientOptions) {
       /** O A only; 422 `refund_exceeds_paid`. */
       refund: (storeId: string, id: string, input: RefundInput, idempotencyKey: string) =>
         request<Payment>(`${store(storeId)}/orders/${enc(id)}/refunds`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      /** 5b §4.9 (P5B-61): same math as `editItems`, no writes. */
+      quoteItems: (storeId: string, id: string, input: EditOrderItemsInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<OrderItemsQuote>(`${store(storeId)}/orders/${enc(id)}/items/quote`, { method: 'POST', body: input, signal: opts?.signal }),
+      /** 5b §4.9 (P5B-60): full desired line set. 200 `Order` + `meta.notices`; 409 `shipment_booked`; 422 `total_below_paid`. */
+      editItems: async (storeId: string, id: string, input: EditOrderItemsInput): Promise<{ order: Order; notices: string[] }> => {
+        const envelope = await requestEnvelope<Order>(`${store(storeId)}/orders/${enc(id)}/items`, { method: 'PUT', body: input });
+        const meta = (envelope?.meta ?? {}) as { notices?: string[] };
+        return { order: envelope!.data, notices: meta.notices ?? [] };
+      },
+      /** 5b P5B-69: `returned` orders, cumulative up to the shipped quantity. */
+      restock: (storeId: string, id: string, input: RestockInput) => request<Order>(`${store(storeId)}/orders/${enc(id)}/restock`, { method: 'POST', body: input }),
+      /** 5b P5B-63: delivered orders; 409 `return_not_allowed`. */
+      createReturn: (storeId: string, id: string, input: CreateReturnInput) =>
+        request<ReturnRequest>(`${store(storeId)}/orders/${enc(id)}/returns`, { method: 'POST', body: input }),
+    },
+
+    /** Phase 5b §4.9 returns and exchanges. Transitions return the updated `ReturnRequest`; invalid → 409. */
+    returns: {
+      list: (storeId: string, filters: ReturnListFilters = {}) =>
+        listOf<ReturnSummary, ReturnListMeta>(`${store(storeId)}/returns`, returnListQuery(filters), emptyReturnMeta()),
+      get: (storeId: string, id: string) => request<ReturnRequest>(`${store(storeId)}/returns/${enc(id)}`),
+      approve: (storeId: string, id: string, input: { pickup_tracking_code?: string | null; note?: string | null } = {}) =>
+        request<ReturnRequest>(`${store(storeId)}/returns/${enc(id)}/approve`, { method: 'POST', body: input }),
+      reject: (storeId: string, id: string, input: { reason: string }) =>
+        request<ReturnRequest>(`${store(storeId)}/returns/${enc(id)}/reject`, { method: 'POST', body: input }),
+      receive: (storeId: string, id: string, input: ReceiveReturnInput) =>
+        request<ReturnRequest>(`${store(storeId)}/returns/${enc(id)}/receive`, { method: 'POST', body: input }),
+      close: (storeId: string, id: string, input: { note?: string | null } = {}) =>
+        request<ReturnRequest>(`${store(storeId)}/returns/${enc(id)}/close`, { method: 'POST', body: input }),
+      /** P5B-67: new manual order with the exchange credit. Idempotency-Key required; 402 at the plan limit. */
+      exchangeOrder: (storeId: string, id: string, input: ExchangeOrderInput, idempotencyKey: string) =>
+        request<{ return: ReturnRequest; order: Order; payment_link: PaymentLink | null }>(`${store(storeId)}/returns/${enc(id)}/exchange-order`, {
+          method: 'POST',
+          body: input,
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      addNote: (storeId: string, id: string, body: string) => request<ReturnEvent>(`${store(storeId)}/returns/${enc(id)}/notes`, { method: 'POST', body: { body } }),
+    },
+
+    /** Phase 5b §4.8 documents. Generation is queued: create → poll `get` until `ready` → open `download_url` (5-min signed). */
+    documents: {
+      templates: (storeId: string) => request<DocumentTemplate[]>(`${store(storeId)}/document-templates`),
+      /** O A (`ManageSettings`); 409 `revision_conflict`. */
+      saveTemplate: (storeId: string, kind: DocumentKind, input: { revision?: number; config: DocumentTemplateConfig }) =>
+        request<DocumentTemplate>(`${store(storeId)}/document-templates/${enc(kind)}`, { method: 'PUT', body: input }),
+      /** 202 `queued`; 409 `conflict` beyond 10 queued per store. */
+      create: (storeId: string, input: CreateDocumentInput) => request<StoreDocument>(`${store(storeId)}/documents`, { method: 'POST', body: input }),
+      get: (storeId: string, id: string, opts?: Pick<RequestOptions, 'signal'>) => request<StoreDocument>(`${store(storeId)}/documents/${enc(id)}`, { signal: opts?.signal }),
+      /** Sanitised HTML for the sandboxed preview iframe (throttle 30/min). */
+      preview: (storeId: string, input: { kind: DocumentKind; config?: DocumentTemplateConfig; order_id?: string | null }, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<{ html: string }>(`${store(storeId)}/documents/preview`, { method: 'POST', body: input, signal: opts?.signal }),
     },
 
     /** Phase 5a §3.8 go-live. Publish → 409 `launch_blocked` with `details.<item_key>`. */

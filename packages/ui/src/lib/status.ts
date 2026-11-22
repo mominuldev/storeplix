@@ -35,3 +35,25 @@ export const couponStatusMeta: Record<CouponDisplayStatus, { label: string; tone
   expired: { label: 'Expired', tone: 'neutral' },
   used_up: { label: 'Used up', tone: 'warning' },
 };
+
+// Phase 5b returns (Figma Returns & exchanges 39:9900): Requested warning, Approved info, Received neutral,
+// Refunded/Exchanged success, Closed neutral, Rejected danger. `pickup_booked` (Figma) is deferred (P5B-64).
+export type ReturnStatus = 'requested' | 'approved' | 'received' | 'refunded' | 'exchanged' | 'rejected' | 'closed';
+
+export const returnStatusMeta: Record<ReturnStatus, { label: string; tone: BadgeTone }> = {
+  requested: { label: 'Requested', tone: 'warning' },
+  approved: { label: 'Approved', tone: 'info' },
+  received: { label: 'Received', tone: 'neutral' },
+  refunded: { label: 'Refunded', tone: 'success' },
+  exchanged: { label: 'Exchanged', tone: 'success' },
+  rejected: { label: 'Rejected', tone: 'danger' },
+  closed: { label: 'Closed', tone: 'neutral' },
+};
+
+export type ReturnType = 'return' | 'exchange';
+
+/** Type chip under the reason (39:9900): Exchange brand, Return neutral. */
+export const returnTypeMeta: Record<ReturnType, { label: string; tone: BadgeTone }> = {
+  return: { label: 'Return', tone: 'neutral' },
+  exchange: { label: 'Exchange', tone: 'brand' },
+};

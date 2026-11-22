@@ -34,6 +34,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool $notify_new_order_email
  * @property array<string, bool> $customer_sms
  * @property string $sms_language
+ * @property string $cod_advance
+ * @property string $tax_display
+ * @property int $tax_rate_bps
+ * @property string|null $tax_bin
+ * @property string|null $invoice_footer
  */
 class StoreSetting extends Model
 {
@@ -47,8 +52,8 @@ class StoreSetting extends Model
 
     protected $attributes = [
         'social_links' => '{}', 'use_address_for_returns' => true, 'noindex' => false, 'cod_enabled' => true,
-        'notify_new_order_email' => true, 'sms_language' => 'bn',
-        'customer_sms' => '{"order_placed":true,"order_confirmed":false,"order_shipped":true,"order_cancelled":true}',
+        'notify_new_order_email' => true, 'sms_language' => 'bn', 'cod_advance' => 'none', 'tax_display' => 'none', 'tax_rate_bps' => 0,
+        'customer_sms' => '{"order_placed":true,"order_confirmed":false,"order_shipped":true,"order_cancelled":true,"order_updated":true,"payment_link":true}',
     ];
 
     protected function casts(): array
@@ -62,6 +67,7 @@ class StoreSetting extends Model
             'free_delivery_over_amount' => 'integer',
             'notify_new_order_email' => 'boolean',
             'customer_sms' => 'array',
+            'tax_rate_bps' => 'integer',
         ];
     }
 

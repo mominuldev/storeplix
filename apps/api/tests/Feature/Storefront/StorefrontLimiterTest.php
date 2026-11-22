@@ -4,6 +4,7 @@ namespace Tests\Feature\Storefront;
 
 use App\Domain\Stores\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\CommerceFixtures;
@@ -62,10 +63,32 @@ class StorefrontLimiterTest extends TestCase
 
     public function test_a_spoofed_client_ip_without_a_valid_key_is_ignored(): void
     {
-        for ($i = 0; $i < 6; $i++) {
-            $this->hit('203.0.113.50', key: 'wrong-key')->assertStatus(401); // throttled per host only
+        for ($i = 0; $i < 5; $i++) {
+            $this->hit('203.0.113.50', key: 'wrong-key')->assertStatus(401); // counted per request IP only
         }
         $this->hit('203.0.113.50')->assertOk(); // the real shopper's bucket was never touched
+    }
+
+    /** QA 5b-1 F-M1: keyless / wrong-key requests never drain the shop's host bucket. */
+    public function test_requests_without_a_valid_key_do_not_count_against_the_host(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            $this->hit('198.51.100.'.($i + 1), key: 'wrong-key')->assertStatus(401);
+        }
+        $this->hit('198.51.100.9', key: 'wrong-key')->assertStatus(429); // their own per-IP bucket is full
+        for ($i = 0; $i < 12; $i++) {
+            $this->hit('192.0.2.'.($i + 1))->assertOk(); // the full host budget is still there
+        }
+        $this->hit('192.0.2.200')->assertStatus(429);
+    }
+
+    /** QA 5b-1 F-L5: a keyed request without the shopper IP logs one warning per host per 5 minutes. */
+    public function test_a_missing_client_ip_is_logged_once_per_host(): void
+    {
+        Log::spy();
+        $this->hit(null)->assertOk();
+        $this->hit(null)->assertOk();
+        Log::shouldHaveReceived('warning')->with('storefront.client_ip_missing', \Mockery::any())->once();
     }
 
     public function test_ipv6_addresses_in_one_64_share_a_bucket(): void

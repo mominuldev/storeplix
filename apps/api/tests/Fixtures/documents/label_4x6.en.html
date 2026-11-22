@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>label_4x6</title>
+<style>
+@page { size: 100mm 150mm; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: 'Inter', 'Noto Sans Bengali', sans-serif; font-size: 10pt; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { page-break-after: always; break-after: page; }
+.page:last-child { page-break-after: auto; break-after: auto; }
+h1 { font-size: 16pt; margin: 0 0 4pt; }
+.muted { color: #555; }
+.small { font-size: 8pt; }
+.bold { font-weight: 700; }
+.right { text-align: right; }
+.row { display: flex; justify-content: space-between; gap: 8pt; }
+.logo { max-height: 40px; max-width: 160px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 4pt 3pt; vertical-align: top; text-align: left; }
+th { border-bottom: 1px solid #111; font-size: 8.5pt; }
+td { border-bottom: 1px solid #ddd; }
+.totals td { border: 0; padding: 2pt 3pt; }
+.totals .grand td { border-top: 1px solid #111; font-weight: 700; font-size: 11pt; }
+.box { border: 1px solid #111; padding: 6pt; }
+.checkbox { display: inline-block; width: 10pt; height: 10pt; border: 1px solid #111; }
+.footer { margin-top: 10pt; font-size: 8.5pt; color: #333; }
+</style>
+</head>
+<body>
+<style>
+.label { width: 100mm; height: 150mm; padding: 4mm; overflow: hidden; display: flex; flex-direction: column; gap: 2.5mm; font-size: 9pt; }
+.label .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111; padding-bottom: 2mm; }
+.label .cash { border: 2px solid #111; text-align: center; padding: 2mm; font-size: 15pt; font-weight: 700; }
+.label .barcode { text-align: center; } .label .barcode img { height: 16mm; max-width: 88mm; }
+.label .to { border: 1px solid #111; padding: 2mm; } .label .to .name { font-size: 12pt; font-weight: 700; }
+.label .foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; font-size: 7.5pt; }
+.label .qr img { width: 20mm; height: 20mm; }
+</style>
+<section class="page label">
+  <div class="head">
+    <div>
+            <div class="bold">Snapshot Shop</div>
+    </div>
+    <div class="right">
+            <div class="small">SP-1042 · 22 Nov 2026</div>
+    </div>
+  </div>
+  <div class="cash">COLLECT CASH ৳ 2,420</div>
+  <div class="barcode"><img src="data:image/svg+xml;base64,…" alt=""><div class="small">SP-1042</div></div>  <div class="to">
+    <div class="small muted">Deliver to</div>
+    <div class="name">রহিম উদ্দিন</div>
+    <div class="bold">01711-000000</div>
+    <div>বাড়ি ১২, রোড ৩, মিরপুর ১০, Mirpur, Dhaka</div>
+    <div class="bold">Mirpur, Dhaka</div>
+  </div>
+  <div class="small"><span class="muted">Items:</span> 1 × Cotton Panjabi (M / Blue), 1 × Plush Elephant (Grey)</div>    <div class="foot">
+    <div>
+      <div class="muted">Return address</div>
+      <div>Snapshot Shop · 01700-000001</div>
+          </div>
+    <div class="qr right"><img src="data:image/svg+xml;base64,…" alt=""><div>Scan to track</div></div>  </div>
+</section>
+</body>
+</html>

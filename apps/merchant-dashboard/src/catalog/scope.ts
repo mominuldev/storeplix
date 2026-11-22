@@ -43,4 +43,9 @@ export const keys = {
   shipping: (s: Scope) => [s.tenantId, s.storeId, 'shipping'] as const,
   launchChecklist: (s: Scope) => [s.tenantId, s.storeId, 'launch-checklist'] as const,
   geo: () => ['geo', 'bd'] as const,
+  // Phase 5b §10
+  returns: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'returns'] as const) : ([s.tenantId, s.storeId, 'returns', filters] as const)),
+  return: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'return', id] as const,
+  document: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'document', id] as const,
+  documentTemplates: (s: Scope) => [s.tenantId, s.storeId, 'document-templates'] as const,
 };

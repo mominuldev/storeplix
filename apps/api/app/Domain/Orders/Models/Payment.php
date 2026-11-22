@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $parent_payment_id
  * @property string|null $idempotency_key
  * @property string|null $actor_user_id
+ * @property string|null $return_request_id
  * @property Carbon $created_at
  * @property-read User|null $actor
  */

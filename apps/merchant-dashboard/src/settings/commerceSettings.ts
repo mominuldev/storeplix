@@ -50,3 +50,8 @@ export function smsPreview(event: CustomerSmsEvent, lang: 'bn' | 'en', shop: str
     order_updated: `${shop}: Order ${s.number} was updated. New total Tk ${s.total}.`,
   }[event];
 }
+
+/** P5B-56: VAT included in a total = floor(total × rate / (10 000 + rate)); totals don't change. */
+export function vatIncluded(total: number, rateBps: number): number {
+  return Math.floor((total * rateBps) / (10_000 + rateBps));
+}

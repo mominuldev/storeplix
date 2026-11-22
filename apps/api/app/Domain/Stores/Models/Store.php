@@ -9,9 +9,11 @@ use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\DataTransfer\Models\DataExport;
 use App\Domain\DataTransfer\Models\DataImport;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Pages\Models\StorePage;
+use App\Domain\Returns\Models\ReturnRequest;
 use App\Domain\Shipping\Models\PickupLocation;
 use App\Domain\Shipping\Models\ShippingZone;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
@@ -147,5 +149,17 @@ class Store extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    // Phase 5b: {return}, {document} through the store (scopeBindings → foreign ids 404).
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(ReturnRequest::class);
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class);
     }
 }

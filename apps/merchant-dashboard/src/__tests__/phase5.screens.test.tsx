@@ -352,6 +352,9 @@ describe('Dashboard and customers', () => {
     expect(within(nav).getByRole('link', { name: 'Create order' })).toBeInTheDocument();
     expect(within(nav).queryByText('Unfinished orders')).toBeNull();
     expect(within(nav).queryByText('Fake order guard')).toBeNull();
-    expect(within(nav).queryByText('Invoices & labels')).toBeNull();
+    // 5b-4/5b-5: Returns and Invoices & labels are real; Shipments waits for couriers (5b-3).
+    expect(within(nav).getByRole('link', { name: 'Returns' })).toHaveAttribute('href', '/returns');
+    expect(within(nav).getByRole('link', { name: 'Invoices & labels' })).toHaveAttribute('href', '/orders/print');
+    expect(within(nav).queryByText('Shipments')).toBeNull();
   });
 });

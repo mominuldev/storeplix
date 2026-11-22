@@ -76,7 +76,7 @@ class RlsCoverageTest extends TestCase
             $this->assertStringContainsString('storeplix_app', (string) $p->roles);
         }
 
-        $this->assertNotNull($policies->where('tablename', 'tenant_users')->where('policyname', 'tenant_users_membership')->first());
+        $this->assertSame(['DELETE', 'INSERT', 'SELECT', 'UPDATE'], $policies->where('tablename', 'tenant_users')->pluck('cmd')->sort()->values()->all());
         $this->assertSame(['INSERT', 'SELECT'], $policies->where('tablename', 'audit_logs')->pluck('cmd')->sort()->values()->all());
         $this->assertSame(['INSERT', 'SELECT', 'UPDATE'], $policies->where('tablename', 'sms_messages')->pluck('cmd')->sort()->values()->all());
     }

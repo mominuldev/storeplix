@@ -124,4 +124,22 @@ class RlsRawSqlTest extends TestCase
         $this->setGuc(null, null);
         $this->assertSame(0, DB::table('tenant_users')->count());
     }
+
+    /** QA 5b-1 F-L2: memberships of other tenants are readable by user, but never writable from another tenant. */
+    public function test_a_user_cannot_change_their_memberships_in_other_tenants(): void
+    {
+        $t = $this->twoTenantsWithOrders();
+        $userA = $t['a']['user']->id;
+        $membership = [
+            'id' => strtolower((string) Str::ulid()), 'tenant_id' => $t['b']['tenant']->id, 'user_id' => $userA,
+            'role' => 'staff', 'created_at' => now(), 'updated_at' => now(),
+        ];
+        $this->platformTable('tenant_users')->insert($membership); // A's user is also staff in B
+
+        $this->setGuc($t['a']['tenant']->id, $userA);
+        $this->assertSame(2, DB::table('tenant_users')->where('user_id', $userA)->count(), 'own memberships stay readable');
+        $this->assertSame(0, DB::update("update tenant_users set role = 'admin' where id = ?", [$membership['id']]));
+        $this->assertSame(0, DB::delete('delete from tenant_users where id = ?', [$membership['id']]));
+        $this->assertSame('staff', $this->platformTable('tenant_users')->where('id', $membership['id'])->value('role'));
+    }
 }

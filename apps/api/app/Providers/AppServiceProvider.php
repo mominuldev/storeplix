@@ -6,6 +6,7 @@ use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -67,15 +68,23 @@ class AppServiceProvider extends ServiceProvider
         // Storefront traffic is proxied by the Next.js server (P5B-9, PHASE-5B-CONTRACT §2.10): per store host + the
         // shopper IP the server forwards (trusted only with a valid key; IPv6 by /64) AND per store host. Without a
         // trusted IP (ISR revalidation, server-only fetches) only the host limit applies.
+        // QA 5b-1 F-M1: a request without a valid storefront key never touches the host bucket (anyone could drain a
+        // shop's 3 000/min by skipping the storefront); it is counted per request IP under its own key, and
+        // ResolveStorefront then answers 401.
         RateLimiter::for('storefront', function (Request $request) {
             $host = strtolower(trim((string) $request->header('X-Storefront-Host')));
+            if (! StorefrontContext::hasValidKey($request)) {
+                return [Limit::perMinute((int) config('storeplix.storefront_per_ip_per_minute', 300))
+                    ->by('sf-keyless:'.StorefrontContext::ipKey((string) $request->ip()))];
+            }
             $limits = [];
             $client = StorefrontContext::trustedClientIp($request);
             if ($client !== null) {
                 $limits[] = Limit::perMinute((int) config('storeplix.storefront_per_ip_per_minute', 300))
                     ->by('sf-ip:'.$host.'|'.StorefrontContext::ipKey($client));
-            } else {
-                Log::debug('storefront.client_ip_missing', ['host' => $host]);
+            } elseif (Cache::add('sf-ip-missing-warned:'.$host, true, now()->addMinutes(5))) {
+                // QA 5b-1 F-L5: once per host per 5 minutes; check the storefront's TRUSTED_PROXY / IP forwarding.
+                Log::warning('storefront.client_ip_missing', ['host' => $host]);
             }
             $limits[] = Limit::perMinute((int) config('storeplix.storefront_per_host_per_minute', 3000))->by('sf:'.$host);
 
@@ -101,6 +110,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=bulk --tries=1 --timeout=310 --memory=512', 'queue-bulk');
         // Phase 5a (QA 5a F-M1): order SMS + email, mirrors compose `queue-notifications`.
         DevCommands::artisan('queue:listen --queue=notifications --tries=3 --backoff=10,60 --timeout=60', 'queue-notifications');
+        // Phase 5b-4: PDF rendering (mirrors compose `queue-documents`, PHASE-5B §17).
+        DevCommands::artisan('queue:listen --queue=documents --tries=2 --timeout=150', 'queue-documents');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }

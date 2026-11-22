@@ -483,9 +483,22 @@ jobs:
             < "$GITHUB_WORKSPACE/infrastructure/docker/postgres/initdb/01-roles.sql"
       - name: Migrate fresh + seed (storeplix_owner)
         run: php artisan migrate:fresh --seed --force --database=pgsql_owner
+      # QA 5b-1 F-L4: roll back exactly the RLS migration and everything after it (not the whole schema), prove the
+      # policies are really gone with the tables and data still there, then re-apply.
       - name: Rollback is reversible (storeplix_owner)
         run: |
-          php artisan migrate:rollback --force --database=pgsql_owner
+          q() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" -AtX -c "$1"; }
+          steps=$(ls database/migrations | awk '$0 >= "2026_06_01_000100"' | wc -l | tr -d ' ')
+          [ "$steps" -ge 1 ] || { echo "::error::RLS migration not found"; exit 1; }
+          stores_before=$(q "select count(*) from stores")
+          php artisan migrate:rollback --step="$steps" --force --database=pgsql_owner
+          policies=$(q "select count(*) from pg_policies where schemaname = 'public'")
+          forced=$(q "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and (c.relrowsecurity or c.relforcerowsecurity)")
+          stores_after=$(q "select count(*) from stores")
+          echo "rolled back ${steps} migration(s): policies=${policies} rls_tables=${forced} stores ${stores_before}->${stores_after}"
+          [ "$policies" = "0" ] || { echo "::error::policies left after rollback"; exit 1; }
+          [ "$forced" = "0" ] || { echo "::error::RLS still enabled after rollback"; exit 1; }
+          [ "$stores_before" = "$stores_after" ] || { echo "::error::data lost on RLS rollback"; exit 1; }
           php artisan migrate --force --database=pgsql_owner
       # Raw catalogue checks, independent of the PHP tests: the app role owns nothing, can't bypass RLS, and
       # every table with a tenant_id column has RLS enabled AND forced with at least one policy.

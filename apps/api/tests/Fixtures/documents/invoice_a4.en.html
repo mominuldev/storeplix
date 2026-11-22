@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>invoice_a4</title>
+<style>
+@page { size: 210mm 297mm; margin: 10mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: 'Inter', 'Noto Sans Bengali', sans-serif; font-size: 10pt; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { page-break-after: always; break-after: page; }
+.page:last-child { page-break-after: auto; break-after: auto; }
+h1 { font-size: 16pt; margin: 0 0 4pt; }
+.muted { color: #555; }
+.small { font-size: 8pt; }
+.bold { font-weight: 700; }
+.right { text-align: right; }
+.row { display: flex; justify-content: space-between; gap: 8pt; }
+.logo { max-height: 40px; max-width: 160px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 4pt 3pt; vertical-align: top; text-align: left; }
+th { border-bottom: 1px solid #111; font-size: 8.5pt; }
+td { border-bottom: 1px solid #ddd; }
+.totals td { border: 0; padding: 2pt 3pt; }
+.totals .grand td { border-top: 1px solid #111; font-weight: 700; font-size: 11pt; }
+.box { border: 1px solid #111; padding: 6pt; }
+.checkbox { display: inline-block; width: 10pt; height: 10pt; border: 1px solid #111; }
+.footer { margin-top: 10pt; font-size: 8.5pt; color: #333; }
+</style>
+</head>
+<body>
+<section class="page"><div class="row">
+  <div>
+        <div class="bold">Snapshot Shop</div>
+        <div class="small muted">Phone: 01700-000001</div>      </div>
+  <div class="right">
+    <h1>Invoice</h1>
+    <div class="small">Invoice no. <span class="bold">SP-1042</span></div>
+    <div class="small">Date: 22 Nov 2026</div>
+  </div>
+</div>
+<div class="row" style="margin: 8pt 0;">
+  <div>
+    <div class="small muted">Ship to</div>
+    <div class="bold">রহিম উদ্দিন</div>
+    <div class="small">01711-000000</div>
+    <div class="small">বাড়ি ১২, রোড ৩, মিরপুর ১০, Mirpur, Dhaka</div>
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th>Item</th><th class="right">Qty</th>
+    <th class="right">Unit price</th><th class="right">Amount</th>  </tr></thead>
+  <tbody>
+      <tr>
+      <td>Cotton Panjabi <span class="muted small">M / Blue</span>        </td>
+      <td class="right">1</td>
+      <td class="right">৳ 1,500</td><td class="right">৳ 1,500</td>    </tr>
+      <tr>
+      <td>Plush Elephant <span class="muted small">Grey</span>        </td>
+      <td class="right">1</td>
+      <td class="right">৳ 950</td><td class="right">৳ 950</td>    </tr>
+    </tbody>
+</table>
+<table class="totals" style="margin-top: 6pt;">
+  <tr><td>Subtotal</td><td class="right">৳ 2,450</td></tr>
+  <tr><td>Discount (WELCOME10)</td><td class="right">− ৳ 100</td></tr>  <tr><td>Delivery</td><td class="right">৳ 70</td></tr>
+  <tr class="grand"><td>Total</td><td class="right">৳ 2,420</td></tr>
+      <tr class="bold"><td>Due (cash on delivery)</td><td class="right">৳ 2,420</td></tr>
+  <tr><td class="small">Payment</td><td class="right small">Cash on delivery</td></tr>
+</table>
+<div class="footer">Thank you for shopping with us!</div>
+</section>
+</body>
+</html>

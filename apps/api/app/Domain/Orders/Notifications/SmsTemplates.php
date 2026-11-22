@@ -13,13 +13,14 @@ use InvalidArgumentException;
  */
 final class SmsTemplates
 {
-    public const EVENTS = ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled'];
+    public const EVENTS = ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated'];
 
     public const LABELS = [
         'order_placed' => 'Order received',
         'order_confirmed' => 'Order confirmed',
         'order_shipped' => 'Shipped',
         'order_cancelled' => 'Order cancelled',
+        'order_updated' => 'Order updated',
     ];
 
     /** 3 UCS-2 segments (Bangla); English GSM-7 texts are far below this. */

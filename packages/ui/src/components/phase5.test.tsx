@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { AreaPicker, type AreaValue } from './AreaPicker';
 import { bpsToInput, parsePercent } from '../lib/percent';
 import { PercentInput } from './PercentInput';
-import { OrderStatusBadge, PaymentStatusBadge } from './StatusBadge';
+import { OrderStatusBadge, PaymentStatusBadge, ReturnStatusBadge, ReturnTypeBadge } from './StatusBadge';
 import { Timeline } from './Timeline';
 
 describe('Phase 5 UI', () => {
@@ -17,6 +17,19 @@ describe('Phase 5 UI', () => {
     );
     expect(screen.getByText('In transit')).toBeInTheDocument();
     expect(screen.getByText('Partly refunded')).toBeInTheDocument();
+  });
+
+  it('return status and type badges use the 39:9900 labels', () => {
+    render(
+      <>
+        <ReturnStatusBadge status="requested" />
+        <ReturnStatusBadge status="exchanged" />
+        <ReturnTypeBadge type="exchange" />
+      </>,
+    );
+    expect(screen.getByText('Requested')).toBeInTheDocument();
+    expect(screen.getByText('Exchanged')).toBeInTheDocument();
+    expect(screen.getByText('Exchange')).toBeInTheDocument();
   });
 
   it('parsePercent converts to basis points within 1–100 %', () => {

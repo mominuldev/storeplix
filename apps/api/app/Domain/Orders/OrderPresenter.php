@@ -46,6 +46,23 @@ final class OrderPresenter
             'tags' => array_values($order->tags ?? []),
             'placed_at' => UserRef::iso($order->placed_at),
             'updated_at' => UserRef::iso($order->updated_at),
+            // 5b
+            'return_status' => $order->return_status ?? 'none',
+            'shipment' => self::shipmentRef($order),
+            'invoice_printed_at' => UserRef::iso($order->invoice_printed_at),
+            'label_printed_at' => UserRef::iso($order->label_printed_at),
+        ];
+    }
+
+    /** @return array{provider: string, status: string, consignment_id: string|null}|null OrderSummary.shipment */
+    private static function shipmentRef(Order $order): ?array
+    {
+        $shipment = $order->relationLoaded('shipment') ? $order->shipment : $order->shipment()->first();
+
+        return $shipment === null ? null : [
+            'provider' => $shipment->provider,
+            'status' => $shipment->status,
+            'consignment_id' => $shipment->getAttribute('consignment_id'),
         ];
     }
 
@@ -87,7 +104,10 @@ final class OrderPresenter
             }
         }
 
-        return self::summary($order, $order->customer, (int) $items->sum('quantity')) + [
+        $summary = self::summary($order, $order->customer, (int) $items->sum('quantity'));
+        unset($summary['shipment']); // Order.shipment is the full Shipment (a superset of OrderSummary.shipment)
+
+        return $summary + [
             'contact' => ['name' => $order->customer_name, 'phone' => $order->customer_phone, 'email' => $order->customer_email],
             'shipping_address' => self::address($order->shipping_address),
             'customer_note' => $order->customer_note,
@@ -115,6 +135,11 @@ final class OrderPresenter
             ],
             'revision' => $order->revision,
             'created_by' => UserRef::of($order->createdBy),
+            // 5b (payment_links: 5b-2)
+            'shipments' => $order->shipments()->get()->map(fn (Shipment $sh) => self::shipment($sh))->values()->all(),
+            'payment_links' => [],
+            'payment_expires_at' => UserRef::iso($order->payment_expires_at),
+            'source_order_id' => $order->source_order_id,
         ];
     }
 
@@ -220,6 +245,7 @@ final class OrderPresenter
             'note' => $payment->note,
             'actor' => UserRef::of($payment->actor),
             'created_at' => UserRef::iso($payment->created_at),
+            'return_request_id' => $payment->return_request_id ?? null,
         ];
     }
 
@@ -233,6 +259,7 @@ final class OrderPresenter
             'tracking_code' => $shipment->tracking_code,
             'tracking_url' => $shipment->tracking_url,
             'status' => $shipment->status,
+            'consignment_id' => $shipment->getAttribute('consignment_id'),
             'cod_amount' => $shipment->cod_amount,
             'shipped_at' => UserRef::iso($shipment->shipped_at),
             'delivered_at' => UserRef::iso($shipment->delivered_at),

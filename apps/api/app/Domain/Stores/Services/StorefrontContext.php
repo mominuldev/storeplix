@@ -51,13 +51,20 @@ final class StorefrontContext
         return self::trustedClientIp($request) ?? (string) $request->ip();
     }
 
-    /** The forwarded shopper IP when the storefront key is valid and the header holds an IP; null otherwise. */
-    public static function trustedClientIp(Request $request): ?string
+    /** True when the request carries the storefront server key (constant-time compare). */
+    public static function hasValidKey(Request $request): bool
     {
         $expected = (string) config('storeplix.storefront_api_key');
         $given = (string) $request->header(ResolveStorefront::KEY_HEADER, '');
+
+        return $expected !== '' && $given !== '' && hash_equals($expected, $given);
+    }
+
+    /** The forwarded shopper IP when the storefront key is valid and the header holds an IP; null otherwise. */
+    public static function trustedClientIp(Request $request): ?string
+    {
         $header = trim((string) $request->header(self::CLIENT_IP_HEADER, ''));
-        if ($expected !== '' && $given !== '' && hash_equals($expected, $given) && filter_var($header, FILTER_VALIDATE_IP) !== false) {
+        if (self::hasValidKey($request) && filter_var($header, FILTER_VALIDATE_IP) !== false) {
             return $header;
         }
 

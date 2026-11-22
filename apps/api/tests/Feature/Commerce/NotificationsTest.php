@@ -74,7 +74,7 @@ class NotificationsTest extends TestCase
         [, $variant] = $this->stocked($h, $store, 1000, 50);
         $this->api($h, 'PATCH', "/api/v1/stores/{$store->id}/settings", ['notifications' => ['sms_language' => 'en', 'new_order_email' => false, 'customer_sms' => ['order_placed' => false]]])->assertOk()
             ->assertJsonPath('data.commerce.notifications.sms_language', 'en')
-            ->assertJsonPath('data.commerce.notifications.customer_sms', ['order_placed' => false, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true]);
+            ->assertJsonPath('data.commerce.notifications.customer_sms', ['order_placed' => false, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true]);
         $id = $this->manual($h, $store, $this->manualBody($variant, 1, ['notify_customer' => false]))->json('data.id');
         $this->assertCount(0, $this->sms());
         Mail::assertNotSent(NewOrderMerchantMail::class);

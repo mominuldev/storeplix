@@ -5,6 +5,10 @@ import type {
   OrderListFilters,
   InventoryListFilters,
   ProductListFilters,
+  ReturnReason,
+  ReturnStatus,
+  ReturnType,
+  CourierProvider,
   StockMovementFilters,
 } from '@storeplix/types';
 
@@ -72,6 +76,34 @@ export function orderListQuery(f: OrderListFilters = {}): Query {
     'filter[coupon_id]': f.coupon_id || undefined,
     'filter[placed_at][gte]': f.placed_from || undefined,
     'filter[placed_at][lte]': f.placed_to || undefined,
+    // 5b §4.8: "Not printed · Printed today" on the print page.
+    'filter[printed]': f.printed || undefined,
+    'filter[not_printed]': f.not_printed || undefined,
+    q: text(f.q),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** Phase 5b §4.9 `GET /returns` filters (`open` = requested, approved, received). Not in @storeplix/types; client-local. */
+export interface ReturnListFilters {
+  status?: (ReturnStatus | 'open')[];
+  type?: ReturnType[];
+  reason?: ReturnReason[];
+  provider?: (CourierProvider | 'manual')[];
+  q?: string;
+  sort?: '-created_at';
+  page?: number;
+  per_page?: number;
+}
+
+export function returnListQuery(f: ReturnListFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[type]': list(f.type),
+    'filter[reason]': list(f.reason),
+    'filter[provider]': list(f.provider),
     q: text(f.q),
     sort: f.sort,
     page: f.page,

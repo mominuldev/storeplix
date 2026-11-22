@@ -159,9 +159,12 @@ export interface UpdateStoreSettingsInput {
   region?: Partial<{ country: string; currency: string; timezone: string }>;
   seo?: Partial<{ title: string | null; description: string | null; share_image_media_id: string | null; hide_from_search: boolean }>;
   /** Phase 5 */
-  checkout?: { cod_enabled?: boolean };
+  checkout?: { cod_enabled?: boolean; /** 5b */ cod_advance?: 'none' | 'delivery_charge' };
   order_prefix?: string;
   notifications?: { new_order_email?: boolean; sms_language?: 'bn' | 'en'; customer_sms?: Partial<Record<CustomerSmsEvent, boolean>> };
+  /** 5b (PHASE-5B-CONTRACT §4 settings additions) */
+  tax?: { display?: 'none' | 'included'; rate_bps?: number; bin?: string | null };
+  invoice?: { footer?: string | null };
 }
 
 // ---------- Plans / subscription / features ----------

@@ -10,7 +10,7 @@ use App\Domain\Stores\Models\StoreSetting;
 /** StoreCommerceSettings (§6) read model. */
 final class StoreCommerce
 {
-    public const SMS_DEFAULTS = ['order_placed' => true, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true];
+    public const SMS_DEFAULTS = ['order_placed' => true, 'order_confirmed' => false, 'order_shipped' => true, 'order_cancelled' => true, 'order_updated' => true];
 
     /** @return array<string, mixed> */
     public static function present(Store $store, StoreSetting $settings): array
@@ -20,7 +20,13 @@ final class StoreCommerce
         $toggles = (array) ($settings->customer_sms ?? []);
 
         return [
-            'checkout' => ['cod_enabled' => (bool) ($settings->cod_enabled ?? true)],
+            'checkout' => ['cod_enabled' => (bool) ($settings->cod_enabled ?? true), 'cod_advance' => $settings->cod_advance === 'delivery_charge' ? 'delivery_charge' : 'none'],
+            'tax' => [
+                'display' => $settings->tax_display === 'included' ? 'included' : 'none',
+                'rate_bps' => (int) ($settings->tax_rate_bps ?? 0),
+                'bin' => $settings->tax_bin,
+            ],
+            'invoice' => ['footer' => $settings->invoice_footer],
             'order_prefix' => $prefix,
             'next_order_number' => $prefix.'-'.($current === null ? StoreCounter::START[StoreCounter::ORDERS] : $current + 1),
             'notifications' => [

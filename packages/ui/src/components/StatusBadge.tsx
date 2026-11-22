@@ -1,4 +1,15 @@
-import { couponStatusMeta, orderStatusMeta, paymentStatusMeta, type CouponDisplayStatus, type OrderStatus, type PaymentStatus } from '../lib/status';
+import {
+  couponStatusMeta,
+  orderStatusMeta,
+  paymentStatusMeta,
+  returnStatusMeta,
+  returnTypeMeta,
+  type CouponDisplayStatus,
+  type OrderStatus,
+  type PaymentStatus,
+  type ReturnStatus,
+  type ReturnType,
+} from '../lib/status';
 import { Badge } from './Badge';
 
 // Figma StatusBadge 3:44 order/payment variants (Orders 7:276): Pending warning, Confirmed info, Ready to ship brand,
@@ -26,6 +37,25 @@ export function CouponStatusBadge({ status, className }: { status: CouponDisplay
   const m = couponStatusMeta[status];
   return (
     <Badge tone={m.tone} dot className={className}>
+      {m.label}
+    </Badge>
+  );
+}
+
+/** Phase 5b Returns & exchanges 39:9900. */
+export function ReturnStatusBadge({ status, className }: { status: ReturnStatus; className?: string }) {
+  const m = returnStatusMeta[status];
+  return (
+    <Badge tone={m.tone} dot className={className}>
+      {m.label}
+    </Badge>
+  );
+}
+
+export function ReturnTypeBadge({ type, className }: { type: ReturnType; className?: string }) {
+  const m = returnTypeMeta[type];
+  return (
+    <Badge tone={m.tone} className={className}>
       {m.label}
     </Badge>
   );

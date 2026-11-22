@@ -39,7 +39,9 @@ class OrderController
         Gate::authorize('view', $store);
         $list = fn (array $values) => 'regex:/^('.implode('|', $values).')(,('.implode('|', $values).'))*$/';
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at'],
+            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed'],
+            'filter.printed' => ['sometimes', 'string', 'in:invoice,label'],
+            'filter.not_printed' => ['sometimes', 'string', 'in:invoice,label'],
             'filter.status' => ['sometimes', 'string', $list(Order::STATUSES)],
             'filter.payment_status' => ['sometimes', 'string', $list(Order::PAYMENT_STATUSES)],
             'filter.channel' => ['sometimes', 'string', $list(Order::CHANNELS)],
@@ -58,12 +60,20 @@ class OrderController
         $q = trim((string) ($input['q'] ?? ''));
 
         $query = self::filtered($store, $filter, $q, withStatus: true);
+        // 5b-4 (Invoices & labels page): "Printed today" (store time) / "Not printed".
+        if (isset($filter['printed'])) {
+            $tz = $store->timezone ?: 'Asia/Dhaka';
+            $query->where($filter['printed'].'_printed_at', '>=', Carbon::now($tz)->startOfDay()->utc());
+        }
+        if (isset($filter['not_printed'])) {
+            $query->whereNull($filter['not_printed'].'_printed_at');
+        }
         match ($input['sort'] ?? '-placed_at') {
             'placed_at' => $query->orderBy('placed_at')->orderBy('id'),
             '-total' => $query->orderByDesc('total_amount')->orderByDesc('id'),
             default => $query->orderByDesc('placed_at')->orderByDesc('id'),
         };
-        $page = $query->with('customer')->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
+        $page = $query->with(['customer', 'shipment'])->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
 
         $byStatus = self::filtered($store, $filter, $q, withStatus: false)->toBase()->reorder()
             ->groupBy('status')->selectRaw('status, count(*) as aggregate')->pluck('aggregate', 'status');
@@ -330,6 +340,7 @@ class OrderController
             'method' => ['required', 'string', Rule::in(Payment::REFUND_METHODS)],
             'reference' => ['sometimes', 'nullable', 'string', 'max:64'],
             'note' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'return_id' => ['sometimes', 'nullable', 'string', 'max:26'],
         ]);
         $input['reference'] = AddressValidator::clean($input['reference'] ?? null);
         $input['note'] = AddressValidator::clean($input['note'] ?? null);

@@ -113,6 +113,39 @@ class RlsLifecycleTest extends TestCase
         $this->assertSame('', $this->guc());
     }
 
+    /** QA 5b-1 F-L1: a rollback restores the GUC of the transaction start; the listener writes the context again. */
+    public function test_a_rollback_never_leaves_the_guc_out_of_step_with_the_context(): void
+    {
+        $t = $this->twoTenantsWithOrders();
+        $a = $t['a']['tenant']->id;
+
+        // null → A inside a transaction that rolls back: the context keeps A, so must the GUC.
+        try {
+            DB::transaction(function () use ($a) {
+                $this->tenancy()->set($a);
+                throw new RuntimeException('boom');
+            });
+        } catch (RuntimeException) {
+        }
+        $this->assertSame($a, $this->tenancy()->id());
+        $this->assertSame($a, $this->guc());
+        $this->assertSame(1, DB::table('orders')->count());
+
+        // A → cleared inside a savepoint that rolls back: the context is empty, so the GUC is empty.
+        DB::transaction(function () {
+            try {
+                DB::transaction(function () {
+                    $this->tenancy()->clear();
+                    throw new RuntimeException('inner');
+                });
+            } catch (RuntimeException) {
+            }
+            $this->assertSame('', $this->guc());
+        });
+        $this->assertNull($this->tenancy()->id());
+        $this->assertSame('', $this->guc());
+    }
+
     public function test_a_reconnect_reapplies_the_current_tenant(): void
     {
         $t = $this->twoTenantsWithOrders();

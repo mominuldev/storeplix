@@ -1,8 +1,8 @@
 import { isApiError } from '@storeplix/api-client';
 import type { Order, OrderStatus } from '@storeplix/types';
-import { Avatar, Button, buttonVariants, cn, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
+import { Avatar, Badge, Button, buttonVariants, cn, Menu, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clock, MapPin, MessageCircle, Phone, Store, Truck } from 'lucide-react';
+import { ChevronDown, Clock, MapPin, MessageCircle, Phone, Printer, Store, Truck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { formatBdt, formatCount } from '../catalog/format';
@@ -16,14 +16,18 @@ import { api } from '../lib/api';
 import { LoadingState } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { settingsKey } from '../settings/schema';
-import { CancelOrderDialog, RefundDialog, ReturnOrderDialog, ShipOrderDialog } from './actions';
-import { handleOrderError, useQuickTransition } from './transitions';
+import { documentKindLabels } from '../documents/labels';
+import { usePrintJob } from '../documents/usePrintJob';
+import { orderReturnStatusLabels } from '../returns/labels';
+import { CancelOrderDialog, CreateReturnDialog, RefundDialog, RestockDialog, ReturnOrderDialog, ShipOrderDialog } from './actions';
+import { handleOrderError, ITEM_EDIT_STATUSES, useQuickTransition } from './transitions';
 import { eventToEntry } from './timeline';
 
 // Figma Order detail 33:3676 (mobile 32:309). Contract §9: actions from `allowed_transitions`, Items, Payments,
 // Shipping, Timeline with notes, Customer card (this shop only), Delivery address with Edit, Order details and tags.
-// Not built (§11): next-step advance banner, Invoice, More, Assigned to, Edit items, Delivery record / fraud,
-// Block this number, courier booking card, campaign field, Send payment link.
+// 5b (PHASE-5B §10): Invoice + other prints (documents), Edit items link, Create return (delivered), Restock
+// (courier-returned). Not built: next-step advance banner, Assigned to, Delivery record / fraud (Phase 8), Block this
+// number, campaign field; courier booking and payment links are 5b-2/5b-3.
 
 export function OrderDetailPage() {
   const { orderId } = useParams();
@@ -45,7 +49,7 @@ export function OrderDetailPage() {
   return <OrderView order={query.data} />;
 }
 
-type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | null;
+type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | 'restock' | 'createReturn' | null;
 
 export function Card({ title, actions, children, className, label }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; label?: string }) {
   return (
@@ -108,6 +112,9 @@ function OrderView({ order }: { order: Order }) {
   const charge = order.payments.find((p) => p.type === 'charge');
   const c = order.customer;
   const addr = order.shipping_address;
+  const print = usePrintJob();
+  const itemsEditable = ITEM_EDIT_STATUSES.includes(order.status);
+  const restockable = order.status === 'returned' && order.items.some((i) => i.quantity > i.restocked_quantity);
 
   return (
     <>
@@ -123,6 +130,11 @@ function OrderView({ order }: { order: Order }) {
             <h1 className="text-heading-24 text-text-primary">{order.number}</h1>
             <OrderStatusBadge status={order.status} />
             <PaymentStatusBadge status={order.payment_status} />
+            {order.return_status !== 'none' && (
+              <Link to={`/returns?q=${encodeURIComponent(order.number)}`} aria-label={`${orderReturnStatusLabels[order.return_status]} · see returns`}>
+                <Badge tone="warning">{orderReturnStatusLabels[order.return_status]}</Badge>
+              </Link>
+            )}
           </div>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-text-secondary">
             <span className="flex items-center gap-1">
@@ -135,6 +147,29 @@ function OrderView({ order }: { order: Order }) {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          <span className="flex items-stretch">
+            <Button variant="secondary" className="rounded-r-none" loading={print.pending && print.kind === 'invoice_a4'} onClick={() => print.start('invoice_a4', [order.id])}>
+              <Printer aria-hidden className="size-4" /> Invoice
+            </Button>
+            <Menu
+              label="More prints"
+              align="end"
+              triggerClassName={cn(buttonVariants({ variant: 'secondary' }), 'size-auto h-full rounded-l-none border-l-0 px-2.5 text-text-primary')}
+              trigger={<ChevronDown aria-hidden className="size-4" />}
+              disabled={print.pending}
+              entries={(['packing_slip', 'label_4x6', 'receipt_80mm', 'invoice_a5_two_up'] as const).map((k) => ({ key: k, label: documentKindLabels[k].action, onSelect: () => print.start(k, [order.id]) }))}
+            />
+          </span>
+          {order.status === 'delivered' && (
+            <Button variant="secondary" onClick={() => setDialog('createReturn')}>
+              Create return
+            </Button>
+          )}
+          {restockable && (
+            <Button variant="secondary" onClick={() => setDialog('restock')}>
+              Restock
+            </Button>
+          )}
           {forward
             .filter((t) => t !== primary)
             .map((t) => (
@@ -162,7 +197,17 @@ function OrderView({ order }: { order: Order }) {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="flex flex-col gap-5">
-          <Card title={`Items · ${formatCount(order.items_count)}`} label="Items">
+          <Card
+            title={`Items · ${formatCount(order.items_count)}`}
+            label="Items"
+            actions={
+              itemsEditable ? (
+                <Link to={`/orders/${order.id}/edit`} className="text-caption font-medium text-brand-600">
+                  Edit items
+                </Link>
+              ) : undefined
+            }
+          >
             <ul className="flex flex-col gap-3">
               {order.items.map((i) => (
                 <li key={i.id} className="flex items-center gap-3">
@@ -335,6 +380,8 @@ function OrderView({ order }: { order: Order }) {
               {order.coupon_code && <Row label="Coupon" value={order.coupon_code} />}
               {order.timestamps.shipped_at && <Row label="Shipped" value={dateTime(order.timestamps.shipped_at)} />}
               {order.timestamps.delivered_at && <Row label="Delivered" value={dateTime(order.timestamps.delivered_at)} />}
+              {order.invoice_printed_at && <Row label="Invoice printed" value={dateTime(order.invoice_printed_at)} />}
+              {order.label_printed_at && <Row label="Label printed" value={dateTime(order.label_printed_at)} />}
             </dl>
             <TagInput label="Order tags" value={order.tags} disabled={tags.isPending || !editable} onChange={(next) => tags.mutate(next)} placeholder="+ Tag" />
           </Card>
@@ -345,6 +392,8 @@ function OrderView({ order }: { order: Order }) {
       {dialog === 'ship' && <ShipOrderDialog open order={target} smsDefault={sms?.order_shipped ?? true} onClose={() => setDialog(null)} />}
       {dialog === 'return' && <ReturnOrderDialog open order={order} onClose={() => setDialog(null)} />}
       {dialog === 'refund' && <RefundDialog open order={order} onClose={() => setDialog(null)} />}
+      {dialog === 'restock' && <RestockDialog open order={order} onClose={() => setDialog(null)} />}
+      {dialog === 'createReturn' && <CreateReturnDialog open order={order} onClose={() => setDialog(null)} />}
     </>
   );
 }

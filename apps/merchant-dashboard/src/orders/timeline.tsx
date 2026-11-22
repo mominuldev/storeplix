@@ -1,6 +1,6 @@
 import type { OrderEvent } from '@storeplix/types';
 import { orderStatusMeta, type TimelineEntry } from '@storeplix/ui';
-import { Ban, CheckCircle2, CreditCard, MessageSquare, Package, PencilLine, RotateCcw, ShoppingBag, Tag, Truck } from 'lucide-react';
+import { Ban, CheckCircle2, CreditCard, MessageSquare, Package, PencilLine, Printer, RotateCcw, ShoppingBag, Tag, Truck } from 'lucide-react';
 import { formatBdt } from '../catalog/format';
 import { clock } from '../commerce/format';
 
@@ -44,6 +44,16 @@ export function eventToEntry(e: OrderEvent): TimelineEntry {
       return { ...base, icon: <MessageSquare />, tone: 'neutral', title: e.body ?? 'Customer notified' };
     case 'coupon_released':
       return { ...base, icon: <Tag />, tone: 'neutral', title: 'Coupon use released', detail: e.body };
+    case 'items_edited': {
+      // 5b P5B-62: meta.lines = [{ product_name, variant_title?, from, to }]; no prices.
+      const lines = Array.isArray(meta.lines) ? (meta.lines as { product_name?: string; from?: number; to?: number }[]) : [];
+      const detail = lines.map((l) => `${l.product_name ?? 'Item'} ${l.from ?? 0} → ${l.to ?? 0}`).join(' · ');
+      return { ...base, icon: <PencilLine />, tone: 'brand', title: `${actorName(e)} changed the items`, detail: [detail || null, e.body].filter(Boolean).join(' — ') || null };
+    }
+    case 'return':
+      return { ...base, icon: <RotateCcw />, tone: 'warning', title: e.body ?? 'Return updated', detail: typeof meta.return_number === 'string' ? meta.return_number : null };
+    case 'document':
+      return { ...base, icon: <Printer />, tone: 'neutral', title: e.body ?? 'Printed', detail: actorName(e) };
     default:
       return { ...base, title: e.body ?? e.type };
   }

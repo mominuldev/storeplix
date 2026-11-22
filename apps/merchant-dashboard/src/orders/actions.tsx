@@ -1,16 +1,18 @@
 import { isApiError } from '@storeplix/api-client';
-import type { CancelReason, Order, RefundMethod, ShipOrderInput } from '@storeplix/types';
-import { Checkbox, Dialog, Input, MoneyInput, Select } from '@storeplix/ui';
-import { useMutation } from '@tanstack/react-query';
+import type { CancelReason, Order, RefundMethod, ReturnReason, ReturnType, ShipOrderInput } from '@storeplix/types';
+import { Checkbox, Dialog, Input, MoneyInput, SegmentedControl, Select } from '@storeplix/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { formatBdt } from '../catalog/format';
-import { useStoreScope } from '../catalog/scope';
+import { keys, useStoreScope } from '../catalog/scope';
 import { errorMessage } from '../catalog/states';
 import { cancelReasonLabels, newIdempotencyKey, refundMethodLabels } from '../commerce/format';
 import { useCommerceInvalidate } from '../commerce/queries';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
+import { returnReasonLabels } from '../returns/labels';
 import { handleOrderError, refundAmountError, type Target } from './transitions';
 
 // Order dialogs (PHASE-5 §4): Cancel 41:9687, Ship (no frame; cancel layout), Return, Refund (O A).
@@ -289,3 +291,191 @@ export function RefundDialog({ order, open, onClose }: { order: Order; open: boo
   );
 }
 
+
+/** 5b P5B-69: put a courier-returned order's items back on the shelf, cumulative up to the shipped quantity. */
+export function RestockDialog({ order, open, onClose }: { order: Order; open: boolean; onClose: () => void }) {
+  const { storeId } = useStoreScope();
+  const invalidate = useCommerceInvalidate();
+  const remaining = (i: Order['items'][number]) => Math.max(0, i.quantity - i.restocked_quantity);
+  const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries(order.items.map((i) => [i.id, remaining(i)])));
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const lines = order.items.filter((i) => (qty[i.id] ?? 0) > 0).map((i) => ({ item_id: i.id, quantity: qty[i.id]! }));
+  const restock = useMutation({
+    mutationFn: () => api.orders.restock(storeId!, order.id, { lines, note: note.trim() || null }),
+    onSuccess: async () => {
+      toast(`Put back in stock for ${order.number}.`);
+      onClose();
+      await invalidate.afterOrderChange(order.id, order.customer.id);
+    },
+    onError: (e) => {
+      if (isApiError(e) && e.status === 422) return setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
+      onClose();
+      handleOrderError(e, () => invalidate.afterOrderChange(order.id, order.customer.id));
+    },
+  });
+  return (
+    <Dialog
+      open={open}
+      title={`Restock ${order.number}`}
+      description="The parcel came back. Choose what goes back on the shelf."
+      confirmLabel="Put back in stock"
+      loading={restock.isPending}
+      confirmDisabled={lines.length === 0}
+      size="md"
+      onCancel={onClose}
+      onConfirm={() => restock.mutate()}
+    >
+      <div className="flex flex-col gap-4">
+        <ul aria-label="Restock" className="flex flex-col divide-y divide-border-default rounded-md border border-border-default">
+          {order.items.map((i) => {
+            const max = remaining(i);
+            const n = qty[i.id] ?? 0;
+            const set = (next: number) => setQty((q) => ({ ...q, [i.id]: Math.max(0, Math.min(max, next)) }));
+            return (
+              <li key={i.id} className="flex items-center gap-3 px-3 py-2.5">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-body font-medium text-text-primary">{i.product_name}</span>
+                  <span className="truncate text-caption text-text-muted">
+                    {i.variant_title} · sent {i.quantity}
+                    {i.restocked_quantity > 0 ? ` · ${i.restocked_quantity} already back` : ''}
+                  </span>
+                </span>
+                <QtyStepper name={i.product_name} value={n} max={max} onChange={set} />
+              </li>
+            );
+          })}
+        </ul>
+        <Textarea id="restock-note" label="Note (optional)" value={note} onChange={setNote} max={500} />
+        {error && (
+          <p role="alert" className="text-caption text-danger">
+            {error}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+function QtyStepper({ name, value, max, onChange }: { name: string; value: number; max: number; onChange: (n: number) => void }) {
+  return (
+    <span className="flex items-center gap-1" aria-label={`Quantity ${name}`}>
+      <button type="button" aria-label={`Fewer ${name}`} disabled={value <= 0} onClick={() => onChange(value - 1)} className="flex size-8 items-center justify-center rounded-md border border-border-default disabled:opacity-40">
+        <Minus aria-hidden className="size-4" />
+      </button>
+      <span className="w-8 text-center text-body font-semibold" aria-live="polite">
+        {value}
+      </span>
+      <button type="button" aria-label={`More ${name}`} disabled={value >= max} onClick={() => onChange(value + 1)} className="flex size-8 items-center justify-center rounded-md border border-border-default disabled:opacity-40">
+        <Plus aria-hidden className="size-4" />
+      </button>
+    </span>
+  );
+}
+
+/** 5b P5B-63: merchant-created return or exchange on a delivered order (39:9900 "+ Create return"). */
+export function CreateReturnDialog({ order, open, onClose }: { order: Order; open: boolean; onClose: () => void }) {
+  const { storeId } = useStoreScope();
+  const navigate = useNavigate();
+  const invalidate = useCommerceInvalidate();
+  const [type, setType] = useState<ReturnType>('return');
+  const [reason, setReason] = useState<ReturnReason | ''>('');
+  const [qty, setQty] = useState<Record<string, number>>(() => (order.items.length === 1 ? { [order.items[0]!.id]: order.items[0]!.quantity } : {}));
+  const [swap, setSwap] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const lines = order.items
+    .filter((i) => (qty[i.id] ?? 0) > 0)
+    .map((i) => ({ order_item_id: i.id, quantity: qty[i.id]!, ...(type === 'exchange' ? { exchange_variant_id: swap[i.id] || null } : {}) }));
+  const missingSwap = type === 'exchange' && lines.some((l) => !l.exchange_variant_id);
+  const create = useMutation({
+    mutationFn: () => api.orders.createReturn(storeId!, order.id, { type, reason: reason as ReturnReason, customer_note: note.trim() || null, lines }),
+    onSuccess: async (r) => {
+      toast(`${r.number} created.`);
+      onClose();
+      await invalidate.afterOrderChange(order.id, order.customer.id);
+      navigate(`/returns/${r.id}`);
+    },
+    onError: (e) => {
+      if (isApiError(e) && (e.status === 422 || e.code === 'return_not_allowed')) return setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
+      setError(errorMessage(e, 'We couldn’t create the return.'));
+    },
+  });
+  return (
+    <Dialog
+      open={open}
+      title={`Return from ${order.number}`}
+      description="Record what the customer is sending back. Stock changes when you mark it received."
+      confirmLabel={type === 'exchange' ? 'Create exchange' : 'Create return'}
+      loading={create.isPending}
+      confirmDisabled={!reason || lines.length === 0 || missingSwap}
+      size="md"
+      onCancel={onClose}
+      onConfirm={() => create.mutate()}
+    >
+      <div className="flex flex-col gap-4">
+        <SegmentedControl
+          aria-label="Return type"
+          value={type}
+          onChange={setType}
+          options={[
+            { value: 'return', label: 'Return for refund' },
+            { value: 'exchange', label: 'Exchange' },
+          ]}
+        />
+        <Select id="return-reason" label="Reason" value={reason} onChange={(e) => setReason(e.target.value as ReturnReason)}>
+          <option value="">Choose a reason</option>
+          {(Object.keys(returnReasonLabels) as ReturnReason[]).map((r) => (
+            <option key={r} value={r}>
+              {returnReasonLabels[r]}
+            </option>
+          ))}
+        </Select>
+        <ul aria-label="Items coming back" className="flex flex-col divide-y divide-border-default rounded-md border border-border-default">
+          {order.items.map((i) => {
+            const n = qty[i.id] ?? 0;
+            return (
+              <li key={i.id} className="flex flex-col gap-2 px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-body font-medium text-text-primary">{i.product_name}</span>
+                    <span className="truncate text-caption text-text-muted">
+                      {i.variant_title} · bought {i.quantity}
+                    </span>
+                  </span>
+                  <QtyStepper name={i.product_name} value={n} max={i.quantity} onChange={(v) => setQty((q) => ({ ...q, [i.id]: Math.max(0, Math.min(i.quantity, v)) }))} />
+                </div>
+                {type === 'exchange' && n > 0 && i.product_id && <SwapVariant productId={i.product_id} currentVariantId={i.variant_id} name={i.product_name} value={swap[i.id] ?? ''} onChange={(v) => setSwap((s) => ({ ...s, [i.id]: v }))} />}
+              </li>
+            );
+          })}
+        </ul>
+        <Textarea id="return-note" label="What did the customer say? (optional)" value={note} onChange={setNote} max={500} placeholder="Chest is too tight, needs L" />
+        {error && (
+          <p role="alert" className="text-caption text-danger">
+            {error}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+function SwapVariant({ productId, currentVariantId, name, value, onChange }: { productId: string; currentVariantId: string | null; name: string; value: string; onChange: (v: string) => void }) {
+  const scope = useStoreScope();
+  const product = useQuery({ queryKey: keys.product(scope, productId), queryFn: () => api.products.get(scope.storeId!, productId), enabled: !!scope.storeId });
+  const options = (product.data?.variants ?? []).filter((v) => v.is_enabled && v.id !== currentVariantId);
+  if (product.isPending) return <span className="text-caption text-text-muted">Loading sizes and colours…</span>;
+  if (!options.length) return <span className="text-caption text-danger">{name} has no other variant to swap to.</span>;
+  return (
+    <Select id={`swap-${productId}`} label={`Wants instead · ${name}`} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Choose a variant</option>
+      {options.map((v) => (
+        <option key={v.id} value={v.id}>
+          {v.title} · {formatBdt(v.price_amount)}
+          {v.track_inventory && !v.allow_backorder ? ` · ${v.inventory.available} in stock` : ''}
+        </option>
+      ))}
+    </Select>
+  );
+}

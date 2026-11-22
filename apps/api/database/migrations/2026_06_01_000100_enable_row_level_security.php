@@ -5,6 +5,7 @@ use App\Domain\Tenancy\Database\RlsTables;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Phase 5b-1 (PHASE-5B-CONTRACT §2.3, ADR 0012): Postgres row-level security on every tenant table.
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\DB;
  * - grants for storeplix_app / storeplix_admin when the roles exist (01-roles.sql), audit_logs append-only.
  *
  * Run as the schema owner (`--database=pgsql_owner`). A no-op on sqlite. Rollback (or
- * database/sql/rls-emergency-off.sql) drops everything again.
+ * database/sql/rls-emergency-off.sql) drops the policies; the functions stay (QA 5b-1 F-L6).
  */
 return new class extends Migration
 {
@@ -46,7 +47,10 @@ return new class extends Migration
 
         $target = RlsPolicies::target($db);
         foreach (RlsTables::TENANT as $table) {
-            RlsPolicies::enable($db, $table, $target);
+            // Tables of later increments (5b-4 / 5b-5 …) are listed in TENANT too; their own migrations enable RLS.
+            if (Schema::hasTable($table)) {
+                RlsPolicies::enable($db, $table, $target);
+            }
         }
 
         $this->createDefinerFunctions($db);
@@ -62,14 +66,14 @@ return new class extends Migration
         }
 
         foreach (RlsTables::TENANT as $table) {
-            RlsPolicies::disable($db, $table);
+            if (Schema::hasTable($table)) {
+                RlsPolicies::disable($db, $table);
+            }
         }
 
-        foreach (self::DEFINER_FUNCTIONS as $function) {
-            $db->statement("DROP FUNCTION IF EXISTS {$function}");
-        }
-        $db->statement('DROP FUNCTION IF EXISTS app_current_tenant()');
-        $db->statement('DROP FUNCTION IF EXISTS app_current_user()');
+        // QA 5b-1 F-L6: the definer functions and GUC helpers stay. A running app (TENANCY_RLS=true) still calls
+        // sp_resolve_host() & co.; dropping them would take every storefront down until a config change + restart.
+        // They are harmless without policies, and up() replaces them (CREATE OR REPLACE).
 
         if (RlsPolicies::roleExists($db, RlsPolicies::APP_ROLE)) {
             $db->statement('GRANT UPDATE, DELETE ON audit_logs TO '.RlsPolicies::APP_ROLE);

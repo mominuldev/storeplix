@@ -37,10 +37,13 @@ export const mainNav: NavEntry[] = [
     label: 'Orders',
     to: '/orders',
     icon: ShoppingBag,
-    // Phase 5a §9: Unfinished orders, Returns, Shipments, Invoices & labels and Fake order guard are hidden (§11).
+    // 5b §10: Returns and Invoices & labels (5b-4/5b-5). Shipments arrives with couriers (5b-3); Unfinished orders and
+    // Fake order guard stay hidden.
     children: [
       { label: 'All orders', to: '/orders' },
       { label: 'Create order', to: '/orders/new' },
+      { label: 'Returns', to: '/returns' },
+      { label: 'Invoices & labels', to: '/orders/print' },
     ],
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },

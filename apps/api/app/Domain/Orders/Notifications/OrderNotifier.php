@@ -43,7 +43,8 @@ class OrderNotifier
         }
     }
 
-    public function sms(Order $order, string $event, ?bool $notify, ?string $carrier = null): void
+    /** $ref: per-occurrence dedupe key for events that can repeat (order_updated: the items_edited event id). */
+    public function sms(Order $order, string $event, ?bool $notify, ?string $carrier = null, ?string $ref = null): void
     {
         if (self::$muted) {
             return;
@@ -53,6 +54,6 @@ class OrderNotifier
         if (! ($notify ?? (bool) ($toggles[$event] ?? false))) {
             return;
         }
-        SendOrderSms::dispatch($order->id, $event, $carrier)->forTenant($order->tenant_id)->onQueue(self::QUEUE)->afterCommit();
+        SendOrderSms::dispatch($order->id, $event, $carrier, $ref)->forTenant($order->tenant_id)->onQueue(self::QUEUE)->afterCommit();
     }
 }

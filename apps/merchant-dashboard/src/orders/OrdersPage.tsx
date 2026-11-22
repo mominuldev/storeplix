@@ -1,7 +1,7 @@
 import type { OrderChannel, OrderListFilters, OrderStatus, OrderSummary, PaymentStatus } from '@storeplix/types';
-import { Button, buttonVariants, DataTable, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { Button, buttonVariants, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Plus, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Plus, Printer, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatBdt } from '../catalog/format';
@@ -13,12 +13,15 @@ import { useCommerceInvalidate, useGeoIndex, useOrders } from '../commerce/queri
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
+import { documentKindLabels, documentKinds } from '../documents/labels';
+import { usePrintJob } from '../documents/usePrintJob';
 import { ShipOrderDialog } from './actions';
 import { useQuickTransition } from './transitions';
 
 // Figma Orders 7:276 (mobile Orders 31:4886, OrderCard 30:3171). Contract §9: status tabs with counts, search,
 // Payment / Source / District / date filters, Next step button, bulk Confirm / Mark packed. Not built (§11): Risk
-// column and filter, Courier problems tab, Quick chips (advance), Book courier, Print invoices, Export.
+// column and filter, Courier problems tab, Quick chips (advance), Book courier, Export. 5b-4: bulk Print (documents)
+// and the Printed filter (`filter[printed]` / `filter[not_printed]`).
 
 const RANGES = [
   { value: '7', label: 'Last 7 days' },
@@ -28,6 +31,13 @@ const RANGES = [
 ] as const;
 
 type Tab = 'all' | OrderStatus;
+
+const PRINTED = [
+  { value: 'invoice_not', label: 'Invoice not printed', filter: { not_printed: 'invoice' } },
+  { value: 'label_not', label: 'Label not printed', filter: { not_printed: 'label' } },
+  { value: 'invoice_today', label: 'Invoice printed today', filter: { printed: 'invoice' } },
+  { value: 'label_today', label: 'Label printed today', filter: { printed: 'label' } },
+] as const satisfies readonly { value: string; label: string; filter: Pick<OrderListFilters, 'printed' | 'not_printed'> }[];
 
 export function OrdersPage() {
   const navigate = useNavigate();
@@ -43,6 +53,8 @@ export function OrdersPage() {
   const channel = (params.get('channel') ?? '') as OrderChannel | '';
   const district = params.get('district') ?? '';
   const range = params.get('range') ?? '30';
+  const printedParam = PRINTED.find((p) => p.value === params.get('printed'));
+  const print = usePrintJob();
   const [selected, setSelected] = useState<string[]>([]);
   const [shipping, setShipping] = useState<OrderSummary | null>(null);
 
@@ -53,6 +65,7 @@ export function OrdersPage() {
     payment_status: payment ? [payment] : undefined,
     channel: channel ? [channel] : undefined,
     district_code: district || undefined,
+    ...(printedParam?.filter ?? {}),
     placed_from: placedFrom,
     q: debounced || undefined,
     page,
@@ -147,7 +160,7 @@ export function OrdersPage() {
     },
   ];
 
-  const filtered = !!(debounced || payment || channel || district || tab !== 'all');
+  const filtered = !!(debounced || payment || channel || district || printedParam || tab !== 'all');
   const counts = meta?.counts;
 
   return (
@@ -156,9 +169,14 @@ export function OrdersPage() {
         title="Orders"
         subtitle="Confirm, ship and collect. Each order shows its next step."
         actions={
-          <Link to="/orders/new" className={buttonVariants()}>
-            <Plus aria-hidden className="size-4" /> Create order
-          </Link>
+          <>
+            <Link to="/orders/print" className={buttonVariants({ variant: 'secondary' })}>
+              <Printer aria-hidden className="size-4" /> Invoices & labels
+            </Link>
+            <Link to="/orders/new" className={buttonVariants()}>
+              <Plus aria-hidden className="size-4" /> Create order
+            </Link>
+          </>
         }
       />
       <Tabs
@@ -206,6 +224,14 @@ export function OrdersPage() {
                 </option>
               ))}
             </FilterSelect>
+            <FilterSelect label="Printed" value={printedParam?.value ?? ''} onChange={(e) => set({ printed: e.target.value })}>
+              <option value="">Printed</option>
+              {PRINTED.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </FilterSelect>
             <FilterSelect label="Date range" value={range} onChange={(e) => set({ range: e.target.value === '30' ? null : e.target.value })}>
               {RANGES.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -223,6 +249,18 @@ export function OrdersPage() {
         onSelectedChange={setSelected}
         bulkActions={
           <>
+            <Menu
+              label="Print selected"
+              align="start"
+              disabled={print.pending || selected.length > 100}
+              triggerClassName={cn(buttonVariants({ size: 'sm', variant: 'secondary' }), 'size-auto text-text-primary')}
+              trigger={
+                <>
+                  <Printer aria-hidden className="size-4" /> Print <ChevronDown aria-hidden className="size-4" />
+                </>
+              }
+              entries={documentKinds.map((k) => ({ key: k, label: documentKindLabels[k].noun(selected.length), onSelect: () => print.start(k, selected) }))}
+            />
             <Button size="sm" variant="secondary" loading={bulk.isPending && bulk.variables === 'ready'} onClick={() => bulk.mutate('ready')}>
               Mark packed
             </Button>

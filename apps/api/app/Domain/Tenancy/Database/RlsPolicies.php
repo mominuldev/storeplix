@@ -24,7 +24,7 @@ final class RlsPolicies
 
     /** Policy names per table (for drops). */
     public const NAMES = [
-        'tenant_users' => ['tenant_users_membership'],
+        'tenant_users' => ['tenant_users_membership', 'tenant_users_select', 'tenant_users_insert', 'tenant_users_update', 'tenant_users_delete'],
         'audit_logs' => ['audit_logs_select', 'audit_logs_insert'],
         'sms_messages' => ['sms_messages_select', 'sms_messages_insert', 'sms_messages_update'],
     ];
@@ -52,12 +52,17 @@ final class RlsPolicies
         self::dropPolicies($db, $table);
 
         match ($table) {
-            // Membership list for /auth/me and ResolveTenant before a tenant is set (app.user_id), B2.
-            'tenant_users' => $db->statement(
-                "CREATE POLICY tenant_users_membership ON {$t} FOR ALL TO {$target}
-                   USING (tenant_id = {$tenant} OR user_id = ".self::USER.")
-                   WITH CHECK (tenant_id = {$tenant})"
-            ),
+            // Membership list for /auth/me and ResolveTenant before a tenant is set (app.user_id), B2. Only READS
+            // follow the user: writes are limited to the current tenant, so a user can't change or delete their
+            // memberships in other tenants (QA 5b-1 F-L2).
+            'tenant_users' => [
+                $db->statement("CREATE POLICY tenant_users_select ON {$t} FOR SELECT TO {$target}
+                    USING (tenant_id = {$tenant} OR user_id = ".self::USER.')'),
+                $db->statement("CREATE POLICY tenant_users_insert ON {$t} FOR INSERT TO {$target} WITH CHECK (tenant_id = {$tenant})"),
+                $db->statement("CREATE POLICY tenant_users_update ON {$t} FOR UPDATE TO {$target}
+                    USING (tenant_id = {$tenant}) WITH CHECK (tenant_id = {$tenant})"),
+                $db->statement("CREATE POLICY tenant_users_delete ON {$t} FOR DELETE TO {$target} USING (tenant_id = {$tenant})"),
+            ],
             // Platform events (tenant_id null) are insertable but readable only through pgsql_admin. No UPDATE /
             // DELETE policy (and no grant): append-only (SECURITY.md T18).
             'audit_logs' => [

@@ -33,8 +33,8 @@ class StoreSettingsTest extends TestCase
                 'region' => ['country', 'currency', 'timezone'],
                 'seo' => ['title', 'description', 'share_image', 'hide_from_search'],
                 'commerce' => [
-                    'checkout' => ['cod_enabled'], 'order_prefix', 'next_order_number',
-                    'notifications' => ['new_order_email', 'sms_language', 'customer_sms' => ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled']],
+                    'checkout' => ['cod_enabled', 'cod_advance'], 'order_prefix', 'next_order_number', 'tax' => ['display', 'rate_bps', 'bin'], 'invoice' => ['footer'],
+                    'notifications' => ['new_order_email', 'sms_language', 'customer_sms' => ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated']],
                 ],
                 'updated_at',
             ]])

@@ -2,6 +2,7 @@
 
 use App\Domain\Billing\BillingServiceProvider;
 use App\Domain\Catalog\CatalogServiceProvider;
+use App\Domain\Documents\DocumentsServiceProvider;
 use App\Domain\Orders\CommerceServiceProvider;
 use App\Domain\Sms\SmsServiceProvider;
 use App\Domain\Stores\StoresServiceProvider;
@@ -16,4 +17,5 @@ return [
     CatalogServiceProvider::class,
     CommerceServiceProvider::class,
     SmsServiceProvider::class,
+    DocumentsServiceProvider::class,
 ];

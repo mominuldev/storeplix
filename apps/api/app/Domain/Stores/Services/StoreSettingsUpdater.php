@@ -97,7 +97,11 @@ class StoreSettingsUpdater
         }
 
         // Phase 5 §3.5: checkout / numbering / notification settings.
-        foreach (['checkout.cod_enabled' => 'cod_enabled', 'notifications.new_order_email' => 'notify_new_order_email', 'notifications.sms_language' => 'sms_language'] as $key => $column) {
+        foreach ([
+            'checkout.cod_enabled' => 'cod_enabled', 'notifications.new_order_email' => 'notify_new_order_email', 'notifications.sms_language' => 'sms_language',
+            // Phase 5b (P5B-56)
+            'tax.display' => 'tax_display', 'tax.rate_bps' => 'tax_rate_bps', 'tax.bin' => 'tax_bin', 'invoice.footer' => 'invoice_footer',
+        ] as $key => $column) {
             [$section, $field] = explode('.', $key);
             if (isset($input[$section]) && is_array($input[$section]) && array_key_exists($field, $input[$section]) && $settings->getAttribute($column) !== $input[$section][$field]) {
                 $settings->setAttribute($column, $input[$section][$field]);

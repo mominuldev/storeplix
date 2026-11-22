@@ -127,6 +127,33 @@ class OrderPlacementService
     }
 
     /**
+     * Exchange order (P5B-67): a manual order inside the CALLER's transaction (ReturnService holds the original order
+     * and the return row locked). Same plan limit as manual orders. Input as manual() plus `credit` (exchange credit,
+     * allocated as a fixed discount over the lines, capped at the subtotal), `source_order_id` and `tags`.
+     * Notifications are the caller's job (after commit).
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public function placeExchange(Store $store, array $input): Order
+    {
+        $lines = [];
+        foreach (array_values($input['items']) as $i => $item) {
+            $lines[] = ['key' => $i, 'variant_id' => strtolower((string) $item['variant_id']), 'quantity' => (int) $item['quantity']];
+        }
+        if (DB::getDriverName() === 'pgsql') {
+            DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ['orders:'.$store->id]);
+        }
+        FeatureGate::assertWithin($this->context->tenant(), Limit::OrdersPerMonth);
+
+        return $this->placeLocked($store, $lines, $input + ['source' => 'dashboard', 'coupon_code' => null], [Product::ACTIVE, Product::DRAFT]);
+    }
+
+    public function notifyPlaced(Order $order, ?bool $notify): void
+    {
+        $this->notifier->placed($order, $notify);
+    }
+
+    /**
      * OrderQuote (POST /orders/quote): the same math without writes; stock and coupon problems come back as data.
      *
      * @param  array<string, mixed>  $input
@@ -249,6 +276,18 @@ class OrderPlacementService
             }
         }
 
+        // 4b. Exchange credit (P5B-67): a fixed discount (not a coupon), capped at the merchandise after discount,
+        // allocated over the lines with the same largest-remainder rule (P5-12).
+        $creditApplied = 0;
+        if (($input['credit'] ?? 0) > 0) {
+            $creditApplied = min((int) $input['credit'], $priced['subtotal'] - $priced['discount']);
+            $shares = CartPricer::allocate($creditApplied, array_map(fn ($l) => $l['line_amount'] - $l['discount_amount'], $priced['lines']));
+            foreach ($shares as $i => $share) {
+                $priced['lines'][$i]['discount_amount'] += $share;
+            }
+            $priced['discount'] += $creditApplied;
+        }
+
         // 5. Zone, free delivery, free-shipping coupon, merchant override.
         $address = $input['address'];
         $merchandise = $priced['subtotal'] - $priced['discount'];
@@ -306,7 +345,8 @@ class OrderPlacementService
         $order->delivery_max_days = $zone?->max_days;
         $order->shipping_overridden = $override !== null;
         $order->customer_note = $input['customer_note'] ?? null;
-        $order->tags = [];
+        $order->tags = array_values($input['tags'] ?? []);
+        $order->source_order_id = $input['source_order_id'] ?? null;
         $order->idempotency_key = $input['idempotency_key'] ?? null;
         if (isset($input['confirmation_token'])) {
             $order->confirmation_token_hash = hash('sha256', $input['confirmation_token']);
@@ -346,6 +386,9 @@ class OrderPlacementService
         }
 
         $meta = ['channel' => $order->channel, 'created_via' => $order->created_via];
+        if ($creditApplied > 0 || isset($input['source_order_id'])) {
+            $meta += ['exchange_credit_amount' => $creditApplied, 'source_order_id' => $input['source_order_id'] ?? null];
+        }
         if ($override !== null) {
             $meta += ['shipping_overridden' => true, 'computed_shipping_amount' => $computedShipping, 'shipping_amount' => $override];
         }

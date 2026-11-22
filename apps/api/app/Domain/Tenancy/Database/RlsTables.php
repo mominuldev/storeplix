@@ -7,17 +7,18 @@ namespace App\Domain\Tenancy\Database;
  * rollback, database/sql/rls-emergency-off.sql and RlsCoverageTest all use it; the coverage test fails when a
  * table with a tenant_id column is missing here or lacks a forced policy.
  *
- * Every later table with tenant_id (5b-2…5b-5: payment_gateway_accounts, payment_links, webhook_events,
- * courier_accounts, courier_area_mappings, shipment_events, shipment_batches, document_templates, documents,
- * return_requests, return_items, return_events) is created with RLS in its own migration
- * (RlsPolicies::enableFor()) and added to TENANT in the same change.
+ * Every later table with tenant_id (5b-2/5b-3: payment_gateway_accounts, payment_links, webhook_events,
+ * courier_accounts, courier_area_mappings, shipment_events, shipment_batches) is created with RLS in its own
+ * migration (`RlsPolicies::enable($db, $table)`) and added to TENANT in the same change. The 000100 policy migration
+ * skips listed tables that don't exist yet, and database/sql/rls-emergency-off.sql must list exactly TENANT
+ * (RlsEmergencyScriptTest).
  */
 final class RlsTables
 {
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -26,6 +27,8 @@ final class RlsTables
         'shipping_zones', 'shipping_zone_areas', 'coupons', 'coupon_categories', 'coupon_products', 'carts',
         'cart_items', 'orders', 'order_items', 'order_events', 'shipments', 'payments', 'coupon_redemptions',
         'idempotency_keys',
+        // 5b-5 order changes, 5b-4 documents (RLS enabled in their own migrations)
+        'return_requests', 'return_items', 'return_events', 'document_templates', 'documents',
     ];
 
     /** @var list<string> platform tables: no tenant_id, no RLS */

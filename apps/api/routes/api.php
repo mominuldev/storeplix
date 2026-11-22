@@ -10,6 +10,7 @@ use App\Domain\Customers\Http\Controllers\CustomerController;
 use App\Domain\Dashboard\Http\Controllers\DashboardController;
 use App\Domain\DataTransfer\Http\Controllers\ExportController;
 use App\Domain\DataTransfer\Http\Controllers\ImportController;
+use App\Domain\Documents\Http\DocumentController;
 use App\Domain\Geo\Http\GeoController;
 use App\Domain\Identity\Http\Controllers\AccountController;
 use App\Domain\Identity\Http\Controllers\AuthController;
@@ -17,9 +18,11 @@ use App\Domain\Identity\Http\Controllers\OtpController;
 use App\Domain\Inventory\Http\Controllers\InventoryController;
 use App\Domain\Media\Http\Controllers\MediaController;
 use App\Domain\Navigation\Http\Controllers\NavigationController;
+use App\Domain\Orders\Http\OrderChangeController;
 use App\Domain\Orders\Http\OrderController;
 use App\Domain\Orders\Http\StorefrontOrderController;
 use App\Domain\Pages\Http\Controllers\PageController;
+use App\Domain\Returns\Http\ReturnController;
 use App\Domain\Shared\Http\HealthController;
 use App\Domain\Shipping\Http\ShippingController;
 use App\Domain\Staff\Http\Controllers\InvitationAcceptanceController;
@@ -182,6 +185,28 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('orders/{order}/notes', [OrderController::class, 'addNote'])->name('stores.orders.notes.store');
                 Route::post('orders/{order}/refunds', [OrderController::class, 'refund'])->middleware('idempotent:orders.refund')->name('stores.orders.refunds.store');
 
+                // --- Phase 5b-5: order changes (edit items, restock), returns & exchanges ---
+                Route::post('orders/{order}/items/quote', [OrderChangeController::class, 'quoteItems'])->name('stores.orders.items.quote');
+                Route::put('orders/{order}/items', [OrderChangeController::class, 'updateItems'])->name('stores.orders.items.update');
+                Route::post('orders/{order}/restock', [OrderChangeController::class, 'restock'])->name('stores.orders.restock');
+                Route::post('orders/{order}/returns', [ReturnController::class, 'store'])->name('stores.orders.returns.store');
+                Route::get('returns', [ReturnController::class, 'index'])->name('stores.returns.index');
+                Route::get('returns/{return}', [ReturnController::class, 'show'])->name('stores.returns.show');
+                Route::post('returns/{return}/approve', [ReturnController::class, 'approve'])->name('stores.returns.approve');
+                Route::post('returns/{return}/reject', [ReturnController::class, 'reject'])->name('stores.returns.reject');
+                Route::post('returns/{return}/receive', [ReturnController::class, 'receive'])->name('stores.returns.receive');
+                Route::post('returns/{return}/close', [ReturnController::class, 'close'])->name('stores.returns.close');
+                Route::post('returns/{return}/exchange-order', [ReturnController::class, 'exchangeOrder'])->middleware('idempotent:returns.exchange')->name('stores.returns.exchange-order');
+                Route::post('returns/{return}/notes', [ReturnController::class, 'addNote'])->name('stores.returns.notes.store');
+
+                // --- Phase 5b-4: documents (invoices, receipts, packing slips, courier labels) ---
+                Route::get('document-templates', [DocumentController::class, 'templates'])->name('stores.document-templates.index');
+                Route::put('document-templates/{kind}', [DocumentController::class, 'updateTemplate'])
+                    ->where('kind', 'invoice_a4|receipt_80mm|invoice_a5_two_up|packing_slip|label_4x6')->name('stores.document-templates.update');
+                Route::post('documents', [DocumentController::class, 'store'])->name('stores.documents.store');
+                Route::post('documents/preview', [DocumentController::class, 'preview'])->middleware('throttle:30,1')->name('stores.documents.preview');
+                Route::get('documents/{document}', [DocumentController::class, 'show'])->name('stores.documents.show');
+
                 Route::get('launch-checklist', [LaunchController::class, 'checklist'])->name('stores.launch-checklist');
                 Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1')->name('stores.publish');
             });
@@ -234,6 +259,10 @@ Route::prefix('v1')->group(function (): void {
             ->middleware(['throttle:checkout', 'idempotent:storefront.checkout'])->name('storefront.checkout');
         Route::post('orders/track', [StorefrontOrderController::class, 'track'])->middleware('throttle:order-track')->name('storefront.orders.track');
     });
+
+    // Phase 5b-4: signed 5-minute document download (PDF; HTML with DOCUMENTS_DRIVER=html). Tenant from the signature.
+    Route::get('documents/{document}/download', [DocumentController::class, 'download'])
+        ->middleware(['signed', 'throttle:60,1'])->name('documents.download');
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])
