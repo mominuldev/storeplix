@@ -37,6 +37,7 @@ function makeStore(status: 'active' | 'draft', mode: StoreMode): CurrentStore {
       contact: { phone: null, email: null, whatsapp: null, support_hours: null },
       social: { facebook: null, instagram: null, youtube: null },
       preview: mode === 'preview',
+      commerce: null,
       theme: undefined,
       seo: { title: 'Demo Store', description: 'Desc', og_image_url: null, noindex: false },
       navigation: { main: { title: 'Main menu', items: [] }, footer: { title: 'Shop', items: [] }, help: { title: 'Help', items: [] } },

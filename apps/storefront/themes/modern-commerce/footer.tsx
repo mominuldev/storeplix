@@ -1,4 +1,4 @@
-import type { PaymentMethodBadge, StorefrontNavMenu } from '@storeplix/types';
+import type { PaymentMethod, PaymentMethodBadge, StorefrontNavMenu } from '@storeplix/types';
 import type { ThemeContact, ThemeStore } from '../types';
 import type { ModernCommerceSettings } from './schema';
 import { ContactList, SocialLinksRow } from './components/contact';
@@ -10,7 +10,12 @@ interface FooterProps extends ThemeContact {
   settings: ModernCommerceSettings;
   description: string | null;
   menus: StorefrontNavMenu[];
+  /** Enabled checkout methods (`config.commerce.payment_methods`); null = not sent (older API). */
+  paymentMethods?: PaymentMethod[] | null;
 }
+
+/** Checkout method → footer badge. */
+export const CHECKOUT_METHOD_BADGES: Record<PaymentMethod, PaymentMethodBadge[]> = { cod: ['cod'], bkash: ['bkash'], sslcommerz: ['visa', 'mastercard'] };
 
 export const PAYMENT_LABELS: Record<PaymentMethodBadge, string> = {
   cod: 'Cash on delivery',
@@ -43,9 +48,11 @@ function Column({ menu }: { menu: StorefrontNavMenu }) {
 }
 
 /** Figma "Site Footer/Desktop" (1:10700) / "Site Footer/Mobile" (1:10765). */
-export function Footer({ store, settings, description, contact, social, menus }: FooterProps) {
+export function Footer({ store, settings, description, contact, social, menus, paymentMethods = null }: FooterProps) {
   const tagline = settings.footer.tagline ?? description;
-  const payments = settings.footer.showPaymentMethods ? settings.footer.paymentMethods : [];
+  // "Pay with" shows what checkout really accepts once the API sends it (PHASE-5-CONTRACT §5).
+  const accepted = paymentMethods ? paymentMethods.flatMap((m) => CHECKOUT_METHOD_BADGES[m] ?? []) : settings.footer.paymentMethods;
+  const payments = settings.footer.showPaymentMethods ? accepted : [];
   const columns = menus.filter((m) => m.items.length > 0);
   const year = new Date().getFullYear();
 

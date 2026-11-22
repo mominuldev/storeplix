@@ -6,11 +6,12 @@ import { getFlashDeals, type FlashDeal } from '@/lib/products';
 import { Countdown } from '../components/countdown';
 import { Icon } from '../components/icon';
 import { MaybeLink } from '../components/product-card';
+import { QuickAddButton } from '../commerce/quick-add';
 import { ProductImage } from '../components/product-image';
 
 /**
  * Figma "Flash Deal Card" (1:9642): discount pill, sale price, stock meter, Add to cart. Real deals
- * have no stock data, so the meter is hidden. No link / cart until Phase 5.
+ * have no stock data, so the meter is hidden. Real deals link to the PDP and add to the bag.
  */
 function DealCard({ deal }: { deal: FlashDeal }) {
   const meter = deal.stock_left !== null && deal.claimed_percent !== null ? { left: deal.stock_left, claimed: deal.claimed_percent } : null;
@@ -58,14 +59,18 @@ function DealCard({ deal }: { deal: FlashDeal }) {
           </span>
         </div>
       ) : null}
-      <button
-        type="button"
-        disabled
-        className="type-label-m mt-auto flex cursor-not-allowed items-center justify-center gap-2 rounded-control bg-brand px-5 py-3 text-on-brand opacity-60"
-      >
-        Add to cart
-        <Icon name="bag-inverse" />
-      </button>
+      {deal.href ? (
+        <QuickAddButton slug={deal.slug} name={deal.name} className="mt-auto" />
+      ) : (
+        <button
+          type="button"
+          disabled
+          className="type-label-m mt-auto flex cursor-not-allowed items-center justify-center gap-2 rounded-control bg-brand px-5 py-3 text-on-brand opacity-60"
+        >
+          Add to cart
+          <Icon name="bag-inverse" />
+        </button>
+      )}
     </article>
   );
 }

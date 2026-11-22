@@ -18,6 +18,12 @@ export const can = {
   manageCatalog: (role: TenantRole | undefined) => has(ROLE_CAN.manage_catalog, role),
   /** Phase 4 P4-14/15: CSV imports and exports (O A). */
   bulkData: (role: TenantRole | undefined) => has(ROLE_CAN.bulk_data, role),
+  /** Phase 5a P5-21: coupons write (O A). */
+  manageMarketing: (role: TenantRole | undefined) => has(ROLE_CAN.manage_marketing, role),
+  /** Phase 5a P5-21: refunds and cancelling paid orders (O A). */
+  manageRefunds: (role: TenantRole | undefined) => has(ROLE_CAN.manage_refunds, role),
+  /** Phase 5a P5-21: shipping, checkout, notifications, publish (O A). */
+  manageSettings: (role: TenantRole | undefined) => has(ROLE_CAN.manage_settings, role),
   manageStaff: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   editSettings: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   viewBilling: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',

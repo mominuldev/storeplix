@@ -22,6 +22,7 @@ composer dev                                         # = php artisan dev (below)
 | server | `serve --port=8000 --no-reload` | `PHP_CLI_SERVER_WORKERS=4` workers, so one slow request doesn't stall every page |
 | queue | `queue:listen --queue=default,media` | mails, media variants, storefront revalidation |
 | queue-bulk | `queue:listen --queue=bulk --timeout=310` | CSV imports and exports, never queued behind short jobs |
+| queue-notifications | `queue:listen --queue=notifications` | order SMS and email (Phase 5a) |
 | scheduler | `schedule:work` | daily `sanctum:prune-expired --hours=24` |
 
 On SQLite set `DB_JOURNAL_MODE=wal` and `DB_BUSY_TIMEOUT=5000` so these processes don't hit "database is locked".

@@ -15,13 +15,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\CatalogFixtures;
+use Tests\Support\ForksRaces;
 use Tests\TestCase;
 
 /** Phase 4 security group (§10/§12): mass assignment, price manipulation, staff cost/PII, plan and stock races. */
 #[Group('security')]
 class CatalogSecurityTest extends TestCase
 {
-    use CatalogFixtures, RefreshDatabase;
+    use CatalogFixtures, ForksRaces, RefreshDatabase;
 
     public function test_mass_assignment_probes_have_no_effect(): void
     {
@@ -93,69 +94,52 @@ class CatalogSecurityTest extends TestCase
     }
 
     /** Postgres only: two connections race at limit − 1; exactly one create succeeds. */
+    #[Group('race')]
     public function test_plan_limit_race(): void
     {
         if (DB::getDriverName() !== 'pgsql' || ! function_exists('pcntl_fork')) {
             $this->markTestSkipped('Needs Postgres + pcntl (CI perf/security job).');
         }
-        $this->seed(PlanSeeder::class);
-        [, $tenant, $store, $h] = $this->shop();
-        $this->tenancy()->run($tenant, function () use ($store) {
-            Subscription::query()->update(['plan_id' => Plan::query()->where('code', Plan::FREE)->value('id'), 'status' => Subscription::ACTIVE]);
-            for ($i = 0; $i < 99; $i++) {
-                $p = new Product(['name' => "P{$i}", 'slug' => "p-{$i}", 'type' => 'simple', 'currency' => 'BDT']);
-                $p->store_id = $store->id;
-                $p->save();
-            }
-        });
-        FeatureGate::forget($tenant->id);
-        $statuses = $this->parallel(2, fn () => $this->api($h, 'POST', "/api/v1/stores/{$store->id}/products", $this->simpleProduct())->status());
-        sort($statuses);
-        $this->assertSame([201, 402], $statuses);
+        try {
+            $this->seed(PlanSeeder::class);
+            [, $tenant, $store, $h] = $this->shop();
+            $this->tenancy()->run($tenant, function () use ($store) {
+                Subscription::query()->update(['plan_id' => Plan::query()->where('code', Plan::FREE)->value('id'), 'status' => Subscription::ACTIVE]);
+                for ($i = 0; $i < 99; $i++) {
+                    $p = new Product(['name' => "P{$i}", 'slug' => "p-{$i}", 'type' => 'simple', 'currency' => 'BDT']);
+                    $p->store_id = $store->id;
+                    $p->save();
+                }
+            });
+            FeatureGate::forget($tenant->id);
+            $statuses = $this->parallel(2, fn () => $this->api($h, 'POST', "/api/v1/stores/{$store->id}/products", $this->simpleProduct())->status());
+            sort($statuses);
+            $this->assertSame([201, 402], $statuses);
+        } finally {
+            $this->raceCleanup();
+        }
     }
 
     /** Postgres only (§12 inventory concurrency): 50 × −1 on stock 50 → 0, 50 ledger rows, never negative. */
     #[Group('perf')]
+    #[Group('race')]
     public function test_parallel_adjustments_never_go_negative(): void
     {
         if (DB::getDriverName() !== 'pgsql' || ! function_exists('pcntl_fork')) {
             $this->markTestSkipped('Needs Postgres + pcntl (CI perf job).');
         }
-        [, $tenant, $store, $h] = $this->shop();
-        $p = $this->createProduct($h, $store, $this->simpleProduct(variant: ['initial_on_hand' => 50]));
-        $variant = $p['variants'][0]['id'];
-        $statuses = $this->parallel(55, fn () => $this->api($h, 'POST', "/api/v1/stores/{$store->id}/inventory/adjustments", [
-            'reason' => 'lost', 'items' => [['variant_id' => $variant, 'mode' => 'delta', 'quantity' => -1]],
-        ])->status());
-        $this->assertSame(50, count(array_filter($statuses, fn ($s) => $s === 200)));
-        $this->assertSame(0, Inventory::withoutTenancy()->where('variant_id', $variant)->value('on_hand'));
-        $this->assertSame(50, InventoryMovement::withoutTenancy()->where('variant_id', $variant)->where('reason', 'lost')->count());
-    }
-
-    /**
-     * Runs $fn in $n forked children with fresh DB connections; returns their results.
-     * Requires committed data (RefreshDatabase transactions are not visible to children), so data is committed first.
-     *
-     * @return list<int>
-     */
-    private function parallel(int $n, callable $fn): array
-    {
-        DB::commit();
-        $files = [];
-        for ($i = 0; $i < $n; $i++) {
-            $file = tempnam(sys_get_temp_dir(), 'par');
-            $files[] = $file;
-            if (pcntl_fork() === 0) {
-                DB::purge();
-                DB::reconnect();
-                file_put_contents($file, (string) $fn());
-                exit(0);
-            }
+        try {
+            [, $tenant, $store, $h] = $this->shop();
+            $p = $this->createProduct($h, $store, $this->simpleProduct(variant: ['initial_on_hand' => 50]));
+            $variant = $p['variants'][0]['id'];
+            $statuses = $this->parallel(55, fn () => $this->api($h, 'POST', "/api/v1/stores/{$store->id}/inventory/adjustments", [
+                'reason' => 'lost', 'items' => [['variant_id' => $variant, 'mode' => 'delta', 'quantity' => -1]],
+            ])->status());
+            $this->assertSame(50, count(array_filter($statuses, fn ($s) => $s === 200)));
+            $this->assertSame(0, Inventory::withoutTenancy()->where('variant_id', $variant)->value('on_hand'));
+            $this->assertSame(50, InventoryMovement::withoutTenancy()->where('variant_id', $variant)->where('reason', 'lost')->count());
+        } finally {
+            $this->raceCleanup();
         }
-        while (pcntl_waitpid(0, $status) !== -1) {
-        }
-        DB::beginTransaction();
-
-        return array_map(fn ($f) => (int) file_get_contents($f), $files);
     }
 }

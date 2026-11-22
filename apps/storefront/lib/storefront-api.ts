@@ -1,7 +1,8 @@
 import 'server-only';
 import { cache } from 'react';
 import { z } from 'zod';
-import type { SocialLinks, StoreContact, StorefrontConfig, StorefrontMedia } from '@storeplix/types';
+import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontConfig, StorefrontMedia } from '@storeplix/types';
+import { parseCommerce } from './commerce-schemas';
 import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
 import { normalizeHost } from './host';
@@ -69,13 +70,16 @@ const StorefrontConfigSchema = z.object({
   ),
   navigation: z.unknown().optional().transform(parseNavigation),
   media: z.unknown().optional().transform(parseMediaMap),
+  // Phase 5a; optional on the wire (rolling deploys) → null.
+  commerce: z.unknown().optional().transform(parseCommerce),
 });
 
 /**
  * Store config whose `theme` is still untrusted input for the theme engine. Optional-on-the-wire
  * fields (icons, contact, social, navigation, media) are always present here, with safe defaults.
  */
-export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'contact' | 'social' | 'navigation' | 'media'> & {
+export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'contact' | 'social' | 'navigation' | 'media' | 'commerce'> & {
+  commerce: StorefrontCommerce | null;
   store: StorefrontConfig['store'] & { icons: NonNullable<StorefrontConfig['store']['icons']> };
   contact: StoreContact;
   social: SocialLinks;

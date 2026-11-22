@@ -1,0 +1,394 @@
+<?php
+
+namespace App\Domain\Orders;
+
+use App\Domain\Coupons\Models\Coupon;
+use App\Domain\Coupons\Models\CouponRedemption;
+use App\Domain\Customers\Models\Customer;
+use App\Domain\Geo\AddressValidator;
+use App\Domain\Identity\Models\User;
+use App\Domain\Inventory\InventoryService;
+use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Models\OrderEvent;
+use App\Domain\Orders\Models\OrderItem;
+use App\Domain\Orders\Models\Payment;
+use App\Domain\Orders\Models\Shipment;
+use App\Domain\Orders\Notifications\OrderNotifier;
+use App\Domain\Shared\Http\ApiException;
+use App\Domain\Shared\Support\Money;
+use App\Domain\Shared\Support\Phone;
+use App\Domain\Shipping\ZoneResolver;
+use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Themes\StoreThemeService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Order lifecycle after placement (P5-17..P5-22, §3.7). Every transition locks the order row, checks the state
+ * machine, applies its side effects (stock through InventoryService, coupon, payments, customer counters), stamps the
+ * *_at column, writes a `status_changed` event, bumps `revision`, and queues notifications after commit.
+ * Lock order (§7): order → inventories (variant_id) → coupon.
+ */
+class OrderService
+{
+    public function __construct(
+        private readonly InventoryService $inventory,
+        private readonly OrderNotifier $notifier,
+        private readonly AuditLogger $audit,
+        private readonly AddressValidator $addresses,
+        private readonly ZoneResolver $zones,
+    ) {}
+
+    public function confirm(Order $order, ?User $user, ?bool $notify = null): Order
+    {
+        $from = null;
+        $order = $this->transition($order, Order::CONFIRMED, $user, function (Order $o) use (&$from) {
+            $from = $o->status;
+            $o->confirmed_at ??= now();
+        });
+        if ($from === Order::PENDING) {
+            $this->notifier->sms($order, 'order_confirmed', $notify);
+        }
+
+        return $order;
+    }
+
+    public function ready(Order $order, ?User $user): Order
+    {
+        return $this->transition($order, Order::READY_TO_SHIP, $user);
+    }
+
+    /** @param array{carrier_name?: string|null, tracking_code?: string|null, tracking_url?: string|null} $input */
+    public function ship(Order $order, array $input, ?User $user, ?bool $notify = null): Order
+    {
+        $carrier = $input['carrier_name'] ?? null;
+        $order = $this->transition($order, Order::SHIPPED, $user, function (Order $o) use ($input, $user) {
+            $now = now();
+            $shipment = new Shipment;
+            $shipment->store_id = $o->store_id;
+            $shipment->order_id = $o->id;
+            $shipment->provider = 'manual';
+            $shipment->carrier_name = $input['carrier_name'] ?? null;
+            $shipment->tracking_code = $input['tracking_code'] ?? null;
+            $shipment->tracking_url = $input['tracking_url'] ?? null;
+            $shipment->status = 'shipped';
+            $shipment->cod_amount = $o->dueAmount();
+            $shipment->shipped_at = $now;
+            $shipment->created_by = $user?->getKey();
+            $shipment->save();
+
+            $lines = [];
+            foreach (OrderItem::query()->where('order_id', $o->id)->orderBy('position')->get() as $i => $item) {
+                if ($item->tracked && $item->variant_id !== null) {
+                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'field' => "items.{$i}.quantity"];
+                }
+            }
+            $this->inventory->ship($o->store_id, $lines, $o->id, $user?->getKey());
+            $o->shipped_at = $now;
+        }, meta: array_filter([
+            'carrier_name' => $input['carrier_name'] ?? null,
+            'tracking_code' => $input['tracking_code'] ?? null,
+            'tracking_url' => $input['tracking_url'] ?? null,
+        ]));
+        $this->notifier->sms($order, 'order_shipped', $notify, $carrier);
+
+        return $order;
+    }
+
+    public function deliver(Order $order, ?User $user): Order
+    {
+        return $this->transition($order, Order::DELIVERED, $user, function (Order $o) {
+            $now = now();
+            Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
+                ->update(['status' => 'succeeded', 'verified_at' => $now, 'updated_at' => $now]);
+            if ($o->total_amount > 0) {
+                $o->paid_amount = $o->total_amount;
+                $o->payment_status = $o->refunded_amount > 0 ? 'partially_refunded' : 'paid';
+            }
+            Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->update(['status' => 'delivered', 'delivered_at' => $now, 'updated_at' => $now]);
+            $o->delivered_at = $now;
+            if ($o->customer_id !== null) {
+                Customer::withTrashed()->whereKey($o->customer_id)->update([
+                    'delivered_orders_count' => DB::raw('delivered_orders_count + 1'),
+                    'total_spent_amount' => DB::raw('total_spent_amount + '.(int) $o->total_amount),
+                ]);
+            }
+        });
+    }
+
+    /** @param list<array{item_id: string, quantity: int}> $restock */
+    public function return(Order $order, array $restock, ?string $note, ?User $user): Order
+    {
+        return $this->transition($order, Order::RETURNED, $user, function (Order $o) use ($restock, $note, $user) {
+            $items = OrderItem::query()->where('order_id', $o->id)->get()->keyBy('id');
+            $errors = [];
+            $wanted = [];
+            foreach ($restock as $i => $line) {
+                $item = $items[strtolower($line['item_id'])] ?? null;
+                if ($item === null) {
+                    $errors["restock.{$i}.item_id"] = ['Unknown item.'];
+
+                    continue;
+                }
+                $quantity = (int) $line['quantity'];
+                $max = $item->quantity - $item->restocked_quantity - ($wanted[$item->id] ?? 0);
+                if ($quantity > $max) {
+                    $errors["restock.{$i}.quantity"] = ["You can restock at most {$max}."];
+
+                    continue;
+                }
+                $wanted[$item->id] = ($wanted[$item->id] ?? 0) + $quantity;
+            }
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
+            $lines = [];
+            foreach ($wanted as $itemId => $quantity) {
+                $item = $items[$itemId];
+                if ($quantity <= 0) {
+                    continue;
+                }
+                OrderItem::query()->whereKey($itemId)->update(['restocked_quantity' => $item->restocked_quantity + $quantity, 'updated_at' => now()]);
+                if ($item->tracked && $item->variant_id !== null) {
+                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity];
+                }
+            }
+            $this->inventory->restock($o->store_id, $lines, $o->id, $user?->getKey(), $note !== null ? mb_substr($note, 0, 255) : null);
+
+            $now = now();
+            Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
+                ->update(['status' => 'cancelled', 'updated_at' => $now]);
+            Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->update(['status' => 'returned', 'returned_at' => $now, 'updated_at' => $now]);
+            $o->returned_at = $now;
+            if ($o->customer_id !== null) {
+                Customer::withTrashed()->whereKey($o->customer_id)->update(['returned_orders_count' => DB::raw('returned_orders_count + 1')]);
+            }
+        }, $note);
+    }
+
+    public function cancel(Order $order, string $reason, ?string $note, ?bool $notify, ?User $user, ?string $role): Order
+    {
+        $paid = false;
+        $order = $this->transition($order, Order::CANCELLED, $user, function (Order $o) use ($reason, $role, $user, &$paid) {
+            $paid = $o->paid_amount > 0;
+            if ($paid && ! Permission::ManageRefunds->grantedTo($role)) {
+                throw new ApiException(403, 'forbidden', 'Only owners and managers can cancel paid orders.');
+            }
+            $lines = [];
+            foreach (OrderItem::query()->where('order_id', $o->id)->get() as $item) {
+                if ($item->tracked && $item->variant_id !== null) {
+                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity];
+                }
+            }
+            $this->inventory->release($o->store_id, $lines);
+
+            $redemption = CouponRedemption::query()->where('order_id', $o->id)->where('status', CouponRedemption::ACTIVE)->first();
+            if ($redemption !== null) {
+                Coupon::query()->whereKey($redemption->coupon_id)->lockForUpdate()->first();
+                $redemption->status = CouponRedemption::RELEASED;
+                $redemption->save();
+                Coupon::query()->whereKey($redemption->coupon_id)->where('used_count', '>', 0)->update(['used_count' => DB::raw('used_count - 1')]);
+                OrderTimeline::record($o, 'coupon_released', $user, null, ['code' => $o->coupon_code]);
+            }
+
+            $now = now();
+            Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
+                ->update(['status' => 'cancelled', 'updated_at' => $now]);
+            if ($o->customer_id !== null) {
+                Customer::withTrashed()->whereKey($o->customer_id)->where('orders_count', '>', 0)->update(['orders_count' => DB::raw('orders_count - 1')]);
+            }
+            $o->cancel_reason = $reason;
+            $o->cancelled_at = $now;
+        }, $note, ['reason' => $reason]);
+
+        if ($paid) {
+            $this->audit->log('order.cancelled', $order, ['reason' => $reason], $user);
+        }
+        $this->notifier->sms($order, 'order_cancelled', $notify);
+
+        return $order;
+    }
+
+    /**
+     * Manual refund record (P5-18). Amount ≤ paid − refunded. Idempotency-Key handled by the route middleware; the
+     * payments unique key is the final guard.
+     *
+     * @param  array{amount: int, method: string, reference?: string|null, note?: string|null}  $input
+     */
+    public function refund(Order $order, array $input, ?string $idempotencyKey, ?User $user): Payment
+    {
+        $payment = DB::transaction(function () use ($order, $input, $idempotencyKey, $user) {
+            /** @var Order $o */
+            $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $refundable = $o->paid_amount - $o->refunded_amount;
+            if ($input['amount'] > $refundable) {
+                $message = $refundable > 0
+                    ? 'You can refund at most '.Money::bdt($refundable).'.'
+                    : 'Nothing has been paid on this order yet.';
+                throw new ApiException(422, 'refund_exceeds_paid', $message, ['amount' => [$message]]);
+            }
+            $charge = Payment::query()->where('order_id', $o->id)->where('type', 'charge')->where('status', 'succeeded')->orderBy('created_at')->first();
+            $payment = new Payment;
+            $payment->store_id = $o->store_id;
+            $payment->order_id = $o->id;
+            $payment->provider = 'manual';
+            $payment->type = 'refund';
+            $payment->status = 'succeeded';
+            $payment->amount = (int) $input['amount'];
+            $payment->currency = $o->currency;
+            $payment->method = $input['method'];
+            $payment->reference = $input['reference'] ?? null;
+            $payment->note = $input['note'] ?? null;
+            $payment->parent_payment_id = $charge?->id;
+            $payment->idempotency_key = $idempotencyKey;
+            $payment->actor_user_id = $user?->getKey();
+            $payment->save();
+
+            $o->refunded_amount += $payment->amount;
+            $o->payment_status = $o->refunded_amount >= $o->paid_amount ? 'refunded' : 'partially_refunded';
+            $o->revision++;
+            $o->save();
+            if ($o->customer_id !== null) {
+                $amount = (int) $payment->amount;
+                Customer::withTrashed()->whereKey($o->customer_id)->update([
+                    'total_spent_amount' => DB::raw("CASE WHEN total_spent_amount >= {$amount} THEN total_spent_amount - {$amount} ELSE 0 END"),
+                ]);
+            }
+            OrderTimeline::record($o, 'refund', $user, $payment->note, ['amount' => $payment->amount, 'method' => $payment->method, 'payment_id' => $payment->id]);
+            $this->audit->log('order.refunded', $o, ['amount' => $payment->amount, 'method' => $payment->method], $user);
+
+            return $payment;
+        });
+
+        return $payment;
+    }
+
+    /**
+     * PATCH (P5-20): contact, address, note, tags while pending / confirmed / ready_to_ship. Returns the order and the
+     * shipping hint for a changed address (not applied automatically).
+     *
+     * @param  array<string, mixed>  $input  validated UpdateOrderInput
+     * @return array{0: Order, 1: array<string, mixed>|null}
+     */
+    public function update(Order $order, array $input, ?User $user): array
+    {
+        return DB::transaction(function () use ($order, $input, $user) {
+            /** @var Order $o */
+            $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if ($o->revision !== (int) $input['revision']) {
+                throw StoreThemeService::conflict();
+            }
+            if (! in_array($o->status, Order::EDITABLE, true)) {
+                throw new ApiException(409, 'invalid_state_transition', 'This order can’t be edited any more.');
+            }
+            $changed = [];
+            $contact = $input['contact'] ?? [];
+            if (array_key_exists('name', $contact) && $contact['name'] !== $o->customer_name) {
+                $o->customer_name = AddressValidator::clean($contact['name']) ?? $o->customer_name;
+                $changed[] = 'contact.name';
+            }
+            if (array_key_exists('phone', $contact)) {
+                $phone = Phone::bdMsisdn($contact['phone']);
+                if ($phone !== $o->customer_phone) {
+                    $o->customer_phone = (string) $phone;
+                    $changed[] = 'contact.phone';
+                }
+            }
+            if (array_key_exists('email', $contact)) {
+                $email = $contact['email'] !== null ? strtolower(trim($contact['email'])) : null;
+                if ($email !== $o->customer_email) {
+                    $o->customer_email = $email;
+                    $changed[] = 'contact.email';
+                }
+            }
+            $hint = null;
+            if (array_key_exists('shipping_address', $input)) {
+                $address = $this->addresses->snapshot($input['shipping_address']);
+                if ($address != $o->shipping_address) {
+                    $o->shipping_address = $address;
+                    $o->district_code = $address['district_code'];
+                    $changed[] = 'shipping_address';
+                    $hint = $this->zones->quote($o->store_id, $address['district_code'], $address['thana_code'], $o->subtotal_amount - $o->discount_amount);
+                }
+            }
+            if (array_key_exists('customer_note', $input) && $input['customer_note'] !== $o->customer_note) {
+                $o->customer_note = $input['customer_note'];
+                $changed[] = 'customer_note';
+            }
+            if (array_key_exists('tags', $input)) {
+                $tags = array_values(array_unique(array_filter(array_map(fn ($t) => AddressValidator::clean($t), $input['tags']))));
+                if ($tags !== $o->tags) {
+                    $o->tags = $tags;
+                    $changed[] = 'tags';
+                }
+            }
+            if ($changed !== []) {
+                $o->revision++;
+                $o->save();
+                OrderTimeline::record($o, 'edited', $user, null, ['fields' => $changed]);
+            }
+
+            return [$o, $hint];
+        });
+    }
+
+    public function note(Order $order, string $body, ?User $user): OrderEvent
+    {
+        return OrderTimeline::record($order, 'note', $user, $body);
+    }
+
+    /**
+     * Bulk confirm / mark packed: each order in its own transaction; wrong states are skipped, not fatal.
+     *
+     * @param  list<string>  $ids  already checked to belong to the store
+     * @return array{action: string, updated: int, skipped: list<array{id: string, reason: string}>}
+     */
+    public function bulk(Store $store, string $action, array $ids, ?User $user): array
+    {
+        $from = $action === 'confirm' ? Order::PENDING : Order::CONFIRMED;
+        $updated = 0;
+        $skipped = [];
+        foreach ($ids as $id) {
+            $order = Order::query()->where('store_id', $store->id)->whereKey($id)->first();
+            try {
+                if ($order === null || $order->status !== $from) {
+                    throw new ApiException(409, 'invalid_state_transition', 'Wrong state.');
+                }
+                $action === 'confirm' ? $this->confirm($order, $user) : $this->ready($order, $user);
+                $updated++;
+            } catch (ApiException $e) {
+                if ($e->errorCode !== 'invalid_state_transition') {
+                    throw $e;
+                }
+                $skipped[] = ['id' => $id, 'reason' => 'invalid_state_transition'];
+            }
+        }
+
+        return ['action' => $action, 'updated' => $updated, 'skipped' => $skipped];
+    }
+
+    /**
+     * @param  callable(Order): void|null  $effects
+     * @param  array<string, mixed>  $meta
+     */
+    private function transition(Order $order, string $to, ?User $user, ?callable $effects = null, ?string $body = null, array $meta = []): Order
+    {
+        return DB::transaction(function () use ($order, $to, $user, $effects, $body, $meta) {
+            /** @var Order $o */
+            $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $from = $o->status;
+            OrderStateMachine::assert($from, $to);
+            if ($effects !== null) {
+                $effects($o);
+            }
+            $o->status = $to;
+            $o->revision++;
+            $o->save();
+            OrderTimeline::record($o, 'status_changed', $user, $body, $meta, $from, $to);
+
+            return $o;
+        });
+    }
+}

@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Stock level of one variant (single location). on_hand changes ONLY through InventoryService (P4-12);
- * committed is never written in Phase 4. Neither is mass-assignable.
+ * Stock level of one variant (single location). on_hand AND committed change ONLY through InventoryService (P4-12,
+ * P5-5: committed = quantities of placed, unshipped orders). Neither is mass-assignable.
  *
  * @property string $id
  * @property string $tenant_id

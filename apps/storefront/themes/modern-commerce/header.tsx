@@ -6,6 +6,7 @@ import { Icon } from './components/icon';
 import { MobileMenu } from './components/mobile-menu';
 import { NavLink } from './components/nav-link';
 import { StoreLogo } from './components/store-logo';
+import { CartBadgeButton } from './commerce/cart-badge';
 import { telHref, whatsappHref } from '@/lib/contact';
 
 interface HeaderProps {
@@ -13,8 +14,6 @@ interface HeaderProps {
   settings: ModernCommerceSettings;
   contact: StoreContact;
   menu: StorefrontNavMenu;
-  /** From the cart API once it exists; hidden when 0. */
-  cartCount?: number;
 }
 
 function SearchField({ placeholder, id, className = '' }: { placeholder: string; id: string; className?: string }) {
@@ -39,19 +38,6 @@ function SearchField({ placeholder, id, className = '' }: { placeholder: string;
         Search
       </button>
     </form>
-  );
-}
-
-function CartButton({ count }: { count: number }) {
-  return (
-    <Link href="/cart" aria-label={`Cart${count ? `, ${count} items` : ''}`} className="relative flex h-12 w-[52px] items-center">
-      <span className="flex size-11 items-center justify-center rounded-full bg-brand text-on-brand">
-        <Icon name="bag" />
-      </span>
-      {count > 0 ? (
-        <span className="type-label-s absolute top-0 left-8 rounded-full bg-accent px-1.5 py-px text-on-accent">{count}</span>
-      ) : null}
-    </Link>
   );
 }
 
@@ -86,7 +72,7 @@ function DesktopNavItem({ item }: { item: StorefrontNavItem }) {
 }
 
 /** Figma "Site Header/Desktop" (1:10645), tablet (1:10799) and mobile (1:10751); drawer 1:14585. */
-export function Header({ store, settings, contact, menu, cartCount = 0 }: HeaderProps) {
+export function Header({ store, settings, contact, menu }: HeaderProps) {
   const tel = telHref(contact.phone);
   const wa = whatsappHref(contact.whatsapp);
   const { announcement, header } = settings;
@@ -118,7 +104,7 @@ export function Header({ store, settings, contact, menu, cartCount = 0 }: Header
               )}
             </p>
             <div className="hidden items-center gap-3 lg:flex">
-              <Link href="/track-order" className="hover:underline">
+              <Link href="/track" className="hover:underline">
                 Track order
               </Link>
             </div>
@@ -133,7 +119,7 @@ export function Header({ store, settings, contact, menu, cartCount = 0 }: Header
               <MobileMenu
                 storeName={store.name}
                 items={menu.items}
-                trackOrderHref="/track-order"
+                trackOrderHref="/track"
                 whatsappHref={wa}
               />
               <Link href="/" className="shrink-0" aria-label={`${store.name} home`}>
@@ -146,7 +132,7 @@ export function Header({ store, settings, contact, menu, cartCount = 0 }: Header
               </Link>
             </div>
             <div className="lg:hidden">
-              <CartButton count={cartCount} />
+              <CartBadgeButton />
             </div>
           </div>
 
@@ -157,19 +143,8 @@ export function Header({ store, settings, contact, menu, cartCount = 0 }: Header
           )}
 
           <div className="hidden shrink-0 items-center gap-2 lg:flex">
-            <Link href="/account" className="flex items-center gap-2 pr-3">
-              <span className="flex size-11 items-center justify-center rounded-full bg-sunken text-ink">
-                <Icon name="user" />
-              </span>
-              <span className="flex flex-col whitespace-nowrap">
-                <span className="type-body-s text-ink-muted">Hello, sign in</span>
-                <span className="text-[15px] leading-[1.3] font-semibold text-ink">Account</span>
-              </span>
-            </Link>
-            <Link href="/wishlist" aria-label="Wishlist" className="flex size-11 items-center justify-center rounded-full bg-sunken text-ink">
-              <Icon name="heart" />
-            </Link>
-            <CartButton count={cartCount} />
+            {/* Account and wishlist are deferred (PHASE-5-CONTRACT §11): hidden, never faked. */}
+            <CartBadgeButton />
           </div>
         </div>
 

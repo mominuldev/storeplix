@@ -7,8 +7,11 @@ use App\Domain\Media\MediaMaps;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Navigation\NavigationService;
 use App\Domain\Pages\Models\StorePage;
+use App\Domain\Shipping\Models\ShippingZone;
+use App\Domain\Shipping\ShippingService;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Themes\Http\Resources\ThemeConfigPresenter;
 use App\Domain\Themes\Models\StoreTheme;
 use App\Domain\Themes\ThemeConfigValidator;
@@ -66,6 +69,22 @@ class StorefrontConfigResource extends JsonResource
             ],
             'navigation' => $this->navigationMenus($preview),
             'media' => MediaMaps::storefront(ThemeConfigValidator::mediaIds($theme)),
+            'commerce' => $this->commerce($settings),
+        ];
+    }
+
+    /** StorefrontCommerce (Phase 5 §3.2): PDP delivery box, cart and footer "Pay with". */
+    private function commerce(?StoreSetting $settings): array
+    {
+        $zones = app(ShippingService::class)->zones($this->id, activeOnly: true);
+
+        return [
+            'checkout_enabled' => $this->status === Store::STATUS_ACTIVE,
+            'payment_methods' => ($settings?->cod_enabled ?? true) ? ['cod'] : [],
+            'free_delivery_over_amount' => $settings?->free_delivery_over_amount !== null ? (int) $settings->free_delivery_over_amount : null,
+            'delivery' => array_map(fn (ShippingZone $z) => [
+                'name' => $z->name, 'charge_amount' => $z->charge_amount, 'min_days' => $z->min_days, 'max_days' => $z->max_days,
+            ], $zones),
         ];
     }
 

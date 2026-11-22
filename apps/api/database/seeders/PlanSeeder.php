@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use App\Domain\Billing\Models\Plan;
 use Illuminate\Database\Seeder;
 
-/** Idempotent (updateOrCreate by code). Values from Figma Settings → Plan & billing 60:16361. */
+/** Idempotent (updateOrCreate by code). Values from Figma Settings → Plan & billing 60:16361; sms_per_month P5-26 / Q33. */
 class PlanSeeder extends Seeder
 {
     public function run(): void
@@ -15,17 +15,17 @@ class PlanSeeder extends Seeder
         $plans = [
             [
                 'code' => 'free', 'name' => 'Free', 'price_amount' => 0, 'sort' => 1,
-                'limits' => ['orders_per_month' => 50, 'staff_seats' => 5, 'products' => 100, 'courier_connections' => 1],
+                'limits' => ['orders_per_month' => 50, 'staff_seats' => 5, 'products' => 100, 'courier_connections' => 1, 'sms_per_month' => 200],
                 'features' => [],
             ],
             [
                 'code' => 'starter', 'name' => 'Starter', 'price_amount' => 49900, 'sort' => 2,
-                'limits' => ['orders_per_month' => 500, 'staff_seats' => 5, 'products' => 1000, 'courier_connections' => null],
+                'limits' => ['orders_per_month' => 500, 'staff_seats' => 5, 'products' => 1000, 'courier_connections' => null, 'sms_per_month' => 2000],
                 'features' => $starterFeatures,
             ],
             [
                 'code' => 'growth', 'name' => 'Growth', 'price_amount' => 149900, 'sort' => 3,
-                'limits' => ['orders_per_month' => null, 'staff_seats' => 15, 'products' => null, 'courier_connections' => null],
+                'limits' => ['orders_per_month' => null, 'staff_seats' => 15, 'products' => null, 'courier_connections' => null, 'sms_per_month' => null],
                 'features' => [...$starterFeatures, 'custom_roles', 'multi_warehouse', 'pos', 'profit_reports', 'api_webhooks'],
             ],
         ];

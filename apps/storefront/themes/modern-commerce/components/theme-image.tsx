@@ -7,6 +7,8 @@ interface ThemeImageProps {
   sizes: string;
   className?: string;
   priority?: boolean;
+  /** Decided on the server when the image is rendered inside a client component (env is server-only). */
+  unoptimized?: boolean;
 }
 
 /**
@@ -14,7 +16,7 @@ interface ThemeImageProps {
  * (STOREFRONT_MEDIA_ORIGINS -> next.config remotePatterns) are optimized by next/image; any other
  * https URL (already sanitized) is rendered unoptimized.
  */
-export function ThemeImage({ src, alt, sizes, className = '', priority }: ThemeImageProps) {
+export function ThemeImage({ src, alt, sizes, className = '', priority, unoptimized }: ThemeImageProps) {
   return (
     <Image
       src={src}
@@ -22,7 +24,7 @@ export function ThemeImage({ src, alt, sizes, className = '', priority }: ThemeI
       fill
       sizes={sizes}
       priority={priority}
-      unoptimized={!src.startsWith('/') && !isAllowedMediaOrigin(src)}
+      unoptimized={unoptimized ?? (!src.startsWith('/') && !isAllowedMediaOrigin(src))}
       className={`object-cover ${className}`}
     />
   );

@@ -150,13 +150,13 @@ const ProductCardSchema = z
   .object({
     id: z.string().min(1).max(64),
     slug: z.string().min(1).max(200),
-    name: z.unknown().transform((v) => cleanText(v, 200, 1)).pipe(z.string()),
-    subtitle: z.unknown().transform((v) => cleanText(v, 120, 1) ?? null),
+    name: z.unknown().optional().transform((v) => cleanText(v, 200, 1)).pipe(z.string()),
+    subtitle: z.unknown().optional().transform((v) => cleanText(v, 120, 1) ?? null),
     price_amount: amount,
     compare_at_amount: amount.nullable().catch(null),
     currency: z.string().regex(/^[A-Za-z]{3}$/).transform((c) => c.toUpperCase()).catch('BDT'),
     on_sale: z.boolean().catch(false),
-    image: z.unknown().transform(parseStorefrontMedia),
+    image: z.unknown().optional().transform(parseStorefrontMedia),
   })
   .transform(
     (c): StorefrontProductCard => ({
@@ -164,6 +164,12 @@ const ProductCardSchema = z
       compare_at_amount: c.compare_at_amount !== null && c.compare_at_amount > c.price_amount ? c.compare_at_amount : null,
     }),
   );
+
+/** One card (PLP, search, related products); invalid → null. */
+export function parseProductCard(v: unknown): StorefrontProductCard | null {
+  const card = ProductCardSchema.safeParse(v);
+  return card.success ? card.data : null;
+}
 
 const ProductFeedSchema = z.object({
   data: z.array(z.unknown()).max(MAX_FEED_ITEMS * 4),

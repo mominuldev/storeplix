@@ -37,14 +37,10 @@ export const mainNav: NavEntry[] = [
     label: 'Orders',
     to: '/orders',
     icon: ShoppingBag,
+    // Phase 5a §9: Unfinished orders, Returns, Shipments, Invoices & labels and Fake order guard are hidden (§11).
     children: [
       { label: 'All orders', to: '/orders' },
       { label: 'Create order', to: '/orders/new' },
-      { label: 'Unfinished orders', to: '/orders/unfinished' },
-      { label: 'Returns', to: '/orders/returns' },
-      { label: 'Shipments', to: '/orders/shipments' },
-      { label: 'Invoices & labels', to: '/orders/invoices' },
-      { label: 'Fake order guard', to: '/orders/fake-order-guard' },
     ],
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },
@@ -62,7 +58,8 @@ export const mainNav: NavEntry[] = [
   },
   { label: 'Inventory', to: '/inventory', icon: Warehouse },
   { label: 'Customers', to: '/customers', icon: Users },
-  { label: 'Marketing', to: '/marketing', icon: Megaphone },
+  // Phase 5a §9: Marketing → Coupons only (overview, campaigns, abandoned cart are Phase 8).
+  { label: 'Marketing', to: '/marketing', icon: Megaphone, children: [{ label: 'Coupons', to: '/marketing/coupons' }] },
   { label: 'Reports', to: '/reports', icon: BarChart3 },
   {
     label: 'Online store',

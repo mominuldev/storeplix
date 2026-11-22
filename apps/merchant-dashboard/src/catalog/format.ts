@@ -37,3 +37,8 @@ export function profitOf(price: number, cost: number | null): { amount: number; 
   const amount = price - cost;
   return { amount, percent: Math.round((amount / price) * 100) };
 }
+
+/** WhatsApp chat link for a BD number ("8801712345678" → https://wa.me/8801712345678). */
+export function waLink(msisdn: string): string {
+  return `https://wa.me/${msisdn.replace(/\D/g, '')}`;
+}

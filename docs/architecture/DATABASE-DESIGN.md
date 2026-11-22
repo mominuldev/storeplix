@@ -19,7 +19,7 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters. Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1). Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
 | Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
@@ -228,6 +228,11 @@ Customers are per-store identities, never shared across stores or tenants.
 id PK · tenant_id · customer_id FK(t) CASCADE · name · phone · line1 · line2 · area varchar(120) · city varchar(80) ·
 district varchar(80) · postal_code varchar(10) · country char(2) · is_default boolean · timestamps.
 
+> **Phase 5a (as built):** the planned `carts`, `cart_items`, `shipping_methods`, `coupons`, `orders`, `order_items`,
+> `order_status_history`, `payments`, `shipping_orders` and `idempotency_keys` entries below are superseded by §5.1
+> (migrations `2026_05_01_*`, PHASE-5-CONTRACT §2). `shipping_methods` became `shipping_zones`; `order_status_history`
+> became `order_events`; `shipping_orders` became `shipments` (5b widens it). Kept below as the Phase 0 design record.
+
 ### carts
 id PK · tenant_id · store_id FK(t) · customer_id FK(t) null · token_hash char(64) (sha256 of opaque cart token) ·
 currency char(3) · coupon_code varchar(40) null · status `CHECK IN ('active','converted','abandoned')` ·
@@ -323,6 +328,194 @@ subject_type varchar(64) · subject_id char(26) · changes jsonb (before/after, 
 user_agent varchar(255) · request_id varchar(64) · created_at. IX(tenant_id, created_at DESC). IX(tenant_id, subject_type, subject_id).
 Partitioned by month (`PARTITION BY RANGE (created_at)`) from Phase 9.
 
+## 5.1 Phase 5a commerce tables (as built)
+Source: `apps/api/database/migrations/2026_05_01_000100` … `002100`; binding detail in PHASE-5-CONTRACT §2.
+Notation as Phase 4: every table has `tenant_id char(26) NOT NULL` FK tenants **CASCADE** (so 5b RLS needs no schema
+change) and `store_id`; **FK(s)** = `(tenant_id, store_id) → stores(tenant_id, id)` CASCADE; **FK3(t)** = triple FK
+`(tenant_id, store_id, col) → t(tenant_id, store_id, id)`. Parents expose `U(tenant_id, id)` and
+`U(tenant_id, store_id, id)`. Timestamps are `timestamptz`. Money is `bigint` paisa. Enum and range **CHECKs are
+Postgres-only** (the app validates on both drivers); partial unique indexes are created on Postgres **and** sqlite.
+
+```mermaid
+erDiagram
+  STORES ||--o{ SHIPPING_ZONES : has
+  SHIPPING_ZONES ||--o{ SHIPPING_ZONE_AREAS : covers
+  PICKUP_LOCATIONS ||--o{ SHIPPING_ZONES : "ships from (5b)"
+  STORES ||--o{ COUPONS : has
+  COUPONS ||--o{ COUPON_CATEGORIES : "applies to"
+  COUPONS ||--o{ COUPON_PRODUCTS : "applies to"
+  CARTS ||--o{ CART_ITEMS : contains
+  PRODUCT_VARIANTS ||--o{ CART_ITEMS : refs
+  CUSTOMERS ||--o{ ORDERS : places
+  COUPONS ||--o{ ORDERS : applied
+  ORDERS ||--o{ ORDER_ITEMS : "contains (snapshots)"
+  ORDERS ||--o{ ORDER_EVENTS : timeline
+  ORDERS ||--o{ SHIPMENTS : "shipped as"
+  ORDERS ||--o{ PAYMENTS : "paid / refunded"
+  ORDERS ||--o| COUPON_REDEMPTIONS : redeems
+  STORES ||--o{ STORE_COUNTERS : numbers
+  STORES ||--o{ IDEMPOTENCY_KEYS : guards
+```
+
+### Changes to existing tables
+- **stores** (000100): + `published_at timestamptz null`. Backfill: `active` stores get `published_at = updated_at`.
+- **store_settings** (000200): + `cod_enabled boolean default true` · `free_delivery_over_amount bigint null`
+  CHECK `NULL OR BETWEEN 100 AND 1000000000` · `order_prefix varchar(6) null` CHECK `NULL OR ~ '^[A-Z]{1,6}$'` ·
+  `notify_new_order_email boolean default true` · `customer_sms jsonb default
+  '{"order_placed":true,"order_confirmed":false,"order_shipped":true,"order_cancelled":true}'` ·
+  `sms_language varchar(2) default 'bn'` CHECK IN (`bn`,`en`).
+- **customers** (001900): + `delivered_orders_count int default 0`, `returned_orders_count int default 0` (written
+  only by `OrderService`, P5-22).
+- **inventory_movements** (002000): reason CHECK widened to `initial, received, correction, damaged, lost, returned,
+  import, other, order_shipped, order_returned` (Postgres; sqlite has no CHECK). `reference_type` has no CHECK and takes
+  `order` as is. Committing stock writes **no** ledger row (P5-5).
+- **plans** (002100, data only): re-runs the idempotent `PlanSeeder` to add `limits.sms_per_month` (Free 200,
+  Starter 2 000, Growth null = unlimited; P5-26/Q33). No schema change.
+
+### store_counters [S]
+tenant_id · store_id FK(s) · key varchar(32) · value bigint · timestamps. **PK(store_id, key)**. No `id`. Written only
+by `StoreCounter::next($key)` (`INSERT … ON CONFLICT DO UPDATE SET value = value + 1 RETURNING value` inside the order
+transaction, so a rolled-back checkout leaves no gap). Key `orders` starts at 1001.
+
+### pickup_locations [S]
+id PK · tenant_id · store_id FK(s) · name varchar(60) · contact_name varchar(80) null · contact_phone varchar(13) null ·
+district_code varchar(32) · thana_code varchar(48) · address_line varchar(255) · is_default boolean default false ·
+timestamps. U(tenant_id, id). U(tenant_id, store_id, id). Partial **U(store_id) WHERE is_default**. Max 10 per store
+(app rule).
+
+### shipping_zones [S]
+id PK · tenant_id · store_id FK(s) · name varchar(60) · kind varchar(16) `CHECK IN ('custom','fallback')` ·
+charge_amount bigint CHECK `BETWEEN 0 AND 1000000` · min_days smallint CHECK `BETWEEN 0 AND 30` · max_days smallint
+CHECK `max_days >= min_days AND max_days <= 30` · is_active boolean default true (CHECK `kind <> 'fallback' OR
+is_active`) · position smallint default 0 · pickup_location_id FK3(pickup_locations) null **RESTRICT** (5b courier
+routing) · timestamps. U(tenant_id, id). U(tenant_id, store_id, id). Partial **U(store_id) WHERE kind = 'fallback'**
+(exactly one "Outside Dhaka" fallback). IX(tenant_id, store_id, position).
+Defaults (P5-8, `shipping:provision-defaults`, DemoSeeder): "Inside Dhaka" ৳ 70, 1–2 days = the **50** Dhaka
+Metropolitan Police thanas of the geo dataset (as built; Figma says "41 thanas"), fallback "Outside Dhaka" ৳ 130,
+2–4 days.
+
+### shipping_zone_areas [S]
+tenant_id · store_id · zone_id FK3(shipping_zones) CASCADE · district_code varchar(32) · thana_code varchar(48)
+default `''` (`''` = whole district). **PK(zone_id, district_code, thana_code)**. **U(store_id, district_code,
+thana_code)** (an area is in at most one zone; a violation maps to 422 `validation_failed` on `zones.N.areas.M`, not
+409). IX(tenant_id, store_id, district_code). Resolution: active zone with the thana → active zone with the whole
+district → fallback.
+
+### coupons [S]
+id PK · tenant_id · store_id FK(s) · code varchar(32) (CHECK `code = upper(code)`) · type varchar(16)
+`CHECK IN ('percentage','fixed','free_shipping')` · percent_bps int null CHECK `BETWEEN 1 AND 10000` · amount bigint
+null CHECK `BETWEEN 1 AND 1000000000` · max_discount_amount bigint null CHECK `>= 1` · applies_to varchar(16) default
+`'all'` `CHECK IN ('all','categories','products')` · min_subtotal_amount bigint null CHECK `>= 0` · usage_limit int null
+CHECK `>= 1` · usage_per_customer int null CHECK `>= 1` · first_order_only boolean default false · starts_at
+timestamptz · ends_at timestamptz null CHECK `ends_at IS NULL OR ends_at > starts_at` · status varchar(16) default
+`'draft'` `CHECK IN ('draft','active','disabled')` (`expired`, `used_up` are derived) · used_count int default 0
+CHECK `>= 0` · revision int default 1 · created_by FK users null SET NULL · timestamps.
+Shape CHECKs: `percentage` ⇒ percent_bps NOT NULL, amount NULL; `fixed` ⇒ amount NOT NULL, percent_bps and
+max_discount_amount NULL; `free_shipping` ⇒ all three NULL and `applies_to = 'all'`.
+U(tenant_id, id). U(tenant_id, store_id, id). **U(store_id, code)** (stored uppercase, so case-insensitive).
+IX(tenant_id, store_id, status, created_at). Hard delete only while never redeemed (else 409 `coupon_in_use`).
+
+### coupon_categories / coupon_products (pivots) [S]
+tenant_id · store_id · coupon_id FK3(coupons) CASCADE · category_id FK3(categories) CASCADE (resp. product_id
+FK3(products) CASCADE). **PK(coupon_id, category_id)** / **PK(coupon_id, product_id)**. IX(tenant_id, store_id,
+category_id) / IX(tenant_id, store_id, product_id).
+
+### carts [S]
+id PK · tenant_id · store_id FK(s) · token_hash char(64) **U** (sha256 of the 43-char opaque token; the raw token is
+never stored) · status varchar(16) default `'active'` `CHECK IN ('active','converted','abandoned')` · coupon_code
+varchar(32) null · currency char(3) · last_activity_at timestamptz · converted_order_id char(26) null (soft ref) · ip
+varchar(45) null · timestamps. U(tenant_id, id). U(tenant_id, store_id, id). IX(tenant_id, store_id, status,
+last_activity_at). No `customer_id` (guest only, P5-2). `carts:prune` daily: active > 30 days → abandoned; abandoned and
+converted > 90 days deleted.
+
+### cart_items [S]
+id PK · tenant_id · store_id · cart_id FK3(carts) CASCADE · variant_id FK3(product_variants) CASCADE · quantity smallint
+CHECK `BETWEEN 1 AND 99` · timestamps. U(tenant_id, id). **U(cart_id, variant_id)**. IX(tenant_id, store_id, cart_id).
+No prices; ≤ 50 lines per cart (app rule).
+
+### orders [S]
+id PK · tenant_id · store_id FK(s) · number varchar(24) (`{prefix}-{sequence}`, e.g. `GS-1042`) · sequence bigint ·
+status varchar(24) `CHECK IN ('pending_payment','pending','confirmed','ready_to_ship','shipped','delivered','returned','cancelled')`
+(`pending_payment` reserved for 5b) · payment_status varchar(24) default `'unpaid'`
+`CHECK IN ('unpaid','partially_paid','paid','partially_refunded','refunded')` · payment_method varchar(24)
+`CHECK IN ('cod','bkash','sslcommerz')` · created_via varchar(16) `CHECK IN ('storefront','dashboard')` · channel
+varchar(16) `CHECK IN ('website','facebook','instagram','whatsapp','phone','walk_in','landing_page','other')` ·
+customer_id FK3(customers) null **NO ACTION** · customer_name varchar(120) · customer_phone varchar(13) ·
+customer_email varchar(254) null · shipping_address jsonb (codes + name snapshots, PHASE-5 §2.1) · district_code
+varchar(32) · currency char(3) · subtotal_amount, discount_amount, shipping_amount, shipping_discount_amount,
+tax_amount (always 0 in 5a), total_amount, paid_amount, refunded_amount bigint default 0 (all CHECK `>= 0`) ·
+coupon_id FK3(coupons) null NO ACTION · coupon_code varchar(32) null · shipping_zone_id char(26) null (soft ref) ·
+shipping_zone_name varchar(60) · delivery_min_days, delivery_max_days smallint null · shipping_overridden boolean
+default false · customer_note varchar(500) null · tags jsonb default `'[]'` · revision int default 1 ·
+idempotency_key varchar(64) null · confirmation_token_hash char(64) null · confirmation_expires_at timestamptz null ·
+cancel_reason varchar(32) null `CHECK IN ('customer_request','fake_order','unreachable','out_of_stock','duplicate','other')` ·
+placed_at timestamptz · confirmed_at, shipped_at, delivered_at, returned_at, cancelled_at timestamptz null · created_by
+FK users null SET NULL (manual orders) · ip varchar(45) null · user_agent varchar(255) null · timestamps. **No soft
+delete.**
+CHECK `total_amount = subtotal_amount - discount_amount + shipping_amount + tax_amount`; CHECK `discount_amount <=
+subtotal_amount`; CHECK `refunded_amount <= paid_amount`.
+U(tenant_id, id). U(tenant_id, store_id, id). **U(store_id, number)**. **U(store_id, sequence)**. Partial
+**U(store_id, idempotency_key) WHERE idempotency_key IS NOT NULL**. Partial **U(confirmation_token_hash) WHERE NOT
+NULL**. IX(tenant_id, store_id, status, placed_at). IX(tenant_id, store_id, placed_at). IX(tenant_id, store_id,
+customer_id). IX(tenant_id, store_id, customer_phone). Postgres: `GIN(customer_name gin_trgm_ops)` (creates
+`pg_trgm` if missing).
+
+### order_items [S]
+id PK · tenant_id · store_id · order_id FK3(orders) CASCADE · product_id char(26) null, variant_id char(26) null
+(**soft refs**, indexed, no FK, P5-31) · product_name varchar(200) · variant_title varchar(130) · option_values jsonb
+default `'[]'` · sku varchar(64) null · image_media_id char(26) null (soft ref) · unit_price_amount bigint ·
+compare_at_amount bigint null · unit_cost_amount bigint null (never exposed to staff or storefront) · subtotal_amount
+bigint · discount_amount bigint default 0 · total_amount bigint · quantity smallint CHECK `BETWEEN 1 AND 99` · tracked
+boolean (inventory tracked at placement) · restocked_quantity smallint default 0 CHECK `BETWEEN 0 AND quantity` ·
+position smallint default 0 · timestamps. CHECK `total_amount = subtotal_amount - discount_amount`; money columns
+CHECK `>= 0`. U(tenant_id, id). IX(tenant_id, store_id, order_id). IX(tenant_id, store_id, variant_id).
+IX(tenant_id, store_id, product_id). Σ `discount_amount` over items = `orders.discount_amount` (largest remainder,
+P5-12).
+
+### order_events (append-only timeline) [S]
+id PK · tenant_id · store_id · order_id FK3(orders) CASCADE · type varchar(24)
+`CHECK IN ('placed','status_changed','note','edited','payment','refund','shipment','notification','coupon_released')` ·
+from_status, to_status varchar(24) null · actor_type varchar(16) `CHECK IN ('user','customer','system')` ·
+actor_user_id FK users null SET NULL · body varchar(1000) null · meta jsonb default `'{}'` · created_at timestamptz
+default now(). **No `updated_at`**; the model refuses updates and deletes (like `inventory_movements`).
+IX(tenant_id, store_id, order_id, created_at). `edited` events list field names, never values.
+**SMS dedupe (as built):** `type = 'notification'` rows with `meta.channel = 'sms'` and `meta.event` are the record
+that an order SMS was sent or skipped; `SendOrderSms` checks them under the order row lock, so a job retry sends at
+most one SMS per (order, event). (The contract draft said an `sms_messages` lookup.)
+
+### shipments [S]
+id PK · tenant_id · store_id · order_id FK3(orders) CASCADE · provider varchar(16) default `'manual'`
+`CHECK IN ('manual','steadfast','pathao','redx')` · carrier_name varchar(60) null · tracking_code varchar(64) null ·
+tracking_url varchar(500) null (https only, app rule) · status varchar(24) `CHECK IN ('shipped','delivered','returned','cancelled')`
+(5b widens with provider statuses) · cod_amount bigint default 0 CHECK `>= 0` · shipped_at, delivered_at, returned_at
+timestamptz null · created_by FK users null SET NULL · timestamps. U(tenant_id, id). U(tenant_id, store_id, id).
+Partial **U(order_id) WHERE status <> 'cancelled'** (one live shipment per order).
+
+### payments [S]
+id PK · tenant_id · store_id · order_id FK3(orders) **NO ACTION** · provider varchar(16)
+`CHECK IN ('cod','manual','bkash','sslcommerz')` · type varchar(8) `CHECK IN ('charge','refund')` · status varchar(16)
+`CHECK IN ('pending','succeeded','failed','cancelled')` · amount bigint CHECK `> 0` · currency char(3) · method
+varchar(24) null `CHECK IN ('cash','bkash_personal','nagad_personal','bank','other')` (manual refunds) · reference
+varchar(64) null (merchant-typed TrxID) · note varchar(255) null · parent_payment_id FK3(payments) null NO ACTION ·
+idempotency_key varchar(64) null · provider_payment_id varchar(128) null · raw jsonb null (5b, secrets stripped) ·
+verified_at timestamptz null · actor_user_id FK users null SET NULL · timestamps. U(tenant_id, id). U(tenant_id,
+store_id, id). Partial **U(store_id, idempotency_key) WHERE idempotency_key IS NOT NULL**. IX(tenant_id, store_id,
+order_id). 5a rows: one COD `charge` per order (pending → succeeded on delivery, cancelled on cancel/return) and manual
+`refund` records.
+
+### coupon_redemptions [S]
+id PK · tenant_id · store_id · coupon_id FK3(coupons) NO ACTION · order_id FK3(orders) CASCADE, **U(order_id)** ·
+customer_phone varchar(13) · discount_amount bigint CHECK `>= 0` (incl. shipping discount) · status varchar(16) default
+`'active'` `CHECK IN ('active','released')` · timestamps. IX(tenant_id, store_id, coupon_id, customer_phone, status).
+Released (and `coupons.used_count − 1`) on cancel; kept on return.
+
+### idempotency_keys [S]
+id PK · tenant_id · store_id FK(s) · scope varchar(64) (`storefront.checkout`, `orders.create`, `orders.refund`) · key
+varchar(64) · request_hash char(64) · status varchar(16) `CHECK IN ('processing','completed')` · response_status
+smallint null · response_body text null (**encrypted** cast) · locked_until timestamptz · created_at timestamptz ·
+expires_at timestamptz (24 h). No `updated_at`. **U(store_id, scope, key)**. IX(expires_at). `idempotency:prune`
+hourly. Store-level only in 5a (no tenant-level rows yet).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -330,7 +523,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 |---|---|---|
 | Staff & roles (89:26676) | `roles(tenant_id, name, is_system)`, `role_permissions(role_id, permission)` — permissions are code constants (`orders.view`, `products.edit`...); `tenant_users.role_id` | 8 |
 | Developer API keys & webhooks (144:40725) | `api_keys(tenant_id, name, prefix, key_hash, scopes text[], last_used_at, revoked_at)`; `webhook_endpoints(tenant_id, url, secret enc, events text[], is_active)`; `webhook_deliveries(endpoint_id, event, payload, status, attempts, next_retry_at, response_code)` | 8 |
-| Coupons/campaigns (61:12479 Marketing) | `coupons` (core, Phase 5); `coupon_redemptions(coupon_id, order_id, customer_id)`; `campaigns(tenant_id, channel sms/email, audience jsonb, status, scheduled_at)`; `campaign_recipients` | 5 / 8 |
+| Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns(tenant_id, channel sms/email, audience jsonb, status, scheduled_at)`; `campaign_recipients` | 5 / 8 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
 | Automations (140:30335) | `automations(tenant_id, trigger, conditions jsonb, actions jsonb, is_active)`, `automation_runs(automation_id, subject_id, status, log)` | 8+ |

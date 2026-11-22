@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { ProductCardView } from '@/lib/products';
 import { formatMoney } from '@/lib/format';
+import { QuickAddButton } from '../commerce/quick-add';
 import { Icon } from './icon';
 import { ProductImage } from './product-image';
 
@@ -28,14 +29,15 @@ export function MaybeLink({ href, className, label, children }: { href: string |
 
 /**
  * Figma "Product Card" (1:9565, Size=Default 1:9566). Prices are paisa from the API - the card only
- * formats them. No PDP or cart in Phase 4: the card has no link and "Add to cart" is disabled.
+ * formats them. Real cards link to the PDP and add to the bag (Phase 5); placeholder demo cards have
+ * no link and a disabled button. Wishlist and ratings are deferred (PHASE-5-CONTRACT §11).
  */
 export function ProductCard({ product }: ProductCardProps) {
   return (
-    <article className="flex min-w-0 flex-col gap-4" data-sp-product={product.placeholder ? 'placeholder' : 'real'}>
+    <article className="flex h-full min-w-0 flex-col gap-4" data-sp-product={product.placeholder ? 'placeholder' : 'real'}>
       <div className="relative aspect-[4/5] w-full overflow-hidden rounded-sf-xs border border-line-subtle bg-sunken sm:aspect-auto sm:h-[320px]">
         <MaybeLink href={product.href} label={product.name} className="absolute inset-0">
-          <ProductImage image={product.image} sizes="(min-width: 1024px) 25vw, 50vw" />
+          <ProductImage image={product.image} sizes="(min-width: 1024px) 25vw, 50vw" unoptimized={product.image_unoptimized} />
         </MaybeLink>
         {product.badge ? (
           <span
@@ -44,13 +46,6 @@ export function ProductCard({ product }: ProductCardProps) {
             {product.badge.label}
           </span>
         ) : null}
-        <button
-          type="button"
-          aria-label={`Add ${product.name} to wishlist`}
-          className="absolute top-[15px] right-[15px] flex size-11 items-center justify-center rounded-full border border-line bg-surface text-ink hover:bg-sunken"
-        >
-          <Icon name="heart" />
-        </button>
       </div>
 
       <div className="flex flex-col gap-2 px-1">
@@ -83,14 +78,18 @@ export function ProductCard({ product }: ProductCardProps) {
         ) : null}
       </div>
 
-      <button
-        type="button"
-        disabled
-        className="type-label-m flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-control bg-brand px-5 py-3 text-on-brand opacity-60"
-      >
-        Add to cart
-        <Icon name="bag-inverse" />
-      </button>
+      {product.href ? (
+        <QuickAddButton slug={product.slug} name={product.name} className="mt-auto" />
+      ) : (
+        <button
+          type="button"
+          disabled
+          className="type-label-m mt-auto flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-control bg-brand px-5 py-3 text-on-brand opacity-60"
+        >
+          Add to cart
+          <Icon name="bag-inverse" />
+        </button>
+      )}
     </article>
   );
 }

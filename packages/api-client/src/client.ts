@@ -87,10 +87,37 @@ import type {
   UpdateProfileInput,
   UpdateStaffRoleInput,
   UpdateStoreSettingsInput,
+  BdGeo,
+  CancelOrderInput,
+  Coupon,
+  CouponListFilters,
+  CouponListMeta,
+  CreateCouponInput,
+  LaunchChecklist,
+  ManualOrderInput,
+  Order,
+  OrderBulkInput,
+  OrderBulkResult,
+  OrderEvent,
+  OrderListFilters,
+  OrderListMeta,
+  OrderQuote,
+  OrderSummary,
+  Payment,
+  PickupLocation,
+  PickupLocationInput,
+  RefundInput,
+  ReturnOrderInput,
+  SaveShippingInput,
+  ShipOrderInput,
+  ShippingQuote,
+  ShippingSettings,
+  UpdateCouponInput,
+  UpdateOrderInput,
 } from '@storeplix/types';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { MeResponse } from './models';
-import { customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, productListQuery } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -448,6 +475,9 @@ export function createApiClient(options: ApiClientOptions) {
   }
 
   const emptyPage = (): PaginationMeta => ({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
+  const emptyOrderCounts = (): OrderListMeta['counts'] => ({
+    all: 0, pending_payment: 0, pending: 0, confirmed: 0, ready_to_ship: 0, shipped: 0, delivered: 0, returned: 0, cancelled: 0,
+  });
   const store = (storeId: string) => `/stores/${enc(storeId)}`;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -726,6 +756,74 @@ export function createApiClient(options: ApiClientOptions) {
       create: (storeId: string, input: CreateExportInput) => request<DataExport>(`${store(storeId)}/exports`, { method: 'POST', body: input }),
       /** `download_url` is a fresh 5-minute signed URL each call once `completed`. */
       get: (storeId: string, id: string) => request<DataExport>(`${store(storeId)}/exports/${enc(id)}`),
+    },
+
+    /** Phase 5a §3.1: public, cacheable 24 h. */
+    geo: {
+      bd: () => request<BdGeo>('/geo/bd', { anonymous: true }),
+    },
+
+    /** Phase 5a §3.5. Reads O A S; writes O A (`ManageSettings`). PUT is a full replacement of zones. */
+    shipping: {
+      get: (storeId: string) => request<ShippingSettings>(`${store(storeId)}/shipping`),
+      save: (storeId: string, input: SaveShippingInput) => request<ShippingSettings>(`${store(storeId)}/shipping`, { method: 'PUT', body: input }),
+      createPickup: (storeId: string, input: PickupLocationInput) =>
+        request<PickupLocation>(`${store(storeId)}/pickup-locations`, { method: 'POST', body: input }),
+      updatePickup: (storeId: string, id: string, input: Partial<PickupLocationInput>) =>
+        request<PickupLocation>(`${store(storeId)}/pickup-locations/${enc(id)}`, { method: 'PATCH', body: input }),
+      deletePickup: (storeId: string, id: string) => request<void>(`${store(storeId)}/pickup-locations/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    /** Phase 5a §3.6. Reads O A S; writes O A (`ManageMarketing`). PATCH needs `revision`. */
+    coupons: {
+      list: (storeId: string, filters: CouponListFilters = {}) =>
+        listOf<Coupon, CouponListMeta>(`${store(storeId)}/coupons`, couponListQuery(filters), { ...emptyPage(), counts: { all: 0, active: 0, scheduled: 0, expired: 0 } }),
+      get: (storeId: string, id: string) => request<Coupon>(`${store(storeId)}/coupons/${enc(id)}`),
+      create: (storeId: string, input: CreateCouponInput) => request<Coupon>(`${store(storeId)}/coupons`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateCouponInput) =>
+        request<Coupon>(`${store(storeId)}/coupons/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** 409 `coupon_in_use` once redeemed. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/coupons/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    /** Phase 5a §3.7. Transitions return the updated `Order`; invalid → 409 `invalid_state_transition`. */
+    orders: {
+      list: (storeId: string, filters: OrderListFilters = {}) =>
+        listOf<OrderSummary, OrderListMeta>(`${store(storeId)}/orders`, orderListQuery(filters), { ...emptyPage(), counts: emptyOrderCounts() }),
+      get: (storeId: string, id: string) => request<Order>(`${store(storeId)}/orders/${enc(id)}`),
+      quote: (storeId: string, input: ManualOrderInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<OrderQuote>(`${store(storeId)}/orders/quote`, { method: 'POST', body: input, signal: opts?.signal }),
+      /** `idempotencyKey` is created once per form session and reused on every retry (§9.1). 402 at the plan limit. */
+      create: (storeId: string, input: ManualOrderInput, idempotencyKey: string) =>
+        request<Order>(`${store(storeId)}/orders`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      /** 200 `Order` + `meta.shipping_hint` (P5-20). */
+      update: async (storeId: string, id: string, input: UpdateOrderInput): Promise<{ order: Order; shippingHint: ShippingQuote | null }> => {
+        const envelope = await requestEnvelope<Order>(`${store(storeId)}/orders/${enc(id)}`, { method: 'PATCH', body: input });
+        const meta = (envelope?.meta ?? {}) as { shipping_hint?: ShippingQuote | null };
+        return { order: envelope!.data, shippingHint: meta.shipping_hint ?? null };
+      },
+      confirm: (storeId: string, id: string, input: { notify_customer?: boolean } = {}) =>
+        request<Order>(`${store(storeId)}/orders/${enc(id)}/confirm`, { method: 'POST', body: input }),
+      ready: (storeId: string, id: string) => request<Order>(`${store(storeId)}/orders/${enc(id)}/ready`, { method: 'POST' }),
+      ship: (storeId: string, id: string, input: ShipOrderInput) => request<Order>(`${store(storeId)}/orders/${enc(id)}/ship`, { method: 'POST', body: input }),
+      deliver: (storeId: string, id: string) => request<Order>(`${store(storeId)}/orders/${enc(id)}/deliver`, { method: 'POST' }),
+      return: (storeId: string, id: string, input: ReturnOrderInput) =>
+        request<Order>(`${store(storeId)}/orders/${enc(id)}/return`, { method: 'POST', body: input }),
+      /** Staff on a paid order → 403. */
+      cancel: (storeId: string, id: string, input: CancelOrderInput) =>
+        request<Order>(`${store(storeId)}/orders/${enc(id)}/cancel`, { method: 'POST', body: input }),
+      bulk: (storeId: string, input: OrderBulkInput) => request<OrderBulkResult>(`${store(storeId)}/orders/bulk`, { method: 'POST', body: input }),
+      addNote: (storeId: string, id: string, body: string) =>
+        request<OrderEvent>(`${store(storeId)}/orders/${enc(id)}/notes`, { method: 'POST', body: { body } }),
+      /** O A only; 422 `refund_exceeds_paid`. */
+      refund: (storeId: string, id: string, input: RefundInput, idempotencyKey: string) =>
+        request<Payment>(`${store(storeId)}/orders/${enc(id)}/refunds`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+    },
+
+    /** Phase 5a §3.8 go-live. Publish → 409 `launch_blocked` with `details.<item_key>`. */
+    launch: {
+      checklist: (storeId: string) => request<LaunchChecklist>(`${store(storeId)}/launch-checklist`),
+      publish: (storeId: string) => request<Store>(`${store(storeId)}/publish`, { method: 'POST' }),
     },
 
     dashboard: {

@@ -3,6 +3,7 @@
 namespace App\Domain\Stores\Http\Resources;
 
 use App\Domain\Media\Http\Resources\MediaPresenter;
+use App\Domain\Orders\Notifications\StoreCommerce;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Themes\Models\StoreTheme;
@@ -61,6 +62,7 @@ final class StoreSettingsPresenter
                 'share_image' => MediaPresenter::ref($settings->ogImage),
                 'hide_from_search' => (bool) $settings->noindex,
             ],
+            'commerce' => StoreCommerce::present($store, $settings),
             'updated_at' => gmdate('Y-m-d\TH:i:s\Z', $updated),
         ];
     }

@@ -41,7 +41,13 @@ export function proxy(request: NextRequest) {
   requestHeaders.set(STOREFRONT_HOST_HEADER, host);
   const res = NextResponse.next({ request: { headers: requestHeaders } });
   setFramingHeaders(res, sanitizePreviewToken(request.cookies.get(PREVIEW_COOKIE)?.value) !== null);
+  if (isPrivateCommercePath(request.nextUrl.pathname)) res.headers.set('Cache-Control', 'private, no-store');
   return res;
+}
+
+/** Cart, checkout, thank-you, tracking and discount links are per shopper (PHASE-5-CONTRACT §5). */
+export function isPrivateCommercePath(pathname: string): boolean {
+  return /^\/(?:cart|checkout|track|discount)(?:\/|$)/.test(pathname);
 }
 
 /** `frame-ancestors` for this response (exported for tests). */

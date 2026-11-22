@@ -1,11 +1,13 @@
 import { isApiError } from '@storeplix/api-client';
 import type { CustomerDetail } from '@storeplix/types';
-import { Avatar, Badge, Button, buttonVariants, Dialog, KpiTile, TagInput } from '@storeplix/ui';
+import { Avatar, Badge, Button, buttonVariants, Dialog, KpiTile, OrderStatusBadge, TagInput } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { CreditCard, Mail, MapPin, MessageCircle, Phone, RefreshCw, ShoppingCart, Trash2, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { dateTime, formatIntlPhone, monthYear } from '../catalog/format';
+import { dateTime, formatBdt, formatCount, formatIntlPhone, monthYear, waLink } from '../catalog/format';
+import { orderChannelLabels, timeAgo } from '../commerce/format';
+import { useOrders } from '../commerce/queries';
 import { useCustomer, useInvalidate } from '../catalog/queries';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage, StateCard } from '../catalog/states';
@@ -15,13 +17,9 @@ import { ConflictDialog, LoadingState, Panel } from '../online-store/components/
 import { toast } from '../online-store/components/Toast';
 import { channelLabels, CustomerFormDialog } from './CustomerFormDialog';
 
-// Figma Customer detail 64:16382 (Main 64:16384). Contract §9.1: Contact, Tags, Notes, stat tiles ("—"),
-// WhatsApp + Edit; O A can delete. SMS, Block, Create order, Addresses, cross-shop delivery record (Q23),
-// Orders table, Lifetime value and message composer are not built.
-
-export function waLink(msisdn: string): string {
-  return `https://wa.me/${msisdn.replace(/\D/g, '')}`;
-}
+// Figma Customer detail 64:16382 (Main 64:16384). Contract §9.1: Contact, Tags, Notes, WhatsApp + Edit; O A can
+// delete. Phase 5a: stat tiles (this shop only), Orders table (GET /orders?filter[customer_id]=), "Create order".
+// SMS, Block, Addresses, cross-shop delivery record (Q23), Risk and message composer are not built.
 
 export function CustomerDetailPage() {
   const { customerId } = useParams();
@@ -111,6 +109,11 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
             <a href={waLink(customer.phone)} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: 'secondary' })}>
               WhatsApp
             </a>
+          )}
+          {customer.phone && (
+            <Link to={`/orders/new?phone=0${customer.phone.slice(3)}`} className={buttonVariants({ variant: 'secondary' })}>
+              Create order
+            </Link>
           )}
           <Button variant="secondary" onClick={() => setEditing(true)}>
             Edit
@@ -225,12 +228,20 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
           </Panel>
         </div>
 
-        <section aria-label="Order stats" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiTile icon={<CreditCard />} label="Total spent" value="—" hint="Starts with the first order" />
-          <KpiTile icon={<ShoppingCart />} label="Avg order" value="—" hint="Starts with the first order" />
-          <KpiTile icon={<Truck />} label="Delivered" value="—" hint="Starts with the first order" />
-          <KpiTile icon={<RefreshCw />} label="Returns cost" value="—" hint="Starts with the first order" />
-        </section>
+        <div className="flex min-w-0 flex-col gap-5">
+          <section aria-label="Order stats" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiTile icon={<CreditCard />} label="Total spent" value={formatBdt(customer.total_spent_amount)} hint="in this shop" />
+            <KpiTile
+              icon={<ShoppingCart />}
+              label="Avg order"
+              value={customer.delivered_orders_count > 0 ? formatBdt(Math.round(customer.total_spent_amount / customer.delivered_orders_count)) : '—'}
+              hint="per delivered order"
+            />
+            <KpiTile icon={<Truck />} label="Delivered" value={`${formatCount(customer.delivered_orders_count)} / ${formatCount(customer.orders_count)}`} hint="orders delivered" />
+            <KpiTile icon={<RefreshCw />} label="Returns" value={formatCount(customer.returned_orders_count)} hint="came back undelivered" />
+          </section>
+          <CustomerOrders customerId={customer.id} />
+        </div>
       </div>
 
       <CustomerFormDialog open={editing} customer={customer} onClose={() => setEditing(false)} />
@@ -252,6 +263,51 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
         }}
       />
     </>
+  );
+}
+
+function CustomerOrders({ customerId }: { customerId: string }) {
+  const navigate = useNavigate();
+  const orders = useOrders({ customer_id: customerId, per_page: 10 });
+  const rows = orders.data?.data ?? [];
+  return (
+    <Panel title="Orders" description="In this shop">
+      {orders.isPending ? (
+        <p className="text-body text-text-muted">Loading orders…</p>
+      ) : orders.isError ? (
+        <ErrorBlock error={orders.error} onRetry={() => void orders.refetch()} />
+      ) : rows.length === 0 ? (
+        <p className="text-body text-text-muted">No orders yet.</p>
+      ) : (
+        <table aria-label="Customer orders" className="w-full text-left text-body">
+          <thead className="text-caption text-text-muted uppercase">
+            <tr>
+              <th className="py-2 font-medium">Order</th>
+              <th className="py-2 font-medium">Total</th>
+              <th className="py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((o) => (
+              <tr key={o.id} className="cursor-pointer border-t border-border-default hover:bg-surface-subtle" onClick={() => navigate(`/orders/${o.id}`)}>
+                <td className="py-2.5">
+                  <Link to={`/orders/${o.id}`} className="font-semibold text-text-primary" onClick={(e) => e.stopPropagation()}>
+                    {o.number}
+                  </Link>
+                  <span className="block text-caption text-text-muted">
+                    {timeAgo(o.placed_at)} · {orderChannelLabels[o.channel]}
+                  </span>
+                </td>
+                <td className="py-2.5 font-semibold">{formatBdt(o.total_amount)}</td>
+                <td className="py-2.5">
+                  <OrderStatusBadge status={o.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Panel>
   );
 }
 

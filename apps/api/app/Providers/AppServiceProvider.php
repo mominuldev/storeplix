@@ -83,6 +83,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('serve --port=8000 --no-reload', 'server');
         DevCommands::artisan('queue:listen --queue=default,media --tries=3 --timeout=90', 'queue');
         DevCommands::artisan('queue:listen --queue=bulk --tries=1 --timeout=310 --memory=512', 'queue-bulk');
+        // Phase 5a (QA 5a F-M1): order SMS + email, mirrors compose `queue-notifications`.
+        DevCommands::artisan('queue:listen --queue=notifications --tries=3 --backoff=10,60 --timeout=60', 'queue-notifications');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }

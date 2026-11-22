@@ -28,8 +28,9 @@ export function robotsResponse(store: SeoTarget | null): Response {
     'Disallow: /api/',
     'Disallow: /cart',
     'Disallow: /checkout',
-    'Disallow: /account',
+    'Disallow: /track',
     'Disallow: /search',
+    'Disallow: /discount',
     '',
     `Sitemap: ${canonicalOrigin(store.config.store, store.host)}/sitemap.xml`,
     '',
@@ -37,24 +38,40 @@ export function robotsResponse(store: SeoTarget | null): Response {
   return new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
 }
 
+/** Sitemap URL cap (PHASE-5-CONTRACT §5). */
+export const SITEMAP_MAX_URLS = 5000;
+
+export interface SitemapEntries {
+  pages?: Array<{ slug: string; updated_at: string | null }>;
+  products?: Array<{ slug: string; updated_at: string | null }>;
+  categories?: Array<{ slug: string }>;
+}
+
 /**
- * sitemap.xml: `/` + every published page for live, indexable stores (canonical origin = primary
- * host); an empty urlset for draft, preview and "hidden from search" stores.
+ * sitemap.xml: `/`, published pages, public products (`/products/{slug}`, lastmod) and visible
+ * categories (`/c/{slug}`) for live, indexable stores (canonical origin = primary host), capped at
+ * 5 000 URLs; an empty urlset for draft, preview and "hidden from search" stores.
  */
-export function sitemapResponse(store: SeoTarget | null, pages: Array<{ slug: string; updated_at: string | null }> = []): Response {
+export function sitemapResponse(store: SeoTarget | null, entries: SitemapEntries | SitemapEntries['pages'] = {}): Response {
   if (!store) return new Response('Not found', { status: 404 });
+  const e: SitemapEntries = Array.isArray(entries) ? { pages: entries } : entries;
   const live = crawlable(store);
   const origin = canonicalOrigin(store.config.store, store.host);
   const urls: Array<{ path: string; lastmod: string | null }> = live
-    ? [{ path: '/', lastmod: null }, ...pages.map((p) => ({ path: `/pages/${encodeURIComponent(p.slug)}`, lastmod: p.updated_at }))]
+    ? [
+        { path: '/', lastmod: null },
+        ...(e.pages ?? []).map((p) => ({ path: `/pages/${encodeURIComponent(p.slug)}`, lastmod: p.updated_at })),
+        ...(e.categories ?? []).map((c) => ({ path: `/c/${encodeURIComponent(c.slug)}`, lastmod: null })),
+        ...(e.products ?? []).map((p) => ({ path: `/products/${encodeURIComponent(p.slug)}`, lastmod: p.updated_at })),
+      ].slice(0, SITEMAP_MAX_URLS)
     : [];
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls
-  .map(
-    (u) =>
-      `  <url><loc>${escapeXml(origin + u.path)}</loc>${u.lastmod ? `<lastmod>${escapeXml(new Date(u.lastmod).toISOString())}</lastmod>` : ''}</url>`,
-  )
+  .map((u) => {
+    const lastmod = u.lastmod && !Number.isNaN(Date.parse(u.lastmod)) ? `<lastmod>${escapeXml(new Date(u.lastmod).toISOString())}</lastmod>` : '';
+    return `  <url><loc>${escapeXml(origin + u.path)}</loc>${lastmod}</url>`;
+  })
   .join('\n')}
 </urlset>
 `;

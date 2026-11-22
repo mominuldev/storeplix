@@ -89,10 +89,10 @@ function ThemeEditor({ theme, onReload }: { theme: StoreTheme; onReload: () => P
         },
       }),
   );
-  // Callbacks touch refs/state, so they are (re)bound in an effect rather than during render.
+  // Callbacks touch refs/state, so they are bound in an effect (setters and refs are stable) rather than during render.
   useEffect(() => {
     controller.setHandlers({
-        onStatus: setStatus,
+      onStatus: setStatus,
       onSaved: (saved) => {
         setSavedAt(saved.draft_updated_at);
         setServerErrors({});
@@ -103,7 +103,7 @@ function ThemeEditor({ theme, onReload }: { theme: StoreTheme; onReload: () => P
       onInvalid: (details) => setServerErrors(details),
       onError: () => toast('We couldn’t save your last change. We’ll retry with the next one.', 'error'),
     });
-  });
+  }, [controller, queryClient, store.id, theme.code]);
 
   const clientErrors = useMemo(() => validateThemeConfig(state.config), [state.config]);
   const errors = useMemo(() => ({ ...serverErrors, ...clientErrors }), [serverErrors, clientErrors]);

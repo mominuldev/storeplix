@@ -2,25 +2,33 @@
 
 use App\Domain\Audit\Http\Controllers\AuditLogController;
 use App\Domain\Billing\Http\Controllers\BillingController;
+use App\Domain\Cart\Http\StorefrontCartController;
 use App\Domain\Catalog\Http\Controllers\CategoryController;
 use App\Domain\Catalog\Http\Controllers\ProductController;
+use App\Domain\Coupons\Http\CouponController;
 use App\Domain\Customers\Http\Controllers\CustomerController;
 use App\Domain\Dashboard\Http\Controllers\DashboardController;
 use App\Domain\DataTransfer\Http\Controllers\ExportController;
 use App\Domain\DataTransfer\Http\Controllers\ImportController;
+use App\Domain\Geo\Http\GeoController;
 use App\Domain\Identity\Http\Controllers\AccountController;
 use App\Domain\Identity\Http\Controllers\AuthController;
 use App\Domain\Identity\Http\Controllers\OtpController;
 use App\Domain\Inventory\Http\Controllers\InventoryController;
 use App\Domain\Media\Http\Controllers\MediaController;
 use App\Domain\Navigation\Http\Controllers\NavigationController;
+use App\Domain\Orders\Http\OrderController;
+use App\Domain\Orders\Http\StorefrontOrderController;
 use App\Domain\Pages\Http\Controllers\PageController;
 use App\Domain\Shared\Http\HealthController;
+use App\Domain\Shipping\Http\ShippingController;
 use App\Domain\Staff\Http\Controllers\InvitationAcceptanceController;
 use App\Domain\Staff\Http\Controllers\InvitationController;
 use App\Domain\Staff\Http\Controllers\StaffController;
+use App\Domain\Stores\Http\Controllers\LaunchController;
 use App\Domain\Stores\Http\Controllers\PreviewTokenController;
 use App\Domain\Stores\Http\Controllers\StoreController;
+use App\Domain\Stores\Http\Controllers\StorefrontCatalogController;
 use App\Domain\Stores\Http\Controllers\StorefrontConfigController;
 use App\Domain\Stores\Http\Controllers\StorefrontPageController;
 use App\Domain\Stores\Http\Controllers\StorefrontProductController;
@@ -32,6 +40,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function (): void {
     Route::get('health', HealthController::class)->name('health');
     Route::get('plans', [BillingController::class, 'plans'])->name('plans.index');
+    Route::get('geo/bd', GeoController::class)->middleware('throttle:geo')->name('geo.bd');
 
     // --- Merchant auth (same-origin cookie sessions, Phase 4.7; sign-in is stateful-only) ---
     Route::prefix('auth')->group(function (): void {
@@ -144,6 +153,37 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('imports/{import}', [ImportController::class, 'destroy'])->name('stores.imports.destroy');
                 Route::post('exports', [ExportController::class, 'store'])->middleware('throttle:merchant-bulk')->name('stores.exports.store');
                 Route::get('exports/{export}', [ExportController::class, 'show'])->name('stores.exports.show');
+
+                // --- Phase 5a: shipping, coupons, orders, go-live ---
+                Route::get('shipping', [ShippingController::class, 'show'])->name('stores.shipping.show');
+                Route::put('shipping', [ShippingController::class, 'update'])->name('stores.shipping.update');
+                Route::post('pickup-locations', [ShippingController::class, 'storePickup'])->name('stores.pickup-locations.store');
+                Route::patch('pickup-locations/{location}', [ShippingController::class, 'updatePickup'])->name('stores.pickup-locations.update');
+                Route::delete('pickup-locations/{location}', [ShippingController::class, 'destroyPickup'])->name('stores.pickup-locations.destroy');
+
+                Route::get('coupons', [CouponController::class, 'index'])->name('stores.coupons.index');
+                Route::post('coupons', [CouponController::class, 'store'])->name('stores.coupons.store');
+                Route::get('coupons/{coupon}', [CouponController::class, 'show'])->name('stores.coupons.show');
+                Route::patch('coupons/{coupon}', [CouponController::class, 'update'])->name('stores.coupons.update');
+                Route::delete('coupons/{coupon}', [CouponController::class, 'destroy'])->name('stores.coupons.destroy');
+
+                Route::get('orders', [OrderController::class, 'index'])->name('stores.orders.index');
+                Route::post('orders/quote', [OrderController::class, 'quote'])->name('stores.orders.quote');
+                Route::post('orders/bulk', [OrderController::class, 'bulk'])->name('stores.orders.bulk');
+                Route::post('orders', [OrderController::class, 'store'])->middleware('idempotent:orders.create')->name('stores.orders.store');
+                Route::get('orders/{order}', [OrderController::class, 'show'])->name('stores.orders.show');
+                Route::patch('orders/{order}', [OrderController::class, 'update'])->name('stores.orders.update');
+                Route::post('orders/{order}/confirm', [OrderController::class, 'confirm'])->name('stores.orders.confirm');
+                Route::post('orders/{order}/ready', [OrderController::class, 'ready'])->name('stores.orders.ready');
+                Route::post('orders/{order}/ship', [OrderController::class, 'ship'])->name('stores.orders.ship');
+                Route::post('orders/{order}/deliver', [OrderController::class, 'deliver'])->name('stores.orders.deliver');
+                Route::post('orders/{order}/return', [OrderController::class, 'return'])->name('stores.orders.return');
+                Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('stores.orders.cancel');
+                Route::post('orders/{order}/notes', [OrderController::class, 'addNote'])->name('stores.orders.notes.store');
+                Route::post('orders/{order}/refunds', [OrderController::class, 'refund'])->middleware('idempotent:orders.refund')->name('stores.orders.refunds.store');
+
+                Route::get('launch-checklist', [LaunchController::class, 'checklist'])->name('stores.launch-checklist');
+                Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1')->name('stores.publish');
             });
         });
 
@@ -173,6 +213,26 @@ Route::prefix('v1')->group(function (): void {
         Route::get('pages', [StorefrontPageController::class, 'index'])->name('storefront.pages.index');
         Route::get('pages/{slug}', [StorefrontPageController::class, 'show'])->name('storefront.pages.show');
         Route::get('products', StorefrontProductController::class)->name('storefront.products');
+
+        // --- Phase 5a: PDP, availability, categories, cart, checkout, confirmation, tracking ---
+        Route::get('products/{slug}', [StorefrontCatalogController::class, 'product'])->where('slug', '[a-z0-9-]{1,220}')->name('storefront.products.show');
+        Route::get('products/{slug}/availability', [StorefrontCatalogController::class, 'availability'])->where('slug', '[a-z0-9-]{1,220}')->name('storefront.products.availability');
+        Route::get('categories', [StorefrontCatalogController::class, 'categories'])->name('storefront.categories.index');
+        Route::get('categories/{slug}', [StorefrontCatalogController::class, 'category'])->where('slug', '[a-z0-9-]{1,140}')->name('storefront.categories.show');
+
+        Route::middleware('throttle:cart')->group(function (): void {
+            Route::get('cart', [StorefrontCartController::class, 'show'])->name('storefront.cart.show');
+            Route::post('cart/items', [StorefrontCartController::class, 'addItem'])->name('storefront.cart.items.store');
+            Route::patch('cart/items/{item}', [StorefrontCartController::class, 'updateItem'])->name('storefront.cart.items.update');
+            Route::delete('cart/items/{item}', [StorefrontCartController::class, 'removeItem'])->name('storefront.cart.items.destroy');
+            Route::put('cart/coupon', [StorefrontCartController::class, 'applyCoupon'])->name('storefront.cart.coupon.update');
+            Route::delete('cart/coupon', [StorefrontCartController::class, 'removeCoupon'])->name('storefront.cart.coupon.destroy');
+            Route::get('cart/shipping-options', [StorefrontCartController::class, 'shippingOptions'])->name('storefront.cart.shipping-options');
+            Route::get('orders/confirmation', [StorefrontOrderController::class, 'confirmation'])->name('storefront.orders.confirmation');
+        });
+        Route::post('checkout', [StorefrontOrderController::class, 'checkout'])
+            ->middleware(['throttle:checkout', 'idempotent:storefront.checkout'])->name('storefront.checkout');
+        Route::post('orders/track', [StorefrontOrderController::class, 'track'])->middleware('throttle:order-track')->name('storefront.orders.track');
     });
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).

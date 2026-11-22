@@ -84,10 +84,10 @@ function PageEditor({ page, onReload }: { page: StorePage; onReload: () => Promi
         },
       }),
   );
-  // Callbacks touch refs/state, so they are (re)bound in an effect rather than during render.
+  // Callbacks touch refs/state, so they are bound in an effect (setters and refs are stable) rather than during render.
   useEffect(() => {
     controller.setHandlers({
-        onStatus: setStatus,
+      onStatus: setStatus,
       onSaved: (saved) => {
         setServerErrors({});
         setSavedSlug(saved.slug);
@@ -99,7 +99,7 @@ function PageEditor({ page, onReload }: { page: StorePage; onReload: () => Promi
       onInvalid: (d) => setServerErrors(d),
       onError: () => toast('We couldn’t save your last change. We’ll retry with the next one.', 'error'),
     });
-  });
+  }, [controller, queryClient, store.id, page.id]);
 
   const clientErrors = useMemo(() => {
     const otherSlugs = (pages.data?.data ?? []).filter((p) => p.id !== page.id).map((p) => p.slug);

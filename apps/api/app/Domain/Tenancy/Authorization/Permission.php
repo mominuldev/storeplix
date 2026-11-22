@@ -18,6 +18,7 @@ use App\Domain\Tenancy\Models\TenantUser;
  * | audit log                                    |   ✓   |   ✓   |   –   |
  * | view cost / profit / stock value at cost     |   ✓   |   ✓   |   –   |  (P4-14)
  * | delete products, categories, customers       |   ✓   |   ✓   |   –   |  (P4-14)
+ * | coupons (write)                              |   ✓   |   ✓   |   –   |  (P5-21)
  * | CSV imports and exports (bulk data)          |   ✓   |   ✓   |   –   |  (P4-14)
  */
 enum Permission: string
@@ -33,6 +34,7 @@ enum Permission: string
     case ViewCosts = 'view_costs';
     case ManageCatalog = 'manage_catalog';
     case BulkData = 'bulk_data';
+    case ManageMarketing = 'manage_marketing';
 
     /** @return list<string> */
     public function roles(): array

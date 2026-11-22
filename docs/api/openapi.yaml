@@ -1,10 +1,13 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.5.0
+  version: 1.5.1
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (payments, couriers, documents) is not specified yet. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
+    1.5.1 (2026-11-22, QA 5a F-L6): documentation-only alignment with the built and accepted Phase 5a deviations
+    (Idempotency-Key format and 400 for a malformed key, zone area clash as 422, confirm also un-packs, manual orders with
+    COD off, no-zone delivery charge, dashboard month rule). No shape changes.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -4260,7 +4263,7 @@ paths:
                 - 'true'
               description: Present on replays
         '400':
-          description: '`idempotency_key_required`'
+          description: '`idempotency_key_required` (header missing or not 8–64 characters of `[A-Za-z0-9_-]`)'
           content:
             application/json:
               schema:
@@ -4410,7 +4413,9 @@ paths:
       - shipping
       summary: Save zones and free delivery
       operationId: saveShipping
-      description: Full replacement of zones; exactly one `fallback`. O A (`ManageSettings`).
+      description: Full replacement of zones; exactly one `fallback`. O A (`ManageSettings`). An area in two zones
+        (within the payload, or against the `U(store_id, district_code, thana_code)` constraint) → 422 `validation_failed`
+        with the error on `zones.N.areas.M` ("Mirpur is already in Inside Dhaka."); there is no 409 for this.
       security:
       - sessionCookie: []
       parameters:
@@ -4921,7 +4926,11 @@ paths:
       - orders
       summary: Create manual order
       operationId: createOrder
-      description: O A S. Same pricing as checkout (P5-19). 402 at the monthly order limit (P5-27).
+      description: O A S. Same pricing as checkout (P5-19). 402 at the monthly order limit (P5-27). Requires an
+        `Idempotency-Key` (400 if missing or malformed). Accepted while the store's COD toggle is off (that toggle governs
+        storefront checkout only). A line whose variant is unknown, disabled or archived is 422 `validation_failed` on
+        `items.N.variant_id`, not `out_of_stock`. With no shipping zones configured (possible only before go-live) the
+        delivery charge is ৳ 0 unless overridden.
       security:
       - sessionCookie: []
       parameters:
@@ -4946,6 +4955,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Order'
+        '400':
+          description: '`idempotency_key_required` (header missing or not 8–64 characters of `[A-Za-z0-9_-]`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '402':
@@ -5148,7 +5163,8 @@ paths:
       - orders
       summary: Confirm order
       operationId: confirmOrder
-      description: O A S. pending → confirmed.
+      description: O A S. pending → confirmed, and also ready_to_ship → confirmed (un-pack; no customer SMS on
+        that path). The order_confirmed SMS is only considered on pending → confirmed.
       security:
       - sessionCookie: []
       parameters:
@@ -5510,6 +5526,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Payment'
+        '400':
+          description: '`idempotency_key_required` (header missing or not 8–64 characters of `[A-Za-z0-9_-]`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -5641,7 +5663,8 @@ components:
         type: string
         minLength: 8
         maxLength: 64
-      description: UUID/ULID; 24 h (API-CONVENTIONS §9).
+        pattern: '^[A-Za-z0-9_-]{8,64}$'
+      description: 8–64 characters of `[A-Za-z0-9_-]` (a UUID or ULID fits); kept 24 h (API-CONVENTIONS §9). Missing or malformed → 400 `idempotency_key_required`.
     ProductSlug:
       in: path
       name: slug
@@ -10007,7 +10030,7 @@ components:
             $ref: '#/components/schemas/ShippingZoneArea'
         area_summary:
           type: string
-          example: Dhaka city · 41 thanas
+          example: Dhaka city · 50 thanas
     ShippingZoneInput:
       type: object
       required:
@@ -12240,6 +12263,9 @@ components:
       properties:
         this_month:
           type: object
+          description: Calendar month in the store timezone. Each figure uses its own timestamp (amended 1.5.1, QA 5a F-L6) —
+            `count` by `placed_at`, `delivered_count` and `sales_amount` by `delivered_at`, `returned_count` by `returned_at`,
+            `cancelled_count` by `cancelled_at`.
           required:
           - count
           - sales_amount

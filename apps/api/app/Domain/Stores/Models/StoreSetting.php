@@ -28,6 +28,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $og_image_media_id
  * @property bool $noindex
  * @property-read Media|null $ogImage
+ * @property bool $cod_enabled
+ * @property int|null $free_delivery_over_amount
+ * @property string|null $order_prefix
+ * @property bool $notify_new_order_email
+ * @property array<string, bool> $customer_sms
+ * @property string $sms_language
  */
 class StoreSetting extends Model
 {
@@ -39,7 +45,11 @@ class StoreSetting extends Model
         'social_links', 'business_address', 'use_address_for_returns',
     ];
 
-    protected $attributes = ['social_links' => '{}', 'use_address_for_returns' => true, 'noindex' => false];
+    protected $attributes = [
+        'social_links' => '{}', 'use_address_for_returns' => true, 'noindex' => false, 'cod_enabled' => true,
+        'notify_new_order_email' => true, 'sms_language' => 'bn',
+        'customer_sms' => '{"order_placed":true,"order_confirmed":false,"order_shipped":true,"order_cancelled":true}',
+    ];
 
     protected function casts(): array
     {
@@ -48,6 +58,10 @@ class StoreSetting extends Model
             'business_address' => 'array',
             'use_address_for_returns' => 'boolean',
             'noindex' => 'boolean',
+            'cod_enabled' => 'boolean',
+            'free_delivery_over_amount' => 'integer',
+            'notify_new_order_email' => 'boolean',
+            'customer_sms' => 'array',
         ];
     }
 

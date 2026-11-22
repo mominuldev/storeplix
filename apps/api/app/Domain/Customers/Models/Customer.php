@@ -29,6 +29,8 @@ use Illuminate\Support\Carbon;
  * @property list<string> $tags
  * @property bool $accepts_marketing
  * @property int $orders_count
+ * @property int $delivered_orders_count
+ * @property int $returned_orders_count
  * @property int $total_spent_amount
  * @property Carbon|null $last_order_at
  * @property int $revision
@@ -46,10 +48,13 @@ class Customer extends Model
 
     public const SOURCE_IMPORT = 'import';
 
+    public const SOURCE_STOREFRONT = 'storefront';
+
     protected $fillable = ['name', 'phone', 'email', 'district', 'area', 'channel', 'tags', 'accepts_marketing'];
 
     protected $attributes = [
         'tags' => '[]', 'accepts_marketing' => false, 'source' => self::SOURCE_MANUAL, 'orders_count' => 0,
+        'delivered_orders_count' => 0, 'returned_orders_count' => 0,
         'total_spent_amount' => 0, 'revision' => 1,
     ];
 
@@ -59,6 +64,8 @@ class Customer extends Model
             'tags' => 'array',
             'accepts_marketing' => 'boolean',
             'orders_count' => 'integer',
+            'delivered_orders_count' => 'integer',
+            'returned_orders_count' => 'integer',
             'total_spent_amount' => 'integer',
             'last_order_at' => 'datetime',
             'revision' => 'integer',

@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Artisan;
  * and social links. Logo/favicon URLs derive from media, so none are seeded. Idempotent.
  * Phase 3: stores:ensure-content gives existing stores their default theme, pages and menus.
  * Phase 4: DemoCatalogSeeder adds 3 categories, 8 active products and 5 customers (idempotent).
+ * Phase 5a: DemoCommerceSeeder adds delivery zones, a pickup address, 2 coupons and 6 orders (idempotent).
  */
 class DemoSeeder extends Seeder
 {
@@ -73,6 +74,6 @@ class DemoSeeder extends Seeder
 
         Artisan::call('stores:ensure-content', ['--store' => 'demo']);
 
-        $this->call(DemoCatalogSeeder::class);
+        $this->call([DemoCatalogSeeder::class, DemoCommerceSeeder::class]);
     }
 }

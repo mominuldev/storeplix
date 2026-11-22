@@ -7,10 +7,15 @@ use App\Domain\Billing\Exceptions\PlanLimitReached;
 use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Notifications\SmsTemplates;
+use App\Domain\Sms\Models\SmsMessage;
 use App\Domain\Staff\SeatCounter;
+use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\TenantCache;
 use App\Domain\Tenancy\TenantContext;
+use Illuminate\Support\Carbon;
 
 /**
  * The ONLY way to check what a tenant's plan allows.
@@ -36,16 +41,28 @@ final class FeatureGate
     }
 
     /**
-     * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29).
-     * Other limits return 0 until their module exists.
+     * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29);
+     * orders_per_month = orders placed this calendar month in the store timezone, any status (P5-27);
+     * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26). Other limits return 0 until their module exists.
      */
     public static function usage(Tenant $tenant, Limit $limit): int
     {
         return match ($limit) {
             Limit::StaffSeats => app(SeatCounter::class)->used($tenant),
             Limit::Products => app(TenantContext::class)->run($tenant, fn () => Product::query()->count()),
+            Limit::OrdersPerMonth => app(TenantContext::class)->run($tenant, fn () => Order::query()->where('placed_at', '>=', self::monthStart())->count()),
+            Limit::SmsPerMonth => app(TenantContext::class)->run($tenant, fn () => SmsMessage::query()->where('tenant_id', $tenant->getKey())
+                ->whereIn('purpose', SmsTemplates::EVENTS)->where('status', '<>', 'failed')->where('created_at', '>=', self::monthStart())->count()),
             default => 0,
         };
+    }
+
+    /** Start of the current calendar month in the (single) store's timezone, as UTC. Call inside the tenant context. */
+    public static function monthStart(): Carbon
+    {
+        $timezone = Store::query()->value('timezone') ?: 'Asia/Dhaka';
+
+        return now($timezone)->startOfMonth()->utc();
     }
 
     public static function assertWithin(Tenant $tenant, Limit $limit, int $adding = 1): void

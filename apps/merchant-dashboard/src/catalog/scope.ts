@@ -15,6 +15,9 @@ export function useStoreScope() {
     canViewCosts: can.viewCosts(role),
     canManageCatalog: can.manageCatalog(role),
     canBulkData: can.bulkData(role),
+    canManageMarketing: can.manageMarketing(role),
+    canManageRefunds: can.manageRefunds(role),
+    canManageSettings: can.manageSettings(role),
   };
 }
 
@@ -32,4 +35,12 @@ export const keys = {
   dashboard: (s: Scope) => [s.tenantId, s.storeId, 'dashboard'] as const,
   import: (s: Scope, id?: string | null) => [s.tenantId, s.storeId, 'import', id] as const,
   importRows: (s: Scope, id: string | null, filter: string) => [s.tenantId, s.storeId, 'import', id, 'rows', filter] as const,
+  // Phase 5a §9.1
+  orders: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'orders'] as const) : ([s.tenantId, s.storeId, 'orders', filters] as const)),
+  order: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'order', id] as const,
+  coupons: (s: Scope, filters?: unknown) => (filters === undefined ? ([s.tenantId, s.storeId, 'coupons'] as const) : ([s.tenantId, s.storeId, 'coupons', filters] as const)),
+  coupon: (s: Scope, id?: string) => [s.tenantId, s.storeId, 'coupon', id] as const,
+  shipping: (s: Scope) => [s.tenantId, s.storeId, 'shipping'] as const,
+  launchChecklist: (s: Scope) => [s.tenantId, s.storeId, 'launch-checklist'] as const,
+  geo: () => ['geo', 'bd'] as const,
 };

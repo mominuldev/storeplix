@@ -29,6 +29,8 @@ final class CustomerPresenter
             'total_spent_amount' => $customer->total_spent_amount,
             'currency' => $currency,
             'last_order_at' => UserRef::iso($customer->last_order_at),
+            'delivered_orders_count' => (int) $customer->delivered_orders_count,
+            'returned_orders_count' => (int) $customer->returned_orders_count,
             'notes_count' => $notesCount,
             'revision' => $customer->revision,
             'created_at' => UserRef::iso($customer->created_at),

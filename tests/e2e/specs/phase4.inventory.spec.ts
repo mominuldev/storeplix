@@ -103,7 +103,8 @@ test('API: status thresholds and untracked; summary counts', async () => {
   for (const k of ['stock_value_cost_amount', 'stock_value_price_amount', 'units_on_hand', 'committed_units', 'low_stock_variants', 'out_of_stock_variants', 'variants_count', 'products_count']) {
     expect(sum, k).toHaveProperty(k);
   }
-  expect(sum.committed_units).toBe(0);
+  // Phase 5a (P5-5): open orders now hold stock, so `committed_units` is real (0 only without open orders).
+  expect(Number.isInteger(sum.committed_units) && sum.committed_units >= 0).toBe(true);
 });
 
 test('API: 20 parallel −1 adjustments on stock 10 → exactly 0, never negative', async () => {

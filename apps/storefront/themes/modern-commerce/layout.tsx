@@ -3,7 +3,7 @@ import type { ModernCommerceSettings } from './schema';
 import { Footer } from './footer';
 import { Header } from './header';
 
-export function ModernCommerceLayout({ store, settings, navigation, description, contact, social, children }: LayoutProps<ModernCommerceSettings>) {
+export function ModernCommerceLayout({ store, settings, navigation, description, contact, social, commerce = null, children }: LayoutProps<ModernCommerceSettings>) {
   return (
     <div className="theme-root flex min-h-dvh flex-col">
       <Header store={store} settings={settings} contact={contact} menu={navigation.main} />
@@ -17,6 +17,7 @@ export function ModernCommerceLayout({ store, settings, navigation, description,
         contact={contact}
         social={social}
         menus={[navigation.footer, navigation.help]}
+        paymentMethods={commerce?.payment_methods ?? null}
       />
     </div>
   );

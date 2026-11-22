@@ -1,5 +1,5 @@
 import { cn } from '@storeplix/ui';
-import { Bell, Building2, CreditCard, ExternalLink, LifeBuoy, Plug, Shield, ShoppingBag, Star, Truck, type LucideIcon } from 'lucide-react';
+import { Bell, Building2, CreditCard, ExternalLink, LifeBuoy, Plug, ShoppingBag, Star, Truck, type LucideIcon } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router';
 import { PageHeader } from '../layout/PageHeader';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
@@ -14,7 +14,7 @@ export const settingsNav: { heading: string; items: Item[] }[] = [
       { label: 'Store details', to: '/settings/store', icon: Building2 },
       { label: 'Shipping & delivery', to: '/settings/shipping', icon: Truck },
       { label: 'Payments & checkout', to: '/settings/payments', icon: CreditCard },
-      { label: 'Taxes & invoices', to: '/settings/taxes', icon: ShoppingBag },
+      { label: 'Taxes & invoices', to: '/settings/invoices', icon: ShoppingBag },
       { label: 'Policies & legal pages', to: '/settings/policies', icon: LifeBuoy },
     ],
   },
@@ -29,7 +29,6 @@ export const settingsNav: { heading: string; items: Item[] }[] = [
     heading: 'Connected',
     items: [
       { label: 'Integrations', to: '/integrations', icon: Plug, external: true },
-      { label: 'Fake order guard', to: '/orders/fake-order-guard', icon: Shield, external: true },
     ],
   },
 ];

@@ -36,7 +36,7 @@ class InventoryMovement extends Model
 
     public const UPDATED_AT = null;
 
-    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other'];
+    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other', 'order_shipped', 'order_returned'];
 
     public const MANUAL_REASONS = ['received', 'correction', 'damaged', 'lost', 'returned', 'other'];
 

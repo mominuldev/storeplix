@@ -84,6 +84,7 @@ export default async function StoreLayout({ children }: { children: ReactNode })
         description={config.seo.description}
         contact={config.contact}
         social={config.social}
+        commerce={config.commerce}
       >
         {children}
       </Layout>

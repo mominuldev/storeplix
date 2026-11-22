@@ -42,12 +42,28 @@ const InventoryPage = lazy(() => import('./inventory/InventoryPage'));
 const CustomersPage = lazy(() => import('./customers/CustomersPage'));
 const CustomerDetailPage = lazy(() => import('./customers/CustomerDetailPage'));
 const AddProductsPage = lazy(() => import('./onboarding/AddProductsPage'));
+// Phase 5a commerce screens.
+const OrdersPage = lazy(() => import('./orders/OrdersPage'));
+const OrderDetailPage = lazy(() => import('./orders/OrderDetailPage'));
+const OrderEditPage = lazy(() => import('./orders/OrderEditPage'));
+const CreateOrderPage = lazy(() => import('./orders/CreateOrderPage'));
+const CouponsPage = lazy(() => import('./coupons/CouponsPage'));
+const CouponEditorPage = lazy(() => import('./coupons/CouponEditorPage'));
+const ShippingPage = lazy(() => import('./settings/ShippingPage'));
+const PaymentsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.PaymentsSettingsPage })));
+const NotificationsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.NotificationsSettingsPage })));
+const InvoicesSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.InvoicesSettingsPage })));
+const DeliveryPage = lazy(() => import('./onboarding/DeliveryPage'));
+const GetPaidPage = lazy(() => import('./onboarding/GetPaidPage'));
+const LivePage = lazy(() => import('./onboarding/LivePage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 
 /** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
 const onlineStoreRoutes = ['/online-store', '/online-store/seo'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
+const commerceRoutes = ['/orders', '/orders/new', '/marketing', '/marketing/coupons'];
+const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 export function AppRoutes() {
   return (
@@ -69,6 +85,9 @@ export function AppRoutes() {
           <Route element={<StoreGate />}>
             <Route path="/onboarding/theme" element={<PickThemePage />} />
             <Route path="/onboarding/products" element={lazyEl(<AddProductsPage />)} />
+            <Route path="/onboarding/delivery" element={lazyEl(<DeliveryPage />)} />
+            <Route path="/onboarding/payments" element={lazyEl(<GetPaidPage />)} />
+            <Route path="/onboarding/live" element={lazyEl(<LivePage />)} />
             {/* Full-screen editors (outside AppShell) */}
             <Route
               path="/online-store/editor"
@@ -144,21 +163,33 @@ export function AppRoutes() {
               <Route path="/inventory" element={lazyEl(<InventoryPage />)} />
               <Route path="/customers" element={lazyEl(<CustomersPage />)} />
               <Route path="/customers/:customerId" element={lazyEl(<CustomerDetailPage />)} />
+              <Route path="/orders" element={lazyEl(<OrdersPage />)} />
+              <Route path="/orders/new" element={lazyEl(<CreateOrderPage />)} />
+              <Route path="/orders/:orderId" element={lazyEl(<OrderDetailPage />)} />
+              <Route path="/orders/:orderId/edit" element={lazyEl(<OrderEditPage />)} />
+              <Route path="/marketing" element={<Navigate to="/marketing/coupons" replace />} />
+              <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
+              <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />
+              <Route path="/marketing/coupons/:couponId" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/staff" element={<StaffPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/settings" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="store" replace />} />
                 <Route path="store" element={<StoreDetailsPage />} />
                 <Route path="plan" element={<PlanPage />} />
+                <Route path="shipping" element={lazyEl(<ShippingPage />)} />
+                <Route path="payments" element={lazyEl(<PaymentsSettingsPage />)} />
+                <Route path="notifications" element={lazyEl(<NotificationsSettingsPage />)} />
+                <Route path="invoices" element={lazyEl(<InvoicesSettingsPage />)} />
                 {settingsNav
                   .flatMap((g) => g.items)
-                  .filter((i) => !i.external && !['/settings/store', '/settings/plan'].includes(i.to))
+                  .filter((i) => !i.external && !settingsRoutes.includes(i.to))
                   .map((i) => (
                     <Route key={i.to} path={i.to.replace('/settings/', '')} element={<SettingsComingSoon title={i.label} />} />
                   ))}
               </Route>
               {allRoutes
-                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes, ...catalogRoutes].includes(r.to))
+                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes, ...catalogRoutes, ...commerceRoutes].includes(r.to))
                 .map((r) => (
                   <Route key={r.to} path={r.to} element={<PlaceholderPage title={r.label} />} />
                 ))}

@@ -2,7 +2,7 @@ import { Logo, ProgressBar, Step, type StepState } from '@storeplix/ui';
 import { MessageCircle } from 'lucide-react';
 
 // Figma 03 Name your shop 48:7869 step rail: 300 wide, surface-card, right border, px 24 py 32.
-// Steps 2 (phone OTP) and 5–7 are later phases: shown as upcoming, never as done.
+// Step 2 is done once the phone is verified; steps before `current` are done (Phase 5a: 6 Delivery, 7 Get paid).
 const baseSteps: { title: string; hint: string }[] = [
   { title: 'Create account', hint: 'Phone & name' },
   { title: 'Verify phone', hint: 'Coming soon' },
@@ -13,11 +13,11 @@ const baseSteps: { title: string; hint: string }[] = [
   { title: 'Get paid', hint: 'COD & gateways' },
 ];
 
-/** `current` = 1-based step number (3 Name your shop, 4 Pick a theme, 5 Add products). */
-export function StepRail({ shopName, current = 3, phoneVerified = false }: { shopName: string; current?: 3 | 4 | 5; phoneVerified?: boolean }) {
+/** `current` = 1-based step number (3 Name your shop … 6 Delivery, 7 Get paid). */
+export function StepRail({ shopName, current = 3, phoneVerified = false }: { shopName: string; current?: 3 | 4 | 5 | 6 | 7; phoneVerified?: boolean }) {
   const steps = baseSteps.map((s, i): { title: string; hint: string; state: StepState } => {
     const n = i + 1;
-    const done = n === 1 || (n === 2 && phoneVerified) || (n === 3 && current > 3) || (n === 4 && current > 4);
+    const done = n === 1 || (n === 2 && phoneVerified) || (n >= 3 && n < current);
     return { ...s, hint: n === 2 && phoneVerified ? '6-digit code' : s.hint, state: n === current ? 'current' : done ? 'done' : 'upcoming' };
   });
   const done = steps.filter((s) => s.state === 'done').length;
@@ -28,7 +28,7 @@ export function StepRail({ shopName, current = 3, phoneVerified = false }: { sho
         <div className="flex flex-col gap-2.5">
           <h2 className="truncate text-heading text-text-primary">Set up {shopName || 'your shop'}</h2>
           <p className="text-caption text-text-secondary">
-            {done} of {steps.length} done · about 5 min left
+            {done} of {steps.length} done · about {Math.max(1, (steps.length - done) * 1)} min left
           </p>
           <ProgressBar value={done / steps.length} label="Setup progress" />
         </div>

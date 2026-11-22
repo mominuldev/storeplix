@@ -4,7 +4,7 @@ import { Tracker, purgeRun, simpleProduct, tagged } from '../support/catalog';
 
 /**
  * Phase 4 §3.6 / §9.1 / §15.6: dashboard home on the demo store.
- *  - API: real catalog/stock/customer numbers that move when data changes; orders null; no-store.
+ *  - API: real catalog/stock/customer numbers that move when data changes; orders block (Phase 5a) once there are orders; no-store.
  *  - UI: greeting "{store} · N products, M low on stock[, K out of stock]"; order/money tiles show "—" with "Starts with your
  *    first order"; the hero money card shows "No sales yet"; Restock task links to /inventory; checklist
  *    has "Add products".
@@ -32,7 +32,9 @@ test('API: shape, no-store, numbers follow the data', async () => {
   expect(r.headers['cache-control']).toContain('no-store');
   const d0 = r.json.data;
   expect(Object.keys(d0).sort()).toEqual(['currency', 'customers', 'generated_at', 'inventory', 'orders', 'products', 'setup', 'timezone'].sort());
-  expect(d0).toMatchObject({ currency: 'BDT', timezone: 'Asia/Dhaka', orders: null });
+  expect(d0).toMatchObject({ currency: 'BDT', timezone: 'Asia/Dhaka' });
+  // Phase 5a (§3.9): `orders` is null only before the first order; the demo store has orders.
+  if (d0.orders !== null) expect(Object.keys(d0.orders).sort()).toEqual(['best_sellers', 'plan', 'this_month', 'waiting']);
   expect(d0.setup.has_products).toBe(d0.products.total > 0);
   expect(d0.products.total).toBe(d0.products.active + d0.products.draft + d0.products.archived);
 
@@ -59,17 +61,24 @@ test('API: shape, no-store, numbers follow the data', async () => {
   expect(d1.customers.new_this_month).toBe(d0.customers.new_this_month + 1);
 });
 
-test('UI: KPI empty states, catalog card, Restock task, checklist', async ({ page, context }) => {
+test('UI: KPI tiles (empty or real), catalog card, Restock task, checklist', async ({ page, context }) => {
   await signInDashboard(context, s);
   const d = (await api(s, 'GET', D())).json.data;
   await page.goto(`${urls.merchant}/`);
   await expect(page.getByText(new RegExp(`${d.products.total} products?`)).first()).toBeVisible();
-  // Order/money tiles: "—" + hint (no fake numbers).
-  await expect(page.getByText('Starts with your first order').first()).toBeVisible();
-  await expect(page.getByText('No sales yet').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /Share your shop link|Copy link/i }).first()).toBeVisible();
-  // Deferred cards are not rendered.
-  for (const gone of [/Courier performance/i, /Orders by source/i, /Money flow/i, /Best sellers/i]) await expect(page.getByText(gone)).toHaveCount(0);
+  if (d.orders === null) {
+    // Order/money tiles before the first order: "—" + hint (no fake numbers).
+    await expect(page.getByText('Starts with your first order').first()).toBeVisible();
+    await expect(page.getByText('No sales yet').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Share your shop link|Copy link/i }).first()).toBeVisible();
+  } else {
+    // Phase 5a (§9): real order KPIs, Orders waiting and Best sellers.
+    await expect(page.getByText(`this month · ${d.orders.this_month.cancelled_count} cancelled`).first()).toBeVisible();
+    await expect(page.getByText('Keep the orders coming').first()).toBeVisible();
+    if (d.orders.best_sellers.length > 0) await expect(page.getByText(/Best sellers/i).first()).toBeVisible();
+  }
+  // Deferred cards are not rendered (Phase 5a §9: still deferred).
+  for (const gone of [/Courier performance/i, /Orders by source/i, /Money flow/i]) await expect(page.getByText(gone)).toHaveCount(0);
 
   const restock = page.getByRole('link', { name: /Restock products/i });
   if (d.inventory.low_stock_variants + d.inventory.out_of_stock_variants > 0) {

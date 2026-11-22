@@ -4,6 +4,7 @@ import type { StorefrontMedia, StorefrontProductCard } from '@storeplix/types';
 import { buildProductFeedRequest, type ProductFeedQuery } from './config-request';
 import { serverEnv } from './env';
 import { getPreviewToken } from './preview';
+import { isAllowedMediaOrigin } from './media';
 import { parseProductFeed, type ProductFeed } from './storefront-schemas';
 
 /**
@@ -16,11 +17,13 @@ import { parseProductFeed, type ProductFeed } from './storefront-schemas';
 export interface ProductCardView extends StorefrontProductCard {
   /** PLACEHOLDER demo product (not from the catalog). */
   placeholder: boolean;
-  /** Card link. Always null until the PDP ships in Phase 5. */
+  /** PDP link (`/products/{slug}`); null for placeholder demo cards. */
   href: string | null;
   rating: number | null;
   review_count: number;
   badge: { label: string; tone: 'sale' | 'new' | 'bestseller' | 'info' } | null;
+  /** Server-decided next/image `unoptimized` (cards also render inside client grids). */
+  image_unoptimized?: boolean;
 }
 
 /** Flash-sale card. Real deals have no stock meter (null fields → the bar is hidden). */
@@ -142,7 +145,21 @@ async function feed(host: string, query: ProductFeedQuery, opts: FeedOptions): P
   return cachedFeed(host, query.sort, query.limit, query.onSale ?? false, token);
 }
 
-const toView = (p: StorefrontProductCard): ProductCardView => ({ ...p, placeholder: false, href: null, rating: null, review_count: 0, badge: null });
+/** A real card links to its PDP (Phase 5); the sale badge is derived from compare-at. */
+export const toCardView = (p: StorefrontProductCard): ProductCardView => {
+  const off = discountLabel(p.price_amount, p.compare_at_amount);
+  const url = p.image?.url ?? '';
+  return {
+    ...p,
+    placeholder: false,
+    href: `/products/${p.slug}`,
+    rating: null,
+    review_count: 0,
+    badge: off ? { label: off, tone: 'sale' } : null,
+    image_unoptimized: url !== '' && !url.startsWith('/') && !isAllowedMediaOrigin(url),
+  };
+};
+const toView = toCardView;
 
 /** `−{round((1 − price/compare_at) × 100)}%` (U+2212 minus), from API amounts. */
 export function discountLabel(price: number, compareAt: number | null): string {

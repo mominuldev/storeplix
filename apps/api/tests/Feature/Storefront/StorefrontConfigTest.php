@@ -46,6 +46,7 @@ class StorefrontConfigTest extends TestCase
             'seo' => ['title', 'description', 'og_image_url', 'noindex'],
             'navigation' => ['main' => ['title', 'items'], 'footer' => ['title', 'items'], 'help' => ['title', 'items']],
             'media',
+            'commerce' => ['checkout_enabled', 'payment_methods', 'free_delivery_over_amount', 'delivery'],
         ]])
             ->assertJsonPath('data.store.id', $store->id)
             ->assertJsonPath('data.store.slug', 'demo')

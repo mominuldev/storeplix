@@ -19,6 +19,8 @@
 #
 # Queues: `queue` works default,media (short jobs); `queue-bulk` works `bulk` (CSV import/export,
 # PHASE-4-CONTRACT §5.4: $timeout 300 s, $tries 1). REDIS_QUEUE_RETRY_AFTER must stay > 300.
+# `queue-notifications` works `notifications` (PHASE-5-CONTRACT P5-26: order SMS via REVE + order mail,
+# dispatched after commit; $tries 3, deduped per (order, event) through sms_messages/order_events).
 #
 # Env resolution
 #   - `${VAR:-default}` values come from the root `.env` (git-ignored). Defaults are DEV-ONLY.
@@ -200,6 +202,23 @@ services:
   queue-bulk:
     <<: *api-common
     command: ["php", "artisan", "queue:work", "redis", "--queue=bulk", "--tries=1", "--timeout=310", "--sleep=1", "--memory=512"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 5a order notifications (shopper SMS, shopper + merchant email) on their own worker, so a slow
+  # SMS gateway or SMTP server never delays storefront revalidation, and a 5 000-row import never delays
+  # an order SMS. Without a worker on `notifications`, no order SMS or email is ever sent.
+  queue-notifications:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=notifications", "--tries=3", "--backoff=10,60", "--timeout=60", "--sleep=1"]
     depends_on:
       api:
         condition: service_healthy

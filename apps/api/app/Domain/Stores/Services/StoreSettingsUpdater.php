@@ -2,6 +2,7 @@
 
 namespace App\Domain\Stores\Services;
 
+use App\Domain\Orders\Notifications\StoreCommerce;
 use App\Domain\Shared\Support\Phone;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
@@ -93,6 +94,29 @@ class StoreSettingsUpdater
                 }
             }
             $settings->business_address = $address;
+        }
+
+        // Phase 5 §3.5: checkout / numbering / notification settings.
+        foreach (['checkout.cod_enabled' => 'cod_enabled', 'notifications.new_order_email' => 'notify_new_order_email', 'notifications.sms_language' => 'sms_language'] as $key => $column) {
+            [$section, $field] = explode('.', $key);
+            if (isset($input[$section]) && is_array($input[$section]) && array_key_exists($field, $input[$section]) && $settings->getAttribute($column) !== $input[$section][$field]) {
+                $settings->setAttribute($column, $input[$section][$field]);
+                $changed[] = $key;
+            }
+        }
+        if (array_key_exists('order_prefix', $input) && $settings->order_prefix !== $input['order_prefix']) {
+            $settings->order_prefix = $input['order_prefix'];
+            $changed[] = 'order_prefix';
+        }
+        if (isset($input['notifications']['customer_sms']) && is_array($input['notifications']['customer_sms'])) {
+            $toggles = (array) ($settings->customer_sms ?? []) + StoreCommerce::SMS_DEFAULTS;
+            foreach ($input['notifications']['customer_sms'] as $event => $on) {
+                if (($toggles[$event] ?? null) !== $on) {
+                    $toggles[$event] = $on;
+                    $changed[] = "notifications.customer_sms.{$event}";
+                }
+            }
+            $settings->customer_sms = $toggles;
         }
 
         // P3-8: Phase 2 colour shortcut writes the active theme's draft AND published colours.

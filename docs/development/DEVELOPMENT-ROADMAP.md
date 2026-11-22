@@ -68,21 +68,26 @@ Binding API/type contract: `docs/development/PHASE-2-CONTRACT.md` (tasks 2.1, 2.
 | 3.6 | Pages + navigation API/UI | API/WEB/SF | Custom page renders; sanitized HTML |
 | 3.7 | SEO: metadata, sitemap, robots, JSON-LD, canonical | SF | Validators pass (Rich Results test fixtures) |
 
-## Phase 4 — Merchant dashboard (catalog & ops UI)
+## Phase 4 — Merchant dashboard (catalog & ops UI) ✅
 Binding API/type contract: `docs/development/PHASE-4-CONTRACT.md` (4.7 is a strictly ordered sub-step that ships last, §7.6).
+**Done 2026-11-22:** QA verdict PASS (`docs/reviews/phase-4-qa.md`, no Critical/High/Medium findings); committed as
+`a0633f4`. All tasks 4.1–4.9 shipped, 4.7 as cookie sessions only (Bearer removed).
 | # | Task | Owner | AC |
 |---|---|---|---|
-| 4.1 | Categories CRUD | API/WEB | Tree depth ≤ 3; isolation tests |
-| 4.2 | Products + variants + images CRUD (Products 60:8983) | API/WEB | Simple/variable, SKU uniqueness per tenant, images ordered |
-| 4.3 | Inventory list + adjustments + movements ledger (Inventory 26:2146, single location) | API/WEB | Atomic adjustments, ledger rows |
-| 4.4 | CSV product import/export (queued) | API/WEB | 5 000 rows < 2 min; formula-injection safe |
-| 4.5 | Customers list/detail (61:12478) | API/WEB | Search by phone/email |
-| 4.9 | Onboarding 05 Add first products `50:312` / M5 `54:941` (quick-add + CSV) | WEB | Product created in active store |
-| 4.6 | Dashboard home KPIs (26:2144) — read models only | API/WEB | Empty/loading/error states (148:34032) |
-| 4.7 | Migrate SPA auth to cookie-based Sanctum (ADR 0005) | API/WEB | Token no longer in JS storage; contract updated |
-| 4.8 | Mobile merchant layouts (2:5) | WEB | Key screens responsive per Figma |
+| 4.1 ✅ | Categories CRUD | API/WEB | Tree depth ≤ 3; isolation tests |
+| 4.2 ✅ | Products + variants + images CRUD (Products 60:8983) | API/WEB | Simple/variable, SKU uniqueness per tenant, images ordered |
+| 4.3 ✅ | Inventory list + adjustments + movements ledger (Inventory 26:2146, single location) | API/WEB | Atomic adjustments, ledger rows |
+| 4.4 ✅ | CSV product import/export (queued) | API/WEB | 5 000 rows < 2 min; formula-injection safe |
+| 4.5 ✅ | Customers list/detail (61:12478) | API/WEB | Search by phone/email |
+| 4.9 ✅ | Onboarding 05 Add first products `50:312` / M5 `54:941` (quick-add + CSV) | WEB | Product created in active store |
+| 4.6 ✅ | Dashboard home KPIs (26:2144) — read models only | API/WEB | Empty/loading/error states (148:34032) |
+| 4.7 ✅ | Migrate SPA auth to cookie-based Sanctum (ADR 0005) | API/WEB | Token no longer in JS storage; contract updated |
+| 4.8 ✅ | Mobile merchant layouts (2:5) | WEB | Key screens responsive per Figma |
 
 ## Phase 5 — Commerce (cart, checkout, orders, payments, shipping)
+Binding contract: `docs/development/PHASE-5-CONTRACT.md`. Split into two build cycles (P5-1, Q31 accepted by the PO
+2026-11-22); see "Phase 5 cycles" below the table. The AC column is the original roadmap AC; where 5a narrows it
+(e.g. "merge on login", stock "reservation" → commitment), the contract wins.
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 5.1 | Storefront catalog APIs (products, categories, search, availability) | API/SF | PLP/PDP render; cost never exposed |
@@ -98,6 +103,32 @@ Binding API/type contract: `docs/development/PHASE-4-CONTRACT.md` (4.7 is a stri
 | 5.11 | Transactional email/SMS (order confirmation) | API | Tenant-branded; queued |
 | 5.12 | Onboarding 06 Delivery `50:604` (shipping methods + courier connect cards `45:8086`) and 07 Get paid `52:564` (COD/bKash/SSLCommerz connect) | WEB/API | Uses 5.3/5.6/5.8 APIs |
 | 5.13 | Onboarding 08 You're live `52:765`: publish store (draft → active) with go-live checklist | API/WEB | Publish revalidates host; Coming soon disappears; platform URL shown |
+
+### Phase 5 cycles
+**5a — Sell with cash on delivery** (PHASE-5-CONTRACT §0–§15, binding; built on branch `phase-5-commerce`, in QA
+review → `docs/reviews/phase-5a-qa.md`):
+| Task | 5a scope |
+|---|---|
+| 5.1 | Storefront catalog API + PDP `/products/{slug}`, PLP `/c/{slug}`, search, categories, availability (no cost/SKU/exact stock) |
+| 5.2 | Server-side guest cart (token in `sp_cart`, sha256 at rest), coupon preview, free-delivery progress. "Merge on login" moves to whenever accounts ship (Q14) |
+| 5.3 | Shipping **zones** (districts/thanas, one charge and delivery time each, undeletable "Outside Dhaka" fallback), store-wide free-delivery threshold, pickup locations; BD geo dataset `GET /geo/bd` |
+| 5.4 | Coupons: percentage (cap), fixed, free delivery; usage enforced in the checkout transaction |
+| 5.5 | Idempotent COD checkout: stock **commitment** (`inventories.committed`), price-change guard, order numbers |
+| 5.7 | Orders: list/detail, manual orders, edits (contact/address/note/tags), state machine, manual shipping details, COD tracking, **manual** refunds |
+| 5.11 | Order SMS (REVE, Bangla default) + shopper/merchant email, per-event toggles, monthly SMS allowance |
+| 5.12 (part) | Onboarding 06 delivery charges + pickup address; 07 cash on delivery. Courier and gateway connect cards shown disabled |
+| 5.13 | Launch checklist, `POST /stores/{store}/publish`, onboarding 08 "You're live" |
+
+**5b — Online money and couriers** (PHASE-5-CONTRACT §16, outline; binding only after its own contract revision once
+the 5a review passes, sandbox accounts exist and the PO answers the 5b questions). In this order:
+| Order | Task | 5b scope |
+|---|---|---|
+| 1 | 5.10 | **Postgres RLS first**, before any online-payment code merges: `storeplix_app` role without BYPASSRLS, `FORCE ROW LEVEL SECURITY` on every tenant table, explicit admin path for pre-tenant lookups, CI with `TENANCY_RLS` on and off |
+| 2 | 5.6 | Payments: bKash Tokenized Checkout + SSLCommerz (merchant-owned credentials), webhooks, `pending_payment` with a hold TTL, advance payment links, gateway refunds |
+| 3 | 5.8 | Couriers: Steadfast first, then Pathao, then RedX; booking, webhooks + polling, Shipments pages |
+| 4 | 5.9 | Invoice and label PDFs (JSON-configured templates; engine must shape Bangla) |
+| 5 | 5.12 (rest) | Onboarding 06 courier connect and 07 gateway connect cards enabled |
+| 6 | 5.7 (rest) | Order "Edit items" (re-commit, re-price) and post-delivery returns/exchanges; customer accounts and cart merge only if Q14 says "accounts" |
 
 ## Phase 6 — Custom domains
 | # | Task | Owner | AC |

@@ -8,14 +8,17 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Support\StockSql;
 use App\Domain\Customers\Http\Controllers\CustomerController;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Media\Http\Resources\MediaPresenter;
+use App\Domain\Orders\Models\Order;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
-/** §3.6 GET /stores/{store}/dashboard — read model from plain aggregates. Orders/money are null until Phase 5. */
+/** §3.6 GET /stores/{store}/dashboard — read model from plain aggregates. Phase 5 §3.9 fills the `orders` block. */
 class DashboardController
 {
     public function __invoke(Store $store, TenantContext $context): JsonResponse
@@ -65,8 +68,59 @@ class DashboardController
                 'total' => Customer::query()->where('store_id', $store->id)->count(),
                 'new_this_month' => Customer::query()->where('store_id', $store->id)->where('created_at', '>=', CustomerController::monthStart($store))->count(),
             ],
-            'orders' => null,
+            'orders' => $this->orders($store, $tenant),
             'setup' => ['has_products' => $total > 0],
         ]], 200, ['Cache-Control' => 'no-store']);
+    }
+
+    /** OrderDashboard (§3.9): this month in the store timezone; null until the first order. */
+    private function orders(Store $store, Tenant $tenant): ?array
+    {
+        if (! Order::query()->where('store_id', $store->id)->exists()) {
+            return null;
+        }
+        $since = CustomerController::monthStart($store);
+        $count = fn (string $column, ?string $status = null) => Order::query()->where('store_id', $store->id)
+            ->where($column, '>=', $since)->when($status, fn ($q) => $q->where('status', $status))->count();
+        $delivered = $count('delivered_at', Order::DELIVERED);
+        $returned = $count('returned_at', Order::RETURNED);
+        $waiting = Order::query()->where('store_id', $store->id)->whereIn('status', [Order::PENDING, Order::CONFIRMED, Order::READY_TO_SHIP])
+            ->groupBy('status')->selectRaw('status, count(*) as aggregate')->pluck('aggregate', 'status');
+
+        $best = DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.tenant_id', $tenant->id)->where('orders.store_id', $store->id)
+            ->where('orders.status', '<>', Order::CANCELLED)->where('orders.placed_at', '>=', now()->subDays(30))
+            ->whereNotNull('order_items.product_id')
+            ->groupBy('order_items.product_id')
+            ->selectRaw('order_items.product_id as product_id, sum(order_items.quantity) as units, max(order_items.product_name) as name')
+            ->orderByDesc('units')->orderBy('order_items.product_id')->limit(5)->get();
+        $products = Product::withTrashed()->whereIn('id', $best->pluck('product_id')->all())->with('images.media')->get()->keyBy('id');
+
+        return [
+            'this_month' => [
+                'count' => $count('placed_at'),
+                'sales_amount' => (int) Order::query()->where('store_id', $store->id)->where('status', Order::DELIVERED)
+                    ->where('delivered_at', '>=', $since)->sum('total_amount'),
+                'delivered_count' => $delivered,
+                'returned_count' => $returned,
+                'cancelled_count' => $count('cancelled_at', Order::CANCELLED),
+                'delivery_success_rate' => $delivered + $returned > 0 ? round($delivered / ($delivered + $returned), 4) : null,
+            ],
+            'waiting' => [
+                'pending' => (int) ($waiting[Order::PENDING] ?? 0),
+                'confirmed' => (int) ($waiting[Order::CONFIRMED] ?? 0),
+                'ready_to_ship' => (int) ($waiting[Order::READY_TO_SHIP] ?? 0),
+            ],
+            'best_sellers' => $best->map(fn ($row) => [
+                'product_id' => $row->product_id,
+                'name' => $products[$row->product_id]->name ?? $row->name,
+                'image' => MediaPresenter::ref(($products[$row->product_id] ?? null)?->images->first()?->media),
+                'units' => (int) $row->units,
+            ])->all(),
+            'plan' => [
+                'used' => FeatureGate::usage($tenant, Limit::OrdersPerMonth),
+                'limit' => FeatureGate::limit($tenant, Limit::OrdersPerMonth),
+            ],
+        ];
     }
 }

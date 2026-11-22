@@ -32,8 +32,14 @@ class StoreSettingsTest extends TestCase
                 'address' => ['street', 'division', 'district', 'area', 'postcode', 'use_for_returns'],
                 'region' => ['country', 'currency', 'timezone'],
                 'seo' => ['title', 'description', 'share_image', 'hide_from_search'],
+                'commerce' => [
+                    'checkout' => ['cod_enabled'], 'order_prefix', 'next_order_number',
+                    'notifications' => ['new_order_email', 'sms_language', 'customer_sms' => ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled']],
+                ],
                 'updated_at',
             ]])
+            ->assertJsonPath('data.commerce.order_prefix', 'SH')
+            ->assertJsonPath('data.commerce.next_order_number', 'SH-1001')
             ->assertJsonPath('data.identity.primary_domain', 'shop.storeplix.test')
             ->assertJsonPath('data.branding.primary_color', '#0846c2')
             ->assertJsonPath('data.address.use_for_returns', true)

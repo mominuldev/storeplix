@@ -209,7 +209,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip
+          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip, pcntl, posix
           coverage: none
           tools: composer:v2
       - name: Composer cache dir
@@ -237,8 +237,12 @@ jobs:
           DB_DATABASE: storeplix_test
       # Phase 4: advisory locks (plan-limit race), partial/expression unique indexes and FOR UPDATE only
       # behave for real on Postgres.
+      # Phase 5a: the fork-based race tests (S2, S3, S4, S17 + Phase 4 A8/A16) COMMIT their data
+      # (RefreshDatabase can't roll back what forked children wrote), so they run isolated in the
+      # `api-perf` job, each group in its own process. Here they are excluded so their committed rows
+      # can't leak into later security tests with global counts (QA phase-5a F-M2).
       - name: security (postgres)
-        run: php artisan test --group=security
+        run: php artisan test --group=security --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -281,7 +285,9 @@ jobs:
       DB_USERNAME: storeplix
       DB_PASSWORD: storeplix
       REDIS_HOST: 127.0.0.1
-      CACHE_STORE: redis
+      # array, not redis: the race tests fork the test process, and forked children must not share the
+      # parent's Redis socket (interleaved replies). Every lock under test is a database lock.
+      CACHE_STORE: array
       QUEUE_CONNECTION: sync
       SESSION_DRIVER: array
     steps:
@@ -289,7 +295,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip, pcntl
+          extensions: mbstring, intl, pdo_pgsql, redis, bcmath, zip, pcntl, posix
           ini-values: memory_limit=1G
           coverage: none
           tools: composer:v2
@@ -320,11 +326,53 @@ jobs:
             echo "::error::No tests in group 'perf': the 5 000-row import budget is not being verified"
             exit 1
           fi
+          skipped=$(grep -o 'skipped="[0-9]*"' build/perf.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          if [ "${skipped:-0}" -gt 0 ]; then
+            echo "::error::${skipped} perf test(s) skipped on Postgres (missing pcntl/pgsql?): the race tests must run"
+            exit 1
+          fi
+      # PHASE-5-CONTRACT §12/§15.2: the Postgres race tests must RUN, never skip (they skip themselves
+      # without pgsql + pcntl). Each runs in a fresh process (RefreshDatabase migrates fresh once per
+      # process) with an array cache: forked children must not share the parent's Redis socket.
+      #   S2 oversell (stock 5, 20 parallel checkouts → 5 orders) · S2 mixed-cart deadlock · S3 coupon
+      #   usage limit · S4 same Idempotency-Key · S17 manual-order plan limit · Phase 4 A8/A16.
+      - name: race tests (postgres, must not skip)
+        run: |
+          mkdir -p build
+          fail=0
+          for t in \
+            test_concurrent_checkouts_never_oversell \
+            test_mixed_carts_do_not_deadlock \
+            test_coupon_usage_limit_holds_under_parallel_checkouts \
+            test_concurrent_same_key_creates_one_order \
+            test_manual_order_plan_limit_race \
+            test_parallel_adjustments_never_go_negative \
+            test_plan_limit_race; do
+            php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
+            ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
+            skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
+            echo "${t}: tests=${ran} skipped=${skipped}"
+            if [ "${ran:-0}" -lt 1 ] || [ "${skipped:-0}" -gt 0 ]; then
+              echo "::error::race test ${t} did not run on Postgres (tests=${ran}, skipped=${skipped})"
+              fail=1
+            fi
+          done
+          exit $fail
+      # Phase 5a perf budget (§12): checkout p95 < 300 ms, 10-line cart, 50 sequential runs. Runs the
+      # `checkout-perf` group when the API adds it; until then the step warns instead of failing.
+      - name: checkout p95 budget (postgres)
+        run: |
+          mkdir -p build
+          php artisan test --group=checkout-perf --log-junit build/checkout-perf.xml || exit 1
+          ran=$(grep -o 'tests="[0-9]*"' build/checkout-perf.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          if [ "${ran:-0}" -lt 1 ]; then
+            echo "::warning::no 'checkout-perf' test yet: the §12 checkout p95 < 300 ms budget is not verified (QA phase-5a F-M3)"
+          fi
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: perf-junit
-          path: apps/api/build/perf.xml
+          path: apps/api/build/*.xml
           if-no-files-found: ignore
 
   web:

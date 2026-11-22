@@ -11,3 +11,8 @@ Schedule::command('subscriptions:end-trials')->daily();
 // Phase 4: bulk-data retention.
 Schedule::command('data:prune-imports')->daily();
 Schedule::command('data:expire-exports')->hourly();
+
+// Phase 5a: carts, idempotency keys and order confirmation tokens.
+Schedule::command('carts:prune')->daily();
+Schedule::command('idempotency:prune')->hourly();
+Schedule::command('orders:expire-confirmation-tokens')->daily();

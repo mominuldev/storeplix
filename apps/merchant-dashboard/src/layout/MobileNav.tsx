@@ -1,6 +1,7 @@
 import { cn } from '@storeplix/ui';
 import { Bell, ChevronDown, House, Menu, Package, Plus, Search, ShoppingBag } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
+import { useDashboard } from '../catalog/queries';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 // Figma Merchant Admin – Mobile · Today app bar 31:4300 (60h): shop avatar, name + domain, search, bell.
@@ -36,7 +37,7 @@ const tabs = [
   { to: '/more', label: 'More', icon: Menu, end: false },
 ] as const;
 
-function Tab({ tab }: { tab: (typeof tabs)[number] }) {
+function Tab({ tab, badge }: { tab: (typeof tabs)[number]; badge?: number }) {
   const Icon = tab.icon;
   return (
     <NavLink
@@ -49,8 +50,16 @@ function Tab({ tab }: { tab: (typeof tabs)[number] }) {
         )
       }
     >
-      <Icon className="size-6" aria-hidden />
+      <span className="relative">
+        <Icon className="size-6" aria-hidden />
+        {!!badge && (
+          <span className="absolute -top-1.5 -right-2.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] leading-none font-semibold text-text-inverse">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+      </span>
       {tab.label}
+      {!!badge && <span className="sr-only"> ({badge} waiting)</span>}
     </NavLink>
   );
 }
@@ -58,13 +67,15 @@ function Tab({ tab }: { tab: (typeof tabs)[number] }) {
 // Figma Components · MobileTabBar 30:3170 — surface-card, top border, pt 6 / pb 8, five slots,
 // centre Create FAB (52px). FAB gradient/shadow are raw values in Figma (#6b63ff→#4d42e0).
 export function MobileTabBar() {
+  // Phase 5a §9: the Orders tab badge shows orders waiting for confirmation.
+  const pending = useDashboard().data?.orders?.waiting.pending ?? 0;
   return (
     <nav
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-20 flex items-end border-t border-border-default bg-surface-card px-2 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden"
     >
       <Tab tab={tabs[0]} />
-      <Tab tab={tabs[1]} />
+      <Tab tab={tabs[1]} badge={pending} />
       <div className="flex flex-1 justify-center">
         <Link
           to="/products/new"

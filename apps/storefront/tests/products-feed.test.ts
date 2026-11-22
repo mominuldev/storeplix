@@ -142,7 +142,7 @@ describe('feed client with fallbacks', () => {
     fetchMock.mockResolvedValue(json(body([card()])));
     const cards = await getFeaturedProducts('demo.localhost', 4);
     expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({ placeholder: false, href: null, name: 'Linen kurta', price_amount: 345000 });
+    expect(cards[0]).toMatchObject({ placeholder: false, href: '/products/linen-kurta', name: 'Linen kurta', price_amount: 345000 });
   });
 
   it.each([
@@ -182,7 +182,7 @@ describe('feed client with fallbacks', () => {
     expect(preview).toContain('No sale items yet — add a compare-at price to show products here');
   });
 
-  it('flash sale: real deals show the discount label and no stock meter or link', async () => {
+  it('flash sale: real deals show the discount label, link to the PDP and have no stock meter (Phase 5)', async () => {
     fetchMock.mockImplementation(async () => json(body([card({ price_amount: 241500, compare_at_amount: 345000, on_sale: true })])));
     const html = await render(FlashSaleSection, flashSaleSchema.parse({}), ctx(false));
     expect(html).toContain('−30%');
@@ -190,7 +190,8 @@ describe('feed client with fallbacks', () => {
     expect(html).toContain('৳ 3,450');
     expect(html).not.toContain('data-sp-stock-meter');
     expect(html).not.toContain('claimed');
-    expect(html).not.toMatch(/href="\/products/);
+    expect(html).toContain('href="/products/linen-kurta"');
+    expect(html).toContain('aria-label="Add Linen kurta to bag"');
   });
 
   it('flash sale: placeholders keep their stock meter when the store has no products', async () => {
@@ -200,11 +201,12 @@ describe('feed client with fallbacks', () => {
     expect(html).toContain('% claimed');
   });
 
-  it('featured section renders real cards without links', async () => {
+  it('featured section renders real cards linking to their PDP', async () => {
     fetchMock.mockImplementation(async () => json(body([card(), card({ id: 'b', slug: 'b', name: 'Second', image: null })])));
     const html = await render(FeaturedProductsSection, featuredProductsSchema.parse({}), ctx(false));
     expect(html.match(/data-sp-product="real"/g)).toHaveLength(2);
-    expect(html).not.toMatch(/href="\/products/);
+    expect(html).toContain('href="/products/linen-kurta"');
+    expect(html).toContain('href="/products/b"');
     expect(html).toContain('data-sp-image-placeholder');
   });
 });
@@ -215,10 +217,12 @@ describe('ProductCard', () => {
     ...over,
   });
 
-  it('renders without any link (no PDP in Phase 4) and with a disabled Add to cart', () => {
+  it('links to the PDP and has an enabled Add to cart; no wishlist heart (deferred)', () => {
     const html = renderToStaticMarkup(createElement(ProductCard, { product: view() }));
-    expect(html).not.toContain('<a ');
-    expect(html).toMatch(/<button type="button" disabled=""[^>]*>Add to cart/);
+    expect(html).toContain('href="/products/linen-kurta"');
+    expect(html).not.toMatch(/<button type="button" disabled=""[^>]*>Add to cart/);
+    expect(html).toContain('aria-label="Add Linen kurta to bag"');
+    expect(html).not.toContain('wishlist');
     expect(html).toContain('৳ 3,450');
   });
 

@@ -1,0 +1,374 @@
+import { isApiError } from '@storeplix/api-client';
+import type { Order, OrderStatus } from '@storeplix/types';
+import { Avatar, Button, buttonVariants, cn, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Clock, MapPin, MessageCircle, Phone, Store, Truck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Link, useParams } from 'react-router';
+import { formatBdt, formatCount } from '../catalog/format';
+import { useStoreScope } from '../catalog/scope';
+import { ErrorBlock, StateCard } from '../catalog/states';
+import { Thumb } from '../catalog/ui';
+import { dateTime, waLink } from '../catalog/format';
+import { cancelReasonLabels, daysRange, localPhone, orderChannelLabels, ordinal, refundMethodLabels, transitionLabels } from '../commerce/format';
+import { useCommerceInvalidate, useOrder } from '../commerce/queries';
+import { api } from '../lib/api';
+import { LoadingState } from '../online-store/components/Shell';
+import { toast } from '../online-store/components/Toast';
+import { settingsKey } from '../settings/schema';
+import { CancelOrderDialog, RefundDialog, ReturnOrderDialog, ShipOrderDialog } from './actions';
+import { handleOrderError, useQuickTransition } from './transitions';
+import { eventToEntry } from './timeline';
+
+// Figma Order detail 33:3676 (mobile 32:309). Contract §9: actions from `allowed_transitions`, Items, Payments,
+// Shipping, Timeline with notes, Customer card (this shop only), Delivery address with Edit, Order details and tags.
+// Not built (§11): next-step advance banner, Invoice, More, Assigned to, Edit items, Delivery record / fraud,
+// Block this number, courier booking card, campaign field, Send payment link.
+
+export function OrderDetailPage() {
+  const { orderId } = useParams();
+  const query = useOrder(orderId);
+  if (query.isPending) return <LoadingState label="Loading order" />;
+  if (query.isError) {
+    const notFound = isApiError(query.error) && query.error.status === 404;
+    return (
+      <StateCard>
+        <ErrorBlock title={notFound ? 'Order not found' : 'We couldn’t load this order'} error={notFound ? undefined : query.error} onRetry={notFound ? undefined : () => void query.refetch()} />
+        <p className="pb-8 text-center">
+          <Link to="/orders" className="font-semibold text-brand-600">
+            Back to orders
+          </Link>
+        </p>
+      </StateCard>
+    );
+  }
+  return <OrderView order={query.data} />;
+}
+
+type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | null;
+
+export function Card({ title, actions, children, className, label }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; label?: string }) {
+  return (
+    <section aria-label={label ?? (typeof title === 'string' ? title : undefined)} className={cn('flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1', className)}>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-body-lg font-semibold text-text-primary">{title}</h2>
+        {actions}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Row({ label, value, strong, tone }: { label: ReactNode; value: ReactNode; strong?: boolean; tone?: 'success' }) {
+  return (
+    <div className={cn('flex items-center justify-between gap-3 text-body', strong ? 'font-semibold text-text-primary' : 'text-text-secondary', tone === 'success' && 'text-success')}>
+      <dt>{label}</dt>
+      <dd className={cn(strong ? 'text-body-lg' : 'text-text-primary', tone === 'success' && 'text-success')}>{value}</dd>
+    </div>
+  );
+}
+
+function OrderView({ order }: { order: Order }) {
+  const scope = useStoreScope();
+  const invalidate = useCommerceInvalidate();
+  const [dialog, setDialog] = useState<DialogKind>(null);
+  const [note, setNote] = useState('');
+  const settings = useQuery({ queryKey: settingsKey(scope.storeId ?? undefined), queryFn: () => api.stores.getSettings(scope.storeId!), enabled: !!scope.storeId, retry: false });
+  const sms = settings.data?.commerce?.notifications.customer_sms;
+  const quick = useQuickTransition();
+  const target = { id: order.id, number: order.number, customerId: order.customer.id };
+
+  const addNote = useMutation({
+    mutationFn: () => api.orders.addNote(scope.storeId!, order.id, note.trim()),
+    onSuccess: async () => {
+      setNote('');
+      await invalidate.afterOrderChange(order.id);
+    },
+    onError: (e) => toast(isApiError(e) ? (e.fieldError('body') ?? e.message) : 'We couldn’t save the note.', 'error'),
+  });
+  const tags = useMutation({
+    mutationFn: (next: string[]) => api.orders.update(scope.storeId!, order.id, { revision: order.revision, tags: next }),
+    onSuccess: () => invalidate.afterOrderChange(order.id),
+    onError: (e) => handleOrderError(e, () => invalidate.afterOrderChange(order.id)),
+  });
+
+  const run = (to: OrderStatus) => {
+    if (to === 'shipped') return setDialog('ship');
+    if (to === 'returned') return setDialog('return');
+    if (to === 'cancelled') return setDialog('cancel');
+    if (to === 'confirmed' || to === 'ready_to_ship' || to === 'delivered') quick.mutate({ target, to });
+  };
+
+  const forward = order.allowed_transitions.filter((t) => t !== 'cancelled' && t !== 'returned');
+  // ready_to_ship → confirmed is "move back"; show it as a secondary action.
+  const primary = forward.find((t) => !(order.status === 'ready_to_ship' && t === 'confirmed'));
+  const canCancel = order.allowed_transitions.includes('cancelled') && order.can.cancel;
+  const editable = order.can.edit;
+  const refunds = order.payments.filter((p) => p.type === 'refund');
+  const charge = order.payments.find((p) => p.type === 'charge');
+  const c = order.customer;
+  const addr = order.shipping_address;
+
+  return (
+    <>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <nav aria-label="Breadcrumb" className="text-caption text-text-secondary">
+            <Link to="/orders" className="text-brand-600 hover:text-brand-700">
+              Orders
+            </Link>{' '}
+            › {order.number}
+          </nav>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-heading-24 text-text-primary">{order.number}</h1>
+            <OrderStatusBadge status={order.status} />
+            <PaymentStatusBadge status={order.payment_status} />
+          </div>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-text-secondary">
+            <span className="flex items-center gap-1">
+              <Clock aria-hidden className="size-3.5" /> Placed {dateTime(order.placed_at)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Store aria-hidden className="size-3.5" /> {orderChannelLabels[order.channel]}
+              {order.created_by ? ` · added by ${order.created_by.name}` : ''}
+            </span>
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {forward
+            .filter((t) => t !== primary)
+            .map((t) => (
+              <Button key={t} variant="secondary" loading={quick.isPending && quick.variables?.to === t} onClick={() => run(t)}>
+                {t === 'confirmed' && order.status === 'ready_to_ship' ? 'Move back to confirmed' : transitionLabels[t]}
+              </Button>
+            ))}
+          {order.allowed_transitions.includes('returned') && (
+            <Button variant="secondary" onClick={() => run('returned')}>
+              Returned
+            </Button>
+          )}
+          {canCancel && (
+            <Button variant="danger" onClick={() => run('cancelled')}>
+              Cancel order
+            </Button>
+          )}
+          {primary && (
+            <Button loading={quick.isPending && quick.variables?.to === primary} onClick={() => run(primary)}>
+              {transitionLabels[primary]}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        <div className="flex flex-col gap-5">
+          <Card title={`Items · ${formatCount(order.items_count)}`} label="Items">
+            <ul className="flex flex-col gap-3">
+              {order.items.map((i) => (
+                <li key={i.id} className="flex items-center gap-3">
+                  <Thumb src={i.image?.url} />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-body font-semibold text-text-primary">{i.product_name}</span>
+                    <span className="truncate text-caption text-text-muted">{[i.variant_title !== 'Default' ? i.variant_title : null, i.sku ? `SKU ${i.sku}` : null].filter(Boolean).join(' · ')}</span>
+                    {i.current_stock && i.current_stock.tracked && (
+                      <span className={cn('text-caption', i.current_stock.available > 0 ? 'text-success' : 'text-danger')}>
+                        {i.current_stock.available > 0 ? `${formatCount(i.current_stock.available)} in stock` : 'Out of stock'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="hidden text-body text-text-secondary sm:inline">
+                    {formatBdt(i.unit_price_amount)} × {i.quantity}
+                  </span>
+                  <span className="w-24 text-right text-body font-semibold text-text-primary">{formatBdt(i.total_amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <dl className="flex flex-col gap-2 border-t border-border-default pt-3">
+              <Row label="Subtotal" value={formatBdt(order.subtotal_amount)} />
+              <Row
+                label={`Delivery · ${order.shipping_zone_name}${order.shipping_overridden ? ' (set by hand)' : ''}`}
+                value={order.shipping_discount_amount > 0 ? `${formatBdt(order.shipping_amount)} (free delivery)` : formatBdt(order.shipping_amount)}
+              />
+              {order.discount_amount > 0 && <Row label={`Discount${order.coupon_code ? ` · ${order.coupon_code}` : ''}`} value={`− ${formatBdt(order.discount_amount)}`} tone="success" />}
+              <div className="border-t border-border-default pt-2">
+                <Row label="Total" value={formatBdt(order.total_amount)} strong />
+              </div>
+              <div className="flex items-center justify-between rounded-md bg-surface-subtle px-3 py-2.5 text-body">
+                <span className="text-text-secondary">Paid {formatBdt(order.paid_amount)}</span>
+                <span className="font-semibold text-text-primary">
+                  {order.status === 'cancelled' || order.status === 'returned' ? 'Nothing due' : `Due on delivery ${formatBdt(order.due_amount)}`}
+                </span>
+              </div>
+            </dl>
+          </Card>
+
+          <Card
+            title="Payments"
+            actions={
+              order.can.refund && order.paid_amount - order.refunded_amount > 0 ? (
+                <Button size="sm" variant="secondary" onClick={() => setDialog('refund')}>
+                  Record refund
+                </Button>
+              ) : undefined
+            }
+          >
+            <ul className="flex flex-col gap-2">
+              <li className="flex items-center gap-3 rounded-lg border border-border-default p-3">
+                <span className="flex size-9 items-center justify-center rounded-control bg-surface-subtle text-text-secondary">
+                  <Truck aria-hidden className="size-4" />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-body font-semibold text-text-primary">Cash on delivery</span>
+                  <span className="text-caption text-text-muted">Collected by you or your courier at the door</span>
+                </span>
+                <span className="text-body font-semibold text-text-primary">{formatBdt(charge?.amount ?? order.total_amount)}</span>
+                <span className="text-caption text-text-muted">{charge ? paymentState(charge.status) : ''}</span>
+              </li>
+              {refunds.map((r) => (
+                <li key={r.id} className="flex items-center gap-3 rounded-lg border border-border-default p-3">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-body font-semibold text-text-primary">Refund · {r.method ? refundMethodLabels[r.method] : 'Manual'}</span>
+                    <span className="truncate text-caption text-text-muted">{[r.reference ? `Ref ${r.reference}` : null, r.actor?.name, dateTime(r.created_at), r.note].filter(Boolean).join(' · ')}</span>
+                  </span>
+                  <span className="text-body font-semibold text-text-primary">− {formatBdt(r.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-caption text-text-muted">Online payments and advance payment links are coming soon.</p>
+          </Card>
+
+          <Card title="Shipping">
+            <dl className="grid gap-3 sm:grid-cols-3">
+              <Field label="Zone" value={`${order.shipping_zone_name}${order.delivery_min_days !== null ? ` · ${daysRange(order.delivery_min_days, order.delivery_max_days)}` : ''}`} />
+              <Field label="Courier" value={order.shipment?.carrier_name ?? '—'} />
+              <Field
+                label="Tracking"
+                value={
+                  order.shipment?.tracking_url ? (
+                    <a href={order.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="text-brand-600 hover:underline">
+                      {order.shipment.tracking_code ?? 'Open tracking'}
+                    </a>
+                  ) : (
+                    (order.shipment?.tracking_code ?? '—')
+                  )
+                }
+              />
+            </dl>
+            {!order.shipment && <p className="text-caption text-text-muted">Not shipped yet. Booking couriers from Store Plix is coming soon.</p>}
+            {order.cancel_reason && <p className="text-caption text-danger">Cancelled: {cancelReasonLabels[order.cancel_reason]}</p>}
+          </Card>
+
+          <Card title="Timeline">
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (note.trim()) addNote.mutate();
+              }}
+            >
+              <input
+                aria-label="Add a note"
+                placeholder="Add a note for your team…"
+                maxLength={1000}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="h-10 min-w-0 flex-1 rounded-md border border-border-default px-3 text-body outline-none focus:border-brand-600"
+              />
+              <Button type="submit" size="sm" variant="secondary" loading={addNote.isPending} disabled={!note.trim()}>
+                Add note
+              </Button>
+            </form>
+            <Timeline label="Order timeline" items={order.events.map(eventToEntry)} />
+          </Card>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          <section aria-label="Customer" className="flex flex-col gap-4 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
+            <div className="flex items-center gap-3">
+              <Avatar name={c.name} />
+              <div className="flex min-w-0 flex-col">
+                {c.id ? (
+                  <Link to={`/customers/${c.id}`} className="truncate text-body font-semibold text-text-primary hover:text-brand-600">
+                    {c.name}
+                  </Link>
+                ) : (
+                  <span className="truncate text-body font-semibold text-text-primary">{c.name}</span>
+                )}
+                <span className="text-caption text-text-muted">
+                  {localPhone(c.phone)} · {c.orders_count <= 1 ? 'first order' : `${ordinal(c.orders_count)} order`}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <a href={`tel:+${c.phone}`} className={buttonVariants({ size: 'sm' })}>
+                <Phone aria-hidden className="size-4" /> Call
+              </a>
+              <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className={buttonVariants({ size: 'sm', variant: 'secondary' })}>
+                <MessageCircle aria-hidden className="size-4" /> WhatsApp
+              </a>
+            </div>
+            <div className="flex gap-3 border-t border-border-default pt-3">
+              <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-text-muted" />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-caption text-text-muted">Delivery address</span>
+                <span className="text-body text-text-primary">{[addr.address_line, addr.area, addr.thana, addr.district].filter(Boolean).join(', ')}</span>
+                {addr.landmark && <span className="text-caption text-text-muted">{addr.landmark}</span>}
+              </div>
+              {editable && (
+                <Link to={`/orders/${order.id}/edit`} className="text-caption font-medium text-brand-600">
+                  Edit
+                </Link>
+              )}
+            </div>
+            {order.customer_note && <p className="rounded-md bg-surface-subtle p-3 text-caption text-text-secondary">“{order.customer_note}”</p>}
+            <div className="grid grid-cols-3 gap-2" aria-label="This shop only">
+              <Tile label="Delivered" value={formatCount(c.delivered_orders_count)} />
+              <Tile label="Returned" value={formatCount(c.returned_orders_count)} />
+              <Tile label="Spent" value={formatBdt(c.total_spent_amount)} />
+            </div>
+          </section>
+
+          <Card title="Order details">
+            <dl className="flex flex-col gap-2">
+              <Row label="Source" value={orderChannelLabels[order.channel]} />
+              <Row label="Payment" value="Cash on delivery" />
+              {order.coupon_code && <Row label="Coupon" value={order.coupon_code} />}
+              {order.timestamps.shipped_at && <Row label="Shipped" value={dateTime(order.timestamps.shipped_at)} />}
+              {order.timestamps.delivered_at && <Row label="Delivered" value={dateTime(order.timestamps.delivered_at)} />}
+            </dl>
+            <TagInput label="Order tags" value={order.tags} disabled={tags.isPending || !editable} onChange={(next) => tags.mutate(next)} placeholder="+ Tag" />
+          </Card>
+        </div>
+      </div>
+
+      {dialog === 'cancel' && <CancelOrderDialog open order={target} smsDefault={sms?.order_cancelled ?? true} onClose={() => setDialog(null)} />}
+      {dialog === 'ship' && <ShipOrderDialog open order={target} smsDefault={sms?.order_shipped ?? true} onClose={() => setDialog(null)} />}
+      {dialog === 'return' && <ReturnOrderDialog open order={order} onClose={() => setDialog(null)} />}
+      {dialog === 'refund' && <RefundDialog open order={order} onClose={() => setDialog(null)} />}
+    </>
+  );
+}
+
+function paymentState(s: 'pending' | 'succeeded' | 'failed' | 'cancelled'): string {
+  return s === 'pending' ? 'At delivery' : s === 'succeeded' ? 'Collected' : s === 'cancelled' ? 'Not collected' : 'Failed';
+}
+
+function Field({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-caption text-text-muted">{label}</dt>
+      <dd className="truncate text-body text-text-primary">{value}</dd>
+    </div>
+  );
+}
+
+function Tile({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md bg-surface-subtle px-3 py-2">
+      <span className="text-caption text-text-muted">{label}</span>
+      <span className="truncate text-body font-semibold text-text-primary">{value}</span>
+    </div>
+  );
+}
+
+export default OrderDetailPage;

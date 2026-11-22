@@ -17,7 +17,7 @@ wishlists, campaigns, abandoned-cart SMS. The full list of deferred Figma featur
 
 Everything in AGENT-CONTRACTS.md, PHASE-2/3/4-CONTRACT.md and docs/api/API-CONVENTIONS.md still applies: envelope,
 snake_case, ULIDs, roles, error codes, cookie sessions (PHASE-4 §7). The machine-readable spec is
-`docs/api/openapi.yaml` (**v1.5.0**).
+`docs/api/openapi.yaml` (**v1.5.0**; **v1.5.1** (amended 2026-11-22, QA 5a F-L6) documents the accepted 5a deviations, no shape changes).
 
 Conventions in this file:
 - **Headers.** `T` = `X-Tenant-Id`. Merchant auth is the Sanctum session cookie plus `X-XSRF-TOKEN` on writes.
@@ -89,13 +89,13 @@ Conventions in this file:
 | P5-5 | **Stock commitment at order placement, decrement at shipping.** Placing an order (storefront or manual) adds the quantity to `inventories.committed` for tracked variants in one transaction, under `SELECT … FOR UPDATE` in `variant_id` order. It succeeds only when `on_hand − committed ≥ qty`, or the variant has `allow_backorder`. Cancelling an unshipped order releases `committed`. **Shipping** decrements `on_hand` and `committed` together and writes ledger reason `order_shipped`. A return restocks `on_hand` (ledger `order_returned`) only for lines the merchant marks restock. Committing writes no ledger row (the ledger tracks `on_hand`; the order timeline explains `committed`). Untracked variants are never touched. ADR 0011 | One stock path through `InventoryService` (P4-12). No TTL is needed for COD: the order itself is the reservation. The TTL question only exists for unpaid online orders (5b, Q35) |
 | P5-6 | **Storefront stock exposure.** The PDP HTML never carries stock. `GET /storefront/products/{slug}/availability` (no-store) returns per variant `available: boolean` and `low_stock: int|null`, where `low_stock` = available units **only when** `0 < available ≤ effective_threshold` (Figma "Only 4 left in 2–3 years"), else `null`. Untracked or backorder variants: `available: true, low_stock: null`. Default, pending PO (Q39) | Shows urgency the design asks for without letting competitors read exact stock levels |
 | P5-7 | **Shipping zones follow Settings 60:14364, not the theme checkout's Standard/Express pair.** A zone = name + areas (whole districts and/or single thanas) + one charge + delivery time (min/max days) + active flag. Exactly one **fallback zone** ("Outside Dhaka", `kind = fallback`) exists per store: no areas, can't be deleted or deactivated, and catches every address no active zone covers ("so no order is ever blocked at checkout"). Resolution: active zone with that **thana** → active zone with the whole **district** → fallback. An area belongs to at most one zone (DB unique). Express/second rates per zone, weight-based charges, COD charge, packaging fee and per-zone default courier are deferred (§11). | The merchant settings screen is the source of truth for rules; one rate per zone is what Figma shows. A guaranteed fallback means a misconfigured zone can't lose a sale |
-| P5-8 | **"Inside Dhaka" default = the Dhaka city (metropolitan) thanas** of the geo dataset (Figma "Dhaka city · 41 thanas"), ৳ 70, 1–2 days; fallback "Outside Dhaka" ৳ 130, 2–4 days (onboarding 06 values). Both are created when the merchant first saves onboarding 06 or Settings → Shipping; `DemoSeeder` and a backfill command create them for existing stores. Default, pending PO (Q37) | Matches the onboarding copy and how BD couriers price "inside Dhaka" |
+| P5-8 | **"Inside Dhaka" default = the Dhaka city (metropolitan) thanas** of the geo dataset: the **50** Dhaka Metropolitan Police thanas of district `dhaka` (amended 2026-11-22, QA 5a F-L6); Figma's "Dhaka city · 41 thanas" is an older count. ৳ 70, 1–2 days; fallback "Outside Dhaka" ৳ 130, 2–4 days (onboarding 06 values). Both are created when the merchant first saves onboarding 06 or Settings → Shipping; `DemoSeeder` and a backfill command create them for existing stores. Default, pending PO (Q37) | Matches the onboarding copy and how BD couriers price "inside Dhaka" |
 | P5-9 | **Free delivery threshold is store-wide** (`store_settings.free_delivery_over_amount`, null = off). It applies when the **merchandise subtotal after discount** ≥ threshold, to every zone. Shown as the cart progress bar ("Add ৳ 450 more for free delivery") and in onboarding 06. | Figma has one threshold (60:14364 "Free delivery" card, 50:604 toggle) |
 | P5-10 | **BD geography is a static, versioned dataset in the API** (`resources/geo/bd.json`: 8 divisions, 64 districts, upazilas/thanas incl. city thanas, with stable lowercase codes and English + Bangla names), served by `GET /geo/bd` (public, cacheable 24 h). Addresses store codes **and** names (snapshots). The API agent sources it from an openly licensed list (candidate: `nuhil/bangladesh-geocode`, MIT; confirm the licence, add Dhaka/Chattogram metropolitan thanas by hand, record the source in `resources/geo/README.md`). The checkout "Area" field is free text in 5a; the courier area mapping (Figma "Map area") is 5b. | Checkout (1:11591) needs Division → District → Upazila/Thana selects, and zones need stable codes. One copy of the data for API, SPA and storefront |
 | P5-11 | **Coupons** (68:19255): `percentage` (1–100 %, as `percent_bps`, optional `max_discount_amount` cap), `fixed` (`amount`), `free_shipping` (shipping charge → 0; always whole order). `applies_to`: `all`, `categories` (incl. descendants), `products`. Conditions: `min_subtotal_amount`, `usage_limit`, `usage_per_customer` (by normalised phone; default 1), `first_order_only` (no non-cancelled order with that phone in this store), `starts_at`/`ends_at` in store time. **One coupon per order**; the "Combine with other coupons" toggle is hidden. "Only customers with a Good delivery record" is deferred (needs courier fraud data, 5b/Phase 8). Code: `^[A-Z0-9][A-Z0-9_-]{2,31}$`, uppercased, unique per store. Status `draft` / `active` / `disabled`; `expired` and `used_up` are **derived** for display. A coupon with redemptions can't be deleted (409 `coupon_in_use`); disable it instead. | Matches the create screen; derived states avoid cron jobs flipping rows |
 | P5-12 | **Discount math is integer and deterministic.** Eligible subtotal `E` = Σ eligible line subtotals. Percentage: `floor(E × percent_bps / 10 000)`, then `min(cap)`, then `min(E)`. Fixed: `min(amount, E)`. The discount is allocated to eligible lines proportionally with the largest-remainder method (ties → lower line index), so `Σ order_items.discount_amount = orders.discount_amount` exactly. Free shipping sets `shipping_amount = 0` and records `shipping_discount_amount`. | Refunds and reports need per-line discounts; no rounding drift |
 | P5-13 | **Coupon usage is enforced transactionally.** In the checkout transaction the coupon row is locked (`FOR UPDATE`) **after** the inventory rows (fixed lock order: inventories by `variant_id`, then coupon, then counter) and re-validated: status, dates, `used_count < usage_limit`, per-phone count from `coupon_redemptions` (status `active`), first-order rule. Success inserts a redemption and increments `used_count`. Cancelling an order releases its redemption (`status = released`, `used_count − 1`); a returned order keeps it. Any failure → 422 `coupon_invalid` with a reason message; nothing is written. | Roadmap AC "usage limits enforced transactionally". A fixed lock order prevents deadlocks |
-| P5-14 | **Checkout is one idempotent request** (ADR 0006). `Idempotency-Key` header required (UUID/ULID, ≤ 64). Stored in `idempotency_keys` (scope `storefront.checkout`, per store) with `request_hash = sha256(canonical body + cart token hash)`. Same key + same hash → the stored 201 with `Idempotent-Replayed: true`; different hash → 409 `idempotency_key_mismatch`; in flight → 409 `idempotency_key_in_use`. `orders` also has `U(store_id, idempotency_key)` as the final guard. The stored response body is encrypted (it contains the confirmation token). Keys live 24 h. | "Replay returns the same order" AC; safe retries on flaky mobile networks |
+| P5-14 | **Checkout is one idempotent request** (ADR 0006). `Idempotency-Key` header required: 8–64 characters of `[A-Za-z0-9_-]` (a UUID or ULID fits); missing **or malformed** → 400 `idempotency_key_required` (amended 2026-11-22, QA 5a F-L6). Stored in `idempotency_keys` (scope `storefront.checkout`, per store) with `request_hash = sha256(canonical body + cart token hash)`. Same key + same hash → the stored 201 with `Idempotent-Replayed: true`; different hash → 409 `idempotency_key_mismatch`; in flight → 409 `idempotency_key_in_use`. `orders` also has `U(store_id, idempotency_key)` as the final guard. The stored response body is encrypted (it contains the confirmation token). Keys live 24 h. | "Replay returns the same order" AC; safe retries on flaky mobile networks |
 | P5-15 | **Price-change guard.** The checkout body carries `expected_total_amount` (what the shopper saw). If the recomputed total differs → 409 `checkout_changed` with `details.expected_total_amount = ["The total changed to ৳ 3,900. Check your order and place it again."]` and nothing is written. | Never charge a COD buyer more than they agreed to at the door |
 | P5-16 | **Order numbers.** `{prefix}-{sequence}`, e.g. `GS-1042`. Sequence per store from `store_counters` (`orders` key, starts at 1001), incremented in the order transaction (`INSERT … ON CONFLICT DO UPDATE SET value = value + 1 RETURNING value`), so a rolled-back checkout leaves no gap. Prefix `store_settings.order_prefix` `^[A-Z]{1,6}$`; default = first two ASCII letters of the store slug uppercased (`demo` → `DE`), editable in Settings → Taxes & invoices ("Invoice numbering", 60:16858). A changed prefix applies to new orders only. Default, pending PO (Q40) | Figma GS-1042; one number for shopper, merchant and courier |
 | P5-17 | **Order state machine** (ADR 0011; enforced by `OrderStateMachine`, every transition writes an `order_events` row). Statuses: `pending` (new, awaiting confirmation call), `confirmed`, `ready_to_ship` (packed), `shipped` (Figma "In transit"), `delivered`, `returned` (came back undelivered), `cancelled`. `pending_payment` is reserved for 5b. Allowed: `pending → confirmed \| cancelled`; `confirmed → ready_to_ship \| shipped \| cancelled`; `ready_to_ship → shipped \| confirmed \| cancelled`; `shipped → delivered \| returned`. `delivered`, `returned`, `cancelled` are final in 5a (post-delivery returns and exchanges are 5b, §16). Anything else → 409 `invalid_state_transition`. | Figma 7:276 tabs (Pending, Confirmed, Ready to ship, In transit, Delivered, Returned, Cancelled). A small, explicit graph is testable |
@@ -128,7 +128,7 @@ Conventions in this file:
 | Q34 | Orders above the monthly plan limit | Storefront orders always accepted; manual orders blocked with 402 |
 | Q35 | Stock hold for unpaid online orders (5b) | 30 min for checkout payments; 2 h for merchant-sent payment links (Figma "expires 15:21" for a 13:21 link) |
 | Q36 | Is COD-only acceptable for go-live? | Yes |
-| Q37 | "Inside Dhaka" definition | Dhaka metropolitan thanas (Figma "41 thanas"); merchant can edit areas |
+| Q37 | "Inside Dhaka" definition | Dhaka metropolitan thanas (50 in the dataset; Figma says "41 thanas") (amended 2026-11-22, QA 5a F-L6); merchant can edit areas |
 | Q24 | (existing) Category URL | `/c/{slug}` |
 | Q38 | Coupon share link: Figma shows `/c/WINTER15`, which collides with category `/c/{slug}` | Share link `/discount/{CODE}` (applies the coupon to the cart and redirects to `/`) |
 | Q39 | Show "Only N left" on PDP and cart | Yes, only when at or below the low-stock threshold (P5-6) |
@@ -218,12 +218,15 @@ Retention and schedules:
 | 409 | `store_not_live` | checkout on a draft store (P5-24) |
 | 409 | `launch_blocked` | publish with unmet hard requirements (P5-25) |
 | 409 | `coupon_in_use` | delete a coupon with redemptions |
-| 409 | `zone_area_taken` | an area already belongs to another zone (`details["areas.N"]`) |
-| 422 | `out_of_stock` (exists) | add-to-cart or checkout beyond `available` (`details["items.N.quantity"] = ["Only 2 left."]`) |
+| 422 | `out_of_stock` (exists) | add-to-cart or checkout beyond `available` (`details["items.N.quantity"] = ["Only 2 left."]`); also a storefront checkout line that is no longer purchasable ("This item is no longer available.") (amended 2026-11-22, QA 5a F-L6) |
 | 422 | `coupon_invalid` (exists) | coupon unknown, inactive, expired, used up, below minimum, not eligible, per-customer or first-order rule (`details.code = [reason]`) |
 | 422 | `cart_empty` | checkout with no purchasable lines |
 | 422 | `payment_method_unavailable` | method not enabled for the store |
 | 422 | `refund_exceeds_paid` | refund > `paid_amount − refunded_amount` |
+
+Amendments (amended 2026-11-22, QA 5a F-L6): there is **no** `zone_area_taken` code; an area in two zones is 422 `validation_failed` on
+`zones.N.areas.M` (§3.5). A missing **or malformed** `Idempotency-Key` (not 8–64 characters of `[A-Za-z0-9_-]`) is 400
+`idempotency_key_required`.
 
 Coupon reason messages (exact): "This code doesn't exist.", "This code isn't active yet.", "This code has expired.",
 "This code has been fully used.", "Spend ৳ {min} or more to use this code.", "This code doesn't apply to the items in
@@ -233,7 +236,7 @@ your bag.", "You've already used this code.", "This code is for first orders onl
 `GET /geo/bd` (no auth, `throttle:60,1` per IP) → 200 `{ data: BdGeo }`, `Cache-Control: public, max-age=86400`,
 `ETag` = dataset version. `BdGeo = { version, divisions[], districts[], thanas[] }` (§6).
 
-### 3.2 Storefront catalog (server-to-server; `throttle:storefront`)
+### 3.2 Storefront catalog (server-to-server; `throttle:storefront` = 1 200/min per store host (amended 2026-11-22, QA 5a F-L6))
 
 | Method & path | Query / body | Success | Errors |
 |---|---|---|---|
@@ -272,7 +275,7 @@ Every write bumps `last_activity_at`.
 
 ### 3.4 Checkout (storefront)
 
-`POST /storefront/checkout` — headers `Idempotency-Key` (required, else 400 `idempotency_key_required`),
+`POST /storefront/checkout` — headers `Idempotency-Key` (required, 8–64 characters of `[A-Za-z0-9_-]`; missing or malformed → 400 `idempotency_key_required` (amended 2026-11-22, QA 5a F-L6)),
 `X-Cart-Token`; throttle `checkout` (tenant + client IP 10/min; tenant + phone 5 per 10 min, keyed after phone
 normalisation). Body `CheckoutInput`:
 
@@ -327,7 +330,8 @@ number with or without prefix.
 | `PATCH /stores/{store}/pickup-locations/{location}` | partial; `is_default: true` moves the default | 200 | 404; 422 |
 | `DELETE /stores/{store}/pickup-locations/{location}` | — | 204; deleting the default promotes the oldest remaining | 404; 409 `conflict` when a zone references it |
 
-Zone rules: `name` 1–60; `charge_amount` 0–1 000 000; `min_days` ≤ `max_days` ≤ 30; `areas` = `[{ district_code,
+Zone rules (amended 2026-11-22, QA 5a F-L6): an area clash (two zones, within the payload or against the unique index) is always 422 on
+`zones.N.areas.M`, never 409. `name` 1–60; `charge_amount` 0–1 000 000; `min_days` ≤ `max_days` ≤ 30; `areas` = `[{ district_code,
 thana_code? }]` (`thana_code` omitted = whole district; a whole district and a thana of the same district may sit in
 different zones — the thana wins); fallback has no areas and `is_active: true`. One full-replace transaction;
 `U(store_id, district_code, thana_code)` violation maps to 422. Audit `shipping.updated` (meta: zone count).
@@ -350,7 +354,7 @@ Settings additions on `PATCH /stores/{store}/settings` (Phase 2 endpoint, O A): 
 discount_amount (Σ redemption discount, active) }`. Audit `coupon.created`, `coupon.updated` (status/value changes),
 `coupon.deleted`.
 
-### 3.7 Orders (merchant; `T`; throttle `merchant`)
+### 3.7 Orders (merchant; `T`; throttle `merchant` = 300/min per user + tenant (amended 2026-11-22, QA 5a F-L6))
 
 | Method & path | Roles | Body / query | Success | Errors |
 |---|---|---|---|---|
@@ -359,7 +363,7 @@ discount_amount (Σ redemption discount, active) }`. Audit `coupon.created`, `co
 | `POST /stores/{store}/orders` | O A S | `ManualOrderInput`; `Idempotency-Key` **required** | 201 `Order` | **402 `plan_limit_reached`** (P5-27); 409 idempotency; 422 like checkout (`items.N.variant_id` "Unknown variant.", `out_of_stock`, `coupon_invalid`) |
 | `GET /stores/{store}/orders/{order}` | O A S | — | 200 `Order` (items, events newest first ≤ 200, payments, shipment, customer summary) | 404 |
 | `PATCH /stores/{store}/orders/{order}` | O A S | `UpdateOrderInput` (`revision` required): `contact`, `shipping_address`, `customer_note`, `tags` | 200 `Order` + `meta.shipping_hint` (P5-20); `edited` event lists changed fields (values not logged) | 404; 409 `revision_conflict`, `invalid_state_transition` (status not editable) |
-| `POST /stores/{store}/orders/{order}/confirm` | O A S | `{ notify_customer?: bool }` | 200 `Order` | 404; 409 `invalid_state_transition` |
+| `POST /stores/{store}/orders/{order}/confirm` | O A S | `{ notify_customer?: bool }` | 200 `Order`. Also the **un-pack** path `ready_to_ship → confirmed` (P5-17); the `order_confirmed` SMS is only considered on `pending → confirmed` (amended 2026-11-22, QA 5a F-L6) | 404; 409 `invalid_state_transition` |
 | `POST /stores/{store}/orders/{order}/ready` | O A S | — | 200 | 404; 409 |
 | `POST /stores/{store}/orders/{order}/ship` | O A S | `ShipOrderInput` `{ carrier_name? ≤ 60, tracking_code? ≤ 64, tracking_url? (https only, ≤ 500), notify_customer?: bool }` | 200 (creates `shipments` row `manual`, `cod_amount = total − paid`; `InventoryService::ship`) | 404; 409; 422 |
 | `POST /stores/{store}/orders/{order}/deliver` | O A S | — | 200 (COD payment succeeded, `paid`, customer counters) | 404; 409 |
@@ -379,6 +383,12 @@ commit. Audit: `order.cancelled` (paid only), `order.refunded`, `order.shipping_
 `notify_customer?` (default true). Cost and stock rules are identical to checkout; `out_of_stock` can be bypassed only by
 variants with `allow_backorder`.
 
+As built (amended 2026-11-22, QA 5a F-L6): manual orders are accepted while `checkout.cod_enabled` is off (the toggle governs storefront checkout;
+the merchant collects however they like). A manual line with an unknown, disabled or archived variant is 422
+`validation_failed` on `items.N.variant_id` (not `out_of_stock`). With no shipping zones configured (only possible
+before go-live, since publish requires the fallback zone) the delivery charge is ৳ 0 unless overridden; the UI offers
+"Change".
+
 **Example** `POST /stores/01J…/orders/01JORD…/cancel` `{ "reason": "unreachable", "note": "No answer 3 times", "notify_customer": true }`
 → 200 `{ "data": { "id": "01JORD…", "number": "GS-1041", "status": "cancelled", "payment_status": "unpaid", "revision": 4, … } }`.
 The same call by staff on an order with `paid_amount > 0` → 403 `{"error":{"code":"forbidden","message":"Only owners and managers can cancel paid orders."}}`.
@@ -395,7 +405,9 @@ The same call by staff on an order with `paid_amount > 0` → 403 `{"error":{"co
   `sales_amount` (Σ total of delivered orders), `delivered_count`, `returned_count`, `cancelled_count`,
   `delivery_success_rate` (delivered / (delivered + returned), null when 0), `waiting` `{ pending, confirmed,
   ready_to_ship }`, `best_sellers` (top 5 products by units, 30 days, non-cancelled), `plan { used, limit }`.
-  `null` only when the store has never had an order.
+  `null` only when the store has never had an order. Month rule (amended 2026-11-22, QA 5a F-L6): each figure is grouped by the month of its own
+  timestamp in the store timezone: `count` by `placed_at`, `delivered_count` and `sales_amount` by `delivered_at`,
+  `returned_count` by `returned_at`, `cancelled_count` by `cancelled_at`.
 - `Customer` gains `delivered_orders_count`, `returned_orders_count`. `source` can now be `storefront`.
 
 ---
@@ -488,7 +500,7 @@ export interface ShippingZoneArea { district_code: string; thana_code: string | 
 export interface ShippingZone {
   id: string; name: string; kind: 'custom' | 'fallback'; charge_amount: number;
   min_days: number; max_days: number; is_active: boolean; position: number;
-  areas: ShippingZoneArea[]; area_summary: string;        // "Dhaka city · 41 thanas"
+  areas: ShippingZoneArea[]; area_summary: string;        // "Dhaka city · 50 thanas"
 }
 export interface ShippingZoneInput {
   id?: string; name: string; kind: 'custom' | 'fallback'; charge_amount: number;
@@ -778,7 +790,8 @@ Notes:
   exception delete the row so the client can retry with the same key. A `processing` row past `locked_until` is taken
   over.
 - Job retries never re-run placement; notifications are separate queued jobs keyed by `(order_id, event)` so a retry
-  sends at most one SMS per event (`sms_messages` lookup before sending).
+  sends at most one SMS per event. As built (amended 2026-11-22, QA 5a F-L6): the dedupe reads the order's `notification` rows in `order_events`
+  (`meta.channel = sms`, `meta.event`) under the order row lock, since `sms_messages` has no `order_id`.
 
 ---
 
@@ -847,7 +860,7 @@ Payments & checkout, Notifications, Taxes & invoices. Checklist (`SetupChecklist
 | S1 | **Price / discount tampering** (T6) | Checkout and manual order accept only variant ids, quantities, coupon code; any `price`, `*_amount` (except `expected_total_amount`, `shipping_amount_override` for merchants) is ignored; totals from DB; `expected_total_amount` mismatch → 409 | `CheckoutPriceTampering`: body with `unit_price_amount: 1`, `discount_amount`, `total_amount` → order uses DB prices; tampered expected total → 409 and nothing written |
 | S2 | **Oversell / stock race** (T7) | `commit` under ordered row locks, conditional on `on_hand − committed ≥ q`; all-or-nothing | `ConcurrentStockReservation` (Postgres, group `perf`): stock 5, 20 parallel checkouts of 1 → exactly 5 orders, `committed = 5`, 15 × 422 `out_of_stock`; mixed-cart deadlock test (A+B vs B+A, 20 pairs) → no deadlock errors |
 | S3 | **Coupon over-redemption** | Coupon row lock in the order transaction, per-phone count, redemptions table | Postgres parallel test: `usage_limit 3`, 10 parallel checkouts → 3 redemptions, `used_count 3`; same phone twice with `usage_per_customer 1` → second 422 |
-| S4 | **Duplicate orders on retry** | `Idempotency-Key` required, request hash, `U(store_id, idempotency_key)` | Replay → same order id + `Idempotent-Replayed`; different body same key → 409 mismatch; two concurrent same-key requests → one 201, one 409 `idempotency_key_in_use` or replay; missing key → 400 |
+| S4 | **Duplicate orders on retry** | `Idempotency-Key` required, request hash, `U(store_id, idempotency_key)` | Replay → same order id + `Idempotent-Replayed`; different body same key → 409 mismatch; two concurrent same-key requests → one 201, one 409 `idempotency_key_in_use` or replay; missing or malformed key → 400 (amended 2026-11-22, QA 5a F-L6) |
 | S5 | **Cart hijack / cross-store cart** | 256-bit token, sha256 at rest, httpOnly host-only cookie, cart bound to the host's store; token never logged | Token of store A sent with host B → 404 `cart_not_found`; DB contains no raw token; log scan after a cart flow has no token |
 | S6 | **Cross-tenant ids in storefront and merchant payloads** (T1) | Storefront variant ids resolved within the host's store (`StoreRule::exists`), FK3 on `cart_items`; merchant `scopeBindings` + store rules; triple FKs | Variant of B added on A's host → 422; A's merchant routes with B's order/coupon/zone ids → 404; B's variant/category/product/customer ids in A's payloads → 422 |
 | S7 | **Cost / stock leakage on storefront** | Exact key-set resource tests; availability exposes boolean + low count only | Key-set tests for card, product, availability, cart, order; `unit_cost_amount` null for staff in merchant order resource |

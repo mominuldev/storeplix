@@ -56,10 +56,20 @@ class UpdateStoreSettingsRequest extends FormRequest
             $trim('address', $key);
         }
 
+        if (isset($in['order_prefix']) && is_string($in['order_prefix'])) {
+            $in['order_prefix'] = strtoupper(trim($in['order_prefix']));
+        }
+
         $trim('seo', 'title', fn ($v) => $v === '' ? null : $v);
         $trim('seo', 'description', fn ($v) => $v === '' ? null : $v);
 
         $this->replace($in);
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return ['order_prefix.regex' => 'Use 1–6 letters (A–Z).'];
     }
 
     public function rules(): array
@@ -122,6 +132,16 @@ class UpdateStoreSettingsRequest extends FormRequest
             'region.country' => ['sometimes', 'string', 'size:2', 'regex:/^[A-Z]{2}$/'],
             'region.currency' => ['sometimes', 'string', 'in:BDT,USD'],
             'region.timezone' => ['sometimes', 'string', 'timezone:all'],
+
+            // Phase 5 §3.5: checkout, order numbering and notifications.
+            'checkout' => ['sometimes', 'array:cod_enabled'],
+            'checkout.cod_enabled' => ['sometimes', 'boolean:strict'],
+            'order_prefix' => ['sometimes', 'string', 'regex:/^[A-Z]{1,6}$/'],
+            'notifications' => ['sometimes', 'array:new_order_email,sms_language,customer_sms'],
+            'notifications.new_order_email' => ['sometimes', 'boolean:strict'],
+            'notifications.sms_language' => ['sometimes', 'string', 'in:bn,en'],
+            'notifications.customer_sms' => ['sometimes', 'array:order_placed,order_confirmed,order_shipped,order_cancelled'],
+            'notifications.customer_sms.*' => ['boolean:strict'],
         ];
     }
 

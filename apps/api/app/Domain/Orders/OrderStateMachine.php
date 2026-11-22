@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Domain\Orders;
+
+use App\Domain\Orders\Models\Order;
+use App\Domain\Shared\Http\ApiException;
+use App\Domain\Tenancy\Authorization\Permission;
+
+/**
+ * P5-17 / ADR 0011. The only allowed status changes; everything else is 409 invalid_state_transition.
+ * `pending_payment` is reserved for 5b; delivered, returned and cancelled are final in 5a.
+ */
+final class OrderStateMachine
+{
+    /** @var array<string, list<string>> mirrors ORDER_TRANSITIONS in @storeplix/types */
+    public const TRANSITIONS = [
+        Order::PENDING_PAYMENT => [],
+        Order::PENDING => [Order::CONFIRMED, Order::CANCELLED],
+        Order::CONFIRMED => [Order::READY_TO_SHIP, Order::SHIPPED, Order::CANCELLED],
+        Order::READY_TO_SHIP => [Order::SHIPPED, Order::CONFIRMED, Order::CANCELLED],
+        Order::SHIPPED => [Order::DELIVERED, Order::RETURNED],
+        Order::DELIVERED => [],
+        Order::RETURNED => [],
+        Order::CANCELLED => [],
+    ];
+
+    public static function can(string $from, string $to): bool
+    {
+        return in_array($to, self::TRANSITIONS[$from] ?? [], true);
+    }
+
+    public static function assert(string $from, string $to): void
+    {
+        if (! self::can($from, $to)) {
+            throw new ApiException(409, 'invalid_state_transition', self::message($from, $to));
+        }
+    }
+
+    /** Allowed next statuses for the current role (staff can't cancel a paid or part-paid order, P5-21). */
+    public static function allowedFor(Order $order, ?string $role): array
+    {
+        return array_values(array_filter(
+            self::TRANSITIONS[$order->status] ?? [],
+            fn (string $to) => $to !== Order::CANCELLED || $order->paid_amount === 0 || Permission::ManageRefunds->grantedTo($role),
+        ));
+    }
+
+    private static function message(string $from, string $to): string
+    {
+        $label = fn (string $s) => str_replace('_', ' ', $s === Order::SHIPPED ? 'in transit' : $s);
+
+        return 'This order is '.$label($from).', so it can’t be marked '.$label($to).'.';
+    }
+}

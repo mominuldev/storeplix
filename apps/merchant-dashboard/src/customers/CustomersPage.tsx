@@ -14,7 +14,7 @@ import { channelLabels, CustomerFormDialog } from './CustomerFormDialog';
 
 // Figma Customers 63:14972 (Main 63:14974), Customer/Row 61:12494, Avatar 61:12493. Contract §9.1: tabs Repeat /
 // Risky / Blocked, the risky banner, district/risk/last-order filters, Delivered/Returns/Risk columns and
-// order-number search are not built. Order figures stay "—" / 0 until Phase 5.
+// order-number search are not built. Phase 5a: Delivered and Returns columns show this shop's counters.
 
 export function startOfMonthIso(now = new Date()): string {
   return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -61,6 +61,8 @@ export function CustomersPage() {
     { key: 'phone', header: 'Phone', width: 150, cell: (c) => <span className="text-body whitespace-nowrap text-text-primary">{c.phone ? formatIntlPhone(c.phone) : (c.email ?? '—')}</span> },
     { key: 'district', header: 'District', width: 120, cell: (c) => <span className="truncate text-body text-text-secondary">{c.district ?? '—'}</span> },
     { key: 'orders', header: 'Orders', width: 64, cell: (c) => <span className="text-body font-semibold text-text-primary">{formatCount(c.orders_count)}</span> },
+    { key: 'delivered', header: 'Delivered', width: 80, cell: (c) => <span className="text-body text-text-primary">{formatCount(c.delivered_orders_count)}</span> },
+    { key: 'returns', header: 'Returns', width: 72, cell: (c) => <span className={c.returned_orders_count > 0 ? 'text-body font-semibold text-danger' : 'text-body text-text-primary'}>{formatCount(c.returned_orders_count)}</span> },
     { key: 'spent', header: 'Total spent', width: 110, cell: (c) => <span className="text-body font-semibold text-text-primary">{formatBdt(c.total_spent_amount)}</span> },
     { key: 'last', header: 'Last order', width: 100, cell: (c) => <span className="text-body text-text-muted">{c.last_order_at ? monthYear(c.last_order_at) : '—'}</span> },
     {

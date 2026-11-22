@@ -67,7 +67,7 @@ test('feed: active only, exact key set, cheapest enabled variant, on_sale, cache
   expect((await storefrontFeed('nope.localhost')).status).toBe(404);
 });
 
-test('demo home: a new active product shows within 5 s and leaves when archived; no placeholders; no links', async ({ page }) => {
+test('demo home: a new active product shows within 5 s and leaves when archived; no placeholders; cards link to the PDP', async ({ page }) => {
   test.setTimeout(90_000);
   const p = await t.createProduct({ ...simpleProduct('Live kurta', 189000, { status: 'active', compare_at_amount: 220000 }) });
   const ms = await waitForStorefront('/', (html) => html.includes(p.name), 5_000);
@@ -78,8 +78,8 @@ test('demo home: a new active product shows within 5 s and leaves when archived;
   const card = page.getByText(p.name, { exact: true }).first();
   await expect(card).toBeVisible();
   await expect(page.getByText(PLACEHOLDER)).toHaveCount(0);
-  // Real cards render without a link until the PDP ships.
-  expect(await card.evaluate((el) => !!el.closest('a'))).toBe(false);
+  // Phase 5a (§5): product cards link to the PDP.
+  expect(await card.evaluate((el) => el.closest('a')?.getAttribute('href') ?? null)).toBe(`/products/${p.slug}`);
   await expect(page.getByText('৳ 1,890').first()).toBeVisible();
 
   const cur = await api(s, 'GET', `/stores/${s.storeId}/products/${p.id}`);

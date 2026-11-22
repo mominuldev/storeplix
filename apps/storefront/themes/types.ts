@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { z } from 'zod';
-import type { SocialLinks, StoreContact, StorefrontMedia } from '@storeplix/types';
+import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontMedia } from '@storeplix/types';
 import type { RawStorefrontConfig } from '@/lib/storefront-api';
 import type { StorefrontNavigation } from '@/lib/storefront-schemas';
 import type { SectionDesign } from './design';
@@ -91,6 +91,8 @@ export interface LayoutProps<TSettings extends BaseThemeSettings = BaseThemeSett
   navigation: StorefrontNavigation;
   /** Store SEO description, usable as footer copy. */
   description: string | null;
+  /** Phase 5a checkout facts (payment methods, delivery); null when the API doesn't send them. */
+  commerce?: StorefrontCommerce | null;
   children: ReactNode;
 }
 

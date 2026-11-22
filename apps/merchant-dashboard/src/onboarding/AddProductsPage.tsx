@@ -119,9 +119,9 @@ export function AddProductsPage() {
     await save(v);
   });
   const saveAndContinue = async () => {
-    if (!isFilled) return navigate('/', { replace: true });
+    if (!isFilled) return navigate('/onboarding/delivery');
     await handleSubmit(async (v) => {
-      if (await save(v)) navigate('/', { replace: true });
+      if (await save(v)) navigate('/onboarding/delivery');
     })();
   };
 

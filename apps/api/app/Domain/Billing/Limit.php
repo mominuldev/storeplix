@@ -9,4 +9,5 @@ enum Limit: string
     case StaffSeats = 'staff_seats';
     case Products = 'products';
     case CourierConnections = 'courier_connections';
+    case SmsPerMonth = 'sms_per_month';
 }

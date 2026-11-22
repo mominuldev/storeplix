@@ -1,6 +1,8 @@
 // Phase 4 list filters → query params (`filter[...]` comma lists, contract §3.2–§3.5, §6 notes).
 import type {
+  CouponListFilters,
   CustomerListFilters,
+  OrderListFilters,
   InventoryListFilters,
   ProductListFilters,
   StockMovementFilters,
@@ -52,6 +54,36 @@ export function customerListQuery(f: CustomerListFilters = {}): Query {
     'filter[channel]': list(f.channel),
     'filter[tag]': f.tag || undefined,
     'filter[created_at][gte]': f.created_from || undefined,
+    q: text(f.q),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** Phase 5a §3.7: `filter[placed_at][gte|lte]`, comma lists. */
+export function orderListQuery(f: OrderListFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[payment_status]': list(f.payment_status),
+    'filter[channel]': list(f.channel),
+    'filter[district_code]': f.district_code || undefined,
+    'filter[customer_id]': f.customer_id || undefined,
+    'filter[coupon_id]': f.coupon_id || undefined,
+    'filter[placed_at][gte]': f.placed_from || undefined,
+    'filter[placed_at][lte]': f.placed_to || undefined,
+    q: text(f.q),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** Phase 5a §3.6. */
+export function couponListQuery(f: CouponListFilters = {}): Query {
+  return {
+    'filter[type]': list(f.type),
+    'filter[status]': list(f.status),
     q: text(f.q),
     sort: f.sort,
     page: f.page,

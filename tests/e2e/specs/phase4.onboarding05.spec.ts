@@ -68,7 +68,8 @@ test('quick-add 2 products → checklist "Add products" is done', async ({ page,
   await page.getByLabel(/^Price/i).first().fill('৪৫০'); // Bangla digits accepted
   await page.getByLabel('Stock', { exact: true }).fill('7');
   await page.getByRole('button', { name: /Save & continue/ }).click();
-  await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+  // Phase 5a (§9): onboarding 05 now continues to 06 (delivery), not to the dashboard.
+  await page.waitForURL((u) => u.pathname === '/onboarding/delivery', { timeout: 15_000 });
 
   expect(posts).toHaveLength(2);
   const list = await api(s, 'GET', `/stores/${s.storeId}/products?per_page=10`);

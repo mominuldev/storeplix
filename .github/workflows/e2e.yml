@@ -15,7 +15,7 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Boot stack
@@ -39,6 +39,9 @@ jobs:
           # compose sends mail to Mailpit; throwaway users are deleted via `docker compose exec api`.
           MAILPIT_URL: http://localhost:8025
           E2E_ARTISAN: docker
+          # Phase 5 specs call the storefront API server-to-server; inside compose the API gets the
+          # compose-level key (infrastructure/docker/.env.example), not the one in apps/api/.env.
+          STOREFRONT_API_KEY: dev-storefront-key-change-me
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()

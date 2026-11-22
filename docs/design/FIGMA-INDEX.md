@@ -104,3 +104,51 @@ Each desktop frame = Sidebar + Main (1440 wide).
 | States: Orders empty / Products empty / Loading-error-no results | `148:34033` / `148:34667` (Card / Empty `148:35263`) / `148:35298` (Loading `148:35302`, Error `148:35336`, No results `148:35352`, Banners `148:35364`) | |
 | Mobile (page 2:5): Today / Orders / Order detail / Create order / More / Products | `31:4281` / `31:4886` / `32:309` / `32:6124` / `32:6541` / `139:1077` | Components section `30:3010`: StatusBar `30:3012`, MobileTabBar `30:3170` (Today `30:3022`, Orders `30:3059`, Products `30:3096`, More `30:3133`), OrderCard `30:3171`, MenuRow `30:3202`, ProductCard `139:1065`. No mobile frames for editor, categories, inventory, customers, import |
 | Onboarding 05 Add first products | `50:312` | **No mobile frame**: `54:941` (listed as M5) is the mobile "You're live" screen (Phase 5.13) |
+
+## Phase 5 — commerce (PHASE-5-CONTRACT §5, §9, §11)
+Frame names and scope as cited in the contract. 5a = built now; "Deferred" frames are recorded, not built.
+
+### Storefront (theme "Gallery"; desktop page 1:9207, mobile page 2:6) — contract §5
+| Route | Desktop | Mobile | Notes |
+|---|---|---|---|
+| PDP `/products/[slug]` | `1:11034` | `1:11250` | Mobile "Product + order form" `16:2` deferred |
+| PLP `/c/[slug]` | `1:10821` | `1:10946` | Filters: price + in stock only |
+| Search `/search?q=` | `1:12443` | — | Same grid as PLP |
+| Cart `/cart` | `1:11378` | `1:11506` / `31:6473` | |
+| Checkout `/checkout` | `1:11591` | `1:11690` / `32:5087` | COD only in 5a |
+| Thank-you `/checkout/thank-you` (Order confirmed) | `1:11788` | `33:5751` (Order placed) | |
+| Track order `/track` | `1:11959` | `33:5864` | Number + phone |
+| Header/footer (cart badge, Track order link, Pay with) | chrome `1:10644` | | |
+| Deferred | Flash sale page `1:12628`, Landing page COD offer `149:1009`, Product + order form `16:2` | | §11 |
+
+### Merchant dashboard (file `2W1wMKN79hhcr1czQS63oN`) — contract §9
+States everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352`; empty Orders `148:34033`.
+| Screen / route | Frame | Notes |
+|---|---|---|
+| Orders `/orders` | `7:276` (section `41:12363`) | Status tabs, filters, table, bulk bar |
+| Order detail `/orders/:id` | `33:3676` | |
+| Cancel order dialog | `41:9687` | |
+| Edit order `/orders/:id/edit` | `144:46654` | Contact + address + note only; "Edit items" is 5b |
+| Create order `/orders/new` | `39:14382` | |
+| Customers / Customer detail (orders table, counts) | `63:14972` / `64:16382` | Also listed under Phase 4 |
+| Coupons `/marketing/coupons` ("Discounts & coupons") | `67:18689` | Section Marketing `61:12479` |
+| Create / edit coupon | `68:19255` | |
+| Settings → Shipping & delivery `/settings/shipping` | `60:14364` | Zones, free delivery, pickup addresses |
+| Settings → Shipping · Edit zone drawer | `66:17755` | Area picker |
+| Settings → Payments & checkout `/settings/payments` | `60:14865` | COD toggle only; others "Coming soon" |
+| Settings → Notifications `/settings/notifications` | `60:15863` | New-order email + customer SMS toggles, language |
+| Settings → Taxes & invoices `/settings/invoices` | `60:16858` | Invoice numbering (order prefix) only |
+| Onboarding 06 Delivery `/onboarding/delivery` | `50:604`; connect courier card `45:8086` | Courier connect disabled (5b) |
+| Onboarding 07 Get paid `/onboarding/payments` | `52:564` | COD only; gateways disabled (5b) |
+| Onboarding 08 You're live `/onboarding/live` | desktop `52:765`, mobile `54:941` | |
+| Dashboard `/` (orders widgets) | `10:600`, mobile `31:4281`; KPI tiles `13:964`, Needs you today `10:958`, Orders waiting `10:1115`, Best sellers `10:1168` | Range toggle, Sales chart `10:890`, Orders by source `10:1024`, Courier performance `10:1061`, Money flow `10:1085` deferred |
+| Mobile (page 2:5) | Orders `31:4886`, Order detail `32:309`, Create order `32:6124`, OrderCard `30:3171`, tab bar Orders `30:3059` | |
+
+### Deferred Phase 5 frames (contract §11)
+| Area | Frames | Goes to |
+|---|---|---|
+| Orders | Request advance payment `144:46081`, Bulk book courier `39:18808`, Unfinished orders `39:9461`, Returns & exchanges `39:9900`, Return detail `146:32329` | 5b / Phase 8 |
+| Shipments & printing | Shipments `39:10347`, Shipment detail `146:33100`, Invoices & labels `39:10790`, templates `44:16156` (A4 `42:11175`, 80 mm `42:12238`, A5 `42:13193`, packing slip `44:12097`, Pathao `44:13094`, RedX `44:14203`, Steadfast `137:30097`), Fake order guard `39:11233` | 5b / Phase 8 |
+| Integrations | List `14:980`, Connect bKash `32:3770`, Steadfast disconnect `32:4182`, courier detail tabs `22:1181`, `29:1814`, `29:2562`, `31:2231`, `31:2905`, `31:3581`, Pathao `152:34534` | 5b / Phase 8 |
+| Marketing | Overview `66:19179`, SMS & WhatsApp campaigns `70:19774`, Abandoned cart recovery `71:20614` | Phase 8 |
+| Settings | Policies & legal pages extras `87:25694` | Later |

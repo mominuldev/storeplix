@@ -4,8 +4,12 @@ namespace Tests\Feature\Catalog;
 
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Media\Models\Media;
+use App\Domain\Orders\Models\Order;
+use App\Domain\Shipping\Models\PickupLocation;
+use App\Domain\Shipping\Models\ShippingZone;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -25,5 +29,14 @@ class DemoSeederTest extends TestCase
         $this->assertSame(8, Product::withoutTenancy()->where('status', 'active')->count());
         $this->assertSame(5, Customer::withoutTenancy()->count());
         $this->assertSame(8, Media::withoutTenancy()->where('purpose', 'product_image')->where('status', Media::READY)->count());
+        // Phase 5a
+        $this->assertSame(2, ShippingZone::withoutTenancy()->count());
+        $this->assertSame(1, PickupLocation::withoutTenancy()->count());
+        $this->assertSame(['FREEDELIVERY', 'WELCOME10'], Coupon::withoutTenancy()->orderBy('code')->pluck('code')->all());
+        $this->assertSame(
+            ['cancelled', 'confirmed', 'delivered', 'pending', 'ready_to_ship', 'shipped'],
+            Order::withoutTenancy()->orderBy('status')->pluck('status')->all(),
+        );
+        $this->assertSame(['DE-1001', 'DE-1006'], [Order::withoutTenancy()->min('number'), Order::withoutTenancy()->max('number')]);
     }
 }

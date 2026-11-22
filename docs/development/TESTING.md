@@ -11,7 +11,8 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | Feature / HTTP (PHP) | Laravel HTTP tests, `RefreshDatabase` | `apps/api/tests/Feature` | yes (sqlite) |
 | **Tenant isolation (PHP)** | Feature tests in group `tenancy` | `apps/api/tests/Feature/**` | yes, **required**, sqlite **and** Postgres |
 | Migrations | `migrate:fresh --seed`, rollback, re-migrate | — | yes (Postgres 16 service) |
-| Perf (Phase 4) | Pest group `perf`: 5 000-row product import validate + run < 120 s, parallel stock adjustments | `apps/api/tests/**` | yes, job `api-perf` (Postgres 16), fails when the group is empty |
+| Perf (Phase 4) | Pest group `perf`: 5 000-row product import validate + run < 120 s, parallel stock adjustments | `apps/api/tests/**` | yes, job `api-perf` (Postgres 16), fails when the group is empty **or anything in it is skipped** |
+| **Race tests (Phase 5a)** | Fork-based Pest tests (`pcntl`): S2 oversell (stock 5, 20 parallel checkouts → 5 orders) and mixed-cart deadlock, S3 coupon usage limit, S4 same `Idempotency-Key`, S17 manual-order plan limit, Phase 4 A8/A16 | `apps/api/tests/Feature/{Commerce,Catalog}/*SecurityTest.php` | yes, `api-perf` step "race tests": one process per test, `CACHE_STORE=array`, **fails when a test skips** (they skip without pgsql + pcntl). Excluded from `security (postgres)` because they commit their data |
 | Unit / component (TS) | Vitest + Testing Library | `apps/*/src/**/*.test.ts(x)`, `packages/*/src` | yes |
 | Type contracts | `tsc --noEmit` against `@storeplix/types` | all TS packages | yes |
 | Bundle secret scan | grep build output for `STOREFRONT_API_KEY` | `.next/static`, `dist/` | yes |
@@ -28,6 +29,10 @@ happy path + validation + authz + cross-tenant case), a handful of E2E smoke flo
 cd apps/api && php artisan test                      # full suite
 cd apps/api && php artisan test --group=tenancy      # tenant-isolation gate only
 cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import < 120 s, stock race (Postgres; CI job api-perf)
+# Phase 5a race tests: Postgres + pcntl only (they SKIP on sqlite; sqlite passing is not evidence).
+#   docker compose up -d postgres redis
+#   DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=storeplix DB_USERNAME=storeplix DB_PASSWORD=storeplix CACHE_STORE=array \
+#     php artisan test --filter='::test_concurrent_checkouts_never_oversell$'   # one process per race test (see ci.yml)
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -75,13 +80,20 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase4.import-export` | template; UI upload → fix the column map → dry-run (nothing written) → error rows → error report (formula-safe) → run; same file again → all `unchanged`, no ledger rows; export formula-safe (= + - @, full-width, leading space), BOM/CRLF/quoted, round-trip columns, tampered signature refused |
 | `phase4.customers` | phone normalisation, duplicates, search (01… / 8801… / digits / email / name), revision 409, notes; UI add → search by phone → detail (WhatsApp link) → note |
 | `phase4.staff` | throwaway staff member: cost null everywhere and ignored on write, stock value at cost null; delete / bulk delete / import / export / template → 403; note delete rules; UI hides Export, Import, Cost, Delete |
-| `phase4.dashboard` | shape, `no-store`, numbers follow the data (active-only stock); UI "—" tiles, "No sales yet", Restock task, checklist |
-| `phase4.storefront` | feed: active + enabled only, exact card keys, cheapest enabled variant, on_sale, cache headers; demo home shows a new product < 5 s and drops it on archive, cards unlinked; a new store's feed 404 (draft) / `has_products:false` (live) → placeholders |
-| `phase4.onboarding05` | new throwaway shop: quick-add with sizes (variable, stock per size) + simple (Bangla digits) → `/`; checklist "Add products" done; Back / Skip |
+| `phase4.dashboard` | shape, `no-store`, numbers follow the data (active-only stock); UI "—" tiles + "No sales yet" before the first order, real order KPIs after (Phase 5a), Restock task, checklist |
+| `phase4.storefront` | feed: active + enabled only, exact card keys, cheapest enabled variant, on_sale, cache headers; demo home shows a new product < 5 s and drops it on archive, cards link to `/products/{slug}` (Phase 5a); a new store's feed 404 (draft) / `has_products:false` (live) → placeholders |
+| `phase4.onboarding05` | new throwaway shop: quick-add with sizes (variable, stock per size) + simple (Bangla digits) → `/onboarding/delivery` (Phase 5a); checklist "Add products" done; Back / Skip |
 | `phase4.mobile` | 390×844: dashboard, products, editor, categories, import, inventory, customers, onboarding 05 have no horizontal overflow (screenshots); tab bar Products active; mobile chips |
 | `phase4.security` | adversarial §10: second tenant (Eve) on demo routes → 404, spoofed tenant → 403, demo ids in Eve payloads → 422, same SKU/slug allowed across tenants, mass assignment, price manipulation, CSV upload hardening (magic bytes, NUL, latin-1, 51 cols, 10 001-char cell, 64 KB line, 5 001 rows, 10 MB + 1 → 413), `<script>` description stays text |
 | `phase4.auth-cookie` | no token in JS storage, HttpOnly/Lax/host-only session cookie, write without CSRF → 419, storefront origin not stateful, logout → 401 + `/login`; non-stateful login 400 `stateful_required`; Bearer → 401 |
 | `phase4.visual` | (`E2E_VISUAL=1`) every Phase 4 screen at 1440 / 834 / 390 px, files named after the Figma frame they are compared with |
+| `phase5.storefront-buy` | throwaway shop on `{slug}.localhost`: PLP `/c/{slug}` → price filter → PDP variant chip → Add to cart (`sp_cart` httpOnly/Lax, not in `document.cookie`) → cart coupon (bad code text, 10 % capped at ৳ 100) → checkout COD (`Place order — ৳ 1,360`) → thank-you (`sp_order`) → Track this order (number prefilled + phone; wrong phone → generic text). PDP HTML has no SKU/stock/cost. Demo store browsed read-only (key sets, robots `Disallow`, search `noindex`) |
+| `phase5.merchant-orders` | dashboard UI: order appears with Pending count → Confirm → Mark packed → Mark shipped (courier, tracking code, https-only link) → Mark delivered (COD paid, customer counters) → Record refund (partially refunded, spent − refund); ledger `order_shipped`; Cancel dialog releases `committed` and `orders_count`; Returned dialog with restock stepper → `order_returned`, COD charge cancelled; bulk confirm skips invalid states; dashboard `orders` block |
+| `phase5.manual-order` | Create order: WhatsApp chip, phone, address, product picker, quote total, delivery override to ৳ 0 ("set by hand"), SMS off; Free-plan throwaway at 50 orders → 402 `plan_limit_reached` + upgrade dialog while a storefront order is still accepted (P5-27) |
+| `phase5.coupons-shipping` | coupon editor (percentage 15 % capped ৳ 150, total uses 1) → second checkout "This code has been fully used."; list `1 / 1` + revenue; `coupon_in_use` 409; code frozen; cancel releases the redemption; per-phone, first-order, minimum, product eligibility, auto-removal notice; zones thana → district → fallback, free delivery after discount, free-shipping coupon, area clash 422 |
+| `phase5.onboarding-golive` | throwaway tenant: checklist + `launch_blocked` details → 07 "Finish setup" shows the blocker list with links → fix → 05 → 06 (defaults ৳ 70 / ৳ 130, 50 Dhaka city thanas) → 07 → publish → 08 "You're live"; Coming soon disappears < 5 s; re-publish 200 |
+| `phase5.security` | §10 live: S1 tampering, S4 idempotency (replay, mismatch, missing/malformed key), S5 cross-store cart token + sha256 at rest + log scan, S6 foreign ids (Eve routes 404, payloads 422, spoofed tenant 403, bulk 422), S7 key sets (catalog, availability, cart, confirmation, track; staff cost null), S8 identical 404s + 429, S9 per-IP and per-phone limiters, S16 draft 404 / preview no-store / `store_not_live`, S10 state machine + staff 403s + refunds (partial, idempotent replay, full, over) |
+| `phase5.mobile` | 390 × 844: PDP, PLP, cart, checkout, track, dashboard Orders, Create order — no horizontal overflow (screenshots); order detail is a `test.fail()` until QA F-L4 is fixed |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -111,7 +123,19 @@ How they run:
   through the API (images detached first: `product_images` keep media RESTRICT after a soft delete) and
   `purgeRun()` hard-deletes this run's soft-deleted rows (products + variants/inventory/ledger, categories,
   customers, imports) so the demo DB ends as it started. Audit-log rows stay.
-- **Env switches:** `E2E_VISUAL=1`, `E2E_ARTISAN=docker`, `STOREFRONT_API_KEY` (else read from `apps/api/.env`).
+- **Env switches:** `E2E_VISUAL=1`, `E2E_ARTISAN=docker`, `STOREFRONT_API_KEY` (else read from `apps/api/.env`; with
+  docker compose it must be the compose-level key, the e2e workflow sets it), `E2E_PROD_STOREFRONT_PORT` (optional: a
+  `next build && next start` storefront on that port; `phase5.storefront-buy` then asserts the exact production
+  `Cache-Control: private, no-store` on cart, checkout, thank-you and track — `next dev` rewrites it to `no-store`).
+- **Phase 5 commerce flows never touch the demo store's orders.** `setupShop()` (`support/commerce.ts`) registers a
+  throwaway tenant with a category, a variable and a simple product (cost set), three zones (thana, whole district,
+  fallback), a contact phone and publishes it; `browserHost()` adds `{slug}.localhost` for Chromium. API-level
+  storefront calls go server-to-server (`sf()`, key + host + client IP). Orders, refunds, plan limits, publish
+  blockers and throttles all run there; `cleanup()` deletes the tenant (cascade).
+- **Notifications (Phase 5a)** are queued on `notifications`. Docker compose runs `queue-notifications`. Locally,
+  `composer dev` only listens on `default,media` and `bulk` (QA F-M1), so order SMS/email jobs pile up in `jobs`
+  until a worker runs `php artisan queue:work --queue=notifications`. With `SMS_DRIVER=log` the SMS text is written
+  to `laravel.log` (`sms.log_driver`).
 - **merchant-bulk throttle:** the suite makes ~15 bulk calls per run on the demo tenant; set
   `THROTTLE_MERCHANT_BULK_PER_HOUR=1000` in local/CI env (the e2e workflow does).
 - **Mail:** with `MAIL_MAILER=log` (local `apps/api/.env`) the specs read the link from
@@ -186,6 +210,16 @@ Phase column = when the test becomes mandatory (the feature must exist first).
 | T-38 | Staff: cost/profit/stock value at cost, delete, import, export | null / 403 | 4 |
 | T-39 | Storefront feed minimality and draft exposure | exact card keys; draft store 404; preview `private, no-store` | 4 |
 | T-40 | Cookie auth (4.7): CSRF, HttpOnly, host-only, storefront origin not stateful, logout/expiry | 419 / 401 | 4 |
+| T-41 | Checkout tampering (S1): client prices/discounts/totals/status in the body; tampered `expected_total_amount` | DB prices; 409 `checkout_changed`, nothing written | 5a |
+| T-42 | Oversell and coupon over-redemption under parallel checkouts (S2, S3), mixed-cart deadlock | exactly N orders / redemptions; no deadlock (Postgres) | 5a |
+| T-43 | Idempotent checkout and refunds (S4): replay, other body, concurrent same key, missing/malformed key | same order + `Idempotent-Replayed`; 409; 400 | 5a |
+| T-44 | Cart token of store A on host B; token at rest; token/phone/address in logs (S5, S15) | 404 `cart_not_found`; sha256 only; absent | 5a |
+| T-45 | Storefront key sets (S7): catalog, availability, cart, confirmation, tracking | never cost/SKU/barcode/on_hand/committed/tenant ids | 5a |
+| T-46 | Order enumeration (S8): wrong phone vs unknown number, throttle | identical 404 body; 429 after 10/min | 5a |
+| T-47 | State machine and staff (S10): every invalid (from, to); staff cancel paid / refund / coupons / shipping / publish | 409 `invalid_state_transition`; 403 | 5a |
+| T-48 | Unsafe tracking links and redirects (S14): `javascript:`/`http:` `tracking_url`; `/discount/{CODE}?next=` | 422; always `/` | 5a |
+| T-49 | Plan limit for manual orders (S17), sequential and parallel; storefront orders never refused | 402 `plan_limit_reached`; storefront 201 | 5a |
+| T-50 | Server Actions CSRF (S12): cross-origin POST with `Next-Action`; non-GET on route handlers | rejected (no cookie set); 405 | 5a |
 
 Non-PHP checks (CI or review):
 
