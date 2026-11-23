@@ -37,7 +37,7 @@ class OrderChangeController
         [$order, $notices] = $this->editor->apply($order, $this->validated($request, quote: false), $request->user());
 
         return new JsonResponse([
-            'data' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->role()),
+            'data' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->permissions()),
             'meta' => ['notices' => $notices],
         ]);
     }
@@ -54,7 +54,7 @@ class OrderChangeController
         ]);
         $order = $this->orders->restock($order, $input['lines'], AddressValidator::clean($input['note'] ?? null), $request->user());
 
-        return new JsonResponse(['data' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->role())]);
+        return new JsonResponse(['data' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->permissions())]);
     }
 
     /** @return array<string, mixed> EditOrderItemsInput */

@@ -12,7 +12,6 @@ import { Cell2 } from '../catalog/ui';
 import { localPhone, orderChannelLabels } from '../commerce/format';
 import { useOrders } from '../commerce/queries';
 import { api } from '../lib/api';
-import { can } from '../lib/permissions';
 import { CourierChoice } from './BookShipmentDialog';
 import { batchReasonLabel, connectedCouriers, courierName, needsArea } from './labels';
 import { useCourierAccounts, useShipmentInvalidate } from './queries';
@@ -256,8 +255,7 @@ export function BulkBookDialog({ orders, onClose, onDone }: BulkBookDialogProps)
 /** 402 `feature_not_in_plan` (P5B-31): bulk booking is Starter and up. */
 function UpgradeDialog({ message, onClose }: { message: string; onClose: () => void }) {
   const navigate = useNavigate();
-  const { role } = useStoreScope();
-  const billing = can.viewBilling(role);
+  const billing = useStoreScope().canViewBilling;
   return (
     <Modal
       open

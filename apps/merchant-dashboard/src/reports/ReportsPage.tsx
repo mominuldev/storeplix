@@ -31,7 +31,7 @@ export function ReportsPage({ type }: { type: ReportType }) {
   const range = rangeFromParams(params, today);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
 
-  if (type === 'profit' && scope.role === 'staff') return <Navigate to={{ pathname: '/reports/sales', search: location.search }} replace />;
+  if (type === 'profit' && !scope.canViewCosts) return <Navigate to={{ pathname: '/reports/sales', search: location.search }} replace />;
 
   const tabs = [
     { value: 'sales' as const, label: 'Sales' },

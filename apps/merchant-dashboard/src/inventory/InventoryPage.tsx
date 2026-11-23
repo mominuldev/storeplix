@@ -70,7 +70,7 @@ export function InventoryPage() {
         ]}
       />
       {tab === 'levels' ? (
-        <StockLevels canViewCosts={scope.canViewCosts} onAdjust={(item) => setAdjusting({ item, reason: 'correction' })} onLedger={() => setTab('movements')} />
+        <StockLevels canViewCosts={scope.canViewCosts} onAdjust={scope.canAdjustInventory ? (item) => setAdjusting({ item, reason: 'correction' }) : undefined} onLedger={() => setTab('movements')} />
       ) : (
         <Movements />
       )}
@@ -87,7 +87,7 @@ export function InventoryPage() {
   );
 }
 
-function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boolean; onAdjust: (i: InventoryItem) => void; onLedger: () => void }) {
+function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boolean; onAdjust?: (i: InventoryItem) => void; onLedger: () => void }) {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const debounced = useDebounced(q);
@@ -139,11 +139,12 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
       mobileLabel: false,
       width: 76,
       align: 'end',
-      cell: (i) => (
-        <Button size="sm" variant="secondary" aria-label={`Adjust ${i.product.name}${i.title !== 'Default' ? ` ${i.title}` : ''}`} onClick={() => onAdjust(i)}>
-          Adjust
-        </Button>
-      ),
+      cell: (i) =>
+        onAdjust ? (
+          <Button size="sm" variant="secondary" aria-label={`Adjust ${i.product.name}${i.title !== 'Default' ? ` ${i.title}` : ''}`} onClick={() => onAdjust(i)}>
+            Adjust
+          </Button>
+        ) : null,
     },
   ];
 

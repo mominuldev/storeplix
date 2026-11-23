@@ -10,7 +10,10 @@ use App\Domain\Staff\Http\Requests\InviteStaffRequest;
 use App\Domain\Staff\Http\Resources\StaffMemberPresenter;
 use App\Domain\Staff\Mail\StaffInvitationMail;
 use App\Domain\Staff\Models\StaffInvitation;
+use App\Domain\Staff\Roles\Models\Role;
+use App\Domain\Staff\Roles\RoleService;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
@@ -27,12 +30,17 @@ class InvitationController
     public function __construct(
         private readonly TenantContext $context,
         private readonly AuditLogger $audit,
+        private readonly RoleService $roles,
     ) {}
 
     public function store(InviteStaffRequest $request): JsonResponse
     {
         $tenant = $this->context->tenant();
         $data = $request->validated();
+        // N5 / N9 (PHASE-8-3 §4): a tenant role the actor fully holds, never the owner role; custom needs custom_roles.
+        $role = isset($data['role_id'])
+            ? $this->roles->assignable($data['role_id'])
+            : $this->roles->assignable($this->roles->systemRole(SystemRole::from($data['role']))->id, 'role');
 
         $alreadyMember = TenantUser::query()->forTenant($tenant->id)
             ->whereIn('user_id', User::query()->select('id')->where('email', $data['email']))
@@ -50,7 +58,7 @@ class InvitationController
 
         $token = StaffInvitation::newToken();
 
-        $invitation = DB::transaction(function () use ($tenant, $existing, $data, $token, $request) {
+        $invitation = DB::transaction(function () use ($tenant, $existing, $data, $token, $request, $role) {
             // Phase 7 (§2.2, S60): serialise invites per tenant (tenant row lock) and re-check the seat limit under it,
             // so two parallel invites at limit − 1 give one 201 and one 402.
             Tenant::query()->whereKey($tenant->id)->lockForUpdate()->first(['id']);
@@ -61,7 +69,7 @@ class InvitationController
             return StaffInvitation::query()->create([
                 'email' => $data['email'],
                 'name' => $data['name'] ?? null,
-                'role' => $data['role'],
+                'role_id' => $role->id,
                 'token_hash' => StaffInvitation::hashToken($token),
                 'invited_by' => $request->user()->getKey(),
                 'expires_at' => now()->addDays(StaffInvitation::TTL_DAYS),
@@ -70,15 +78,16 @@ class InvitationController
         });
 
         $this->send($invitation, $token, $request->user());
-        $this->audit->log('staff.invited', $invitation, ['role' => $invitation->role]);
+        $this->audit->log('staff.invited', $invitation, ['role' => $invitation->role, 'role_id' => $role->id, 'role_name' => $role->name]);
 
-        return new JsonResponse(['data' => StaffMemberPresenter::invitation($invitation->load('inviter'))], 201);
+        return new JsonResponse(['data' => StaffMemberPresenter::invitation($invitation->load(['inviter', 'roleModel']))], 201);
     }
 
     /** New token + fresh 7-day expiry; the old token stops working. */
     public function resend(Request $request, StaffInvitation $invitation): JsonResponse
     {
         Gate::authorize('manageInvitation', $invitation);
+        $this->assertHeldRole($invitation); // N6
         $this->assertOpen($invitation);
 
         $token = StaffInvitation::newToken();
@@ -91,18 +100,25 @@ class InvitationController
         $this->send($invitation, $token, $request->user());
         $this->audit->log('staff.invitation_resent', $invitation);
 
-        return new JsonResponse(['data' => StaffMemberPresenter::invitation($invitation->load('inviter'))]);
+        return new JsonResponse(['data' => StaffMemberPresenter::invitation($invitation->load(['inviter', 'roleModel']))]);
     }
 
     public function destroy(StaffInvitation $invitation): Response
     {
         Gate::authorize('manageInvitation', $invitation);
+        $this->assertHeldRole($invitation); // N6
         $this->assertOpen($invitation);
 
         $invitation->update(['revoked_at' => now()]);
         $this->audit->log('staff.invitation_revoked', $invitation);
 
         return response()->noContent();
+    }
+
+    /** N6: only invitations whose role the actor fully holds; a missing role fails closed (SEC-L5). */
+    private function assertHeldRole(StaffInvitation $invitation): void
+    {
+        $this->roles->assertHoldsRole($invitation->role_id);
     }
 
     private function assertOpen(StaffInvitation $invitation): void
@@ -116,6 +132,8 @@ class InvitationController
     {
         $shop = Store::query()->value('name') ?? $this->context->tenant()?->name ?? 'a shop';
 
-        Mail::to($invitation->email)->queue(new StaffInvitationMail($token, $shop, $inviter->name, $invitation->role));
+        $roleName = Role::query()->whereKey($invitation->role_id)->value('name');
+
+        Mail::to($invitation->email)->queue(new StaffInvitationMail($token, $shop, $inviter->name, $invitation->role, $roleName));
     }
 }

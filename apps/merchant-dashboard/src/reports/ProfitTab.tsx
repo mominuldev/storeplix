@@ -39,7 +39,7 @@ export function waterfallBars(s: ProfitReport['summary']): BarDatum[] {
 export function ProfitTab({ range, onMeta }: { range: ReportRange; onMeta: (m: ReportMeta) => void }) {
   const { activeTenant } = useAuth();
   const features = useFeatures();
-  const allowedRole = can.viewCosts(activeTenant?.role);
+  const allowedRole = can.viewCosts(activeTenant);
   const included = features.data?.features.profit_reports ?? false;
   const q = useReport<ProfitReport>('profit', range, fetchers.profit(range), allowedRole && included);
   const [showAll, setShowAll] = useState(false);
@@ -60,7 +60,7 @@ export function ProfitTab({ range, onMeta }: { range: ReportRange; onMeta: (m: R
           <h2 className="text-body-lg font-medium text-text-primary">See what you actually keep</h2>
           <p className="text-body text-text-secondary">Profit & loss is part of the Growth plan: revenue, product and courier costs, and profit per order and per day.</p>
         </div>
-        {can.manageBilling(activeTenant?.role) ? (
+        {can.manageBilling(activeTenant) ? (
           <Link to="/settings/plan?upgrade=growth" className={buttonVariants({ size: 'md' })}>
             Upgrade to Growth
           </Link>

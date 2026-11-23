@@ -2,7 +2,8 @@ import { cn } from '@storeplix/ui';
 import { Bell, ChevronDown, ChevronRight, ExternalLink, Search, Store as StoreIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
-import { mainNav, mobileMoreGroups } from '../layout/nav';
+import { roleNameOf } from '../lib/permissions';
+import { mobileMoreGroups, visibleNav } from '../layout/nav';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 // Figma Merchant Admin – Mobile · More 32:6541 — "More" app bar (Heading/24 + search + bell), shop card
@@ -23,10 +24,10 @@ const hints: Record<string, string> = {
   '/settings': 'Shop, staff, payments',
 };
 
-const roleLabel = (role: string | undefined) => (role ? role.charAt(0).toUpperCase() + role.slice(1) : '');
 
 export function MorePage() {
   const { logout, user, tenants, activeTenant } = useAuth();
+  const nav = visibleNav(activeTenant);
   const store = useTenantStore().data;
   const name = store?.name ?? activeTenant?.name ?? 'Your shop';
   const domain = store ? storeDomain(store) : null;
@@ -51,7 +52,7 @@ export function MorePage() {
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate text-body-lg font-medium text-text-primary">{name}</span>
             <span className="truncate text-caption text-text-muted">
-              {[roleLabel(activeTenant?.role), user?.name].filter(Boolean).join(' · ')}
+              {[activeTenant ? roleNameOf(activeTenant) : '', user?.name].filter(Boolean).join(' · ')}
             </span>
           </span>
           {tenants.length > 1 && (
@@ -70,12 +71,12 @@ export function MorePage() {
         )}
       </section>
 
-      {mobileMoreGroups.map((group) => (
+      {mobileMoreGroups.map((g) => ({ ...g, items: g.items.filter((to) => nav.some((n) => n.to === to)) })).filter((g) => g.items.length > 0).map((group) => (
         <section key={group.heading} aria-label={group.heading} className="flex flex-col gap-2">
           <h2 className="pl-1 text-caption font-medium tracking-[0.06em] text-text-muted uppercase">{group.heading}</h2>
           <div className="flex flex-col rounded-card border border-border-default bg-surface-card py-1 shadow-elevation-1">
             {group.items.map((to, i) => {
-              const item = mainNav.find((n) => n.to === to)!;
+              const item = nav.find((n) => n.to === to)!;
               const Icon = item.icon;
               return (
                 <Link

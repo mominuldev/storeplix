@@ -23,7 +23,7 @@ export function PlanCard({ collapsed }: { collapsed?: boolean }) {
     <div className="flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3.5 py-2.5">
       <span className="text-caption font-medium text-brand-700">{title}</span>
       <ProgressBar value={value} label="Plan usage" className="bg-brand-100" />
-      {can.viewBilling(activeTenant?.role) && (
+      {can.viewBilling(activeTenant) && (
         <Link to="/settings/plan" className="text-caption font-medium text-brand-600 hover:text-brand-700">
           See plans & usage
         </Link>

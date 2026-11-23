@@ -93,14 +93,16 @@ export function CustomersPage() {
                 Import
               </Link>
             )}
-            {scope.canBulkData && (
+            {scope.canExportData && (
               <Button variant="secondary" loading={exporter.running} onClick={() => void exporter.start({ type: 'customers', filters: { q: filters.q, created_from: filters.created_from } })}>
                 Export
               </Button>
             )}
-            <Button leftIcon={<Plus aria-hidden className="size-4" />} onClick={() => setAdding(true)}>
-              Add customer
-            </Button>
+            {scope.canEditCustomers && (
+              <Button leftIcon={<Plus aria-hidden className="size-4" />} onClick={() => setAdding(true)}>
+                Add customer
+              </Button>
+            )}
           </>
         }
       />
@@ -155,7 +157,7 @@ export function CustomersPage() {
                 }}
               />
             ) : (
-              <NoResults title="No customers yet" description="Add your first customer, or import a list from a spreadsheet." onClear={() => setAdding(true)} clearLabel="Add customer" />
+              <NoResults title="No customers yet" description="Add your first customer, or import a list from a spreadsheet." onClear={scope.canEditCustomers ? () => setAdding(true) : undefined} clearLabel="Add customer" />
             )
           ) : undefined
         }

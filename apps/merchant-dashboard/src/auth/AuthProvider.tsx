@@ -81,6 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     retry: false,
     staleTime: 5 * 60_000,
+    // PHASE-8-3 P83-6: role/permission changes apply on the next request; pick them up when the tab regains focus.
+    refetchOnWindowFocus: 'always',
   });
 
   // Proactive logout when the absolute expiry passes (contract D3 / §7.2).

@@ -624,6 +624,34 @@ BEGIN
   END IF;
 END
 $$;
+-- table: roles
+DO $$
+BEGIN
+  IF to_regclass('public.roles') IS NOT NULL THEN
+    DROP POLICY IF EXISTS roles_select ON "roles";
+    DROP POLICY IF EXISTS roles_insert ON "roles";
+    DROP POLICY IF EXISTS roles_update ON "roles";
+    DROP POLICY IF EXISTS roles_delete ON "roles";
+    DROP POLICY IF EXISTS tenant_isolation ON "roles";
+    ALTER TABLE "roles" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "roles" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: role_permissions
+DO $$
+BEGIN
+  IF to_regclass('public.role_permissions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS role_permissions_select ON "role_permissions";
+    DROP POLICY IF EXISTS role_permissions_insert ON "role_permissions";
+    DROP POLICY IF EXISTS role_permissions_update ON "role_permissions";
+    DROP POLICY IF EXISTS role_permissions_delete ON "role_permissions";
+    DROP POLICY IF EXISTS tenant_isolation ON "role_permissions";
+    ALTER TABLE "role_permissions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "role_permissions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

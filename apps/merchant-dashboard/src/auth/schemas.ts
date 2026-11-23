@@ -61,7 +61,8 @@ export type AcceptInviteInput = z.input<typeof acceptInviteSchema>;
 export const inviteSchema = z.object({
   name: z.string().trim().max(120),
   email: z.email('Enter a valid email address'),
-  role: z.enum(['admin', 'staff']),
+  /** PHASE-8-3 §7.4: the invite sends `role_id` (system or custom role). */
+  role_id: z.string().min(1, 'Choose a role'),
 });
 export type InviteValues = z.infer<typeof inviteSchema>;
 

@@ -163,7 +163,7 @@ class OrdersTest extends TestCase
         $this->tenancy()->run($tenant, fn () => Order::query()->whereKey($id)->update(['paid_amount' => 500, 'payment_status' => 'partially_paid']));
         $this->api($staff, 'GET', $this->url($store, "/{$id}"))->assertJsonPath('data.allowed_transitions', ['confirmed']);
         $this->api($staff, 'POST', $this->url($store, "/{$id}/cancel"), ['reason' => 'other'])->assertForbidden()
-            ->assertJsonPath('error.message', 'Only owners and managers can cancel paid orders.');
+            ->assertJsonPath('error.message', 'You do not have permission to cancel paid orders.');
         $this->api($staff + ['Idempotency-Key' => (string) Str::uuid()], 'POST', $this->url($store, "/{$id}/refunds"), ['amount' => 100, 'method' => 'cash'])->assertForbidden();
         $this->api($h, 'POST', $this->url($store, "/{$id}/cancel"), ['reason' => 'other'])->assertOk();
         // staff may cancel unpaid orders

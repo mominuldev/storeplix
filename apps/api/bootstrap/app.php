@@ -9,6 +9,7 @@ use App\Domain\Identity\Http\Middleware\RequireStatefulRequest;
 use App\Domain\Identity\Http\Middleware\RequireSurface;
 use App\Domain\Shared\Http\ApiExceptionRenderer;
 use App\Domain\Stores\Http\Middleware\ResolveStorefront;
+use App\Domain\Tenancy\Authorization\RequirePermission;
 use App\Domain\Tenancy\Middleware\ResetDatabaseTenant;
 use App\Domain\Tenancy\Middleware\ResolveTenant;
 use App\Domain\Tenancy\Middleware\SetDatabaseUser;
@@ -36,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'platform' => RequirePlatformStaff::class,
             'platform.can' => RequirePlatformPermission::class,
             'platform.ip' => PlatformIpAllowlist::class,
+            // Phase 8.3 (PHASE-8-3 P83-4): `perm:<key>|…` / `perm:base` on every tenant route
+            'perm' => RequirePermission::class,
         ]);
 
         // Phase 4.7 (§7.2): same-origin cookie sessions for the SPAs (exact stateful domain list) with the absolute
@@ -64,6 +67,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(SubstituteBindings::class, RequirePlatformStaff::class);
         $middleware->prependToPriorityList(SubstituteBindings::class, PlatformIpAllowlist::class);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequirePlatformPermission::class);
+
+        // Phase 8.3 (P83-4): permissions are checked after the tenant AND after route-model binding (foreign ids → 404).
+        $middleware->appendToPriorityList(SubstituteBindings::class, RequirePermission::class);
 
         // API clients never get redirected to a login page.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

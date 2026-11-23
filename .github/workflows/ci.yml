@@ -220,6 +220,17 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'analytics'"; exit 1; }
           exit $status
 
+      # Phase 8.3 (PHASE-8-3-CONTRACT §10, §13.6): the `roles` group (parity fixture for owner/admin/staff on every
+      # merchant route, route→permission map, catalogue, roles API, N1–N9) must exist and pass on sqlite.
+      - name: phase 8.3 group (roles)
+        run: |
+          mkdir -p build
+          php artisan test --group=roles --exclude-group perf --exclude-group race --log-junit build/roles.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/roles.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "roles tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'roles'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -336,6 +347,13 @@ jobs:
       # Dhaka day boundaries on timestamptz, CHECK partition identities).
       - name: phase 8.2 analytics (postgres)
         run: php artisan test --group=analytics --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.3 (§13.2): the permission-parity fixture must give identical codes on Postgres too.
+      - name: phase 8.3 roles (postgres)
+        run: php artisan test --group=roles --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -690,6 +708,10 @@ jobs:
       # with RLS on; the app-role REVOKE and forced RLS on tenant_daily_metrics are covered by the `rls` step above.
       - name: phase 8.2 analytics (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" analytics lenient --group=analytics --exclude-group perf --exclude-group race'
+      # Phase 8.3 (PHASE-8-3-CONTRACT §10, §13.6): roles API, N1–N9, parity and the roles/role_permissions member-read
+      # policy with the app role and RLS forced (RLS probes for both tables are also in the `rls` step above).
+      - name: phase 8.3 roles (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" roles lenient --group=roles --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

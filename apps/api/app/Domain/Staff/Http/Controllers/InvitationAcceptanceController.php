@@ -2,17 +2,21 @@
 
 namespace App\Domain\Staff\Http\Controllers;
 
+use App\Domain\Billing\Feature;
 use App\Domain\Billing\FeatureGate;
 use App\Domain\Billing\Limit;
 use App\Domain\Identity\Http\Controllers\IssuesTokens;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Staff\Http\Requests\AcceptInvitationRequest;
+use App\Domain\Staff\Http\Resources\StaffMemberPresenter;
 use App\Domain\Staff\Models\StaffInvitation;
+use App\Domain\Staff\Roles\Models\Role;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Tenancy\Support\Memberships;
 use App\Domain\Tenancy\Support\PreTenantLookup;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +51,7 @@ class InvitationAcceptanceController
                 'store_name' => Store::query()->value('name'),
                 'email' => $invitation->email,
                 'role' => $invitation->role,
+                'role_name' => StaffMemberPresenter::roleName(Role::query()->find($invitation->role_id), $invitation->role),
                 'invited_by_name' => (string) $invitation->inviter?->name,
                 'expires_at' => $invitation->expires_at->toIso8601ZuluString(),
                 'user_exists' => User::query()->where('email', $invitation->email)->exists(),
@@ -61,7 +66,7 @@ class InvitationAcceptanceController
 
         // B4 (Phase 5b): the token resolves the tenant (a definer function under RLS); everything else, including the
         // row lock, runs scoped inside that tenant. The transaction opens INSIDE run(): no tenant switch within it.
-        [$user, $membership, $tenant] = $this->context->run($this->tenantFor($token), function () use ($token, $authUser) {
+        [$user, $membership, $tenant, $role] = $this->context->run($this->tenantFor($token), function () use ($token, $authUser) {
             $user = null;
             $data = [];
             $invitation = $this->findUsable($token);
@@ -91,6 +96,13 @@ class InvitationAcceptanceController
                 if ($locked === null || ! $locked->isUsable()) {
                     throw new ApiException(404, 'invitation_invalid', 'This invitation is invalid or has expired.');
                 }
+                // SEC-L4 (N9 on accept): accepting assigns the role, so a custom role needs `custom_roles` now, not
+                // only when the invitation was sent → 402 feature_not_in_plan. A missing role fails closed (404).
+                $role = Role::query()->whereKey($locked->role_id)->first()
+                    ?? throw new ApiException(404, 'invitation_invalid', 'This invitation is invalid or has expired.');
+                if (! $role->is_system) {
+                    FeatureGate::assertAllows($tenant, Feature::CustomRoles);
+                }
 
                 $user ??= User::query()->create([
                     'name' => $data['name'],
@@ -101,10 +113,11 @@ class InvitationAcceptanceController
                     'password_changed_at' => now(),
                 ]);
 
+                // PHASE-8-3 §6.2: the membership takes the invitation's role (role kind follows role_id, P83-3).
                 $membership = TenantUser::query()->create([
                     'tenant_id' => $tenant->id,
                     'user_id' => $user->id,
-                    'role' => $invitation->role,
+                    'role_id' => $locked->role_id,
                     'invited_by' => $invitation->invited_by,
                     'joined_at' => now(),
                 ]);
@@ -116,11 +129,11 @@ class InvitationAcceptanceController
 
             $this->audit->log('staff.joined', $membership, ['role' => $membership->role], actor: $user, tenantId: $tenant->id);
 
-            return [$user, $membership, $tenant];
+            return [$user, $membership, $tenant, Role::query()->find($membership->role_id)];
         });
 
         if ($authUser !== null) {
-            return new JsonResponse(['data' => ['id' => $tenant->id, 'name' => $tenant->name, 'role' => $membership->role]]);
+            return new JsonResponse(['data' => Memberships::shape($tenant, $membership->role, $role)]);
         }
 
         return $this->sessionResponse($user, 201);

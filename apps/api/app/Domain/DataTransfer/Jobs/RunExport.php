@@ -50,7 +50,7 @@ class RunExport implements ShouldQueue
         try {
             $writer = CsvWriter::toPath($tmp);
             $count = $export->type === 'products'
-                ? $this->products($writer, $store, $export->filters ?? [])
+                ? $this->products($writer, $store, $export->filters ?? [], $export->include_costs)
                 : $this->customers($writer, $store, $export->filters ?? []);
             unset($writer);
 
@@ -71,8 +71,11 @@ class RunExport implements ShouldQueue
         }
     }
 
-    /** @param array<string, mixed> $filters */
-    private function products(Writer $writer, Store $store, array $filters): int
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  bool  $includeCosts  false → the cost_price column stays empty (SEC-M1)
+     */
+    private function products(Writer $writer, Store $store, array $filters, bool $includeCosts): int
     {
         $writer->insertOne(ImportColumns::PRODUCT_FIELDS);
         $listFilter = array_filter([
@@ -119,7 +122,7 @@ class RunExport implements ShouldQueue
                     $variant->barcode ?? '',
                     ImportValues::major($variant->price_amount),
                     ImportValues::major($variant->compare_at_amount),
-                    ImportValues::major($variant->cost_amount),
+                    $includeCosts ? ImportValues::major($variant->cost_amount) : '',
                     (string) ($variant->inventory?->on_hand ?? 0),
                     $variant->weight_grams === null ? '' : rtrim(rtrim(number_format($variant->weight_grams / 1000, 3, '.', ''), '0'), '.'),
                     $first ? ($product->seo_title ?? '') : '',

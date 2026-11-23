@@ -37,7 +37,7 @@ export function BookShipmentDialog({ order, provider: initialProvider, onClose, 
   const couriers = useCourierAccounts();
   const shipping = useShipping();
   const invalidate = useShipmentInvalidate();
-  const canOverrideCod = scope.role === 'owner' || scope.role === 'admin';
+  const canOverrideCod = scope.canManageRefunds; // S33: COD override needs orders.refund
   const connected = connectedCouriers(couriers.data);
   const [chosen, setChosen] = useState<CourierProvider | null>(initialProvider ?? null);
   const provider = chosen && connected.some((c) => c.provider === chosen) ? chosen : (connected[0]?.provider ?? null);

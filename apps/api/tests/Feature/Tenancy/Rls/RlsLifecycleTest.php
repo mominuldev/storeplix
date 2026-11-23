@@ -43,7 +43,7 @@ class RlsLifecycleTest extends TestCase
         });
 
         $this->setGuc($t['a']['tenant']->id, $t['a']['user']->id); // a stale session state the worker must not keep
-        $this->artisan('queue:work', ['--stop-when-empty' => true, '--tries' => 1])->assertExitCode(0);
+        $this->artisan('queue:work', ['--stop-when-empty' => true, '--tries' => 1, '--memory' => 1024])->assertExitCode(0); // P83-QA-2: the suite process is past the default 128 MB
 
         $this->assertSame([
             ['context' => $t['a']['tenant']->id, 'guc' => $t['a']['tenant']->id, 'orders' => [$t['a']['tenant']->id]],

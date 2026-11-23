@@ -14,7 +14,7 @@ import { useImpersonation } from '../impersonation/hooks';
 import { changePasswordSchema, type ChangePasswordValues } from '../auth/schemas';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
-import { roleLabel } from '../lib/permissions';
+import { roleNameOf } from '../lib/permissions';
 import { formatBdPhone, normalizeBdPhone } from '../lib/phone';
 import { FormAlert } from '../onboarding/AuthShell';
 import { fetchTenantStore, storeDomain, storeKey } from '../stores/useTenantStore';
@@ -45,7 +45,7 @@ function daysAgo(iso: string | null | undefined): string {
   return d <= 0 ? 'Last changed today' : `Last changed ${d} ${d === 1 ? 'day' : 'days'} ago`;
 }
 
-const rolePill: Record<TenantRole, string> = { owner: 'bg-brand-50 text-brand-700', admin: 'bg-surface-subtle text-text-secondary', staff: 'bg-surface-subtle text-text-secondary' };
+const rolePill: Record<TenantRole, string> = { owner: 'bg-brand-50 text-brand-700', admin: 'bg-surface-subtle text-text-secondary', staff: 'bg-surface-subtle text-text-secondary', custom: 'bg-surface-subtle text-text-secondary' };
 
 // Figma Account 148:33262: Profile 148:33851 (editable; photo, language & number style not in the API →
 // disabled), Sign-in & security 148:33899 (password → modal; SMS two-step, authenticator, backup codes
@@ -120,13 +120,13 @@ function OwnAccount() {
   });
 
   const verified = !!user?.phone_verified_at;
-  const joined = activeTenant ? `${roleLabel[activeTenant.role]}${user?.created_at ? ` · joined ${new Date(user.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}` : '';
+  const joined = activeTenant ? `${roleNameOf(activeTenant)}${user?.created_at ? ` · joined ${new Date(user.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}` : '';
 
   return (
     <>
       <PageHeader
         title="Your account"
-        subtitle={`${user?.name ?? ''}${activeTenant ? ` · ${roleLabel[activeTenant.role]} of ${activeTenant.name}` : ''} — only you see this page.`}
+        subtitle={`${user?.name ?? ''}${activeTenant ? ` · ${roleNameOf(activeTenant)} of ${activeTenant.name}` : ''} — only you see this page.`}
         actions={
           <Button variant="secondary" onClick={() => void logout()}>
             Sign out
@@ -234,7 +234,7 @@ function OwnAccount() {
                       <span className="truncate text-body font-medium text-text-primary">{store?.name ?? t.name}</span>
                       <span className="truncate text-caption text-text-secondary">{store ? storeDomain(store) : 'No shop yet'}</span>
                     </span>
-                    <span className={cn('rounded-full px-2 py-0.5 text-caption font-medium', rolePill[t.role])}>{roleLabel[t.role]}</span>
+                    <span className={cn('rounded-full px-2 py-0.5 text-caption font-medium', rolePill[t.role])}>{roleNameOf(t)}</span>
                   </li>
                 );
               })}

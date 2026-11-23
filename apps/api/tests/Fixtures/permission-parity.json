@@ -1,0 +1,782 @@
+{
+    "DELETE api/v1/billing/scheduled-change": {
+        "owner": 404,
+        "admin": 403,
+        "staff": 403
+    },
+    "DELETE api/v1/media/{media}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 204
+    },
+    "DELETE api/v1/staff/invitations/{invitation}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/staff/{member}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/categories/{category}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/coupons/{coupon}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/couriers/{provider}": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/customers/{customer}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/customers/{customer}/notes/{note}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/domains/{domain}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/imports/{import}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/orders/{order}/payment-links/{link}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 204
+    },
+    "DELETE api/v1/stores/{store}/pages/{page}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/payment-gateways/{provider}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/pickup-locations/{location}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "DELETE api/v1/stores/{store}/products/{product}": {
+        "owner": 204,
+        "admin": 204,
+        "staff": 403
+    },
+    "GET api/v1/audit-logs": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/billing/invoices": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/billing/invoices/{invoice}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/billing/invoices/{invoice}/pdf": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/billing/payments/{payment}": {
+        "owner": 404,
+        "admin": 404,
+        "staff": 403
+    },
+    "GET api/v1/features": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/media": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/media/{media}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/page-templates": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/staff": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/stores": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/categories": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/categories/{category}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/coupons": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/coupons/{coupon}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/couriers": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/couriers/{provider}/areas": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/couriers/{provider}/pickup-stores": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/customers": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/customers/{customer}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/dashboard": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/document-templates": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/documents/{document}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/domains": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/domains/{domain}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/exports/{export}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/imports/template": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/imports/{import}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/imports/{import}/error-report": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/imports/{import}/rows": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/inventory": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/inventory/movements": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/launch-checklist": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/navigation": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/orders": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/orders/{order}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/orders/{order}/payment-links": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/pages": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/pages/{page}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/payment-gateways": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/products": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/products/{product}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/reports/delivery": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/reports/profit": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/stores/{store}/reports/sales": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/returns": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/returns/{return}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/settings": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/shipment-batches/{batch}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/shipments": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/shipments/{shipment}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/shipping": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/themes": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/stores/{store}/themes/{code}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "GET api/v1/subscription": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "GET api/v1/themes": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/staff/{member}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/categories/{category}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/stores/{store}/coupons/{coupon}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/couriers/{provider}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/customers/{customer}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/stores/{store}/inventory/{variant}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/stores/{store}/orders/{order}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/stores/{store}/pages/{page}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/payment-gateways/{provider}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/pickup-locations/{location}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PATCH api/v1/stores/{store}/products/{product}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "PATCH api/v1/stores/{store}/settings": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/billing/change-plan": {
+        "owner": 200,
+        "admin": 403,
+        "staff": 403
+    },
+    "POST api/v1/billing/invoices/{invoice}/pay": {
+        "owner": 201,
+        "admin": 403,
+        "staff": 403
+    },
+    "POST api/v1/billing/quote": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/dev/billing/clock": {
+        "owner": 422,
+        "admin": 403,
+        "staff": 403
+    },
+    "POST api/v1/media": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/staff/invitations": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/staff/invitations/{invitation}/resend": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/categories": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/coupons": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/couriers/{provider}/test": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/couriers/{provider}/webhook-secret": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/customers": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/customers/{customer}/notes": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/documents": {
+        "owner": 202,
+        "admin": 202,
+        "staff": 202
+    },
+    "POST api/v1/stores/{store}/documents/preview": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/domains": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/domains/{domain}/primary": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/domains/{domain}/verify": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/exports": {
+        "owner": 202,
+        "admin": 202,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/imports": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/imports/{import}/run": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/imports/{import}/validate": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/inventory/adjustments": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/orders/bulk": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/quote": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/cancel": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/confirm": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/deliver": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 409
+    },
+    "POST api/v1/stores/{store}/orders/{order}/items/quote": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/notes": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/orders/{order}/payment-links": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/orders/{order}/payment-links/{link}/resend": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/ready": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/refunds": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/orders/{order}/restock": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 409
+    },
+    "POST api/v1/stores/{store}/orders/{order}/return": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 422
+    },
+    "POST api/v1/stores/{store}/orders/{order}/returns": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/orders/{order}/ship": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/orders/{order}/shipments": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/pages": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/payment-gateways/{provider}/test-payment": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/pickup-locations": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/preview-token": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/products": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/products/bulk": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/products/{product}/duplicate": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/publish": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/returns/{return}/approve": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/returns/{return}/close": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 409
+    },
+    "POST api/v1/stores/{store}/returns/{return}/exchange-order": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 409
+    },
+    "POST api/v1/stores/{store}/returns/{return}/notes": {
+        "owner": 201,
+        "admin": 201,
+        "staff": 201
+    },
+    "POST api/v1/stores/{store}/returns/{return}/receive": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 422
+    },
+    "POST api/v1/stores/{store}/returns/{return}/reject": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/shipments/bulk": {
+        "owner": 202,
+        "admin": 202,
+        "staff": 202
+    },
+    "POST api/v1/stores/{store}/shipments/sync": {
+        "owner": 202,
+        "admin": 202,
+        "staff": 202
+    },
+    "POST api/v1/stores/{store}/shipments/{shipment}/cancel": {
+        "owner": 409,
+        "admin": 409,
+        "staff": 409
+    },
+    "POST api/v1/stores/{store}/shipments/{shipment}/mark-cancelled": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/shipments/{shipment}/refresh": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 200
+    },
+    "POST api/v1/stores/{store}/themes/{code}/apply": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/themes/{code}/discard": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "POST api/v1/stores/{store}/themes/{code}/publish": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/categories/order": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 422
+    },
+    "PUT api/v1/stores/{store}/couriers/{provider}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/document-templates/{kind}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/navigation/{handle}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/orders/{order}/items": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 422
+    },
+    "PUT api/v1/stores/{store}/payment-gateways/{provider}": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/shipping": {
+        "owner": 422,
+        "admin": 422,
+        "staff": 403
+    },
+    "PUT api/v1/stores/{store}/themes/{code}/draft": {
+        "owner": 200,
+        "admin": 200,
+        "staff": 403
+    }
+}

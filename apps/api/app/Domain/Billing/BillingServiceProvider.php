@@ -42,10 +42,10 @@ class BillingServiceProvider extends ServiceProvider
         Subscription::saved(fn (Subscription $s) => FeatureGate::forget($s->tenant_id));
         Subscription::deleted(fn (Subscription $s) => FeatureGate::forget($s->tenant_id));
 
-        $role = fn () => $this->app->make(TenantContext::class)->role();
-        Gate::define('billing.view', fn () => Permission::ViewBilling->grantedTo($role()));
-        Gate::define('billing.manage', fn () => Permission::ManageBilling->grantedTo($role())); // Phase 7: owner only (Q88)
-        Gate::define('billing.features', fn () => Permission::Operate->grantedTo($role()));
+        $context = fn () => $this->app->make(TenantContext::class);
+        Gate::define('billing.view', fn () => $context()->allows(Permission::BillingView));
+        Gate::define('billing.manage', fn () => $context()->allows(Permission::BillingManage)); // owner only (Q88, Q123)
+        Gate::define('billing.features', fn () => $context()->has()); // base (PHASE-8-3 §3.1)
 
         // §6.1: billing POST/DELETE, 20/min per tenant + user (pay adds 10/min per tenant in the controller).
         RateLimiter::for('billing', fn (Request $r) => RateLimit::perMinute(20)

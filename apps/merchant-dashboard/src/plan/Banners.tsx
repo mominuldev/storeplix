@@ -23,7 +23,7 @@ export function TrialBanner() {
         You’re on the <strong className="font-semibold">{planName(features.plan_code)} trial</strong> — {days} {days === 1 ? 'day' : 'days'} left. After that your shop
         moves to the Free plan; nothing gets locked.
       </span>
-      {can.viewBilling(activeTenant?.role) && (
+      {can.viewBilling(activeTenant) && (
         <Link to="/settings/plan" className="font-semibold text-brand-600 hover:text-brand-700">
           See plans
         </Link>
@@ -77,8 +77,8 @@ export function PlanBanner() {
   const features = useFeatures().data;
   const sub = useSubscription().data;
   const plans = usePlans().data;
-  const billing = can.viewBilling(activeTenant?.role);
-  const owner = can.manageBilling(activeTenant?.role);
+  const billing = can.viewBilling(activeTenant);
+  const owner = can.manageBilling(activeTenant);
   if (!billing) return <TrialBanner />;
   const kind = billingBannerKind(sub, features);
   const payNow = owner ? (
@@ -143,17 +143,26 @@ export function VerifyPhoneBanner() {
 
 // Phase 4 §9.2 / Phase 7 §8.3: any 402 `plan_limit_reached` opens one app-wide dialog. The button names the plan from
 // `details.upgrade_plan[0]` (P7-17), falling back to Starter; only the owner can upgrade.
+// Phase 8.3 W-2: a `feature` variant for a feature the plan doesn't include (`feature_not_in_plan`, "+ Custom role"),
+// titled by the feature, not "You’ve reached your plan’s limit" (that stays for count limits).
 interface PlanLimitState {
   message: string;
   upgradePlan: string | null;
+  variant: 'limit' | 'feature';
+  title: string | null;
 }
 let planLimit: PlanLimitState | null = null;
 const planListeners = new Set<() => void>();
 const emitPlan = () => planListeners.forEach((l) => l());
 
-export function showPlanLimit(message: string, upgradePlan: string | null = null) {
-  planLimit = { message, upgradePlan };
+export function showPlanLimit(message: string, upgradePlan: string | null = null, opts: { variant?: 'limit' | 'feature'; title?: string } = {}) {
+  planLimit = { message, upgradePlan, variant: opts.variant ?? 'limit', title: opts.title ?? null };
   emitPlan();
+}
+
+/** The feature-gate variant: `title` names the feature, e.g. "Custom roles are on Growth". */
+export function showFeatureUpgrade(title: string, message: string, upgradePlan: string | null = null) {
+  showPlanLimit(message, upgradePlan, { variant: 'feature', title });
 }
 
 /** Opens the plan-limit dialog for a 402 `plan_limit_reached` (or `feature_not_in_plan`) error. Returns true when handled. */
@@ -161,7 +170,8 @@ export function handlePlanLimit(error: unknown): boolean {
   if (isApiError(error) && error.status === 402 && (error.code === 'plan_limit_reached' || error.code === 'feature_not_in_plan')) {
     const hint = (error.details as Record<string, unknown> | undefined)?.upgrade_plan;
     const upgradePlan = Array.isArray(hint) && typeof hint[0] === 'string' ? hint[0] : null;
-    showPlanLimit(error.message || 'You’ve reached your plan’s limit.', upgradePlan);
+    if (error.code === 'feature_not_in_plan') showPlanLimit(error.message, upgradePlan, { variant: 'feature' });
+    else showPlanLimit(error.message || 'You’ve reached your plan’s limit.', upgradePlan);
     return true;
   }
   return false;
@@ -181,13 +191,20 @@ export function PlanLimitDialog() {
     planLimit = null;
     emitPlan();
   };
-  const owner = can.manageBilling(activeTenant?.role);
+  const owner = can.manageBilling(activeTenant);
   const target = state?.upgradePlan ?? 'starter';
+  const feature = state?.variant === 'feature';
   return (
     <Dialog
       open={!!state}
-      title="You’ve reached your plan’s limit"
-      description={`${state?.message ?? ''} ${owner ? 'Upgrade to add more — nothing you already have is hidden or deleted.' : 'Ask your shop owner to upgrade.'}`}
+      title={state?.title ?? (feature ? `Available on the ${planName(target)} plan` : 'You’ve reached your plan’s limit')}
+      description={`${state?.message ?? ''} ${
+        owner
+          ? feature
+            ? 'Upgrade to use it — nothing you already have is hidden or deleted.'
+            : 'Upgrade to add more — nothing you already have is hidden or deleted.'
+          : 'Ask your shop owner to upgrade.'
+      }`}
       confirmLabel={owner ? `Upgrade to ${planName(target)}` : 'OK'}
       cancelLabel={owner ? 'Not now' : null}
       onCancel={close}

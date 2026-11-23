@@ -5,6 +5,7 @@ namespace App\Domain\Orders;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
 
 /**
  * P5-17 / ADR 0011. The only allowed status changes; everything else is 409 invalid_state_transition.
@@ -41,13 +42,13 @@ final class OrderStateMachine
      * Allowed next statuses for the current role (staff can't cancel a paid or part-paid order, P5-21). An unpaid
      * online order only confirms itself (payment) or moves to COD (shopper): merchants see `cancelled` only.
      */
-    public static function allowedFor(Order $order, ?string $role): array
+    public static function allowedFor(Order $order, ?PermissionSet $permissions): array
     {
         $next = $order->status === Order::PENDING_PAYMENT ? [Order::CANCELLED] : (self::TRANSITIONS[$order->status] ?? []);
 
         return array_values(array_filter(
             $next,
-            fn (string $to) => $to !== Order::CANCELLED || $order->paid_amount === 0 || Permission::ManageRefunds->grantedTo($role),
+            fn (string $to) => $to !== Order::CANCELLED || $order->paid_amount === 0 || ($permissions?->has(Permission::OrdersRefund) ?? false),
         ));
     }
 

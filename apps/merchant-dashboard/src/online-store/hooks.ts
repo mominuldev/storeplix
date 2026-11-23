@@ -20,7 +20,7 @@ export const osKeys = {
 /** O and A edit Online store; staff read only (contract §6, Permission::ManageSettings). */
 export function useCanEditStore() {
   const { activeTenant } = useAuth();
-  return can.editSettings(activeTenant?.role);
+  return can.editSettings(activeTenant);
 }
 
 export function useStoreId() {

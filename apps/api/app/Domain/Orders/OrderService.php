@@ -22,6 +22,7 @@ use App\Domain\Shared\Support\Phone;
 use App\Domain\Shipping\ZoneResolver;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Themes\StoreThemeService;
 use Illuminate\Support\Facades\DB;
@@ -230,13 +231,13 @@ class OrderService
         });
     }
 
-    public function cancel(Order $order, string $reason, ?string $note, ?bool $notify, ?User $user, ?string $role): Order
+    public function cancel(Order $order, string $reason, ?string $note, ?bool $notify, ?User $user, ?PermissionSet $permissions): Order
     {
         $paid = false;
-        $order = $this->transition($order, Order::CANCELLED, $user, function (Order $o) use ($reason, $role, $user, &$paid) {
+        $order = $this->transition($order, Order::CANCELLED, $user, function (Order $o) use ($reason, $permissions, $user, &$paid) {
             $paid = $o->paid_amount > 0;
-            if ($paid && ! Permission::ManageRefunds->grantedTo($role)) {
-                throw new ApiException(403, 'forbidden', 'Only owners and managers can cancel paid orders.');
+            if ($paid && ! ($permissions?->has(Permission::OrdersRefund) ?? false)) {
+                throw new ApiException(403, 'forbidden', 'You do not have permission to cancel paid orders.');
             }
             $this->cancelEffects($o, $reason, $user);
         }, $note, ['reason' => $reason]);

@@ -72,9 +72,8 @@ function useBillingProviders(enabled: boolean): GatewayProvider[] {
 // Invoices 65:17616. Phase 7 §8.2. Owner changes the plan and pays; admin reads; staff gets the empty state.
 export function PlanPage() {
   const { activeTenant, tenantId } = useAuth();
-  const role = activeTenant?.role;
-  const allowed = can.viewBilling(role);
-  const owner = can.manageBilling(role);
+  const allowed = can.viewBilling(activeTenant);
+  const owner = can.manageBilling(activeTenant);
   const features = useFeatures();
   const subscription = useSubscription();
   const plans = usePlans();

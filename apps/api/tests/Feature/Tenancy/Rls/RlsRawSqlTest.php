@@ -138,6 +138,7 @@ class RlsRawSqlTest extends TestCase
         $membership = [
             'id' => strtolower((string) Str::ulid()), 'tenant_id' => $t['b']['tenant']->id, 'user_id' => $userA,
             'role' => 'staff', 'created_at' => now(), 'updated_at' => now(),
+            'role_id' => $this->platformTable('roles')->where('tenant_id', $t['b']['tenant']->id)->where('key', 'staff')->value('id'), // Phase 8.3
         ];
         $this->platformTable('tenant_users')->insert($membership); // A's user is also staff in B
 

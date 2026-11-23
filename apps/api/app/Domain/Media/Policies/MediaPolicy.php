@@ -14,10 +14,10 @@ class MediaPolicy
 
     public function view(User $user, Media $media): bool
     {
-        return $this->inCurrentTenant($media) && $this->can(Permission::Operate);
+        return $this->inCurrentTenant($media);
     }
 
-    /** Branding assets (logo/favicon) are store settings → owner/admin only. */
+    /** Branding assets (logo/favicon) are store settings (settings.manage); others need products.edit or settings.manage. */
     public function delete(User $user, Media $media): bool
     {
         if (! $this->inCurrentTenant($media)) {
@@ -26,6 +26,8 @@ class MediaPolicy
 
         $branding = in_array($media->purpose, [MediaPurpose::Logo->value, MediaPurpose::Favicon->value], true);
 
-        return $this->can($branding ? Permission::ManageSettings : Permission::Operate);
+        return $branding
+            ? $this->can(Permission::SettingsManage)
+            : $this->can(Permission::ProductsEdit, Permission::SettingsManage);
     }
 }

@@ -200,9 +200,11 @@ export function OrdersPage() {
             <Link to="/orders/print" className={cn(buttonVariants({ variant: 'secondary' }), 'max-md:hidden')}>
               Invoices & labels
             </Link>
-            <Link to="/orders/new" className={cn(buttonVariants(), 'max-md:hidden')}>
-              Create order
-            </Link>
+            {scope.canViewOrders && (
+              <Link to="/orders/new" className={cn(buttonVariants(), 'max-md:hidden')}>
+                Create order
+              </Link>
+            )}
           </>
         }
       />

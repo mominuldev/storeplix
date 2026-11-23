@@ -17,6 +17,7 @@ use App\Domain\DataTransfer\Models\DataImportRow;
 use App\Domain\Media\TenantStorage;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/** §3.4 imports (owner/admin, Permission::BulkData). */
+/** §3.4 imports (Permission::DataImport). */
 class ImportController
 {
     public function __construct(
@@ -65,6 +66,7 @@ class ImportController
             'type' => ['required', 'string', 'in:products,customers'],
             'file' => ['required', 'file'],
         ]);
+        $this->authorizeType($input['type']);
         $this->assertNoActiveImport($store);
 
         $info = CsvInspector::inspect($file->getRealPath(), (int) $file->getSize());
@@ -110,6 +112,7 @@ class ImportController
     public function validateImport(Request $request, Store $store, DataImport $import): JsonResponse
     {
         $this->authorize($store);
+        $this->authorizeType($import->type);
         $fields = ImportColumns::fields($import->type);
         $input = $request->validate([
             'column_map' => ['required', 'array'],
@@ -241,9 +244,13 @@ class ImportController
     public function run(Request $request, Store $store, DataImport $import): JsonResponse
     {
         $this->authorize($store);
+        $this->authorizeType($import->type);
         $input = $request->validate(['allow_partial' => ['sometimes', 'boolean:strict']]);
         if ($import->status !== DataImport::VALIDATED) {
             throw $this->invalidState();
+        }
+        if ($import->type === DataImport::PRODUCTS && ! $this->context->allows(Permission::CostsView) && $this->setsCost($import)) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to change cost prices. Remove the cost column or ask the owner.');
         }
 
         if ($import->type === DataImport::PRODUCTS && ! ($input['allow_partial'] ?? false)) {
@@ -284,9 +291,38 @@ class ImportController
     private function authorize(Store $store): void
     {
         Gate::authorize('view', $store);
-        if (! Gate::allows('bulk-data')) {
-            throw new ApiException(403, 'forbidden', 'Only the owner or an admin can import or export data.');
+        if (! Gate::allows('data.import')) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to import data.');
         }
+    }
+
+    /**
+     * PHASE-8-3 §3.2 (SEC-M2): `data.import` alone must not get around the keys of what the file writes. A product
+     * import needs `products.edit` and `inventory.adjust` (+ `costs.view` when a row sets a cost, checked on run); a
+     * customer import needs `customers.edit`. Denied → 403 `forbidden`, like the `perm:` middleware.
+     */
+    private function authorizeType(string $type): void
+    {
+        $needs = $type === DataImport::PRODUCTS
+            ? [Permission::ProductsEdit, Permission::InventoryAdjust]
+            : [Permission::CustomersEdit];
+        foreach ($needs as $permission) {
+            if (! $this->context->allows($permission)) {
+                throw new ApiException(403, 'forbidden', 'You do not have permission to do this.');
+            }
+        }
+    }
+
+    /** Does any row that will be written carry a cost price? */
+    private function setsCost(DataImport $import): bool
+    {
+        foreach (DataImportRow::query()->where('import_id', $import->id)->where('status', '!=', 'error')->lazyById(500) as $row) {
+            if (($row->values['variant']['cost_amount'] ?? null) !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function assertNoActiveImport(Store $store, ?string $except = null): void

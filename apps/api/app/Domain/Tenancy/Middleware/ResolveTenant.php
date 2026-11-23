@@ -7,9 +7,14 @@ use App\Domain\Admin\Impersonation\ImpersonationSession;
 use App\Domain\Admin\Impersonation\Models\PlatformImpersonation;
 use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Staff\Roles\Models\Role;
+use App\Domain\Staff\Roles\RolePermissions;
+use App\Domain\Tenancy\Authorization\PermissionSet;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
+use App\Domain\Tenancy\Scopes\TenantScope;
 use App\Domain\Tenancy\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
@@ -29,6 +34,10 @@ use Symfony\Component\HttpFoundation\Response;
  * its target (any other id → 403 `forbidden`, even one the staff user is a member of), the effective role is
  * `owner`, and a suspended tenant stays viewable. Each such request bumps `request_count` / `last_request_at`
  * (one UPDATE). RLS GUCs: app.user_id = the staff user, app.tenant_id = the target (TenantContext), as for members.
+ *
+ * Phase 8.3 (P83-5): the membership is loaded with its role (`id`, `key`, `revision`); the context gets the role kind
+ * and the resolved PermissionSet (system role → code, custom role → revision-keyed TenantCache). Impersonation → the
+ * owner set (still read-only).
  */
 class ResolveTenant
 {
@@ -62,16 +71,20 @@ class ResolveTenant
             $this->rls->setUser((string) $user->getAuthIdentifier());
         }
 
+        $roleId = null;
         if ($request->hasSession() && ImpersonationSession::isImpersonating($request)) {
             [$tenant, $role] = $this->impersonated($request, $tenantId);
+            $permissions = SystemRole::Owner->permissions();
         } else {
-            [$tenant, $role] = $this->member($user->getAuthIdentifier(), $tenantId);
+            [$tenant, $role, $roleId] = $this->member($user->getAuthIdentifier(), $tenantId);
             if (SessionSurface::of($request) === SessionSurface::MERCHANT) {
                 self::touchLastActive($tenant->id);
             }
+            $this->context->set($tenant, $role, PermissionSet::none(), $roleId);
+            $permissions = $this->permissionsOf($tenant->id, $roleId);
         }
 
-        $this->context->set($tenant, $role);
+        $this->context->set($tenant, $role, $permissions, $roleId);
 
         try {
             return $next($request);
@@ -80,7 +93,16 @@ class ResolveTenant
         }
     }
 
-    /** @return array{0: Tenant, 1: string} */
+    /** P83-5: the role row inside the tenant (context already set); a missing role grants nothing (fail closed). */
+    private function permissionsOf(string $tenantId, ?string $roleId): PermissionSet
+    {
+        $role = $roleId === null ? null : Role::query()->withoutGlobalScope(TenantScope::class)
+            ->where('tenant_id', $tenantId)->whereKey($roleId)->first(['id', 'tenant_id', 'key', 'is_system', 'revision']);
+
+        return $role === null ? PermissionSet::none() : RolePermissions::for($role);
+    }
+
+    /** @return array{0: Tenant, 1: string, 2: string|null} */
     private function member(mixed $userId, string $tenantId): array
     {
         $membership = Str::isUlid($tenantId)
@@ -97,7 +119,7 @@ class ResolveTenant
             throw new ApiException(403, 'tenant_suspended', 'This tenant is suspended.');
         }
 
-        return [$tenant, $membership->role];
+        return [$tenant, $membership->role, $membership->role_id];
     }
 
     /**

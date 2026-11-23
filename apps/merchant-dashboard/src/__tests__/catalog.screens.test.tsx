@@ -205,7 +205,7 @@ describe('Import wizard', () => {
   it('staff cannot import', async () => {
     signedIn('staff');
     renderApp(<AppRoutes />, { route: '/products/import' });
-    expect(await screen.findByText('Imports are for owners and managers', {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('Importing isn’t part of your role', {}, SLOW)).toBeInTheDocument();
   });
 });
 

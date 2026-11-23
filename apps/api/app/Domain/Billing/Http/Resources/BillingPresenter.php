@@ -30,7 +30,7 @@ final class BillingPresenter
             'due_at' => $invoice->due_at->toIso8601ZuluString(),
             'paid_at' => $invoice->paid_at?->toIso8601ZuluString(),
             'is_overdue' => $invoice->isOverdue(),
-            'can_pay' => $invoice->isOpen() && Permission::ManageBilling->grantedTo(app(TenantContext::class)->role()),
+            'can_pay' => $invoice->isOpen() && app(TenantContext::class)->allows(Permission::BillingManage),
         ];
     }
 

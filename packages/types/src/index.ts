@@ -7,8 +7,15 @@ export interface PaginationMeta { current_page: number; per_page: number; total:
 
 export interface HealthStatus { status: 'ok'; version: string; time: string }
 
-export type TenantRole = 'owner' | 'admin' | 'staff';
-export interface TenantMembership { id: string; name: string; role: TenantRole }
+/** Phase 8.3: 'custom' = a tenant-defined role (PHASE-8-3 §8). */
+export type TenantRole = 'owner' | 'admin' | 'staff' | 'custom';
+export type SystemRoleKey = 'owner' | 'admin' | 'staff';
+export interface TenantMembership {
+  id: string; name: string; role: TenantRole;
+  role_id: string; role_name: string;
+  /** Resolved permission set; the API stays the source of truth (PHASE-8-3 §7.1). */
+  permissions: PermissionKey[];
+}
 export interface User {
   id: string; name: string; email: string; phone: string | null; created_at: string;
   password_changed_at: string | null;
@@ -97,7 +104,8 @@ export interface UpdateProfileInput { name?: string; email?: string; phone?: str
 export interface ChangePasswordInput { current_password: string; password: string; password_confirmation: string }
 
 // ---------- Staff ----------
-export type AssignableRole = Exclude<TenantRole, 'owner'>;
+/** Legacy input only (PHASE-8-3); prefer role_id. */
+export type AssignableRole = 'admin' | 'staff';
 export interface StaffMember {
   id: string;                       // tenant_users.id (kind=member) or staff_invitations.id (kind=invitation)
   kind: 'member' | 'invitation';
@@ -106,6 +114,8 @@ export interface StaffMember {
   email: string;
   phone: string | null;
   role: TenantRole;
+  role_id: string;
+  role_name: string;
   status: 'active' | 'invited' | 'expired';
   is_you: boolean;
   invited_by: { id: string; name: string } | null;
@@ -114,10 +124,12 @@ export interface StaffMember {
   created_at: string;
 }
 export interface StaffSeatsMeta { seats_used: number; seats_limit: number | null }
-export interface InviteStaffInput { email: string; name?: string | null; role: AssignableRole }
-export interface UpdateStaffRoleInput { role: AssignableRole }
+export type InviteStaffInput = { email: string; name?: string | null } & (
+  { role_id: string; role?: never } | { role: AssignableRole; role_id?: never }
+);
+export type UpdateStaffRoleInput = { role_id: string; role?: never } | { role: AssignableRole; role_id?: never };
 export interface InvitationPreview {
-  tenant_name: string; store_name: string | null; email: string; role: AssignableRole;
+  tenant_name: string; store_name: string | null; email: string; role: Exclude<TenantRole, 'owner'>; role_name: string;
   invited_by_name: string; expires_at: string; user_exists: boolean;
 }
 export interface AcceptInvitationInput { name: string; password: string; password_confirmation: string; phone: string }
@@ -365,20 +377,52 @@ export interface MeMeta {
   impersonation?: MeImpersonation | null;
 }
 
-// ---------- Permissions surfaced to the UI ----------
-/** Mirrors App\Domain\Tenancy\Authorization\Permission (P4-14). UI derives from TenantMembership.role. */
-export const ROLE_CAN = {
-  view_costs: ['owner', 'admin'],
-  manage_catalog: ['owner', 'admin'],   // delete products/categories/customers
-  bulk_data: ['owner', 'admin'],        // imports & exports
-  manage_marketing: ['owner', 'admin'], // coupons (P5-21)
-  manage_refunds: ['owner', 'admin'],   // refunds, cancelling paid orders
-  manage_settings: ['owner', 'admin'],  // shipping, checkout, notifications, publish
-  manage_integrations: ['owner', 'admin'], // gateways, couriers (5b)
-  manage_domains: ['owner', 'admin'],   // custom domains (Phase 6)
-  view_billing: ['owner', 'admin'],     // plan, invoices, payments (Phase 7)
-  manage_billing: ['owner'],            // change plan, pay (Phase 7, Q88)
-} as const satisfies Record<string, readonly TenantRole[]>;
+// ---------- Roles & permissions (Phase 8.3, PHASE-8-3 §2, §8) ----------
+export type PermissionKey =
+  | 'orders.view' | 'orders.process' | 'orders.refund' | 'shipments.manage' | 'shipments.cancel'
+  | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
+  | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
+  | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage';
+export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
+
+/** §2.1 order (UI order); `billing.manage` last (owner only, never grantable). */
+export const PERMISSION_KEYS: readonly PermissionKey[] = [
+  'orders.view', 'orders.process', 'orders.refund', 'shipments.manage', 'shipments.cancel',
+  'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
+  'costs.view', 'reports.view', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
+  'integrations.manage', 'domains.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
+];
+
+/** §2.2 — mirrors App\Domain\Tenancy\Authorization\SystemRole. */
+export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRoleKey, readonly PermissionKey[]> = {
+  owner: PERMISSION_KEYS,
+  admin: PERMISSION_KEYS.filter((k) => k !== 'billing.manage'),
+  staff: [
+    'orders.view', 'orders.process', 'shipments.manage', 'shipments.cancel', 'products.edit',
+    'inventory.adjust', 'customers.view', 'customers.edit', 'reports.view',
+  ],
+};
+
+export interface PermissionDefinition {
+  key: PermissionKey; label: string; description: string | null;
+  requires: PermissionKey[]; sensitive: boolean; grantable: boolean;
+}
+export interface PermissionGroup { key: PermissionGroupKey; label: string; permissions: PermissionDefinition[] }
+export interface RoleMemberPreview { id: string; name: string }
+export interface Role {
+  id: string; key: SystemRoleKey | null; name: string; description: string | null; is_system: boolean;
+  permissions: PermissionKey[]; members_count: number; invitations_count: number; members_preview: RoleMemberPreview[];
+  editable: boolean; revision: number; created_at: string; updated_at: string;
+  updated_by: { id: string; name: string } | null;
+}
+export interface RoleMember {
+  id: string; kind: 'member' | 'invitation'; user_id: string | null; name: string | null; email: string;
+  phone: string | null; status: 'active' | 'invited' | 'expired'; is_you: boolean;
+}
+export interface RoleDetail extends Role { members: RoleMember[] }
+export interface RolesMeta { custom_roles_used: number; custom_roles_limit: number; custom_roles_enabled: boolean }
+export interface CreateRoleInput { name: string; description?: string | null; permissions: PermissionKey[] }
+export interface UpdateRoleInput { revision: number; name?: string; description?: string | null; permissions?: PermissionKey[] }
 
 // ---------- Catalog (Phase 4) ----------
 export const DEFAULT_LOW_STOCK_THRESHOLD = 5;
@@ -1378,7 +1422,7 @@ export interface AdminTenant extends AdminTenantSummary {
 }
 export interface AdminTenantMember {
   id: string | null; name: string | null; email: string; phone: string | null;
-  role: 'owner' | 'admin' | 'staff'; status: 'active' | 'invited'; joined_at: string | null;
+  role: TenantRole; role_name: string; status: 'active' | 'invited'; joined_at: string | null;
 }
 export interface AdminDomain {
   id: string; hostname: string; tenant: AdminShopRef; kind: 'platform' | 'custom'; status: DomainStatus;

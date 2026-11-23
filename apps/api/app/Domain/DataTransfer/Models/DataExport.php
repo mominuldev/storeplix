@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $filters
  * @property string|null $file_path
  * @property int|null $row_count
+ * @property bool $include_costs
  * @property Carbon|null $expires_at
  * @property string|null $created_by
  * @property Carbon $created_at
@@ -42,9 +43,10 @@ class DataExport extends Model
 
     protected $fillable = ['type', 'status', 'filters', 'file_path', 'row_count', 'expires_at', 'created_by'];
 
+    /** Not fillable: set only by ExportController from the requester's `costs.view` (SEC-M1). */
     protected function casts(): array
     {
-        return ['filters' => 'array', 'row_count' => 'integer', 'expires_at' => 'datetime'];
+        return ['filters' => 'array', 'row_count' => 'integer', 'expires_at' => 'datetime', 'include_costs' => 'boolean'];
     }
 
     public function store(): BelongsTo

@@ -135,9 +135,11 @@ export function CategoriesPage() {
         title="Categories"
         subtitle="Categories build your shop menu. Buyers see this order in your shop menu."
         actions={
-          <Button aria-label="New category" onClick={() => setEditing({ mode: 'new' })}>
-            + New category
-          </Button>
+          scope.canEditProducts && (
+            <Button aria-label="New category" onClick={() => setEditing({ mode: 'new' })}>
+              + New category
+            </Button>
+          )
         }
       />
       <Tabs aria-label="Catalog groups" value="categories" onChange={() => {}} items={[{ value: 'categories', label: 'Categories', count: categories.length }]} />

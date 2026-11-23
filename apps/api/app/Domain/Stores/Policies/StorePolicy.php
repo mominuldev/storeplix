@@ -15,24 +15,25 @@ class StorePolicy
 {
     use Authorizes;
 
+    /** Base access (PHASE-8-3 §3.1): every member; route keys (`perm:`) guard the rest. */
     public function viewAny(User $user): bool
     {
-        return $this->can(Permission::Operate);
+        return $this->member();
     }
 
     public function view(User $user, Store $store): bool
     {
-        return $this->inCurrentTenant($store) && $this->can(Permission::Operate);
+        return $this->inCurrentTenant($store);
     }
 
     public function create(User $user): bool
     {
-        return $this->can(Permission::ManageSettings);
+        return $this->can(Permission::SettingsManage);
     }
 
     public function update(User $user, Store $store): bool
     {
-        return $this->inCurrentTenant($store) && $this->can(Permission::ManageSettings);
+        return $this->inCurrentTenant($store) && $this->can(Permission::SettingsManage);
     }
 
     /** Any member of the owning tenant may preview its (draft) storefront. */

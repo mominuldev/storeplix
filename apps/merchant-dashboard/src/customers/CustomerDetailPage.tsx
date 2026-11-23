@@ -113,7 +113,7 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
           <Button variant="secondary" onClick={() => setEditing(true)}>
             Edit
           </Button>
-          {scope.canManageCatalog && (
+          {scope.canDeleteCustomers && (
             <Button variant="danger" onClick={() => setDeleting(true)}>
               Delete
             </Button>

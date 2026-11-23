@@ -20,6 +20,7 @@ use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shipping\Models\PickupLocation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
 use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -54,13 +55,13 @@ class BookingService
      *
      * @param  array{provider: string, pickup_location_id?: string|null, cod_amount?: int|null, weight_grams?: int|null, item_description?: string|null, note?: string|null, delivery_type?: int|null, area?: array{city_id?: string|null, zone_id?: string|null, area_id?: string|null}|null, remember_area?: bool}  $input
      */
-    public function book(Store $store, Order $order, array $input, ?User $user, ?string $role, ?string $idempotencyKey): Shipment
+    public function book(Store $store, Order $order, array $input, ?User $user, ?PermissionSet $permissions, ?string $idempotencyKey): Shipment
     {
         $account = $this->connectedAccount($store, $input['provider']);
         $override = array_key_exists('cod_amount', $input) && $input['cod_amount'] !== null;
-        if ($override && ! Permission::ManageRefunds->grantedTo($role)) {
+        if ($override && ! ($permissions?->has(Permission::OrdersRefund) ?? false)) {
             // S33: only owners/admins may change what the rider collects.
-            throw new ApiException(403, 'forbidden', 'Only owners and admins can change the COD amount.');
+            throw new ApiException(403, 'forbidden', 'You do not have permission to change the COD amount.');
         }
 
         [$shipment, $request, $fresh] = DB::transaction(function () use ($store, $order, $input, $account, $user, $idempotencyKey, $override) {

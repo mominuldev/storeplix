@@ -63,7 +63,7 @@ class DashboardController
                 'low_stock_variants' => (int) $stock->low_count,
                 'out_of_stock_variants' => (int) $stock->out_count,
                 'units_on_hand' => (int) $stock->units,
-                'stock_value_cost_amount' => Permission::ViewCosts->grantedTo($context->role()) ? (int) $stock->value_cost : null,
+                'stock_value_cost_amount' => $context->allows(Permission::CostsView) ? (int) $stock->value_cost : null,
             ],
             'customers' => [
                 'total' => Customer::query()->where('store_id', $store->id)->count(),

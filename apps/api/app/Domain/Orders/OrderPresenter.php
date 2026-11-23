@@ -19,6 +19,7 @@ use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Shared\Http\UserRef;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
 
 /** Order payloads (@storeplix/types): merchant OrderSummary / Order / OrderQuote lines, storefront order and tracking. */
 final class OrderPresenter
@@ -90,17 +91,17 @@ final class OrderPresenter
     }
 
     /** @return array<string, mixed> Order */
-    public static function full(Order $order, ?string $role): array
+    public static function full(Order $order, ?PermissionSet $permissions): array
     {
         $order->loadMissing(['items', 'customer', 'payments.actor', 'shipment', 'createdBy']);
-        $costs = Permission::ViewCosts->grantedTo($role);
+        $costs = ($permissions?->has(Permission::CostsView) ?? false);
         $items = $order->items;
         $media = MediaMaps::load($items->pluck('image_media_id')->filter()->values()->all());
         $variants = ProductVariant::query()->where('store_id', $order->store_id)->whereIn('id', $items->pluck('variant_id')->filter()->all())
             ->with('inventory')->get()->keyBy('id');
         $events = OrderEvent::query()->where('order_id', $order->id)->with('actor')
             ->orderByDesc('created_at')->orderByDesc('id')->limit(200)->get();
-        $allowed = OrderStateMachine::allowedFor($order, $role);
+        $allowed = OrderStateMachine::allowedFor($order, $permissions);
         $timestamps = [];
         foreach (self::TIMESTAMPS as $column) {
             if ($order->{$column} !== null) {
@@ -117,7 +118,7 @@ final class OrderPresenter
             'customer_note' => $order->customer_note,
             'items' => $items->map(fn (OrderItem $item) => self::item($item, $media, $variants[$item->variant_id] ?? null, $costs))->values()->all(),
             'events' => $events->map(fn (OrderEvent $e) => self::event($e))->all(),
-            'payments' => $order->payments->map(fn (Payment $p) => self::payment($p, $role))->values()->all(),
+            'payments' => $order->payments->map(fn (Payment $p) => self::payment($p, $permissions))->values()->all(),
             'shipment' => $order->shipment ? self::shipment($order->shipment) : null,
             'subtotal_amount' => $order->subtotal_amount,
             'discount_amount' => $order->discount_amount,
@@ -135,7 +136,7 @@ final class OrderPresenter
             'can' => [
                 'edit' => in_array($order->status, Order::EDITABLE, true),
                 'cancel' => in_array(Order::CANCELLED, $allowed, true),
-                'refund' => Permission::ManageRefunds->grantedTo($role) && $order->paid_amount - $order->refunded_amount > 0,
+                'refund' => ($permissions?->has(Permission::OrdersRefund) ?? false) && $order->paid_amount - $order->refunded_amount > 0,
             ],
             'revision' => $order->revision,
             'created_by' => UserRef::of($order->createdBy),
@@ -247,7 +248,7 @@ final class OrderPresenter
     }
 
     /** @return array<string, mixed> Payment */
-    public static function payment(Payment $payment, ?string $role = null): array
+    public static function payment(Payment $payment, ?PermissionSet $permissions = null): array
     {
         return [
             'id' => $payment->id,
@@ -270,7 +271,7 @@ final class OrderPresenter
             'payment_link_id' => $payment->payment_link_id,
             'return_request_id' => $payment->return_request_id ?? null,
             'can_refund' => $payment->type === Payment::TYPE_CHARGE && $payment->isOnline() && $payment->status === Payment::STATUS_SUCCEEDED
-                && Permission::ManageRefunds->grantedTo($role) && (int) $payment->amount - (int) $payment->refunded_amount > 0,
+                && ($permissions?->has(Permission::OrdersRefund) ?? false) && (int) $payment->amount - (int) $payment->refunded_amount > 0,
         ];
     }
 

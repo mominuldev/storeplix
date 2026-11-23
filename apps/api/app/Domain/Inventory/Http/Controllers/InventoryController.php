@@ -237,6 +237,6 @@ class InventoryController
 
     private function costs(): bool
     {
-        return Permission::ViewCosts->grantedTo($this->context->role());
+        return $this->context->allows(Permission::CostsView);
     }
 }

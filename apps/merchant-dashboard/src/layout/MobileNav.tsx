@@ -1,7 +1,9 @@
 import { cn } from '@storeplix/ui';
 import { Bell, ChevronDown, House, Menu, Package, Plus, Search, ShoppingBag } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router';
+import { useAuth } from '../auth/AuthProvider';
 import { useDashboard } from '../catalog/queries';
+import { can } from '../lib/permissions';
 import { storeDomain, useTenantStore } from '../stores/useTenantStore';
 
 // Figma Merchant Admin – Mobile · Today app bar 31:4300 (60h): shop avatar, name + domain, search, bell.
@@ -74,14 +76,16 @@ function Tab({ tab, badge }: { tab: (typeof tabs)[number]; badge?: number }) {
 export function MobileTabBar() {
   // Phase 5a §9: the Orders tab badge shows orders waiting for confirmation.
   const pending = useDashboard().data?.orders?.waiting.pending ?? 0;
+  const { activeTenant } = useAuth();
   return (
     <nav
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-20 flex items-center border-t border-border-default bg-surface-card px-2 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden"
     >
       <Tab tab={tabs[0]} />
-      <Tab tab={tabs[1]} badge={pending} />
+      {can.seeOrders(activeTenant) && <Tab tab={tabs[1]} badge={pending} />}
       <div className="flex min-h-13 flex-1 items-center justify-center">
+        {can.editProducts(activeTenant) && (
         <Link
           to="/products/new"
           aria-label="Add product"
@@ -89,6 +93,7 @@ export function MobileTabBar() {
         >
           <Plus className="size-[26px]" aria-hidden />
         </Link>
+        )}
       </div>
       <Tab tab={tabs[2]} />
       <Tab tab={tabs[3]} />

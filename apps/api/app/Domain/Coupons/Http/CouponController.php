@@ -129,8 +129,8 @@ class CouponController
     private function authorizeWrite(Store $store): void
     {
         Gate::authorize('view', $store);
-        if (! Permission::ManageMarketing->grantedTo($this->context->role())) {
-            throw new ApiException(403, 'forbidden', 'Only owners and managers can manage coupons.');
+        if (! $this->context->allows(Permission::MarketingManage)) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to manage coupons.');
         }
     }
 

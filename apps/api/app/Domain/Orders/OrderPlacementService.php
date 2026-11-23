@@ -242,7 +242,7 @@ class OrderPlacementService
             $shipping = ['shipping' => (int) $override];
         }
 
-        $costs = Permission::ViewCosts->grantedTo($this->context->role());
+        $costs = $this->context->allows(Permission::CostsView);
         $quoteLines = [];
         foreach ($priced['lines'] as $i => $line) {
             $variant = $loaded['variants'][$loaded['lines'][$i]['variant_id']] ?? null;

@@ -19,7 +19,7 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2). Tenant-scoped only: tenant_users, media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2). Tenant-scoped only: tenant_users, roles, role_permissions (8.3), media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
 | Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
@@ -127,10 +127,22 @@ Laravel Sanctum default, `tokenable_id char(26)`. `expires_at` set at issue from
 ## 5. Tenant-owned core tables
 
 ### tenant_users
-id PK · tenant_id FK tenants · user_id FK users · role varchar(32) `CHECK IN ('owner','admin','staff')` ·
+id PK · tenant_id FK tenants · user_id FK users · role varchar(32) `CHECK IN ('owner','admin','staff','custom')` ·
+role_id char(26) FK(t) roles RESTRICT (Phase 8.3) ·
 status `CHECK IN ('invited','active','disabled')` · invited_by char(26) null · timestamps.
-**U(tenant_id, user_id)**. IX(user_id). Partial **U(tenant_id) WHERE role='owner'** (exactly one owner).
-Phase 8: `role_id` → `roles` for custom roles (Figma Staff & roles).
+**U(tenant_id, user_id)**. IX(user_id). IX(tenant_id, role_id). Partial **U(tenant_id) WHERE role='owner'** (exactly one owner).
+Phase 8.3 (ADR 0017): `role_id` is the source of truth; `role` is a denormalised kind = `roles.key ?? 'custom'`, written
+in the same transaction. `staff_invitations` gains the same `role_id` (NOT NULL, FK(t) RESTRICT).
+
+### roles · role_permissions (Phase 8.3, PHASE-8-3 §5, ADR 0017)
+**roles**: id PK · tenant_id FK tenants CASCADE · key varchar(16) null `CHECK IN ('owner','admin','staff')` · name
+varchar(40) · description varchar(200) null · is_system boolean · revision integer default 1 · created_by, updated_by
+char(26) null FK users SET NULL · timestamps. **U(tenant_id, id)** · **U(tenant_id, key) WHERE key IS NOT NULL** ·
+**U(tenant_id, lower(name))** · `CHECK (is_system = (key IS NOT NULL))`. Three system rows per tenant (seeded at
+registration and by backfill `2026_11_01_000300`); their permissions are code (`SystemRole`), not rows.
+**role_permissions**: tenant_id · role_id · permission varchar(48) `CHECK (permission ~ '^[a-z]+\.[a-z_]+$')` ·
+created_at. **PK(tenant_id, role_id, permission)**; FK (tenant_id, role_id) → roles(tenant_id, id) CASCADE. Custom
+roles only; keys are `App\Domain\Tenancy\Authorization\Permission` values (unknown keys ignored on read).
 
 ### stores
 id PK · tenant_id · name varchar(160) · slug varchar(63) · status `CHECK IN ('draft','active','suspended')` ·
@@ -584,6 +596,9 @@ erDiagram
 - **Special policies** (instead of `tenant_isolation`):
   - `tenant_users` (split by 000110, QA 5b-1 F-L2): SELECT `tenant_id = current tenant OR user_id = app_current_user()`;
     INSERT / UPDATE / DELETE only in the current tenant.
+  - `roles`, `role_permissions` (Phase 8.3): SELECT `tenant_id = current tenant OR tenant_id IN (SELECT tenant_id FROM
+    tenant_users WHERE user_id = app_current_user())` (`/auth/me` lists every membership's permissions without a tenant
+    context); INSERT / UPDATE / DELETE only in the current tenant. Listed in `RlsTables::SPECIAL`.
   - `audit_logs`: SELECT current tenant; INSERT `tenant_id IS NULL OR current tenant`. The app role has no
     UPDATE/DELETE grant (append-only).
   - `sms_messages`: INSERT as `audit_logs`; SELECT **and** UPDATE `current tenant OR (tenant_id IS NULL AND no tenant
@@ -784,7 +799,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 
 | Module (Figma section) | Tables | Phase |
 |---|---|---|
-| Staff & roles (89:26676) | `roles(tenant_id, name, is_system)`, `role_permissions(role_id, permission)` — permissions are code constants (`orders.view`, `products.edit`...); `tenant_users.role_id` | 8 |
+| Staff & roles (89:26676) | `roles`, `role_permissions`, `tenant_users.role_id`, `staff_invitations.role_id` — **specified in 8.3 (§5 tenant_users, PHASE-8-3 §5)** | 8.3 |
 | Developer API keys & webhooks (144:40725) | `api_keys(tenant_id, name, prefix, key_hash, scopes text[], last_used_at, revoked_at)`; `webhook_endpoints(tenant_id, url, secret enc, events text[], is_active)`; `webhook_deliveries(endpoint_id, event, payload, status, attempts, next_retry_at, response_code)` | 8 |
 | Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns(tenant_id, channel sms/email, audience jsonb, status, scheduled_at)`; `campaign_recipients` | 5 / 8 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |

@@ -44,7 +44,7 @@ export function StoreDetailsPage() {
 function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings: StoreSettings; storeId: string; justSaved: boolean; onSaved: (updatedAt: string) => void }) {
   const { activeTenant, tenantId } = useAuth();
   const queryClient = useQueryClient();
-  const editable = can.editSettings(activeTenant?.role);
+  const editable = can.editSettings(activeTenant);
   const [formError, setFormError] = useState<string | null>(null);
   const [previews, setPreviews] = useState({ logo: settings.branding.logo?.url ?? null, favicon: settings.branding.favicon?.url ?? null });
   const logo = useBrandUpload('logo');

@@ -70,7 +70,7 @@ final class DomainPresenter
         $tenant = $context->tenant();
 
         return [
-            'manage' => $manage && Permission::ManageDomains->grantedTo($context->role()),
+            'manage' => $manage && $context->allows(Permission::DomainsManage),
             'feature' => $tenant !== null && FeatureGate::allows($tenant, Feature::CustomDomain),
             'store_suspended' => $store->status === Store::STATUS_SUSPENDED,
         ];

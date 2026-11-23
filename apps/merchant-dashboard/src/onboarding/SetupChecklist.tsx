@@ -25,7 +25,7 @@ export function SetupChecklist() {
   const navigate = useNavigate();
   const { activeTenant } = useAuth();
   const store = useTenantStore().data;
-  const manage = can.manageStaff(activeTenant?.role);
+  const manage = can.manageStaff(activeTenant);
   const settings = useQuery({ queryKey: settingsKey(store?.id), queryFn: () => api.stores.getSettings(store!.id), enabled: !!store, retry: false });
   const themes = useQuery({ queryKey: ['store-themes', store?.id], queryFn: () => api.storeThemes.list(store!.id), enabled: !!store, retry: false });
   // Phase 4 §9.1: "Add products" is done once the store has any product.

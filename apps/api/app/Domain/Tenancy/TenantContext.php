@@ -2,6 +2,9 @@
 
 namespace App\Domain\Tenancy;
 
+use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Exceptions\MissingTenantContextException;
 use App\Domain\Tenancy\Models\Tenant;
@@ -14,6 +17,9 @@ use App\Domain\Tenancy\Models\Tenant;
  *
  * Phase 5b (RLS): every change is mirrored into the Postgres GUC app.tenant_id (RlsSession), and switching to a
  * different tenant inside an open transaction throws TenantSwitchInTransaction.
+ *
+ * Phase 8.3 (P83-5): besides the role kind (owner|admin|staff|custom) it carries the member's resolved PermissionSet
+ * and role id. Callers that pass only a system role kind (jobs, console, tests) get that system role's set.
  */
 final class TenantContext
 {
@@ -23,7 +29,11 @@ final class TenantContext
 
     private ?string $role = null;
 
-    public function set(Tenant|string $tenant, ?string $role = null): void
+    private ?PermissionSet $permissions = null;
+
+    private ?string $roleId = null;
+
+    public function set(Tenant|string $tenant, ?string $role = null, ?PermissionSet $permissions = null, ?string $roleId = null): void
     {
         $this->rls()->assertCanSwitch($this->tenantId, $tenant instanceof Tenant ? (string) $tenant->getKey() : $tenant);
 
@@ -36,6 +46,8 @@ final class TenantContext
         }
 
         $this->role = $role;
+        $this->permissions = $permissions ?? self::defaultPermissions($role);
+        $this->roleId = $roleId;
         $this->rls()->applyTenant($this->tenantId);
     }
 
@@ -44,6 +56,8 @@ final class TenantContext
         $this->tenantId = null;
         $this->tenant = null;
         $this->role = null;
+        $this->permissions = null;
+        $this->roleId = null;
         $this->rls()->applyTenant(null);
     }
 
@@ -74,10 +88,37 @@ final class TenantContext
         return $this->tenant;
     }
 
-    /** Role of the authenticated user inside the current tenant (owner|admin|staff), if any. */
+    /** Role kind of the authenticated user inside the current tenant (owner|admin|staff|custom), if any. */
     public function role(): ?string
     {
         return $this->role;
+    }
+
+    /** The member's roles.id (null outside a member request, e.g. jobs or impersonation). */
+    public function roleId(): ?string
+    {
+        return $this->roleId;
+    }
+
+    /** Resolved permissions of the acting member (empty when no member acts). */
+    public function permissions(): PermissionSet
+    {
+        return $this->permissions ?? PermissionSet::none();
+    }
+
+    public function allows(Permission $permission): bool
+    {
+        return $this->permissions()->has($permission);
+    }
+
+    public function allowsAny(Permission ...$permissions): bool
+    {
+        return $this->permissions()->hasAny(...$permissions);
+    }
+
+    private static function defaultPermissions(?string $role): ?PermissionSet
+    {
+        return $role === null ? null : SystemRole::tryFrom($role)?->permissions();
     }
 
     /**
@@ -88,17 +129,17 @@ final class TenantContext
      * @param  callable(): T  $callback
      * @return T
      */
-    public function run(Tenant|string $tenant, callable $callback, ?string $role = null): mixed
+    public function run(Tenant|string $tenant, callable $callback, ?string $role = null, ?PermissionSet $permissions = null): mixed
     {
-        $previous = [$this->tenantId, $this->tenant, $this->role];
+        $previous = [$this->tenantId, $this->tenant, $this->role, $this->permissions, $this->roleId];
 
-        $this->set($tenant, $role);
+        $this->set($tenant, $role, $permissions);
 
         try {
             return $callback();
         } finally {
             $changed = $previous[0] !== $this->tenantId;
-            [$this->tenantId, $this->tenant, $this->role] = $previous;
+            [$this->tenantId, $this->tenant, $this->role, $this->permissions, $this->roleId] = $previous;
             if ($changed) {
                 $this->rls()->applyTenant($this->tenantId);
             }

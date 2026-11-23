@@ -23,6 +23,7 @@ use App\Domain\Shared\Models\StoreCounter;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Authorization\PermissionSet;
 use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -366,11 +367,11 @@ class ReturnService
      * @param  array{shipping_amount_override?: int|null, send_payment_link?: array<string, mixed>|null}  $input
      * @return array{0: ReturnRequest, 1: Order}
      */
-    public function exchange(ReturnRequest $return, array $input, ?User $user, ?string $role, ?string $idempotencyKey): array
+    public function exchange(ReturnRequest $return, array $input, ?User $user, ?PermissionSet $permissions, ?string $idempotencyKey): array
     {
         $created = null;
         $link = null;
-        $result = $this->locked($return, function (Order $o, ReturnRequest $r) use ($input, $user, $role, $idempotencyKey, &$created, &$link) {
+        $result = $this->locked($return, function (Order $o, ReturnRequest $r) use ($input, $user, $permissions, $idempotencyKey, &$created, &$link) {
             if ($r->type !== 'exchange' || $r->exchange_order_id !== null) {
                 throw new ApiException(409, 'invalid_state_transition', 'This return has no exchange to create.');
             }
@@ -404,8 +405,8 @@ class ReturnService
 
             // Price difference = what the new order costs before the credit − the credit (P5B-67).
             $difference = $order->subtotal_amount + $order->shipping_amount - $credit;
-            if ($difference < 0 && ! Permission::ManageRefunds->grantedTo($role)) {
-                throw new ApiException(403, 'forbidden', 'Only owners and managers can create an exchange that needs a refund.');
+            if ($difference < 0 && ! ($permissions?->has(Permission::OrdersRefund) ?? false)) {
+                throw new ApiException(403, 'forbidden', 'You do not have permission to create an exchange that needs a refund.');
             }
             // Product decision (2026-11-22): the link charges ONLY the price difference of the goods (exchange items
             // at current price − the returned lines' credit), capped at the due; delivery stays cash on delivery.

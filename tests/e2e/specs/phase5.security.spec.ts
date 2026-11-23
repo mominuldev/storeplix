@@ -301,7 +301,9 @@ test('S10 state machine, staff limits and refunds', async () => {
   const id3 = (await api(shop.s, 'GET', `/stores/${shop.s.storeId}/orders?q=${third.order.number}`)).json.data[0].id as string;
   tinker(`DB::table('orders')->where('id','${id3}')->where('store_id','${shop.s.storeId}')->update(['paid_amount'=>1000,'payment_status'=>'partially_paid']); echo 'ok';`);
   const paidCancel = await transition(staff.session, id3, 'cancel', { reason: 'other' });
-  expect([paidCancel.status, paidCancel.json.error?.message]).toEqual([403, 'Only owners and managers can cancel paid orders.']);
+  // Phase 8.3: the rule is the `orders.refund` key (custom roles may hold it), so assert the stable code, not the copy.
+  expect([paidCancel.status, paidCancel.json.error?.code]).toEqual([403, 'forbidden']);
+  expect(paidCancel.json.error?.message).toMatch(/cancel paid orders/);
 });
 
 test('S14 /discount/{CODE} ignores ?next= and lands on / (demo host, no cart: cookie only, no DB write)', async ({ page }) => {

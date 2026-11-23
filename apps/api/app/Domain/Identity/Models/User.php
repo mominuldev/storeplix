@@ -58,7 +58,7 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Tenant::class, 'tenant_users')
             ->using(TenantUser::class)
-            ->withPivot(['id', 'role', 'joined_at'])
+            ->withPivot(['id', 'role', 'role_id', 'joined_at'])
             ->withTimestamps();
     }
 

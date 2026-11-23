@@ -49,6 +49,7 @@ use App\Domain\Shipping\Http\ShippingController;
 use App\Domain\Staff\Http\Controllers\InvitationAcceptanceController;
 use App\Domain\Staff\Http\Controllers\InvitationController;
 use App\Domain\Staff\Http\Controllers\StaffController;
+use App\Domain\Staff\Roles\Http\RoleController;
 use App\Domain\Stores\Http\Controllers\LaunchController;
 use App\Domain\Stores\Http\Controllers\PreviewTokenController;
 use App\Domain\Stores\Http\Controllers\StoreController;
@@ -100,235 +101,243 @@ Route::prefix('v1')->group(function (): void {
     // --- Merchant APIs: authenticated + tenant context from X-Tenant-Id ---
     // Phase 8.1 (P8-1, S68): merchant routes refuse admin-surface sessions.
     Route::middleware(['auth:sanctum', 'surface:merchant,impersonation', 'tenant'])->group(function (): void {
-        Route::get('stores', [StoreController::class, 'index'])->name('stores.index');
-        Route::post('stores', [StoreController::class, 'store'])->name('stores.store');
-        Route::get('stores/{store}', [StoreController::class, 'show'])->name('stores.show');
-        Route::get('stores/{store}/settings', [StoreSettingsController::class, 'show'])->name('stores.settings.show');
-        Route::patch('stores/{store}/settings', [StoreSettingsController::class, 'update'])->name('stores.settings.update');
+        Route::get('stores', [StoreController::class, 'index'])->middleware('perm:base')->name('stores.index');
+        Route::post('stores', [StoreController::class, 'store'])->middleware('perm:settings.manage')->name('stores.store');
+        Route::get('stores/{store}', [StoreController::class, 'show'])->middleware('perm:base')->name('stores.show');
+        Route::get('stores/{store}/settings', [StoreSettingsController::class, 'show'])->middleware('perm:base')->name('stores.settings.show');
+        Route::patch('stores/{store}/settings', [StoreSettingsController::class, 'update'])->middleware('perm:settings.manage')->name('stores.settings.update');
         Route::post('stores/{store}/preview-token', PreviewTokenController::class)
             ->middleware('throttle:30,1,stores.preview-token')
-            ->name('stores.preview-token');
+            ->middleware('perm:base')->name('stores.preview-token');
 
         // --- Phase 3: storefront engine (themes, pages, navigation) ---
-        Route::get('themes', ThemeCatalogController::class)->name('themes.index');
-        Route::get('page-templates', [PageController::class, 'templates'])->name('page-templates.index');
+        Route::get('themes', ThemeCatalogController::class)->middleware('perm:base')->name('themes.index');
+        Route::get('page-templates', [PageController::class, 'templates'])->middleware('perm:base')->name('page-templates.index');
 
         Route::prefix('stores/{store}')->group(function (): void {
-            Route::get('themes', [StoreThemeController::class, 'index'])->name('stores.themes.index');
+            Route::get('themes', [StoreThemeController::class, 'index'])->middleware('perm:base')->name('stores.themes.index');
             Route::prefix('themes/{code}')->where(['code' => '[a-z0-9-]{1,64}'])->group(function (): void {
-                Route::get('/', [StoreThemeController::class, 'show'])->name('stores.themes.show');
-                Route::put('draft', [StoreThemeController::class, 'saveDraft'])->middleware('throttle:120,1,stores.themes.draft')->name('stores.themes.draft');
+                Route::get('/', [StoreThemeController::class, 'show'])->middleware('perm:base')->name('stores.themes.show');
+                Route::put('draft', [StoreThemeController::class, 'saveDraft'])->middleware('throttle:120,1,stores.themes.draft')->middleware('perm:settings.manage')->name('stores.themes.draft');
                 Route::middleware('throttle:20,1,stores.themes.publish')->group(function (): void {
-                    Route::post('publish', [StoreThemeController::class, 'publish'])->name('stores.themes.publish');
-                    Route::post('discard', [StoreThemeController::class, 'discard'])->name('stores.themes.discard');
-                    Route::post('apply', [StoreThemeController::class, 'apply'])->name('stores.themes.apply');
+                    Route::post('publish', [StoreThemeController::class, 'publish'])->middleware('perm:settings.manage')->name('stores.themes.publish');
+                    Route::post('discard', [StoreThemeController::class, 'discard'])->middleware('perm:settings.manage')->name('stores.themes.discard');
+                    Route::post('apply', [StoreThemeController::class, 'apply'])->middleware('perm:settings.manage')->name('stores.themes.apply');
                 });
             });
 
             Route::scopeBindings()->group(function (): void {
-                Route::get('pages', [PageController::class, 'index'])->name('stores.pages.index');
-                Route::post('pages', [PageController::class, 'store'])->name('stores.pages.store');
-                Route::get('pages/{page}', [PageController::class, 'show'])->name('stores.pages.show');
-                Route::patch('pages/{page}', [PageController::class, 'update'])->name('stores.pages.update');
-                Route::delete('pages/{page}', [PageController::class, 'destroy'])->name('stores.pages.destroy');
+                Route::get('pages', [PageController::class, 'index'])->middleware('perm:base')->name('stores.pages.index');
+                Route::post('pages', [PageController::class, 'store'])->middleware('perm:settings.manage')->name('stores.pages.store');
+                Route::get('pages/{page}', [PageController::class, 'show'])->middleware('perm:base')->name('stores.pages.show');
+                Route::patch('pages/{page}', [PageController::class, 'update'])->middleware('perm:settings.manage')->name('stores.pages.update');
+                Route::delete('pages/{page}', [PageController::class, 'destroy'])->middleware('perm:settings.manage')->name('stores.pages.destroy');
             });
 
-            Route::get('navigation', [NavigationController::class, 'index'])->name('stores.navigation.index');
-            Route::put('navigation/{handle}', [NavigationController::class, 'update'])->name('stores.navigation.update');
+            Route::get('navigation', [NavigationController::class, 'index'])->middleware('perm:base')->name('stores.navigation.index');
+            Route::put('navigation/{handle}', [NavigationController::class, 'update'])->middleware('perm:settings.manage')->name('stores.navigation.update');
 
             // --- Phase 4: catalog, inventory, customers, bulk data, dashboard ---
             Route::middleware('throttle:merchant')->scopeBindings()->group(function (): void {
-                Route::get('dashboard', DashboardController::class)->name('stores.dashboard');
+                Route::get('dashboard', DashboardController::class)->middleware('perm:base')->name('stores.dashboard');
 
                 // Phase 7 (7.4): reports in the store timezone (PHASE-7-CONTRACT §6.3).
-                Route::get('reports/sales', [ReportController::class, 'sales'])->name('stores.reports.sales');
-                Route::get('reports/profit', [ReportController::class, 'profit'])->name('stores.reports.profit');
-                Route::get('reports/delivery', [ReportController::class, 'delivery'])->name('stores.reports.delivery');
+                Route::get('reports/sales', [ReportController::class, 'sales'])->middleware('perm:reports.view')->name('stores.reports.sales');
+                Route::get('reports/profit', [ReportController::class, 'profit'])->middleware('perm:reports.view')->name('stores.reports.profit');
+                Route::get('reports/delivery', [ReportController::class, 'delivery'])->middleware('perm:reports.view')->name('stores.reports.delivery');
 
-                Route::get('categories', [CategoryController::class, 'index'])->name('stores.categories.index');
-                Route::post('categories', [CategoryController::class, 'store'])->name('stores.categories.store');
-                Route::put('categories/order', [CategoryController::class, 'reorder'])->name('stores.categories.reorder');
-                Route::get('categories/{category}', [CategoryController::class, 'show'])->name('stores.categories.show');
-                Route::patch('categories/{category}', [CategoryController::class, 'update'])->name('stores.categories.update');
-                Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->name('stores.categories.destroy');
+                Route::get('categories', [CategoryController::class, 'index'])->middleware('perm:base')->name('stores.categories.index');
+                Route::post('categories', [CategoryController::class, 'store'])->middleware('perm:products.edit')->name('stores.categories.store');
+                Route::put('categories/order', [CategoryController::class, 'reorder'])->middleware('perm:products.edit')->name('stores.categories.reorder');
+                Route::get('categories/{category}', [CategoryController::class, 'show'])->middleware('perm:base')->name('stores.categories.show');
+                Route::patch('categories/{category}', [CategoryController::class, 'update'])->middleware('perm:products.edit')->name('stores.categories.update');
+                Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->middleware('perm:products.delete')->name('stores.categories.destroy');
 
-                Route::get('products', [ProductController::class, 'index'])->name('stores.products.index');
-                Route::post('products', [ProductController::class, 'store'])->name('stores.products.store');
-                Route::post('products/bulk', [ProductController::class, 'bulk'])->name('stores.products.bulk');
-                Route::get('products/{product}', [ProductController::class, 'show'])->name('stores.products.show');
-                Route::patch('products/{product}', [ProductController::class, 'update'])->name('stores.products.update');
-                Route::delete('products/{product}', [ProductController::class, 'destroy'])->name('stores.products.destroy');
-                Route::post('products/{product}/duplicate', [ProductController::class, 'duplicate'])->name('stores.products.duplicate');
+                Route::get('products', [ProductController::class, 'index'])->middleware('perm:base')->name('stores.products.index');
+                Route::post('products', [ProductController::class, 'store'])->middleware('perm:products.edit')->name('stores.products.store');
+                Route::post('products/bulk', [ProductController::class, 'bulk'])->middleware('perm:products.edit')->name('stores.products.bulk');
+                Route::get('products/{product}', [ProductController::class, 'show'])->middleware('perm:base')->name('stores.products.show');
+                Route::patch('products/{product}', [ProductController::class, 'update'])->middleware('perm:products.edit')->name('stores.products.update');
+                Route::delete('products/{product}', [ProductController::class, 'destroy'])->middleware('perm:products.delete')->name('stores.products.destroy');
+                Route::post('products/{product}/duplicate', [ProductController::class, 'duplicate'])->middleware('perm:products.edit')->name('stores.products.duplicate');
 
-                Route::get('inventory', [InventoryController::class, 'index'])->name('stores.inventory.index');
-                Route::post('inventory/adjustments', [InventoryController::class, 'adjust'])->name('stores.inventory.adjust');
-                Route::get('inventory/movements', [InventoryController::class, 'movements'])->name('stores.inventory.movements');
-                Route::patch('inventory/{variant}', [InventoryController::class, 'update'])->name('stores.inventory.update');
+                Route::get('inventory', [InventoryController::class, 'index'])->middleware('perm:base')->name('stores.inventory.index');
+                Route::post('inventory/adjustments', [InventoryController::class, 'adjust'])->middleware('perm:inventory.adjust')->name('stores.inventory.adjust');
+                Route::get('inventory/movements', [InventoryController::class, 'movements'])->middleware('perm:base')->name('stores.inventory.movements');
+                Route::patch('inventory/{variant}', [InventoryController::class, 'update'])->middleware('perm:inventory.adjust')->name('stores.inventory.update');
 
-                Route::get('customers', [CustomerController::class, 'index'])->name('stores.customers.index');
-                Route::post('customers', [CustomerController::class, 'store'])->name('stores.customers.store');
-                Route::get('customers/{customer}', [CustomerController::class, 'show'])->name('stores.customers.show');
-                Route::patch('customers/{customer}', [CustomerController::class, 'update'])->name('stores.customers.update');
-                Route::delete('customers/{customer}', [CustomerController::class, 'destroy'])->name('stores.customers.destroy');
-                Route::post('customers/{customer}/notes', [CustomerController::class, 'addNote'])->name('stores.customers.notes.store');
-                Route::delete('customers/{customer}/notes/{note}', [CustomerController::class, 'deleteNote'])->name('stores.customers.notes.destroy');
+                Route::get('customers', [CustomerController::class, 'index'])->middleware('perm:customers.view')->name('stores.customers.index');
+                Route::post('customers', [CustomerController::class, 'store'])->middleware('perm:customers.edit')->name('stores.customers.store');
+                Route::get('customers/{customer}', [CustomerController::class, 'show'])->middleware('perm:customers.view')->name('stores.customers.show');
+                Route::patch('customers/{customer}', [CustomerController::class, 'update'])->middleware('perm:customers.edit')->name('stores.customers.update');
+                Route::delete('customers/{customer}', [CustomerController::class, 'destroy'])->middleware('perm:customers.delete')->name('stores.customers.destroy');
+                Route::post('customers/{customer}/notes', [CustomerController::class, 'addNote'])->middleware('perm:customers.edit')->name('stores.customers.notes.store');
+                Route::delete('customers/{customer}/notes/{note}', [CustomerController::class, 'deleteNote'])->middleware('perm:customers.edit')->name('stores.customers.notes.destroy');
 
-                Route::get('imports/template', [ImportController::class, 'template'])->name('stores.imports.template');
-                Route::post('imports', [ImportController::class, 'store'])->middleware('throttle:merchant-bulk')->name('stores.imports.store');
-                Route::get('imports/{import}', [ImportController::class, 'show'])->name('stores.imports.show');
-                Route::post('imports/{import}/validate', [ImportController::class, 'validateImport'])->name('stores.imports.validate');
-                Route::get('imports/{import}/rows', [ImportController::class, 'rows'])->name('stores.imports.rows');
-                Route::get('imports/{import}/error-report', [ImportController::class, 'errorReport'])->name('stores.imports.error-report');
-                Route::post('imports/{import}/run', [ImportController::class, 'run'])->middleware('throttle:merchant-bulk')->name('stores.imports.run');
-                Route::delete('imports/{import}', [ImportController::class, 'destroy'])->name('stores.imports.destroy');
-                Route::post('exports', [ExportController::class, 'store'])->middleware('throttle:merchant-bulk')->name('stores.exports.store');
-                Route::get('exports/{export}', [ExportController::class, 'show'])->name('stores.exports.show');
+                Route::get('imports/template', [ImportController::class, 'template'])->middleware('perm:data.import')->name('stores.imports.template');
+                Route::post('imports', [ImportController::class, 'store'])->middleware('throttle:merchant-bulk')->middleware('perm:data.import')->name('stores.imports.store');
+                Route::get('imports/{import}', [ImportController::class, 'show'])->middleware('perm:data.import')->name('stores.imports.show');
+                Route::post('imports/{import}/validate', [ImportController::class, 'validateImport'])->middleware('perm:data.import')->name('stores.imports.validate');
+                Route::get('imports/{import}/rows', [ImportController::class, 'rows'])->middleware('perm:data.import')->name('stores.imports.rows');
+                Route::get('imports/{import}/error-report', [ImportController::class, 'errorReport'])->middleware('perm:data.import')->name('stores.imports.error-report');
+                Route::post('imports/{import}/run', [ImportController::class, 'run'])->middleware('throttle:merchant-bulk')->middleware('perm:data.import')->name('stores.imports.run');
+                Route::delete('imports/{import}', [ImportController::class, 'destroy'])->middleware('perm:data.import')->name('stores.imports.destroy');
+                Route::post('exports', [ExportController::class, 'store'])->middleware('throttle:merchant-bulk')->middleware('perm:data.export')->name('stores.exports.store');
+                Route::get('exports/{export}', [ExportController::class, 'show'])->middleware('perm:data.export')->name('stores.exports.show');
 
                 // --- Phase 5a: shipping, coupons, orders, go-live ---
-                Route::get('shipping', [ShippingController::class, 'show'])->name('stores.shipping.show');
-                Route::put('shipping', [ShippingController::class, 'update'])->name('stores.shipping.update');
-                Route::post('pickup-locations', [ShippingController::class, 'storePickup'])->name('stores.pickup-locations.store');
-                Route::patch('pickup-locations/{location}', [ShippingController::class, 'updatePickup'])->name('stores.pickup-locations.update');
-                Route::delete('pickup-locations/{location}', [ShippingController::class, 'destroyPickup'])->name('stores.pickup-locations.destroy');
+                Route::get('shipping', [ShippingController::class, 'show'])->middleware('perm:base')->name('stores.shipping.show');
+                Route::put('shipping', [ShippingController::class, 'update'])->middleware('perm:settings.manage')->name('stores.shipping.update');
+                Route::post('pickup-locations', [ShippingController::class, 'storePickup'])->middleware('perm:settings.manage')->name('stores.pickup-locations.store');
+                Route::patch('pickup-locations/{location}', [ShippingController::class, 'updatePickup'])->middleware('perm:settings.manage')->name('stores.pickup-locations.update');
+                Route::delete('pickup-locations/{location}', [ShippingController::class, 'destroyPickup'])->middleware('perm:settings.manage')->name('stores.pickup-locations.destroy');
 
-                Route::get('coupons', [CouponController::class, 'index'])->name('stores.coupons.index');
-                Route::post('coupons', [CouponController::class, 'store'])->name('stores.coupons.store');
-                Route::get('coupons/{coupon}', [CouponController::class, 'show'])->name('stores.coupons.show');
-                Route::patch('coupons/{coupon}', [CouponController::class, 'update'])->name('stores.coupons.update');
-                Route::delete('coupons/{coupon}', [CouponController::class, 'destroy'])->name('stores.coupons.destroy');
+                Route::get('coupons', [CouponController::class, 'index'])->middleware('perm:base')->name('stores.coupons.index');
+                Route::post('coupons', [CouponController::class, 'store'])->middleware('perm:marketing.manage')->name('stores.coupons.store');
+                Route::get('coupons/{coupon}', [CouponController::class, 'show'])->middleware('perm:base')->name('stores.coupons.show');
+                Route::patch('coupons/{coupon}', [CouponController::class, 'update'])->middleware('perm:marketing.manage')->name('stores.coupons.update');
+                Route::delete('coupons/{coupon}', [CouponController::class, 'destroy'])->middleware('perm:marketing.manage')->name('stores.coupons.destroy');
 
-                Route::get('orders', [OrderController::class, 'index'])->name('stores.orders.index');
-                Route::post('orders/quote', [OrderController::class, 'quote'])->name('stores.orders.quote');
-                Route::post('orders/bulk', [OrderController::class, 'bulk'])->name('stores.orders.bulk');
-                Route::post('orders', [OrderController::class, 'store'])->middleware('idempotent:orders.create')->name('stores.orders.store');
-                Route::get('orders/{order}', [OrderController::class, 'show'])->name('stores.orders.show');
-                Route::patch('orders/{order}', [OrderController::class, 'update'])->name('stores.orders.update');
-                Route::post('orders/{order}/confirm', [OrderController::class, 'confirm'])->name('stores.orders.confirm');
-                Route::post('orders/{order}/ready', [OrderController::class, 'ready'])->name('stores.orders.ready');
-                Route::post('orders/{order}/ship', [OrderController::class, 'ship'])->name('stores.orders.ship');
-                Route::post('orders/{order}/deliver', [OrderController::class, 'deliver'])->name('stores.orders.deliver');
-                Route::post('orders/{order}/return', [OrderController::class, 'return'])->name('stores.orders.return');
-                Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('stores.orders.cancel');
-                Route::post('orders/{order}/notes', [OrderController::class, 'addNote'])->name('stores.orders.notes.store');
-                Route::post('orders/{order}/refunds', [OrderController::class, 'refund'])->middleware('idempotent:orders.refund')->name('stores.orders.refunds.store');
+                Route::get('orders', [OrderController::class, 'index'])->middleware('perm:orders.view|shipments.manage')->name('stores.orders.index');
+                Route::post('orders/quote', [OrderController::class, 'quote'])->middleware('perm:orders.view')->name('stores.orders.quote');
+                Route::post('orders/bulk', [OrderController::class, 'bulk'])->middleware('perm:orders.process')->name('stores.orders.bulk');
+                Route::post('orders', [OrderController::class, 'store'])->middleware('idempotent:orders.create')->middleware('perm:orders.view')->name('stores.orders.store');
+                Route::get('orders/{order}', [OrderController::class, 'show'])->middleware('perm:orders.view|shipments.manage')->name('stores.orders.show');
+                Route::patch('orders/{order}', [OrderController::class, 'update'])->middleware('perm:orders.process')->name('stores.orders.update');
+                Route::post('orders/{order}/confirm', [OrderController::class, 'confirm'])->middleware('perm:orders.process')->name('stores.orders.confirm');
+                Route::post('orders/{order}/ready', [OrderController::class, 'ready'])->middleware('perm:orders.process')->name('stores.orders.ready');
+                Route::post('orders/{order}/ship', [OrderController::class, 'ship'])->middleware('perm:orders.process')->name('stores.orders.ship');
+                Route::post('orders/{order}/deliver', [OrderController::class, 'deliver'])->middleware('perm:orders.process')->name('stores.orders.deliver');
+                Route::post('orders/{order}/return', [OrderController::class, 'return'])->middleware('perm:orders.process')->name('stores.orders.return');
+                Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('perm:orders.process')->name('stores.orders.cancel');
+                Route::post('orders/{order}/notes', [OrderController::class, 'addNote'])->middleware('perm:orders.view')->name('stores.orders.notes.store');
+                Route::post('orders/{order}/refunds', [OrderController::class, 'refund'])->middleware('idempotent:orders.refund')->middleware('perm:orders.refund')->name('stores.orders.refunds.store');
 
                 // --- Phase 5b-2: payment links (O A S) ---
-                Route::get('orders/{order}/payment-links', [PaymentLinkController::class, 'index'])->name('stores.orders.payment-links.index');
-                Route::post('orders/{order}/payment-links', [PaymentLinkController::class, 'store'])->middleware('idempotent:payment-links.create')->name('stores.orders.payment-links.store');
-                Route::post('orders/{order}/payment-links/{link}/resend', [PaymentLinkController::class, 'resend'])->name('stores.orders.payment-links.resend');
-                Route::delete('orders/{order}/payment-links/{link}', [PaymentLinkController::class, 'destroy'])->name('stores.orders.payment-links.destroy');
+                Route::get('orders/{order}/payment-links', [PaymentLinkController::class, 'index'])->middleware('perm:orders.view')->name('stores.orders.payment-links.index');
+                Route::post('orders/{order}/payment-links', [PaymentLinkController::class, 'store'])->middleware('idempotent:payment-links.create')->middleware('perm:orders.process')->name('stores.orders.payment-links.store');
+                Route::post('orders/{order}/payment-links/{link}/resend', [PaymentLinkController::class, 'resend'])->middleware('perm:orders.process')->name('stores.orders.payment-links.resend');
+                Route::delete('orders/{order}/payment-links/{link}', [PaymentLinkController::class, 'destroy'])->middleware('perm:orders.process')->name('stores.orders.payment-links.destroy');
 
                 // --- Phase 5b-5: order changes (edit items, restock), returns & exchanges ---
-                Route::post('orders/{order}/items/quote', [OrderChangeController::class, 'quoteItems'])->name('stores.orders.items.quote');
-                Route::put('orders/{order}/items', [OrderChangeController::class, 'updateItems'])->name('stores.orders.items.update');
-                Route::post('orders/{order}/restock', [OrderChangeController::class, 'restock'])->name('stores.orders.restock');
-                Route::post('orders/{order}/returns', [ReturnController::class, 'store'])->name('stores.orders.returns.store');
-                Route::get('returns', [ReturnController::class, 'index'])->name('stores.returns.index');
-                Route::get('returns/{return}', [ReturnController::class, 'show'])->name('stores.returns.show');
-                Route::post('returns/{return}/approve', [ReturnController::class, 'approve'])->name('stores.returns.approve');
-                Route::post('returns/{return}/reject', [ReturnController::class, 'reject'])->name('stores.returns.reject');
-                Route::post('returns/{return}/receive', [ReturnController::class, 'receive'])->name('stores.returns.receive');
-                Route::post('returns/{return}/close', [ReturnController::class, 'close'])->name('stores.returns.close');
-                Route::post('returns/{return}/exchange-order', [ReturnController::class, 'exchangeOrder'])->middleware('idempotent:returns.exchange')->name('stores.returns.exchange-order');
-                Route::post('returns/{return}/notes', [ReturnController::class, 'addNote'])->name('stores.returns.notes.store');
+                Route::post('orders/{order}/items/quote', [OrderChangeController::class, 'quoteItems'])->middleware('perm:orders.process')->name('stores.orders.items.quote');
+                Route::put('orders/{order}/items', [OrderChangeController::class, 'updateItems'])->middleware('perm:orders.process')->name('stores.orders.items.update');
+                Route::post('orders/{order}/restock', [OrderChangeController::class, 'restock'])->middleware('perm:orders.process')->name('stores.orders.restock');
+                Route::post('orders/{order}/returns', [ReturnController::class, 'store'])->middleware('perm:orders.process')->name('stores.orders.returns.store');
+                Route::get('returns', [ReturnController::class, 'index'])->middleware('perm:orders.view')->name('stores.returns.index');
+                Route::get('returns/{return}', [ReturnController::class, 'show'])->middleware('perm:orders.view')->name('stores.returns.show');
+                Route::post('returns/{return}/approve', [ReturnController::class, 'approve'])->middleware('perm:orders.process')->name('stores.returns.approve');
+                Route::post('returns/{return}/reject', [ReturnController::class, 'reject'])->middleware('perm:orders.process')->name('stores.returns.reject');
+                Route::post('returns/{return}/receive', [ReturnController::class, 'receive'])->middleware('perm:orders.process')->name('stores.returns.receive');
+                Route::post('returns/{return}/close', [ReturnController::class, 'close'])->middleware('perm:orders.process')->name('stores.returns.close');
+                Route::post('returns/{return}/exchange-order', [ReturnController::class, 'exchangeOrder'])->middleware('idempotent:returns.exchange')->middleware('perm:orders.process')->name('stores.returns.exchange-order');
+                Route::post('returns/{return}/notes', [ReturnController::class, 'addNote'])->middleware('perm:orders.view')->name('stores.returns.notes.store');
 
                 // --- Phase 5b-4: documents (invoices, receipts, packing slips, courier labels) ---
-                Route::get('document-templates', [DocumentController::class, 'templates'])->name('stores.document-templates.index');
+                Route::get('document-templates', [DocumentController::class, 'templates'])->middleware('perm:base')->name('stores.document-templates.index');
                 Route::put('document-templates/{kind}', [DocumentController::class, 'updateTemplate'])
-                    ->where('kind', 'invoice_a4|receipt_80mm|invoice_a5_two_up|packing_slip|label_4x6')->name('stores.document-templates.update');
-                Route::post('documents', [DocumentController::class, 'store'])->name('stores.documents.store');
-                Route::post('documents/preview', [DocumentController::class, 'preview'])->middleware('throttle:30,1,stores.documents.preview')->name('stores.documents.preview');
-                Route::get('documents/{document}', [DocumentController::class, 'show'])->name('stores.documents.show');
+                    ->where('kind', 'invoice_a4|receipt_80mm|invoice_a5_two_up|packing_slip|label_4x6')->middleware('perm:settings.manage')->name('stores.document-templates.update');
+                Route::post('documents', [DocumentController::class, 'store'])->middleware('perm:orders.view|shipments.manage')->name('stores.documents.store');
+                Route::post('documents/preview', [DocumentController::class, 'preview'])->middleware('throttle:30,1,stores.documents.preview')->middleware('perm:orders.view|shipments.manage')->name('stores.documents.preview');
+                Route::get('documents/{document}', [DocumentController::class, 'show'])->middleware('perm:orders.view|shipments.manage')->name('stores.documents.show');
 
                 // --- Phase 5b-3: shipments (courier booking, list, detail, sync; O A S) ---
-                Route::post('orders/{order}/shipments', [ShipmentController::class, 'store'])->middleware('idempotent:shipments.book')->name('stores.orders.shipments.store');
-                Route::post('shipments/bulk', [ShipmentController::class, 'bulk'])->middleware('throttle:20,1,stores.shipments.bulk')->name('stores.shipments.bulk');
-                Route::get('shipment-batches/{batch}', [ShipmentController::class, 'batch'])->where('batch', '[0-9A-Za-z]{26}')->name('stores.shipment-batches.show');
-                Route::get('shipments', [ShipmentController::class, 'index'])->name('stores.shipments.index');
-                Route::post('shipments/sync', [ShipmentController::class, 'syncNow'])->name('stores.shipments.sync');
-                Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->where('shipment', '[0-9A-Za-z]{26}')->name('stores.shipments.show');
-                Route::post('shipments/{shipment}/refresh', [ShipmentController::class, 'refresh'])->where('shipment', '[0-9A-Za-z]{26}')->name('stores.shipments.refresh');
-                Route::post('shipments/{shipment}/cancel', [ShipmentController::class, 'cancel'])->where('shipment', '[0-9A-Za-z]{26}')->name('stores.shipments.cancel');
-                Route::post('shipments/{shipment}/mark-cancelled', [ShipmentController::class, 'markCancelled'])->where('shipment', '[0-9A-Za-z]{26}')->name('stores.shipments.mark-cancelled');
+                Route::post('orders/{order}/shipments', [ShipmentController::class, 'store'])->middleware('idempotent:shipments.book')->middleware('perm:shipments.manage')->name('stores.orders.shipments.store');
+                Route::post('shipments/bulk', [ShipmentController::class, 'bulk'])->middleware('throttle:20,1,stores.shipments.bulk')->middleware('perm:shipments.manage')->name('stores.shipments.bulk');
+                Route::get('shipment-batches/{batch}', [ShipmentController::class, 'batch'])->where('batch', '[0-9A-Za-z]{26}')->middleware('perm:shipments.manage|orders.view')->name('stores.shipment-batches.show');
+                Route::get('shipments', [ShipmentController::class, 'index'])->middleware('perm:shipments.manage|orders.view')->name('stores.shipments.index');
+                Route::post('shipments/sync', [ShipmentController::class, 'syncNow'])->middleware('perm:shipments.manage')->name('stores.shipments.sync');
+                Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->where('shipment', '[0-9A-Za-z]{26}')->middleware('perm:shipments.manage|orders.view')->name('stores.shipments.show');
+                Route::post('shipments/{shipment}/refresh', [ShipmentController::class, 'refresh'])->where('shipment', '[0-9A-Za-z]{26}')->middleware('perm:shipments.manage')->name('stores.shipments.refresh');
+                Route::post('shipments/{shipment}/cancel', [ShipmentController::class, 'cancel'])->where('shipment', '[0-9A-Za-z]{26}')->middleware('perm:shipments.cancel')->name('stores.shipments.cancel');
+                Route::post('shipments/{shipment}/mark-cancelled', [ShipmentController::class, 'markCancelled'])->where('shipment', '[0-9A-Za-z]{26}')->middleware('perm:shipments.cancel')->name('stores.shipments.mark-cancelled');
 
                 // --- Phase 5b-2: payment gateways (reads O A S, writes O A ManageIntegrations) ---
-                Route::get('payment-gateways', [PaymentGatewayController::class, 'index'])->name('stores.payment-gateways.index');
+                Route::get('payment-gateways', [PaymentGatewayController::class, 'index'])->middleware('perm:base')->name('stores.payment-gateways.index');
                 Route::put('payment-gateways/{provider}', [PaymentGatewayController::class, 'connect'])->where('provider', 'bkash|sslcommerz')
-                    ->middleware('throttle:20,1,stores.payment-gateways.connect')->name('stores.payment-gateways.connect');
-                Route::patch('payment-gateways/{provider}', [PaymentGatewayController::class, 'update'])->where('provider', 'bkash|sslcommerz')->name('stores.payment-gateways.update');
-                Route::delete('payment-gateways/{provider}', [PaymentGatewayController::class, 'disconnect'])->where('provider', 'bkash|sslcommerz')->name('stores.payment-gateways.disconnect');
+                    ->middleware('throttle:20,1,stores.payment-gateways.connect')->middleware('perm:integrations.manage')->name('stores.payment-gateways.connect');
+                Route::patch('payment-gateways/{provider}', [PaymentGatewayController::class, 'update'])->where('provider', 'bkash|sslcommerz')->middleware('perm:integrations.manage')->name('stores.payment-gateways.update');
+                Route::delete('payment-gateways/{provider}', [PaymentGatewayController::class, 'disconnect'])->where('provider', 'bkash|sslcommerz')->middleware('perm:integrations.manage')->name('stores.payment-gateways.disconnect');
                 Route::post('payment-gateways/{provider}/test-payment', [PaymentGatewayController::class, 'testPayment'])->where('provider', 'bkash|sslcommerz')
-                    ->middleware(['throttle:20,1,stores.payment-gateways.test-payment', 'idempotent:payment-gateways.test'])->name('stores.payment-gateways.test-payment');
+                    ->middleware(['throttle:20,1,stores.payment-gateways.test-payment', 'idempotent:payment-gateways.test'])->middleware('perm:integrations.manage')->name('stores.payment-gateways.test-payment');
 
                 // --- Phase 5b-3: couriers (reads O A S, writes O A ManageIntegrations) ---
-                Route::get('couriers', [CourierAccountController::class, 'index'])->name('stores.couriers.index');
+                Route::get('couriers', [CourierAccountController::class, 'index'])->middleware('perm:base')->name('stores.couriers.index');
                 Route::put('couriers/{provider}', [CourierAccountController::class, 'connect'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1,stores.couriers.connect')->name('stores.couriers.connect');
-                Route::patch('couriers/{provider}', [CourierAccountController::class, 'update'])->where('provider', 'steadfast|pathao|redx')->name('stores.couriers.update');
-                Route::delete('couriers/{provider}', [CourierAccountController::class, 'disconnect'])->where('provider', 'steadfast|pathao|redx')->name('stores.couriers.disconnect');
+                    ->middleware('throttle:20,1,stores.couriers.connect')->middleware('perm:integrations.manage')->name('stores.couriers.connect');
+                Route::patch('couriers/{provider}', [CourierAccountController::class, 'update'])->where('provider', 'steadfast|pathao|redx')->middleware('perm:integrations.manage')->name('stores.couriers.update');
+                Route::delete('couriers/{provider}', [CourierAccountController::class, 'disconnect'])->where('provider', 'steadfast|pathao|redx')->middleware('perm:integrations.manage')->name('stores.couriers.disconnect');
                 Route::post('couriers/{provider}/test', [CourierAccountController::class, 'test'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1,stores.couriers.test')->name('stores.couriers.test');
+                    ->middleware('throttle:20,1,stores.couriers.test')->middleware('perm:integrations.manage')->name('stores.couriers.test');
                 Route::post('couriers/{provider}/webhook-secret', [CourierAccountController::class, 'rotateWebhookSecret'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:20,1,stores.couriers.webhook-secret')->name('stores.couriers.webhook-secret');
+                    ->middleware('throttle:20,1,stores.couriers.webhook-secret')->middleware('perm:integrations.manage')->name('stores.couriers.webhook-secret');
                 Route::get('couriers/{provider}/areas', [CourierAccountController::class, 'areas'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:120,1,stores.couriers.areas')->name('stores.couriers.areas');
+                    ->middleware('throttle:120,1,stores.couriers.areas')->middleware('perm:base')->name('stores.couriers.areas');
                 Route::get('couriers/{provider}/pickup-stores', [CourierAccountController::class, 'pickupStores'])->where('provider', 'steadfast|pathao|redx')
-                    ->middleware('throttle:30,1,stores.couriers.pickup-stores')->name('stores.couriers.pickup-stores');
+                    ->middleware('throttle:30,1,stores.couriers.pickup-stores')->middleware('perm:base')->name('stores.couriers.pickup-stores');
 
                 // --- Phase 6: custom domains (reads O A S, writes O A ManageDomains; PHASE-6 §4.1) ---
-                Route::get('domains', [DomainController::class, 'index'])->name('stores.domains.index');
-                Route::post('domains', [DomainController::class, 'store'])->middleware('throttle:domains')->name('stores.domains.store');
-                Route::get('domains/{domain}', [DomainController::class, 'show'])->where('domain', '[0-9A-Za-z]{26}')->name('stores.domains.show');
+                Route::get('domains', [DomainController::class, 'index'])->middleware('perm:base')->name('stores.domains.index');
+                Route::post('domains', [DomainController::class, 'store'])->middleware('throttle:domains')->middleware('perm:domains.manage')->name('stores.domains.store');
+                Route::get('domains/{domain}', [DomainController::class, 'show'])->where('domain', '[0-9A-Za-z]{26}')->middleware('perm:base')->name('stores.domains.show');
                 Route::delete('domains/{domain}', [DomainController::class, 'destroy'])->where('domain', '[0-9A-Za-z]{26}')
-                    ->middleware('throttle:domains')->name('stores.domains.destroy');
+                    ->middleware('throttle:domains')->middleware('perm:domains.manage')->name('stores.domains.destroy');
                 Route::post('domains/{domain}/verify', [DomainController::class, 'verify'])->where('domain', '[0-9A-Za-z]{26}')
-                    ->middleware('throttle:domains')->name('stores.domains.verify');
+                    ->middleware('throttle:domains')->middleware('perm:domains.manage')->name('stores.domains.verify');
                 Route::post('domains/{domain}/primary', [DomainController::class, 'primary'])->where('domain', '[0-9A-Za-z]{26}')
-                    ->middleware('throttle:domains')->name('stores.domains.primary');
+                    ->middleware('throttle:domains')->middleware('perm:domains.manage')->name('stores.domains.primary');
 
-                Route::get('launch-checklist', [LaunchController::class, 'checklist'])->name('stores.launch-checklist');
-                Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1,stores.publish')->name('stores.publish');
+                Route::get('launch-checklist', [LaunchController::class, 'checklist'])->middleware('perm:base')->name('stores.launch-checklist');
+                Route::post('publish', [LaunchController::class, 'publish'])->middleware('throttle:20,1,stores.publish')->middleware('perm:settings.manage')->name('stores.publish');
             });
         });
 
-        Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
-        Route::post('staff/invitations', [InvitationController::class, 'store'])->name('staff.invitations.store');
+        Route::get('staff', [StaffController::class, 'index'])->middleware('perm:staff.manage')->name('staff.index');
+        Route::post('staff/invitations', [InvitationController::class, 'store'])->middleware('perm:staff.manage')->name('staff.invitations.store');
         Route::post('staff/invitations/{invitation}/resend', [InvitationController::class, 'resend'])
             ->middleware('throttle:invitation-resend')
-            ->name('staff.invitations.resend');
-        Route::delete('staff/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('staff.invitations.destroy');
-        Route::patch('staff/{member}', [StaffController::class, 'update'])->name('staff.update');
-        Route::delete('staff/{member}', [StaffController::class, 'destroy'])->name('staff.destroy');
+            ->middleware('perm:staff.manage')->name('staff.invitations.resend');
+        Route::delete('staff/invitations/{invitation}', [InvitationController::class, 'destroy'])->middleware('perm:staff.manage')->name('staff.invitations.destroy');
+        Route::patch('staff/{member}', [StaffController::class, 'update'])->middleware('perm:staff.manage')->name('staff.update');
+        Route::delete('staff/{member}', [StaffController::class, 'destroy'])->middleware('perm:base')->name('staff.destroy');
 
-        Route::get('media', [MediaController::class, 'index'])->name('media.index');
-        Route::post('media', [MediaController::class, 'store'])->middleware('throttle:60,1,media.store')->name('media.store');
-        Route::get('media/{media}', [MediaController::class, 'show'])->name('media.show');
-        Route::delete('media/{media}', [MediaController::class, 'destroy'])->name('media.destroy');
+        // --- Phase 8.3: custom roles & permissions (PHASE-8-3 §6.1; writes also need custom_roles, §4 rules in RoleService) ---
+        Route::get('permissions', [RoleController::class, 'permissions'])->middleware('perm:staff.manage')->name('permissions.index');
+        Route::get('roles', [RoleController::class, 'index'])->middleware('perm:staff.manage')->name('roles.index');
+        Route::post('roles', [RoleController::class, 'store'])->middleware('perm:staff.manage')->name('roles.store');
+        Route::get('roles/{role}', [RoleController::class, 'show'])->middleware('perm:staff.manage')->name('roles.show');
+        Route::patch('roles/{role}', [RoleController::class, 'update'])->middleware('perm:staff.manage')->name('roles.update');
+        Route::delete('roles/{role}', [RoleController::class, 'destroy'])->middleware('perm:staff.manage')->name('roles.destroy');
 
-        Route::get('subscription', [BillingController::class, 'subscription'])->name('subscription.show');
-        Route::get('features', [BillingController::class, 'features'])->name('features.index');
+        Route::get('media', [MediaController::class, 'index'])->middleware('perm:base')->name('media.index');
+        Route::post('media', [MediaController::class, 'store'])->middleware('throttle:60,1,media.store')->middleware('perm:products.edit|settings.manage')->name('media.store');
+        Route::get('media/{media}', [MediaController::class, 'show'])->middleware('perm:base')->name('media.show');
+        Route::delete('media/{media}', [MediaController::class, 'destroy'])->middleware('perm:products.edit|settings.manage')->name('media.destroy');
+
+        Route::get('subscription', [BillingController::class, 'subscription'])->middleware('perm:billing.view')->name('subscription.show');
+        Route::get('features', [BillingController::class, 'features'])->middleware('perm:base')->name('features.index');
 
         // --- Phase 7 (7.2): platform billing (PHASE-7-CONTRACT §6.1; tenant-level, no {store}) ---
         Route::prefix('billing')->group(function (): void {
             Route::middleware('throttle:billing')->group(function (): void {
-                Route::post('quote', [BillingChangeController::class, 'quote'])->name('billing.quote');
-                Route::post('change-plan', [BillingChangeController::class, 'change'])->name('billing.change-plan');
-                Route::delete('scheduled-change', [BillingChangeController::class, 'cancelScheduled'])->name('billing.scheduled-change.destroy');
-                Route::post('invoices/{invoice}/pay', [BillingInvoiceController::class, 'pay'])->name('billing.invoices.pay');
+                Route::post('quote', [BillingChangeController::class, 'quote'])->middleware('perm:billing.view')->name('billing.quote');
+                Route::post('change-plan', [BillingChangeController::class, 'change'])->middleware('perm:billing.manage')->name('billing.change-plan');
+                Route::delete('scheduled-change', [BillingChangeController::class, 'cancelScheduled'])->middleware('perm:billing.manage')->name('billing.scheduled-change.destroy');
+                Route::post('invoices/{invoice}/pay', [BillingInvoiceController::class, 'pay'])->middleware('perm:billing.manage')->name('billing.invoices.pay');
             });
             Route::middleware('throttle:merchant')->group(function (): void {
-                Route::get('invoices', [BillingInvoiceController::class, 'index'])->name('billing.invoices.index');
-                Route::get('invoices/{invoice}', [BillingInvoiceController::class, 'show'])->name('billing.invoices.show');
-                Route::get('invoices/{invoice}/pdf', [BillingInvoiceController::class, 'pdf'])->name('billing.invoices.pdf');
-                Route::get('payments/{payment}', [BillingInvoiceController::class, 'payment'])->name('billing.payments.show');
+                Route::get('invoices', [BillingInvoiceController::class, 'index'])->middleware('perm:billing.view')->name('billing.invoices.index');
+                Route::get('invoices/{invoice}', [BillingInvoiceController::class, 'show'])->middleware('perm:billing.view')->name('billing.invoices.show');
+                Route::get('invoices/{invoice}/pdf', [BillingInvoiceController::class, 'pdf'])->middleware('perm:billing.view')->name('billing.invoices.pdf');
+                Route::get('payments/{payment}', [BillingInvoiceController::class, 'payment'])->middleware('perm:billing.view')->name('billing.payments.show');
             });
         });
         // Phase 7 (§4.6): TESTING-ONLY billing clock (404 unless BILLING_FAKE=true; never registered in production).
         if (! app()->environment('production')) {
-            Route::post('dev/billing/clock', DevBillingController::class)->middleware('throttle:60,1,dev.billing')->name('dev.billing.clock');
+            Route::post('dev/billing/clock', DevBillingController::class)->middleware('throttle:60,1,dev.billing')->middleware('perm:billing.manage')->name('dev.billing.clock');
         }
 
-        Route::get('audit-logs', AuditLogController::class)->name('audit-logs.index');
+        Route::get('audit-logs', AuditLogController::class)->middleware('perm:audit.view')->name('audit-logs.index');
     });
 
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
