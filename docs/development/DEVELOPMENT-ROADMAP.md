@@ -189,9 +189,12 @@ performance reports (Q85), super-admin billing screens (8.1), refunds of platfor
 | 7.4 | Reports: Sales `60:11864`, Profit `60:12262`, Delivery `60:12660` (section 60:11810) | API/WEB | Matches order data; store (tenant) timezone; Profit Growth + O A |
 
 ## Phase 8 — Super admin, analytics, extended modules
+One contract per task, each with its own build cycle and QA gate. **8.1** contract: `docs/development/PHASE-8-1-CONTRACT.md`
+(draft 2026-11-23 for PO review; branch `phase-8-super-admin`; openapi 1.9.0; ADR 0015; defaults Q91–Q102). The admin
+Figma (`5:189`) also designs 8.2 metrics (MRR, GMV, health), risk, support and settings screens; 8.1 hides them.
 | # | Task | Owner | AC |
 |---|---|---|---|
-| 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189) | API/WEB | Read-only impersonation audited |
+| 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
 | 8.2 | Platform analytics (GMV, MRR, churn) | API/WEB | Nightly aggregates |
 | 8.3 | Custom roles & permissions (89:26676) | API/WEB | Granular permissions enforced |
 | 8.4 | Developer API keys + outbound webhooks (144:40725) | API/WEB | HMAC signatures; retries |

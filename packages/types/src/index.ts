@@ -185,7 +185,8 @@ export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled
 // ---------- Audit ----------
 export interface AuditLog {
   id: string; action: string;
-  actor: { type: 'user' | 'system'; id: string | null; name: string | null } | null;
+  /** Phase 8.1: `platform_user` = Storeplix staff, shown as "Store Plix support" (id null for merchants). */
+  actor: { type: AuditActorType; id: string | null; name: string | null } | null;
   subject: { type: string; id: string } | null;
   meta: Record<string, unknown>;
   ip: string | null; user_agent: string | null; created_at: string;
@@ -1319,4 +1320,128 @@ export interface DeliveryReport {
     provider: CourierProvider; problem: string | null; last_location: string | null; last_event_at: string | null;
   }[];
   districts: { district_code: string; district_name: string; parcels_count: number; success_rate: number | null }[];
+}
+
+// ---------- Phase 8.1: super admin (PHASE-8-1-CONTRACT; openapi 1.9.0) ----------
+export type AuditActorType = 'user' | 'system' | 'platform_user';
+export type PlatformRole = 'super_admin' | 'billing' | 'support' | 'read_only';
+export type PlatformPermission = 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team';
+export type SuspensionReasonCode = 'unpaid' | 'fraud' | 'terms_violation' | 'merchant_request' | 'other';
+export type AdminPlanChangeEffective = 'now' | 'next_renewal';
+export type ImpersonationStatus = 'pending' | 'active' | 'ended' | 'expired';
+export type AdminTenantStatus = 'active' | 'suspended';
+export type AdminTenantTab = 'all' | 'active' | 'paying' | 'trial' | 'past_due' | 'suspended';
+export type AdminDomainState = 'all' | 'dns_pending' | 'ssl_failing' | 'active' | 'suspended' | 'expired';
+
+export interface AdminLoginInput { email: string; password: string }
+export type AdminTotpInput = { login_token: string; code: string } | { login_token: string; recovery_code: string };
+export interface AdminLoginStep { step: 'totp' | 'enroll'; login_token: string; expires_at: string }
+export interface TotpEnrollment { otpauth_uri: string; qr_svg: string; secret: string }
+export interface PlatformUser {
+  id: string; name: string; email: string; platform_role: PlatformRole; permissions: PlatformPermission[];
+  totp_enrolled: boolean; recovery_codes_left: number;
+}
+export interface AdminSession { user: PlatformUser; session_expires_at: string; idle_expires_at: string }
+export interface PlatformInvitationLookup { email: string; role: PlatformRole; existing_user: boolean }
+export interface AcceptPlatformInvitationInput { name?: string; password: string; password_confirmation?: string }
+
+export interface AdminShopRef { id: string; name: string; slug: string }
+export interface AdminOwner { id: string; name: string; email: string; phone: string | null }
+export interface AdminTenantSummary {
+  id: string; name: string; status: AdminTenantStatus;
+  store: { id: string; name: string; slug: string; status: 'draft' | 'active' | 'suspended'; primary_host: string };
+  owner: AdminOwner | null;
+  plan_code: string; billing_interval: BillingInterval | null; subscription_status: SubscriptionStatus | null;
+  trial_ends_at: string | null; current_period_end: string | null; created_at: string;
+}
+export interface AdminTenantCounts { all: number; paying: number; trial: number; past_due: number; suspended: number }
+export interface AdminTenant extends AdminTenantSummary {
+  suspension: { suspended_at: string; reason_code: SuspensionReasonCode; store_status_before: 'draft' | 'active' } | null;
+  subscription: Subscription | null;
+  usage: { key: LimitKey; used: number; limit: number | null }[];
+  member_count: number; domain_count: number; lifetime_paid_amount: number;
+  open_invoice: AdminInvoiceSummary | null;
+}
+export interface AdminTenantMember {
+  id: string | null; name: string | null; email: string; phone: string | null;
+  role: 'owner' | 'admin' | 'staff'; status: 'active' | 'invited'; joined_at: string | null;
+}
+export interface AdminDomain {
+  id: string; hostname: string; tenant: AdminShopRef; kind: 'platform' | 'custom'; status: DomainStatus;
+  failure_code: DomainFailureCode | null; is_primary: boolean; dns_ok: boolean | null; ssl_ok: boolean | null;
+  last_checked_at: string | null; created_at: string;
+}
+export interface AdminInvoiceSummary {
+  id: string; number: string; tenant: AdminShopRef; kind: string; status: BillingInvoiceStatus; plan_code: string;
+  billing_interval: BillingInterval; total_amount: number; currency: 'BDT'; provider: string | null;
+  issued_at: string; due_at: string | null; paid_at: string | null;
+}
+export interface AdminInvoice extends BillingInvoice {
+  tenant: AdminShopRef;
+  payments: (BillingPayment & { provider_reference: string | null; is_duplicate: boolean })[];
+}
+export interface AdminOverview {
+  tenants: { total: number; active: number; suspended: number };
+  subscriptions: { paying: number; trialing: number; free: number; past_due: number; by_plan: { plan_code: string; count: number }[] };
+  past_due: { count: number; amount: number; currency: 'BDT' };
+  open_invoices: number;
+  domains: { active: number; pending: number; failing: number; suspended: number };
+  active_impersonations: number;
+  newest_tenants: AdminTenantSummary[];
+}
+export interface AdminSearchResult { tenants: AdminTenantSummary[]; domains: AdminDomain[]; invoices: AdminInvoiceSummary[] }
+export interface AdminAuditEntry {
+  id: string; action: string;
+  actor: { type: AuditActorType; id: string | null; name: string | null; email: string | null };
+  tenant: AdminShopRef | null;
+  subject: { type: string; id: string } | null;
+  reason: string | null; ip: string | null; user_agent: string | null;
+  meta: Record<string, unknown> | null; impersonation_id: string | null; created_at: string;
+}
+export interface CursorMeta { next_cursor: string | null; prev_cursor: string | null; per_page: number }
+
+export interface Impersonation {
+  id: string; status: ImpersonationStatus; staff: { id: string; name: string; email: string }; tenant: AdminShopRef;
+  reason: string; ticket_ref: string | null; started_at: string | null; expires_at: string | null; ended_at: string | null;
+  ended_by: 'staff' | 'expiry' | 'revoked' | null; request_count: number; created_at: string;
+}
+export interface ImpersonationTicket { id: string; url: string; ticket_expires_at: string }
+/** `/auth/me` meta.impersonation (merchant app) */
+export interface MeImpersonation {
+  id: string; tenant_id: string; tenant_name: string; owner_name: string | null; reason: string; expires_at: string;
+}
+export interface ImpersonationStart { user: User; impersonation: MeImpersonation; session_expires_at: string }
+
+export interface PlatformStaff {
+  id: string; kind: 'user' | 'invitation'; name: string | null; email: string; role: PlatformRole;
+  status: 'active' | 'invited' | 'disabled' | 'locked'; totp_enrolled: boolean; invited_at: string | null;
+  /** invitations only */
+  expires_at: string | null;
+}
+export interface PlatformInvitation { id: string; email: string; role: PlatformRole; expires_at: string; created_at: string }
+export interface PlatformRoleMatrix {
+  roles: PlatformRole[]; permissions: PlatformPermission[]; grants: Partial<Record<PlatformRole, PlatformPermission[]>>;
+}
+export interface PlatformTeamMeta {
+  counts: { all: number; active: number; invited: number; disabled: number };
+  matrix: PlatformRoleMatrix;
+  security: { totp_required: true; ip_allowlist_enabled: boolean; session_idle_minutes: number; impersonation_minutes: number };
+}
+
+export interface AdminSuspendInput { reason_code: SuspensionReasonCode; reason: string; notify: boolean }
+export interface AdminReactivateInput { reason: string; notify: boolean }
+export interface AdminQuoteInput { plan_code: string; interval: BillingInterval; effective: AdminPlanChangeEffective }
+export interface AdminChangePlanInput extends AdminQuoteInput { reason: string; notify: boolean }
+export interface AdminExtendInput { days: number; reason: string }
+export interface AdminMarkPaidInput { reference: string; reason: string }
+export interface AdminReasonInput { reason: string }
+export interface CreateImpersonationInput { reason: string; ticket_ref?: string | null }
+export interface InvitePlatformStaffInput { email: string; role: PlatformRole }
+export interface UpdatePlatformStaffInput { role: PlatformRole; reason: string }
+
+/** Phase 8.1 (P8-12): the whole `/storefront/config` answer for a suspended shop. */
+export interface StorefrontSuspended { availability: 'suspended' }
+export type StorefrontConfigResponse = StorefrontConfig | StorefrontSuspended;
+export function isStorefrontSuspended(c: StorefrontConfigResponse): c is StorefrontSuspended {
+  return (c as StorefrontSuspended).availability === 'suspended';
 }

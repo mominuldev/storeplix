@@ -94,6 +94,18 @@ Each item has a **default** the team builds against until the PO answers. Answer
 | Q88 | Billing roles and emails | Only the owner changes the plan or pays (ManageBilling); admins see plan and invoices; billing emails to the owner only | Admins paying needs a permission change only | **Answered: default accepted (PO 2026-11-23).** |
 | Q89 | Late and duplicate Storeplix payments | A payment verified after its invoice was voided reactivates the plan from the payment date; a duplicate is flagged and refunded by ops in the provider panel within 7 days; no credit balance (P7-14) | Needs an ops refund routine (RUNBOOK §10) | **Answered: default accepted (PO 2026-11-23).** |
 | Q90 | **Platform gateway accounts** (refines Q5): Storeplix's own bKash PGW and SSLCommerz merchant accounts with sandbox credentials | **Open.** Phase 7 is built on fakes (`BILLING_FAKE`); certification (PHASE-7 §13) is a post-build blocker until these exist | Without them no merchant can pay a real invoice | |
+| Q91 | Platform roles: Figma `39:12019` shows five (incl. Engineering) and a "New role" editor | Four fixed roles `super_admin`, `billing`, `support`, `read_only` (PHASE-8-1 P8-2); Engineering and custom roles when themes/integrations admin exists | A role editor is its own security feature | |
+| Q92 | Log every page a staff member opens while impersonating? | No: start/end audit rows on the shop's log + a request counter (P8-11) | Per-request logging = one write per GET | |
+| Q93 | 2FA options for platform staff | Mandatory TOTP + 10 recovery codes; no "trust this device", no security keys (P8-4) | Keys/trusted devices later without schema change | |
+| Q94 | May Support suspend shops? (Figma matrix row "suspend") | No: Super admin only; Support can impersonate and re-check domains | Matrix change only | |
+| Q95 | Admin "Change plan → Now (prorate) → Charge today" (`45:4989`) | Not built: "Now" is a comp change with no charge; "At next renewal" schedules it (P8-13) | Staff can't bill a prorated upgrade on the merchant's behalf | |
+| Q96 | Editable permission matrix | Read-only in 8.1 | — | |
+| Q97 | Dunning settings, retry queue, "Retry now", "Send reminder" (`34:859`, `33:4851`) | Not built: no auto-debit exists (Q83), so nothing to retry; reminders stay automatic | — | |
+| Q98 | Plans & pricing editor and "Schedule migration" (`35:1193`) | Not built; prices stay in `PlanSeeder` + migrations | Price changes need a deploy | |
+| Q99 | "Add merchant" wizard (`46:6071`) incl. WooCommerce import and welcome SMS | Not built; merchants sign up themselves | Assisted onboarding is manual | |
+| Q100 | Hash-chained audit log, "Verify chain", before/after diffs (`39:16118`) | Not built; `audit_logs` is already append-only in the DB (T18). Phase 9.4 | — | |
+| Q101 | Suspended storefront: "temporarily unavailable" (Figma) or "Store not found" | Figma: 503 "temporarily unavailable" page without shop name or reason, on every host (P8-12) | Reveals that the host is a suspended shop | |
+| Q102 | Notify the owner on suspend / reactivate / staff plan changes | Email the owner when "Notify" is checked (default checked); no SMS in 8.1 | — | |
 
 ## Phase 5b defaults as built (Q45–Q63)
 All accepted by the PO on 2026-11-22 and built on `phase-5b-online-money`. Where the code is the evidence:

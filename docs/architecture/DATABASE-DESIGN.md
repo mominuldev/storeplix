@@ -98,7 +98,7 @@ erDiagram
 | phone | varchar(20) null | E.164 |
 | password | varchar(255) | argon2id |
 | email_verified_at, phone_verified_at | timestamptz null | |
-| platform_role | varchar(32) null | `CHECK IN ('super_admin','support','finance')`; null = normal user |
+| platform_role | varchar(16) null | `CHECK IN ('super_admin','billing','support','read_only')`; null = normal user (**amended** by PHASE-8-1 P8-2; more staff columns in its §5.1) |
 | two_factor_secret, two_factor_recovery_codes | text null | encrypted cast |
 | last_login_at | timestamptz null | |
 | created_at, updated_at | timestamptz | |
