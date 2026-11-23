@@ -3,6 +3,8 @@
 namespace App\Domain\Staff\Models;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Staff\Roles\Models\Role;
+use App\Domain\Staff\Roles\RoleKindSync;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -15,7 +17,8 @@ use Illuminate\Support\Carbon;
  * @property string $tenant_id
  * @property string $email
  * @property string|null $name
- * @property string $role
+ * @property string $role admin|staff|custom (kind of role_id, P83-3)
+ * @property string $role_id
  * @property string $token_hash
  * @property string $invited_by
  * @property Carbon $expires_at
@@ -31,7 +34,7 @@ class StaffInvitation extends Model
 
     public const TTL_DAYS = 7;
 
-    protected $fillable = ['email', 'name', 'role', 'token_hash', 'invited_by', 'expires_at', 'accepted_at', 'accepted_user_id', 'revoked_at', 'last_sent_at'];
+    protected $fillable = ['email', 'name', 'role', 'role_id', 'token_hash', 'invited_by', 'expires_at', 'accepted_at', 'accepted_user_id', 'revoked_at', 'last_sent_at'];
 
     protected $hidden = ['token_hash'];
 
@@ -43,6 +46,17 @@ class StaffInvitation extends Model
             'revoked_at' => 'datetime',
             'last_sent_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(fn (self $m) => RoleKindSync::apply($m));
+        static::updating(fn (self $m) => RoleKindSync::apply($m));
+    }
+
+    public function roleModel(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
     }
 
     public static function hashToken(string $token): string

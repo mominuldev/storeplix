@@ -54,6 +54,6 @@ final class CustomerPresenter
     public static function canDeleteNote(CustomerNote $note, ?string $userId): bool
     {
         return ($userId !== null && $note->author_user_id === $userId)
-            || Permission::ManageCatalog->grantedTo(app(TenantContext::class)->role());
+            || app(TenantContext::class)->allows(Permission::CustomersDelete);
     }
 }

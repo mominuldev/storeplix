@@ -301,7 +301,7 @@ class OrderController
             'notify_customer' => ['sometimes', 'boolean'],
             'refund_to_gateway' => ['sometimes', 'boolean'],
         ]);
-        $order = $this->orders->cancel($order, $input['reason'], AddressValidator::clean($input['note'] ?? null), $input['notify_customer'] ?? null, $request->user(), $this->context->role());
+        $order = $this->orders->cancel($order, $input['reason'], AddressValidator::clean($input['note'] ?? null), $input['notify_customer'] ?? null, $request->user(), $this->context->permissions());
         // P5B-25: the cancel commits first; then the online payments go back through their gateway (default on).
         if (($input['refund_to_gateway'] ?? true) && $order->paid_amount - $order->refunded_amount > 0) {
             app(PaymentService::class)->refundCancelledOrder($order, $request->user());
@@ -346,8 +346,8 @@ class OrderController
     public function refund(Request $request, Store $store, Order $order): JsonResponse
     {
         Gate::authorize('view', $store);
-        if (! Permission::ManageRefunds->grantedTo($this->context->role())) {
-            throw new ApiException(403, 'forbidden', 'Only owners and managers can record refunds.');
+        if (! $this->context->allows(Permission::OrdersRefund)) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to record refunds.');
         }
         $input = $request->validate([
             'amount' => ['required', 'integer:strict', 'min:1', 'max:1000000000000'],
@@ -363,7 +363,7 @@ class OrderController
             ? app(PaymentService::class)->refund($order, $input, $request->header(IdempotencyGuard::HEADER), $request->user())
             : $this->orders->refund($order, $input, $request->header(IdempotencyGuard::HEADER), $request->user());
 
-        return new JsonResponse(['data' => OrderPresenter::payment($payment->load('actor'), $this->context->role())], 201);
+        return new JsonResponse(['data' => OrderPresenter::payment($payment->load('actor'), $this->context->permissions())], 201);
     }
 
     /** @return array<string, list<mixed>> */
@@ -393,7 +393,7 @@ class OrderController
     private function one(Order $order, int $status = 200, ?array $meta = null): JsonResponse
     {
         $order = Order::query()->whereKey($order->id)->firstOrFail();
-        $body = ['data' => OrderPresenter::full($order, $this->context->role())];
+        $body = ['data' => OrderPresenter::full($order, $this->context->permissions())];
         if ($meta !== null) {
             $body['meta'] = $meta;
         }

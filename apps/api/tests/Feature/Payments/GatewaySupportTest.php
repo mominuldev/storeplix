@@ -11,7 +11,7 @@ use App\Domain\Payments\Models\PaymentGatewayAccount;
 use App\Domain\Payments\PayloadScrubber;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Tenancy\Authorization\Permission;
-use App\Domain\Tenancy\Models\TenantUser;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
@@ -138,7 +138,8 @@ class GatewaySupportTest extends TestCase
 
     public function test_manage_integrations_is_owner_and_admin_only(): void
     {
-        $this->assertSame([TenantUser::ROLE_OWNER, TenantUser::ROLE_ADMIN], Permission::ManageIntegrations->roles());
-        $this->assertFalse(Permission::ManageIntegrations->grantedTo(TenantUser::ROLE_STAFF));
+        $this->assertTrue(SystemRole::Owner->permissions()->has(Permission::IntegrationsManage));
+        $this->assertTrue(SystemRole::Admin->permissions()->has(Permission::IntegrationsManage));
+        $this->assertFalse(SystemRole::Staff->permissions()->has(Permission::IntegrationsManage));
     }
 }

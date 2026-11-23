@@ -5,6 +5,7 @@ namespace Tests\Feature\Staff;
 use App\Domain\Identity\Models\User;
 use App\Domain\Staff\Mail\StaffInvitationMail;
 use App\Domain\Staff\Models\StaffInvitation;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
@@ -146,7 +147,9 @@ class StaffTest extends TestCase
             ->assertOk()->assertJsonPath('data.role', 'admin');
 
         $log = $this->platformQuery(AuditLog::class)->where('action', 'staff.role_changed')->sole();
-        $this->assertSame(['role' => ['from' => 'staff', 'to' => 'admin']], $log->meta['changes']);
+        // PHASE-8-3 §6.4 (amended): role names + role ids
+        $this->assertSame(['role' => ['from' => 'Staff', 'to' => 'Manager']], $log->meta['changes']);
+        $this->assertSame($this->membership($staffA, $tenant)->role_id, $log->meta['role_id']['to']);
 
         $this->flushHeaders()->withHeaders($this->tenantHeaders($staffB, $tenant))
             ->deleteJson('/api/v1/staff/'.$this->membership($staffB, $tenant)->id)
@@ -271,7 +274,10 @@ class StaffTest extends TestCase
 
         $this->withHeaders(['X-Testing-User' => $existing->id, 'Referer' => 'http://localhost:5173/'])->postJson("/api/v1/invitations/{$token}/accept")
             ->assertOk()
-            ->assertExactJson(['data' => ['id' => $tenant->id, 'name' => $tenant->name, 'role' => 'staff']]);
+            ->assertExactJson(['data' => [
+                'id' => $tenant->id, 'name' => $tenant->name, 'role' => 'staff', 'role_id' => $this->membership($existing, $tenant)->role_id,
+                'role_name' => 'Staff', 'permissions' => SystemRole::Staff->permissions()->keys(),
+            ]]);
 
         $this->assertSame('staff', $this->membership($existing, $tenant)->role);
         $this->assertSame(2, $this->platformQuery(TenantUser::class)->where('user_id', $existing->id)->count());

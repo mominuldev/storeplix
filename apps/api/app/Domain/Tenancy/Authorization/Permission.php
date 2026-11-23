@@ -1,55 +1,155 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Domain\Tenancy\Authorization;
 
-use App\Domain\Tenancy\Models\TenantUser;
-
 /**
- * ADR 0005 permission matrix (code-defined; Phase 8 replaces it with custom roles).
+ * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * | Permission                                   | owner | admin | staff |
- * |----------------------------------------------|-------|-------|-------|
- * | catalog/orders/customers, media upload       |   ✓   |   ✓   |   ✓   |
- * | refunds, cancel paid orders                  |   ✓   |   ✓   |   –   |
- * | store settings, themes, pages, shipping      |   ✓   |   ✓   |   –   |
- * | domains, credentials, staff management       |   ✓   | ✓ (not the owner) | – |
- * | billing view (Phase 2 contract: O A)         |   ✓   |   ✓   |   –   |
- * | billing manage, delete tenant, transfer      |   ✓   |   –   |   –   |
- * | audit log                                    |   ✓   |   ✓   |   –   |
- * | view cost / profit / stock value at cost     |   ✓   |   ✓   |   –   |  (P4-14)
- * | delete products, categories, customers       |   ✓   |   ✓   |   –   |  (P4-14)
- * | coupons (write)                              |   ✓   |   ✓   |   –   |  (P5-21)
- * | CSV imports and exports (bulk data)          |   ✓   |   ✓   |   –   |  (P4-14)
- * | payment gateways, couriers (write)           |   ✓   |   ✓   |   –   |  (P5B-10)
+ * 22 grantable keys plus the owner-only `billing.manage`. Case order = UI order = catalogue order of
+ * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
+ * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
  */
 enum Permission: string
 {
-    case Operate = 'operate';
-    case ManageRefunds = 'manage_refunds';
-    case ManageSettings = 'manage_settings';
-    case ManageStaff = 'manage_staff';
-    case ManageDomains = 'manage_domains';
-    case ViewBilling = 'view_billing';
-    case ManageBilling = 'manage_billing';
-    case ViewAudit = 'view_audit';
-    case ViewCosts = 'view_costs';
-    case ManageCatalog = 'manage_catalog';
-    case BulkData = 'bulk_data';
-    case ManageMarketing = 'manage_marketing';
-    case ManageIntegrations = 'manage_integrations';
+    case OrdersView = 'orders.view';
+    case OrdersProcess = 'orders.process';
+    case OrdersRefund = 'orders.refund';
+    case ShipmentsManage = 'shipments.manage';
+    case ShipmentsCancel = 'shipments.cancel';
+    case ProductsEdit = 'products.edit';
+    case ProductsDelete = 'products.delete';
+    case InventoryAdjust = 'inventory.adjust';
+    case CustomersView = 'customers.view';
+    case CustomersEdit = 'customers.edit';
+    case CustomersDelete = 'customers.delete';
+    case CostsView = 'costs.view';
+    case ReportsView = 'reports.view';
+    case DataExport = 'data.export';
+    case DataImport = 'data.import';
+    case MarketingManage = 'marketing.manage';
+    case SettingsManage = 'settings.manage';
+    case IntegrationsManage = 'integrations.manage';
+    case DomainsManage = 'domains.manage';
+    case StaffManage = 'staff.manage';
+    case AuditView = 'audit.view';
+    case BillingView = 'billing.view';
+    case BillingManage = 'billing.manage';
 
-    /** @return list<string> */
-    public function roles(): array
+    /** Group keys in UI order with their English labels (PermissionGroup). */
+    public const GROUPS = [
+        'orders' => 'Orders',
+        'shipping' => 'Shipping',
+        'products' => 'Products & stock',
+        'customers' => 'Customers',
+        'money' => 'Money & data',
+        'store' => 'Store & settings',
+        'team' => 'Team & billing',
+    ];
+
+    public function group(): string
     {
         return match ($this) {
-            self::Operate => [TenantUser::ROLE_OWNER, TenantUser::ROLE_ADMIN, TenantUser::ROLE_STAFF],
-            self::ManageBilling => [TenantUser::ROLE_OWNER],
-            default => [TenantUser::ROLE_OWNER, TenantUser::ROLE_ADMIN],
+            self::OrdersView, self::OrdersProcess, self::OrdersRefund => 'orders',
+            self::ShipmentsManage, self::ShipmentsCancel => 'shipping',
+            self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust => 'products',
+            self::CustomersView, self::CustomersEdit, self::CustomersDelete => 'customers',
+            self::CostsView, self::ReportsView, self::DataExport, self::DataImport => 'money',
+            self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage => 'store',
+            self::StaffManage, self::AuditView, self::BillingView, self::BillingManage => 'team',
         };
     }
 
-    public function grantedTo(?string $role): bool
+    /** Direct prerequisites (P83-11): a role holding this key must also hold these. @return list<self> */
+    public function requires(): array
     {
-        return $role !== null && in_array($role, $this->roles(), true);
+        return match ($this) {
+            self::OrdersProcess => [self::OrdersView],
+            self::OrdersRefund => [self::OrdersProcess],
+            self::ShipmentsCancel => [self::ShipmentsManage],
+            self::ProductsDelete => [self::ProductsEdit],
+            self::CustomersEdit => [self::CustomersView],
+            self::CustomersDelete => [self::CustomersEdit],
+            self::BillingManage => [self::BillingView],
+            default => [],
+        };
+    }
+
+    public function sensitive(): bool
+    {
+        return in_array($this, [
+            self::OrdersRefund, self::CostsView, self::DataExport, self::IntegrationsManage, self::StaffManage, self::BillingManage,
+        ], true);
+    }
+
+    /** Only `billing.manage` is never grantable (owner only, Q123). */
+    public function grantable(): bool
+    {
+        return $this !== self::BillingManage;
+    }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::OrdersView => 'View & create orders',
+            self::OrdersProcess => 'Confirm & cancel orders',
+            self::OrdersRefund => 'Refunds & paid cancellations',
+            self::ShipmentsManage => 'Book courier & print labels',
+            self::ShipmentsCancel => 'Change courier after booking',
+            self::ProductsEdit => 'Edit products & prices',
+            self::ProductsDelete => 'Delete products & categories',
+            self::InventoryAdjust => 'Adjust stock',
+            self::CustomersView => 'View customers',
+            self::CustomersEdit => 'Add & edit customers',
+            self::CustomersDelete => "Delete customers and others' notes",
+            self::CostsView => 'See product cost & profit',
+            self::ReportsView => 'Reports, payouts & COD settlements',
+            self::DataExport => 'Export customer phone numbers',
+            self::DataImport => 'Import products & customers (CSV)',
+            self::MarketingManage => 'Create & edit coupons',
+            self::SettingsManage => 'Change shop settings',
+            self::IntegrationsManage => 'Connect payments & couriers',
+            self::DomainsManage => 'Manage domains',
+            self::StaffManage => 'Manage staff & roles',
+            self::AuditView => 'View activity log',
+            self::BillingView => 'View plan & invoices',
+            self::BillingManage => 'Change plan & pay',
+        };
+    }
+
+    public function description(): ?string
+    {
+        return match ($this) {
+            self::OrdersView => 'Orders, unfinished orders, returns',
+            self::OrdersProcess => 'Status changes, edit items, returns, payment links',
+            self::OrdersRefund => 'Refund money, cancel paid orders, change COD amount',
+            self::ShipmentsManage => 'Steadfast, Pathao, RedX',
+            self::ShipmentsCancel => 'Cancel a booked parcel',
+            self::ProductsEdit => 'Products, categories, images',
+            self::InventoryAdjust => 'Receive and count stock',
+            self::CustomersView => 'Names, phones, order history',
+            self::CustomersEdit => 'Details and notes',
+            self::CostsView => 'Cost price, margin, profit report',
+            self::ReportsView => 'Sales and delivery reports',
+            self::DataExport => 'CSV export of products and customers',
+            self::SettingsManage => 'Delivery charges, checkout, themes, pages, publish',
+            self::IntegrationsManage => 'API keys and credentials',
+            self::StaffManage => 'Invite, remove, change roles',
+            self::BillingManage => 'Owner only',
+            default => null,
+        };
+    }
+
+    /** @return list<self> every grantable key, catalogue order */
+    public static function grantableCases(): array
+    {
+        return array_values(array_filter(self::cases(), fn (self $p) => $p->grantable()));
+    }
+
+    /** @return list<string> */
+    public static function values(): array
+    {
+        return array_map(fn (self $p) => $p->value, self::cases());
     }
 }

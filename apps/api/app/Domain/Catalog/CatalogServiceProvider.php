@@ -30,7 +30,9 @@ class CatalogServiceProvider extends ServiceProvider
         Gate::policy(Customer::class, CustomerPolicy::class);
         Gate::policy(CustomerNote::class, CustomerPolicy::class);
 
-        Gate::define('bulk-data', fn () => Permission::BulkData->grantedTo($this->app->make(TenantContext::class)->role()));
+        // PHASE-8-3 §3.2: the old `bulk-data` gate is split into the data.import / data.export keys.
+        Gate::define('data.import', fn () => $this->app->make(TenantContext::class)->allows(Permission::DataImport));
+        Gate::define('data.export', fn () => $this->app->make(TenantContext::class)->allows(Permission::DataExport));
 
         Product::observe(StorefrontRevalidationObserver::class);
         Category::observe(StorefrontRevalidationObserver::class);

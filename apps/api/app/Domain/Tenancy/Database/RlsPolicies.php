@@ -27,6 +27,8 @@ final class RlsPolicies
         'tenant_users' => ['tenant_users_membership', 'tenant_users_select', 'tenant_users_insert', 'tenant_users_update', 'tenant_users_delete'],
         'audit_logs' => ['audit_logs_select', 'audit_logs_insert'],
         'sms_messages' => ['sms_messages_select', 'sms_messages_insert', 'sms_messages_update'],
+        'roles' => ['roles_select', 'roles_insert', 'roles_update', 'roles_delete'],
+        'role_permissions' => ['role_permissions_select', 'role_permissions_insert', 'role_permissions_update', 'role_permissions_delete'],
     ];
 
     public static function roleExists(ConnectionInterface $db, string $role): bool
@@ -79,6 +81,16 @@ final class RlsPolicies
                 $db->statement("CREATE POLICY sms_messages_update ON {$t} FOR UPDATE TO {$target}
                     USING (tenant_id = {$tenant} OR (tenant_id IS NULL AND {$tenant} IS NULL))
                     WITH CHECK (tenant_id = {$tenant} OR (tenant_id IS NULL AND {$tenant} IS NULL))"),
+            ],
+            // PHASE-8-3 §5.1: /auth/me lists the role (and its permissions) of every membership without a tenant
+            // context, so READS follow the user's memberships like tenant_users; writes stay in the current tenant.
+            'roles', 'role_permissions' => [
+                $db->statement("CREATE POLICY {$table}_select ON {$t} FOR SELECT TO {$target}
+                    USING (tenant_id = {$tenant} OR tenant_id IN (SELECT tu.tenant_id FROM tenant_users tu WHERE tu.user_id = ".self::USER.'))'),
+                $db->statement("CREATE POLICY {$table}_insert ON {$t} FOR INSERT TO {$target} WITH CHECK (tenant_id = {$tenant})"),
+                $db->statement("CREATE POLICY {$table}_update ON {$t} FOR UPDATE TO {$target}
+                    USING (tenant_id = {$tenant}) WITH CHECK (tenant_id = {$tenant})"),
+                $db->statement("CREATE POLICY {$table}_delete ON {$t} FOR DELETE TO {$target} USING (tenant_id = {$tenant})"),
             ],
             default => $db->statement(
                 "CREATE POLICY tenant_isolation ON {$t} FOR ALL TO {$target}

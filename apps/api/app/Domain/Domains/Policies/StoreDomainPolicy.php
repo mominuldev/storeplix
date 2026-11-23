@@ -9,29 +9,29 @@ use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Tenancy\Authorization\Authorizes;
 use App\Domain\Tenancy\Authorization\Permission;
 
-/** PHASE-6 §4.1: reads O A S (`Operate`), writes O A (`ManageDomains`), always inside the current tenant. */
+/** PHASE-6 §4.1 / PHASE-8-3 §3: reads are base access, writes need domains.manage, always inside the current tenant. */
 class StoreDomainPolicy
 {
     use Authorizes;
 
     public function viewAny(User $user): bool
     {
-        return $this->can(Permission::Operate);
+        return $this->member();
     }
 
     public function view(User $user, StoreDomain $domain): bool
     {
-        return $this->inCurrentTenant($domain) && $this->can(Permission::Operate);
+        return $this->inCurrentTenant($domain);
     }
 
     public function create(User $user): bool
     {
-        return $this->can(Permission::ManageDomains);
+        return $this->can(Permission::DomainsManage);
     }
 
     public function update(User $user, StoreDomain $domain): bool
     {
-        return $this->inCurrentTenant($domain) && $this->can(Permission::ManageDomains);
+        return $this->inCurrentTenant($domain) && $this->can(Permission::DomainsManage);
     }
 
     public function delete(User $user, StoreDomain $domain): bool

@@ -16,9 +16,9 @@ namespace App\Domain\Tenancy\Database;
 final class RlsTables
 {
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
-    public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages'];
+    public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -37,6 +37,8 @@ final class RlsTables
         'billing_invoices', 'billing_payments',
         // Phase 8.2 analytics (PHASE-8-2 §5.1; app role also revoked, only pgsql_admin reads it)
         'tenant_daily_metrics',
+        // Phase 8.3 roles (PHASE-8-3 §5.1; member-read special policy)
+        'roles', 'role_permissions',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */

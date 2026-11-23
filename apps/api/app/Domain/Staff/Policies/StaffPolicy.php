@@ -9,9 +9,8 @@ use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\Models\TenantUser;
 
 /**
- * Staff management (ADR 0005): owner + admin; admins act on admins/staff but never the owner
- * (owner protection is a 409 `last_owner`, enforced in the controller after this check).
- * Leaving the shop (deleting your own membership) is allowed for every role.
+ * Staff management (PHASE-8-3 §3, §4): staff.manage; nobody acts on the owner (409 `last_owner`) and the
+ * non-delegation rules N5/N6 run in StaffService. Leaving the shop (deleting your own membership) is base access.
  */
 class StaffPolicy
 {
@@ -19,22 +18,22 @@ class StaffPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->can(Permission::ManageStaff);
+        return $this->can(Permission::StaffManage);
     }
 
     public function invite(User $user): bool
     {
-        return $this->can(Permission::ManageStaff);
+        return $this->can(Permission::StaffManage);
     }
 
     public function manageInvitation(User $user, StaffInvitation $invitation): bool
     {
-        return $this->inCurrentTenant($invitation) && $this->can(Permission::ManageStaff);
+        return $this->inCurrentTenant($invitation) && $this->can(Permission::StaffManage);
     }
 
     public function updateRole(User $user, TenantUser $member): bool
     {
-        return $this->inCurrentTenant($member) && $this->can(Permission::ManageStaff);
+        return $this->inCurrentTenant($member) && $this->can(Permission::StaffManage);
     }
 
     public function remove(User $user, TenantUser $member): bool
@@ -43,6 +42,6 @@ class StaffPolicy
             return false;
         }
 
-        return $member->user_id === $user->getKey() || $this->can(Permission::ManageStaff);
+        return $member->user_id === $user->getKey() || $this->can(Permission::StaffManage);
     }
 }

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
- * ProductSummary / Product / ProductVariant payloads. $costs = Permission::ViewCosts (P4-5): when false every
+ * ProductSummary / Product / ProductVariant payloads. $costs = Permission::CostsView (P4-5): when false every
  * cost_amount is null.
  */
 final class ProductPresenter

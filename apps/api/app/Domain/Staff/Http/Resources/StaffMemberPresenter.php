@@ -3,9 +3,11 @@
 namespace App\Domain\Staff\Http\Resources;
 
 use App\Domain\Staff\Models\StaffInvitation;
+use App\Domain\Staff\Roles\Models\Role;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\TenantUser;
 
-/** Shapes StaffMember (@storeplix/types) for members and invitations alike. */
+/** Shapes StaffMember (@storeplix/types) for members and invitations alike (Phase 8.3: + role_id, role_name). */
 final class StaffMemberPresenter
 {
     /** @return array<string, mixed> */
@@ -21,6 +23,8 @@ final class StaffMemberPresenter
             'email' => (string) $user?->email,
             'phone' => $user?->phone,
             'role' => $member->role,
+            'role_id' => $member->role_id,
+            'role_name' => self::roleName($member->roleModel, $member->role),
             'status' => 'active',
             'is_you' => $member->user_id === $currentUserId,
             'invited_by' => $member->inviter ? ['id' => $member->inviter->id, 'name' => $member->inviter->name] : null,
@@ -41,6 +45,8 @@ final class StaffMemberPresenter
             'email' => $invitation->email,
             'phone' => null,
             'role' => $invitation->role,
+            'role_id' => $invitation->role_id,
+            'role_name' => self::roleName($invitation->roleModel, $invitation->role),
             'status' => $invitation->isExpired() ? 'expired' : 'invited',
             'is_you' => false,
             'invited_by' => $invitation->inviter ? ['id' => $invitation->inviter->id, 'name' => $invitation->inviter->name] : null,
@@ -48,5 +54,11 @@ final class StaffMemberPresenter
             'expires_at' => $invitation->expires_at->toIso8601ZuluString(),
             'created_at' => $invitation->created_at?->toIso8601ZuluString(),
         ];
+    }
+
+    /** The role's name; a system kind's label when the row isn't loaded. */
+    public static function roleName(?Role $role, string $kind): string
+    {
+        return $role?->name ?? SystemRole::tryFrom($kind)?->label() ?? 'Custom role';
     }
 }

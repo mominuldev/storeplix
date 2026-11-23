@@ -164,11 +164,11 @@ class ReturnController
             'send_payment_link.provider' => ['required_with:send_payment_link', 'string', 'in:bkash,sslcommerz'],
             'send_payment_link.expires_in_minutes' => ['required_with:send_payment_link', 'integer', 'in:120,360,1440,2880'],
         ]);
-        [$return, $order] = $this->returns->exchange($return, $input, $request->user(), $this->context->role(), $request->header(IdempotencyGuard::HEADER));
+        [$return, $order] = $this->returns->exchange($return, $input, $request->user(), $this->context->permissions(), $request->header(IdempotencyGuard::HEADER));
 
         return new JsonResponse(['data' => [
             'return' => ReturnPresenter::full(ReturnRequest::query()->whereKey($return->id)->firstOrFail()),
-            'order' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->role()),
+            'order' => OrderPresenter::full(Order::query()->whereKey($order->id)->firstOrFail(), $this->context->permissions()),
             'payment_link' => $this->returns->lastLink !== null ? PaymentPresenter::link($this->returns->lastLink->load('creator'), $store->load('primaryDomain')) : null,
         ]], 201);
     }

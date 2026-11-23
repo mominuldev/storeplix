@@ -18,6 +18,7 @@ class StaffInvitationMail extends Mailable implements ShouldQueue
         public readonly string $shopName,
         public readonly string $inviterName,
         public readonly string $role,
+        public readonly ?string $roleName = null, // Phase 8.3: the role's display name (custom roles)
     ) {}
 
     public function url(): string
@@ -36,7 +37,7 @@ class StaffInvitationMail extends Mailable implements ShouldQueue
             'url' => $this->url(),
             'shop' => $this->shopName,
             'inviter' => $this->inviterName,
-            'roleLabel' => $this->role === 'admin' ? 'Manager' : 'Staff',
+            'roleLabel' => $this->roleName ?? ($this->role === 'admin' ? 'Manager' : 'Staff'),
         ]);
     }
 }

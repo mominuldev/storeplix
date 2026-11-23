@@ -105,12 +105,12 @@ class CustomerController
         return new JsonResponse(['data' => CustomerPresenter::note($note->load('author'), $request->user()?->getKey())], 201);
     }
 
-    /** DELETE /stores/{store}/customers/{customer}/notes/{note} — author, or owner/admin. */
+    /** DELETE /stores/{store}/customers/{customer}/notes/{note} — author, or customers.delete. */
     public function deleteNote(Request $request, Store $store, Customer $customer, CustomerNote $note): Response
     {
         Gate::authorize('view', $customer);
         if (! CustomerPresenter::canDeleteNote($note, $request->user()?->getKey())) {
-            throw new ApiException(403, 'forbidden', 'Only the author or an owner/admin can delete this note.');
+            throw new ApiException(403, 'forbidden', 'Only the author or someone allowed to delete customers can delete this note.');
         }
         $note->delete();
 

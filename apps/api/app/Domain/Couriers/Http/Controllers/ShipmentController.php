@@ -69,7 +69,7 @@ class ShipmentController
         if ($input['provider'] === CourierAccount::PATHAO && isset($input['weight_grams']) && ($input['weight_grams'] < 500 || $input['weight_grams'] > 10000)) {
             throw ValidationException::withMessages(['weight_grams' => ['Pathao takes parcels from 0.5 kg to 10 kg.']]);
         }
-        $shipment = $this->booking->book($store, $order, $input, $request->user(), $this->context->role(), $request->header('Idempotency-Key'));
+        $shipment = $this->booking->book($store, $order, $input, $request->user(), $this->context->permissions(), $request->header('Idempotency-Key'));
 
         return new JsonResponse(['data' => ShipmentPresenter::shipment($shipment)], 201);
     }

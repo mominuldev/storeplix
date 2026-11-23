@@ -17,6 +17,7 @@ use App\Domain\Returns\ReturnService;
 use App\Domain\Shipping\Models\PickupLocation;
 use App\Domain\Shipping\ShippingService;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\Seeder;
@@ -129,7 +130,7 @@ class DemoCommerceSeeder extends Seeder
                         'ready' => $orders->ready($order, $user),
                         'ship' => $orders->ship($order, ['carrier_name' => 'Steadfast', 'tracking_code' => 'SF'.$order->sequence], $user, false),
                         'deliver' => $orders->deliver($order, $user),
-                        'cancel' => $orders->cancel($order, 'customer_request', null, false, $user, TenantUser::ROLE_OWNER),
+                        'cancel' => $orders->cancel($order, 'customer_request', null, false, $user, SystemRole::Owner->permissions()),
                     };
                 }
             }

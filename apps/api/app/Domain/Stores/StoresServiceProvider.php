@@ -8,6 +8,7 @@ use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Staff\Policies\StaffPolicy;
+use App\Domain\Staff\Roles\EnsureSystemRoles;
 use App\Domain\Stores\Console\EnsureStoreContent;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -17,10 +18,12 @@ use App\Domain\Stores\Observers\StoreObserver;
 use App\Domain\Stores\Policies\StorePolicy;
 use App\Domain\Stores\Revalidation\StorefrontRevalidationObserver;
 use App\Domain\Tenancy\Authorization\Permission;
+use App\Domain\Tenancy\Events\TenantCreated;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
 use App\Domain\Themes\Models\StoreTheme;
 use App\Domain\Themes\ThemeRegistry;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -44,7 +47,9 @@ class StoresServiceProvider extends ServiceProvider
         Gate::policy(TenantUser::class, StaffPolicy::class);
         Gate::policy(Media::class, MediaPolicy::class);
 
-        Gate::define('audit.view', fn () => Permission::ViewAudit->grantedTo($this->app->make(TenantContext::class)->role()));
+        Event::listen(TenantCreated::class, EnsureSystemRoles::class); // PHASE-8-3 §5.2
+
+        Gate::define('audit.view', fn () => $this->app->make(TenantContext::class)->allows(Permission::AuditView));
 
         Store::observe([StoreObserver::class, StorefrontRevalidationObserver::class]);
         StoreDomain::observe([StoreDomainObserver::class, StorefrontRevalidationObserver::class]);

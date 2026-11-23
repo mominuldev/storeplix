@@ -130,8 +130,8 @@ class ProductController
                 ->where('tenant_id', $this->context->requireId())->where('store_id', $store->id)->whereNull('deleted_at')],
         ], ['category_ids.*.exists' => 'Unknown category.']);
 
-        if ($input['action'] === 'delete' && ! Permission::ManageCatalog->grantedTo($this->context->role())) {
-            throw new ApiException(403, 'forbidden', 'Only the owner or an admin can delete products.');
+        if ($input['action'] === 'delete' && ! $this->context->allows(Permission::ProductsDelete)) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to delete products.');
         }
 
         $ids = array_map('strtolower', $input['ids']);
@@ -227,7 +227,7 @@ class ProductController
 
     private function costs(): bool
     {
-        return Permission::ViewCosts->grantedTo($this->context->role());
+        return $this->context->allows(Permission::CostsView);
     }
 
     private function one(Product $product, int $status = 200): JsonResponse

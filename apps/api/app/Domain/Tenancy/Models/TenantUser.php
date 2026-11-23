@@ -3,6 +3,8 @@
 namespace App\Domain\Tenancy\Models;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Staff\Roles\Models\Role;
+use App\Domain\Staff\Roles\RoleKindSync;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,7 +18,8 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $tenant_id
  * @property string $user_id
- * @property string $role
+ * @property string $role owner|admin|staff|custom (kind of role_id, P83-3)
+ * @property string $role_id
  * @property string|null $invited_by
  * @property Carbon|null $joined_at
  */
@@ -30,7 +33,10 @@ class TenantUser extends Pivot
 
     public const ROLE_STAFF = 'staff';
 
-    public const ROLES = [self::ROLE_OWNER, self::ROLE_ADMIN, self::ROLE_STAFF];
+    /** Phase 8.3: a member of a custom role (see role_id). */
+    public const ROLE_CUSTOM = 'custom';
+
+    public const ROLES = [self::ROLE_OWNER, self::ROLE_ADMIN, self::ROLE_STAFF, self::ROLE_CUSTOM];
 
     protected $table = 'tenant_users';
 
@@ -38,11 +44,23 @@ class TenantUser extends Pivot
 
     protected $keyType = 'string';
 
-    protected $fillable = ['tenant_id', 'user_id', 'role', 'invited_by', 'joined_at'];
+    protected $fillable = ['tenant_id', 'user_id', 'role', 'role_id', 'invited_by', 'joined_at'];
 
     protected function casts(): array
     {
         return ['joined_at' => 'datetime'];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(fn (self $m) => RoleKindSync::apply($m));
+        static::updating(fn (self $m) => RoleKindSync::apply($m));
+    }
+
+    /** The role row (tenant-scoped query: only inside the membership's tenant). */
+    public function roleModel(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
     }
 
     public function user(): BelongsTo

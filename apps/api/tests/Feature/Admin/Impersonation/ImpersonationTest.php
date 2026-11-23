@@ -10,6 +10,7 @@ use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
@@ -211,7 +212,12 @@ class ImpersonationTest extends TestCase
 
         $this->b('GET', '/api/v1/auth/me')->assertOk()
             ->assertJsonPath('data.id', $staff->id)->assertJsonPath('data.email', $staff->email)
-            ->assertJsonPath('data.tenants', [['id' => $tenant->id, 'name' => $tenant->name, 'role' => 'owner']])
+            ->assertJsonPath('data.tenants', [[
+                'id' => $tenant->id, 'name' => $tenant->name, 'role' => 'owner',
+                // PHASE-8-3 §6.2: impersonation = the owner set
+                'role_id' => $this->platformTable('roles')->where('tenant_id', $tenant->id)->where('key', 'owner')->value('id'),
+                'role_name' => 'Owner', 'permissions' => SystemRole::Owner->permissions()->keys(),
+            ]])
             ->assertJsonPath('meta.impersonation', [
                 'id' => $id, 'tenant_id' => $tenant->id, 'tenant_name' => $tenant->name, 'owner_name' => $owner->name,
                 'reason' => self::REASON, 'expires_at' => $row->expires_at->toIso8601ZuluString(),

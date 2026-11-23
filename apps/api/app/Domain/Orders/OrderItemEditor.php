@@ -500,7 +500,7 @@ class OrderItemEditor
      */
     private function present(Order $order, array $plan): array
     {
-        $costs = Permission::ViewCosts->grantedTo($this->context->role());
+        $costs = $this->context->allows(Permission::CostsView);
         $mediaIds = [];
         foreach ($plan['lines'] as $line) {
             $mediaIds[] = $line['item']?->image_media_id ?? $line['variant']?->image_media_id ?? $line['variant']?->product?->images->first()?->media_id;

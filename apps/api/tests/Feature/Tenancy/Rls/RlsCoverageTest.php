@@ -81,6 +81,17 @@ class RlsCoverageTest extends TestCase
         $this->assertSame(['DELETE', 'INSERT', 'SELECT', 'UPDATE'], $policies->where('tablename', 'tenant_users')->pluck('cmd')->sort()->values()->all());
         $this->assertSame(['INSERT', 'SELECT'], $policies->where('tablename', 'audit_logs')->pluck('cmd')->sort()->values()->all());
         $this->assertSame(['INSERT', 'SELECT', 'UPDATE'], $policies->where('tablename', 'sms_messages')->pluck('cmd')->sort()->values()->all());
+        // PHASE-8-3 §5.1: roles tables read across the user's memberships, write in the current tenant only.
+        foreach (['roles', 'role_permissions'] as $table) {
+            $this->assertSame(['DELETE', 'INSERT', 'SELECT', 'UPDATE'], $policies->where('tablename', $table)->pluck('cmd')->sort()->values()->all(), $table);
+            $select = $policies->where('tablename', $table)->firstWhere('cmd', 'SELECT');
+            $this->assertStringContainsString('app_current_user()', (string) $select->qual, $table);
+            foreach (['INSERT', 'UPDATE'] as $cmd) {
+                $write = $policies->where('tablename', $table)->firstWhere('cmd', $cmd);
+                $this->assertStringContainsString('app_current_tenant()', (string) $write->with_check, "{$table} {$cmd}");
+                $this->assertStringNotContainsString('app_current_user()', (string) $write->with_check, "{$table} {$cmd}");
+            }
+        }
     }
 
     public function test_the_app_connects_as_a_role_that_cannot_bypass_rls(): void

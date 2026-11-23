@@ -9,6 +9,7 @@ use App\Domain\DataTransfer\Models\DataExport;
 use App\Domain\Media\TenantStorage;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
@@ -55,6 +56,8 @@ class ExportController
             'created_by' => $request->user()?->getKey(),
         ]);
         $export->store_id = $store->id;
+        // SEC-M1: the queued job has no member context, so record now whether the requester may see costs.
+        $export->include_costs = app(TenantContext::class)->allows(Permission::CostsView);
         $export->save();
 
         $this->audit->log('export.created', $export, ['type' => $export->type, 'filters' => $filters]);
@@ -97,8 +100,8 @@ class ExportController
     private function authorize(Store $store): void
     {
         Gate::authorize('view', $store);
-        if (! Gate::allows('bulk-data')) {
-            throw new ApiException(403, 'forbidden', 'Only the owner or an admin can import or export data.');
+        if (! Gate::allows('data.export')) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to export data.');
         }
     }
 }

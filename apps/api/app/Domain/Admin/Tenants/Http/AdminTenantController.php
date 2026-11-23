@@ -12,6 +12,7 @@ use App\Domain\Billing\Http\Resources\PlanPresenter;
 use App\Domain\Billing\Limit;
 use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Stores\Models\StoreDomain;
+use App\Domain\Tenancy\Authorization\SystemRole;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\PlatformDb;
 use App\Domain\Tenancy\TenantContext;
@@ -103,19 +104,22 @@ class AdminTenantController
     {
         $tenantId = (string) TenantDirectory::find($tenant)->id;
         $db = PlatformDb::connection(); // cross-tenant: admin merchant members
+        // PHASE-8-3 P83-13: + role_name (custom roles show their name).
+        $roleNames = $db->table('roles')->where('tenant_id', $tenantId)->pluck('name', 'id');
+        $roleName = fn ($row) => (string) ($roleNames[$row->role_id] ?? SystemRole::tryFrom((string) $row->role)?->label() ?? 'Custom role');
         $members = $db->table('tenant_users as tu')->join('users as u', 'u.id', '=', 'tu.user_id')->where('tu.tenant_id', $tenantId)
             ->orderByRaw("case tu.role when 'owner' then 0 when 'admin' then 1 else 2 end")->orderBy('tu.created_at')
-            ->get(['u.id', 'u.name', 'u.email', 'u.phone', 'tu.role', 'tu.created_at'])
+            ->get(['u.id', 'u.name', 'u.email', 'u.phone', 'tu.role', 'tu.role_id', 'tu.created_at'])
             ->map(fn ($m) => [
                 'id' => (string) $m->id, 'name' => (string) $m->name, 'email' => (string) $m->email,
-                'phone' => $m->phone !== null ? (string) $m->phone : null, 'role' => (string) $m->role, 'status' => 'active',
-                'joined_at' => AdminPresenter::ts($m->created_at),
+                'phone' => $m->phone !== null ? (string) $m->phone : null, 'role' => (string) $m->role, 'role_name' => $roleName($m),
+                'status' => 'active', 'joined_at' => AdminPresenter::ts($m->created_at),
             ]);
         $invitations = $db->table('staff_invitations')->where('tenant_id', $tenantId)->whereNull('accepted_at')->whereNull('revoked_at')
-            ->where('expires_at', '>', now())->orderBy('created_at')->get(['email', 'name', 'role'])
+            ->where('expires_at', '>', now())->orderBy('created_at')->get(['email', 'name', 'role', 'role_id'])
             ->map(fn ($i) => [
                 'id' => null, 'name' => $i->name !== null ? (string) $i->name : null, 'email' => (string) $i->email, 'phone' => null,
-                'role' => (string) $i->role, 'status' => 'invited', 'joined_at' => null,
+                'role' => (string) $i->role, 'role_name' => $roleName($i), 'status' => 'invited', 'joined_at' => null,
             ]);
 
         return AdminPresenter::json(['data' => $members->concat($invitations)->values()->all()]);

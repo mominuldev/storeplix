@@ -45,8 +45,8 @@ final class ReportController
     public function profit(Store $store, ReportRangeRequest $request, ProfitReport $report): JsonResponse
     {
         Gate::authorize('view', $store);
-        if (! Permission::ViewCosts->grantedTo($this->context->role())) {
-            throw new ApiException(403, 'forbidden', 'Only the owner or an admin can see profit.');
+        if (! $this->context->allows(Permission::CostsView)) {
+            throw new ApiException(403, 'forbidden', 'You do not have permission to see profit.');
         }
         FeatureGate::assertAllows($this->context->tenant(), Feature::ProfitReports);
 

@@ -13,6 +13,8 @@ use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Tenancy\Support\Memberships;
+use App\Domain\Tenancy\Support\PlatformDb;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -250,7 +252,9 @@ final class ImpersonationService
     {
         $tenant = Tenant::query()->findOrFail($row->target_tenant_id);
         $user = (new UserResource($staff->withoutRelations()))->resolve();
-        $user['tenants'] = [['id' => $tenant->id, 'name' => $tenant->name, 'role' => TenantUser::ROLE_OWNER]];
+        // PHASE-8-3 §6.2: impersonation = the owner set (still read-only, P8-10).
+        $ownerRole = PlatformDb::connection()->table('roles')->where('tenant_id', $tenant->id)->where('key', TenantUser::ROLE_OWNER)->value('id');
+        $user['tenants'] = [Memberships::owner($tenant, $ownerRole !== null ? (string) $ownerRole : null)];
 
         return $user;
     }

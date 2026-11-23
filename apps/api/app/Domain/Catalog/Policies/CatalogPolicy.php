@@ -8,7 +8,7 @@ use App\Domain\Tenancy\Authorization\Permission;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Products and categories (P4-14): any role operates; only owner/admin delete (ManageCatalog).
+ * Products and categories: reading is base access, writing needs products.edit, deleting products.delete (PHASE-8-3 §3).
  * Tenant check is defence in depth on top of BelongsToTenant + scoped route bindings.
  */
 class CatalogPolicy
@@ -17,16 +17,16 @@ class CatalogPolicy
 
     public function view(User $user, Model $model): bool
     {
-        return $this->inCurrentTenant($model) && $this->can(Permission::Operate);
+        return $this->inCurrentTenant($model);
     }
 
     public function update(User $user, Model $model): bool
     {
-        return $this->inCurrentTenant($model) && $this->can(Permission::Operate);
+        return $this->inCurrentTenant($model) && $this->can(Permission::ProductsEdit);
     }
 
     public function delete(User $user, Model $model): bool
     {
-        return $this->inCurrentTenant($model) && $this->can(Permission::ManageCatalog);
+        return $this->inCurrentTenant($model) && $this->can(Permission::ProductsDelete);
     }
 }
