@@ -53,6 +53,7 @@ export const failureCopy: Record<DomainFailureCode, string> = {
   ssl_timeout: 'Securing the domain took too long. Check the records and press Check now to try again.',
   ssl_lost: 'The secure lock (SSL) stopped working. Check your records; we keep checking.',
   suspended: 'This domain was suspended by Storeplix. Contact support.',
+  plan_limit: 'This domain was disconnected because your plan doesn’t include it. Upgrade, then press Check now to connect it again.',
 };
 
 export function failureText(code: string | null | undefined): string | null {

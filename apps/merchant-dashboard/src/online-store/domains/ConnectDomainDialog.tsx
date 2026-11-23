@@ -6,6 +6,7 @@ import { Info } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { connectDomainSchema, connectErrorMessage, looksLikeApex, stripHostname, type ConnectDomainInput, type ConnectDomainValues } from './domainCopy';
+import { handlePlanLimit } from '../../plan/Banners';
 import { useAddDomain } from './queries';
 
 // Connect dialog (PHASE-6-CONTRACT §8). V3 has no dialog frame; composed from Dialog (Overlay 128:221) + Input 3:58.
@@ -40,6 +41,13 @@ export function ConnectDomainDialog({ open, limitMax, onClose, onConnected }: { 
       reset();
       onConnected(domain);
     } catch (e) {
+      // Phase 7 §8.3: at the domain limit the app-wide dialog names the plan that allows more (`upgrade_plan`).
+      if (isApiError(e) && e.status === 402 && e.code === 'plan_limit_reached') {
+        reset();
+        onClose();
+        handlePlanLimit(e);
+        return;
+      }
       setServerError(isApiError(e) ? connectErrorMessage(e, limitMax) : 'We couldn’t connect this domain. Try again.');
     }
   });

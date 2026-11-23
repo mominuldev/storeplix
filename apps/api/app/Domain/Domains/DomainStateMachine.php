@@ -62,7 +62,10 @@ final class DomainStateMachine
         string $reason = 'check',
     ): ?StoreDomain {
         $from = $domain->status;
-        if ($domain->isPlatform() || ! self::allowed($from, $to)) {
+        // Phase 7 (§2.3): plan enforcement detaches any custom row except a suspended one (→ expired, `plan_limit`).
+        $planDetach = $failure === DomainFailureCode::PlanLimit && $to === StoreDomain::STATUS_EXPIRED
+            && $from !== StoreDomain::STATUS_SUSPENDED && $from !== StoreDomain::STATUS_EXPIRED;
+        if ($domain->isPlatform() || (! $planDetach && ! self::allowed($from, $to))) {
             throw new InvalidDomainTransition($from, $to);
         }
 

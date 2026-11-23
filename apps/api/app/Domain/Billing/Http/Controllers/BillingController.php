@@ -62,6 +62,8 @@ class BillingController
             'trial_ends_at' => $plan['trial_ends_at'],
             'features' => $features,
             'limits' => $limits,
+            'grace_ends_at' => $plan['grace_ends_at'] ?? null,
+            'domain_grace_ends_at' => $plan['domain_grace_ends_at'] ?? null,
         ]]);
     }
 }

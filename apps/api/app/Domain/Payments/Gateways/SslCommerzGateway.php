@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
  * or the transaction query (tran_id) decides. `risk_level` stays in Verification::raw for PaymentService (risk tag).
  * Undocumented details are marked `VERIFY against sandbox` and isolated in one method each.
  */
-final class SslCommerzGateway implements PaymentGateway
+class SslCommerzGateway implements PaymentGateway
 {
     private const SESSION = 'gwprocess/v4/api.php';
 
@@ -211,7 +211,7 @@ final class SslCommerzGateway implements PaymentGateway
      *
      * @return array<string, scalar>
      */
-    private function sessionFields(Payment $payment, string $returnUrl, ?string $ipnUrl): array
+    protected function sessionFields(Payment $payment, string $returnUrl, ?string $ipnUrl): array
     {
         /** @var Order|null $order */
         $order = $payment->order_id !== null ? $payment->order()->with('items')->first() : null;
@@ -252,7 +252,7 @@ final class SslCommerzGateway implements PaymentGateway
         return $fields;
     }
 
-    private function fallbackEmail(string $tag): string
+    protected function fallbackEmail(string $tag): string
     {
         $tag = preg_replace('/[^A-Za-z0-9-]/', '', $tag) ?: 'order';
 

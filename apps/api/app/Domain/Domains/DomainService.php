@@ -171,6 +171,12 @@ final class DomainService
         if ($domain->status === StoreDomain::STATUS_SUSPENDED) {
             throw new InvalidDomainTransition(StoreDomain::STATUS_SUSPENDED, StoreDomain::STATUS_PENDING_VERIFICATION);
         }
+        // Phase 7 (§2.1 b, S66): reviving a failed/expired (e.g. plan_limit) row needs the feature and room in the plan,
+        // counting the row itself; re-checks of pending/active rows stay ungated (Q71).
+        if (in_array($domain->status, [StoreDomain::STATUS_VERIFICATION_FAILED, StoreDomain::STATUS_EXPIRED], true)) {
+            FeatureGate::assertAllows($this->tenant(), Feature::CustomDomain);
+            FeatureGate::assertWithin($this->tenant(), Limit::CustomDomains, adding: 0);
+        }
         $this->throttleRecheck($domain);
         $this->audit->log('domain.recheck_requested', $domain, ['hostname' => $domain->hostname, 'status' => $domain->status], $user);
 

@@ -483,3 +483,95 @@ flattening if Q75 is to be certified).
 - **Leaving Cloudflare for SaaS**: delete custom hostnames only through the app (remove / reconcile), never by disabling
   the feature on the zone while merchants still point at `customers.storeplix.com`: every custom domain would go dark
   at once.
+
+## 10. Platform billing (Phase 7)
+
+Sources: PHASE-7-CONTRACT §1 (P7-4, P7-7–P7-14, P7-20), §4, §6.2, §12, §13; ADR 0008 (amended); ADR 0007. Owner: QA
+(ARCH reviews). **VERIFY** lines are provider details the public docs don't settle; the §13 certification run resolves
+them. Until then treat them as the expected setup.
+
+How it fits together: merchants pay Storeplix with **Storeplix's own** bKash PGW and SSLCommerz merchant accounts
+(never a merchant's `payment_gateway_accounts`). An invoice is paid only after a server-side provider answer (bKash
+Execute/Query, SSLCommerz Validation API) with the exact amount, `BDT` and our payment id as reference. Browser returns
+and the SSLCommerz IPN only trigger that check. Renewals are manual: an invoice 7 days before period end, `past_due`
+for 7 days after it, then the shop drops to Free (nothing is deleted; custom domains above the plan are detached).
+
+### 10.1 Environment (web, every queue worker, scheduler)
+| Key | Production | Notes |
+|---|---|---|
+| `BILLING_FAKE` | **`false`** | `true` with `APP_ENV=production` → the API refuses to boot; `/dev/billing/*` and `/dev/fake-billing-gateway/*` are never registered in production |
+| `BILLING_GATEWAY_MODE` | `live` | `sandbox` for staging and certification. bKash live stays unavailable until `BKASH_LIVE_BASE_URL` is set (as 5b) |
+| `BILLING_BKASH_APP_KEY`, `_APP_SECRET`, `_USERNAME`, `_PASSWORD` | secret manager | Platform bKash PGW. Empty → bKash is not offered (`meta.providers`), `pay` answers 422 `billing_gateway_unavailable` |
+| `BILLING_SSLCOMMERZ_STORE_ID`, `_STORE_PASSWD` | secret manager | Platform SSLCommerz. `store_passwd` also verifies the IPN `verify_sign` |
+| `BILLING_VAT_RATE_BPS` / `BILLING_VAT_BIN` / `BILLING_SELLER` | 1500 / company BIN / legal name + address | Printed on invoice PDFs (Q82: accountant sign-off before go-live) |
+| `BILLING_OPS_EMAIL` | ops mailbox | Duplicate and mismatched platform payments (money taken without service) |
+| `BILLING_GRACE_DAYS` / `_RENEWAL_LEAD_DAYS` / `_DOMAIN_GRACE_DAYS` / `_PAYMENT_HOLD_MINUTES` / `_CHANGE_INVOICE_TTL_HOURS` | 7 / 7 / 7 / 30 / 24 (defaults) | config `billing.php` |
+| `MERCHANT_APP_URL` | `https://app.storeplix.com` | The only redirect target after a billing return (`/settings/plan?payment=…`) |
+| `PUBLIC_API_URL` | `https://api.storeplix.com` | Base of the signed return URLs and of the IPN URL |
+
+Platform credentials are never stored in the database, never in a response, a log line or a payment's `raw` column.
+Rotating them: update the secret manager, restart web + `queue-billing` + scheduler; the cached bKash grant token
+(`billing:bkash:token:{fingerprint}`, global cache) is keyed by the credentials and expires on its own.
+
+### 10.2 Provider panels (one-time, per environment)
+- **SSLCommerz** merchant panel → IPN settings: `{PUBLIC_API_URL}/api/v1/billing/webhooks/sslcommerz` (POST). This is
+  the platform IPN, separate from the merchants' 5b IPN URLs. VERIFY: `product_profile: non-physical-goods` with
+  `shipping_method: NO` and no `ship_*` fields is accepted.
+- **bKash** has no usable IPN: `billing:reconcile-payments` queries pending payments every 5 minutes. Ask bKash for the
+  live base URL and whitelist the API egress IPs if they require it (VERIFY).
+
+### 10.3 Processes and schedule
+| Process / command | Schedule | Notes |
+|---|---|---|
+| `queue-billing`: `php artisan queue:work redis --queue=billing --tries=3 --timeout=150 --sleep=1` | worker, 1+ | `ProcessSubscriptionJob` (one per due tenant, unique 10 min), `ReconcileBillingPaymentJob`, `ProcessBillingIpn`. Add it to the §1 process list |
+| `billing:run` | scheduler, hourly, no overlap | Discovery on `pgsql_admin` (≤ 1 000 due tenants): trial end → Free, change-invoice expiry, renewal invoices + reminders, period end, `past_due`, expiry to Free, custom-domain detachment. Replaces `subscriptions:end-trials` (alias kept) |
+| `billing:reconcile-payments` | scheduler, every 5 min | Pending payments older than 2 min (and failed/cancelled ones < 48 h old) are queried; past the 30-min hold → `cancelled` |
+| Invoice PDFs | `documents` queue (`queue-documents` + Gotenberg, §5) | Rendered after paid/void, cached on the private disk under the tenant prefix |
+| Billing mails | `notifications` queue | Owner only |
+
+### 10.4 Ops commands (no super-admin UI until Phase 8.1)
+Every command writes an `audit_logs` row (`actor_type: system`) with `--reason`, and needs `--force` in production.
+- `php artisan billing:show {tenant}` — subscription, open invoice, last payments (no secrets). Start here.
+- `php artisan billing:mark-paid {invoice} --reference="bank txn 123" --reason="ticket 456"` — bank transfer or a
+  support case; creates a `manual` payment and applies it like a verified one (plan change / renewal).
+- `php artisan billing:void {invoice} --reason=` — void an open invoice.
+- `php artisan billing:extend {tenant} --days=7 --reason=` — move `current_period_end` (and `trial_ends_at` while
+  trialing) forward, e.g. after a provider outage.
+- `php artisan billing:change-plan {tenant} {plan} --interval=month --reason=` — comp plan, no invoice.
+
+### 10.5 Operating
+- **"I paid but I'm still on Free"**: `billing:show {tenant}`. A `pending` payment is re-queried by the reconciler
+  within 5 minutes; a `failed` one with `failure_code` `amount_mismatch` / `currency_mismatch` / `reference_mismatch`
+  means money was taken without service: refund it in the provider panel (Q89) or `billing:mark-paid` the invoice if
+  the customer prefers service. A late success after the invoice was voided reactivates the plan from the payment date
+  on its own (P7-14).
+- **Duplicate payment** (`is_duplicate = true`, ops mail): refund it in the provider panel within 7 days (Q89). There
+  is no API refund and no credit balance.
+- **Provider outage**: payments stay `pending` and are reconciled later; extend affected shops with `billing:extend`
+  if a renewal deadline passes during the outage.
+- **Custom domain detached by the plan** (`failure_code: plan_limit`): the merchant upgrades, then presses "Check now"
+  on the domain (re-check is 402 until the plan allows it).
+
+### 10.6 Certification (PHASE-7-CONTRACT §13; blocker for closing Phase 7)
+Needs from the PO (Q90, Q82): Storeplix's bKash PGW sandbox credentials and SSLCommerz sandbox `store_id` /
+`store_passwd`, the company's legal name, address and VAT BIN.
+1. Staging API, `queue-billing`, `queue-documents` and the scheduler with `BILLING_FAKE=false`,
+   `BILLING_GATEWAY_MODE=sandbox`, the sandbox credentials, and `PUBLIC_API_URL` = a public HTTPS tunnel/host.
+2. Register the IPN URL (§10.2) in the SSLCommerz sandbox panel.
+3. Boot check on a scratch container: `APP_ENV=production BILLING_FAKE=true` → refuses.
+4. With a fresh shop: upgrade Free → Starter with bKash sandbox → `paid`; again with SSLCommerz → `paid`; an SSLCommerz
+   IPN arriving before the browser return (close the tab on the provider page) → `paid` once; a cancelled payment →
+   `cancelled`, plan unchanged; a renewal paid during `past_due` (use `billing:extend` with negative days on staging
+   only, or wait).
+5. Record `apps/api/tests/Fixtures/billing/{bkash,sslcommerz}/*.json` with `"_source": "sandbox-YYYY-MM-DD"` (secrets
+   and tokens redacted), resolve every VERIFY in the contract and here, and write
+   `tests/e2e/specs/phase7.billing.sandbox.spec.ts` (manual dispatch only, never in CI).
+
+### 10.7 Rollback
+- **Application rollback**: the Phase 7 migrations are additive; the previous release ignores the new tables and
+  columns but also stops running `billing:run`, so renewals, `past_due` and expiries pause. Paid invoices stay paid.
+  Re-deploy within days or extend affected shops afterwards.
+- **Stop taking payments without a deploy**: clear the platform credentials of one provider (it disappears from the
+  pay dialog) or both (`pay` answers 422 `billing_gateway_unavailable`; plans can still be quoted and scheduled).
+- **Never** set `BILLING_FAKE=true` in production (refused at boot) and never mark an invoice paid by editing the
+  database: use `billing:mark-paid` so the plan change, audit and receipt happen.

@@ -325,16 +325,23 @@ id PK · tenant_id · store_id FK(t) · from_path varchar(512) · to_path varcha
 **U(store_id, from_path)**.
 
 ### subscriptions
+**Phase 7 (PHASE-7-CONTRACT §5.1, migration `2026_08_01_000100`)** adds `billing_interval` (`month`|`year`),
+`scheduled_plan_id`/`scheduled_interval`, `past_due_at`, `grace_ends_at`, `domain_grace_ends_at`, `ended_at`,
+`ended_reason` (`unpaid`|`cancelled`), `cancelled_at`, `plan_changed_at`, `notices jsonb`; timestamps become
+`timestamptz`; discovery indexes `IX(status, current_period_end)`, `IX(status, trial_ends_at)`. `plans` gains
+`price_yearly_amount`. The design below (provider columns) is superseded where it differs.
 id PK · tenant_id · plan_id FK plans · status `CHECK IN ('trialing','active','past_due','cancelled','expired')` ·
 current_period_start, current_period_end, trial_ends_at, cancelled_at timestamptz · cancel_at_period_end boolean ·
 provider varchar(32) · provider_subscription_id varchar(128) null · timestamps.
 Partial **U(tenant_id) WHERE status IN ('trialing','active','past_due')**.
 
 ### subscription_items
+**Not built** (no add-ons in Phase 7; PHASE-7-CONTRACT §5.1).
 id PK · tenant_id · subscription_id FK(t) · type `CHECK IN ('plan','addon')` · code varchar(40) · quantity int ·
 unit_amount bigint · currency char(3) · timestamps.
 
 ### invoices (SaaS billing)
+**Superseded by `billing_invoices` + `billing_payments` (Phase 7, §5.3 below).**
 id PK · tenant_id · subscription_id FK(t) null · number varchar(24) **U** (global `SP-2026-000123`) · status
 `CHECK IN ('draft','open','paid','void','uncollectible')` · subtotal_amount, tax_amount, total_amount bigint · currency ·
 due_at, paid_at · provider_payment_id null · lines jsonb · pdf_path null · timestamps. IX(tenant_id, created_at DESC).
@@ -741,6 +748,36 @@ ULIDs) · language varchar(2) default `'en'` `CHECK IN ('en','bn')` · status va
 tenant prefix) · bytes int null · error_code varchar(48) null · expires_at timestamptz null (24 h) · created_by FK users
 null SET NULL · timestamps. U(tenant_id, id). IX(tenant_id, store_id, created_at). IX(status, expires_at)
 (`documents:prune`; deliberately not tenant-led, it is a platform sweep run on `pgsql_admin`).
+
+## 5.3 Phase 7 billing tables (PHASE-7-CONTRACT §5, migrations `2026_08_01_*`)
+### platform_counters (platform, no tenant_id, no RLS)
+key varchar(64) PK (`billing_invoice:{YYYY}`) · value bigint · updated_at. Written only by `InvoiceNumberAllocator`
+(row locked `FOR UPDATE` in the issuing transaction → gapless numbers). `storeplix_app` SELECT/INSERT/UPDATE.
+
+### billing_invoices (RLS forced)
+id PK · tenant_id · subscription_id FK(t) · number varchar(20) **U** (`SP-2026-000123`) · kind `CHECK IN
+('new','upgrade','renewal')` · status `CHECK IN ('open','paid','void')` · plan_id FK plans RESTRICT · interval ·
+currency char(3) `= 'BDT'` · subtotal_amount, tax_amount, total_amount bigint (`total > 0`, `subtotal + tax = total`,
+VAT-inclusive) · tax_rate_bps · credit_amount · lines jsonb · bill_to jsonb (snapshot) · period_start, period_end
+null · issued_at, due_at · paid_at, voided_at null · void_reason `CHECK IN ('superseded','expired','unpaid','cancelled',
+'manual')` · paid_late bool · paid_payment_id null · reminders jsonb · pdf_path null · created_by FK users SET NULL ·
+idempotency_key null · timestamps. U(tenant_id, id). **Partial U(tenant_id) WHERE status = 'open'** (one open invoice).
+U(tenant_id, idempotency_key) partial. Partial U(subscription_id, period_start) WHERE kind = 'renewal' AND status <>
+'void'. IX(tenant_id, issued_at DESC). IX(status, due_at) (platform sweep on `pgsql_admin`).
+
+### billing_payments (RLS forced)
+id PK · tenant_id · invoice_id FK(t) · provider `CHECK IN ('bkash','sslcommerz','manual')` · status `CHECK IN
+('pending','succeeded','failed','cancelled')` · amount bigint > 0 · currency · provider_payment_id, provider_trx_id
+null · failure_code null · is_duplicate bool · raw jsonb (scrubbed, hidden) · expires_at · verified_at null ·
+initiated_by FK users SET NULL · idempotency_key null · reference null (manual) · timestamps. U(tenant_id, id).
+Partial **U(provider, provider_trx_id)** (global). U(tenant_id, idempotency_key) partial. IX(tenant_id, invoice_id).
+IX(status, created_at) (platform reconcile).
+
+Definer function `sp_billing_payment_owner(p_payment text)` → `tenant_id` (billing return URL and SSLCommerz billing
+IPN, B22/B23). Report indexes (`000700`, only if missing): orders `(tenant_id, store_id, placed_at)` and
+`(tenant_id, store_id, delivered_at) WHERE delivered_at IS NOT NULL`; shipments `(tenant_id, store_id, booked_at)
+WHERE booked_at IS NOT NULL`; return_requests `(tenant_id, store_id, created_at)`. `store_domains.failure_code` gains
+`plan_limit`.
 
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.

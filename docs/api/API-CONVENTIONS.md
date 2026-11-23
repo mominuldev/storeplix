@@ -132,6 +132,21 @@ Reused: `feature_not_in_plan` / `plan_limit_reached` (402: `custom_domain` featu
 `rate_limited`. The domain re-check never answers 502: resolver/provider errors are recorded on the row
 (`failure_code`) and the request still returns 200.
 
+**Phase 7 codes** (PHASE-7-CONTRACT §6.0, monetization):
+| HTTP | code | When |
+|---|---|---|
+| 409 | `plan_unchanged` | `POST /billing/change-plan` (or quote) to the current plan and interval |
+| 409 | `invoice_overdue` | a plan change other than Free while the subscription is `past_due` (pay the overdue invoice first) |
+| 409 | `invoice_not_open` | pay a `paid` or `void` invoice |
+| 422 | `plan_unavailable` | unknown or inactive plan, an interval the plan doesn't offer, or a change PHASE-7 §3.3 refuses (`details.plan_code`) |
+| 422 | `billing_gateway_unavailable` | pay with a provider the platform hasn't configured |
+Every 402 (`plan_limit_reached`, `feature_not_in_plan`) may add `details.upgrade_plan: ["<plan code>"]` = the cheapest
+plan that would allow the action (P7-17). `subscription_inactive` stays reserved and unused (P7-4: non-payment drops to
+Free). Reused: `provider_unavailable` (502 on initiate or invoice PDF), `feature_not_in_plan` (Profit report),
+`idempotency_key_*`. Limiter `billing`: 20/min per tenant + user on billing writes, `pay` also 10/min per tenant.
+Public billing callbacks: `GET|POST /billing/payments/return/{provider}/{payment}` (signed, 303 to the merchant app,
+limiter `payment-returns`) and `POST /billing/webhooks/sslcommerz` (always 200 `WebhookAck`, limiter `webhooks`).
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).

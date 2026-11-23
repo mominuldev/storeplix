@@ -31,6 +31,11 @@
 # `queue-domains` works `domains` (PHASE-6-CONTRACT §2.2, §11: CheckDomainJob / DeleteProviderHostnameJob, 3 tries,
 # job timeout 60 s). Without it a domain never leaves `pending_verification` on its own (only "Check now" moves it).
 #
+# `queue-billing` works `billing` (PHASE-7-CONTRACT §4.5: subscription lifecycle, billing payment reconcile, IPN;
+# --tries=3 --timeout=150); the scheduler runs billing:run hourly and billing:reconcile-payments every 5 min.
+# Billing (Phase 7): BILLING_FAKE=true (default here, DEV-ONLY) serves the fake platform gateway page
+# http://localhost:8000/api/v1/dev/fake-billing-gateway/{payment} and POST /api/v1/dev/billing/clock.
+#
 # Payments (5b-2): PAYMENTS_FAKE=true (default here, DEV-ONLY) serves the fake hosted page
 # http://localhost:8000/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
 # Sandbox runs: PAYMENTS_FAKE=false, PUBLIC_API_URL=<https tunnel>, credentials entered in the dashboard.
@@ -148,6 +153,23 @@ x-api-env: &api-env
   DOMAINS_FAKE_SSL_POLLS: ${DOMAINS_FAKE_SSL_POLLS:-1}
   CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
   CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+  # Phase 7 billing (PHASE-7-CONTRACT §12, P7-10, P7-20). DEV-ONLY values.
+  # BILLING_FAKE binds FakeBillingGateway for the platform's bKash + SSLCommerz accounts, serves the fake hosted page
+  # /api/v1/dev/fake-billing-gateway/{payment} (Pay / Pay wrong amount / Fail / Cancel / Pay, then time out) and the
+  # testing-only POST /api/v1/dev/billing/clock. The API refuses to boot with it in production.
+  # Certification (§13): BILLING_FAKE=false + the platform sandbox credentials + PUBLIC_API_URL=<https tunnel>.
+  BILLING_FAKE: ${BILLING_FAKE:-true}
+  BILLING_GATEWAY_MODE: ${BILLING_GATEWAY_MODE:-sandbox}
+  # Platform (Storeplix's own) gateway accounts, never a merchant's. Empty → that provider is not offered.
+  BILLING_BKASH_APP_KEY: ${BILLING_BKASH_APP_KEY:-}
+  BILLING_BKASH_APP_SECRET: ${BILLING_BKASH_APP_SECRET:-}
+  BILLING_BKASH_USERNAME: ${BILLING_BKASH_USERNAME:-}
+  BILLING_BKASH_PASSWORD: ${BILLING_BKASH_PASSWORD:-}
+  BILLING_SSLCOMMERZ_STORE_ID: ${BILLING_SSLCOMMERZ_STORE_ID:-}
+  BILLING_SSLCOMMERZ_STORE_PASSWD: ${BILLING_SSLCOMMERZ_STORE_PASSWD:-}
+  BILLING_VAT_BIN: ${BILLING_VAT_BIN:-}
+  BILLING_OPS_EMAIL: ${BILLING_OPS_EMAIL:-billing-ops@storeplix.test}
+  # MERCHANT_APP_URL (above) is the only billing return redirect target ({MERCHANT_APP_URL}/settings/plan?payment=…).
 
 x-api-common: &api-common
   build:
@@ -338,6 +360,22 @@ services:
   queue-domains:
     <<: *api-common
     command: ["php", "artisan", "queue:work", "redis", "--queue=domains", "--tries=3", "--timeout=90", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 7 billing (PHASE-7-CONTRACT §4): ProcessSubscriptionJob (billing:run, hourly), ReconcileBillingPaymentJob
+  # (billing:reconcile-payments, every 5 min) and ProcessBillingIpn. Without it renewals, past_due and expiry never run.
+  queue-billing:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=billing", "--tries=3", "--timeout=150", "--sleep=1"]
     depends_on:
       api:
         condition: service_healthy

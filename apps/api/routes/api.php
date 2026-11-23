@@ -1,7 +1,13 @@
 <?php
 
 use App\Domain\Audit\Http\Controllers\AuditLogController;
+use App\Domain\Billing\Http\Controllers\BillingChangeController;
 use App\Domain\Billing\Http\Controllers\BillingController;
+use App\Domain\Billing\Http\Controllers\BillingInvoiceController;
+use App\Domain\Billing\Http\Controllers\BillingReturnController;
+use App\Domain\Billing\Http\Controllers\BillingWebhookController;
+use App\Domain\Billing\Http\Controllers\DevBillingController;
+use App\Domain\Billing\Http\Controllers\FakeBillingGatewayController;
 use App\Domain\Cart\Http\StorefrontCartController;
 use App\Domain\Catalog\Http\Controllers\CategoryController;
 use App\Domain\Catalog\Http\Controllers\ProductController;
@@ -36,6 +42,7 @@ use App\Domain\Payments\Http\Controllers\PaymentLinkController;
 use App\Domain\Payments\Http\Controllers\PaymentReturnController;
 use App\Domain\Payments\Http\Controllers\PaymentWebhookController;
 use App\Domain\Payments\Http\Controllers\StorefrontPaymentController;
+use App\Domain\Reports\Http\ReportController;
 use App\Domain\Returns\Http\ReturnController;
 use App\Domain\Shared\Http\HealthController;
 use App\Domain\Shipping\Http\ShippingController;
@@ -131,6 +138,11 @@ Route::prefix('v1')->group(function (): void {
             // --- Phase 4: catalog, inventory, customers, bulk data, dashboard ---
             Route::middleware('throttle:merchant')->scopeBindings()->group(function (): void {
                 Route::get('dashboard', DashboardController::class)->name('stores.dashboard');
+
+                // Phase 7 (7.4): reports in the store timezone (PHASE-7-CONTRACT §6.3).
+                Route::get('reports/sales', [ReportController::class, 'sales'])->name('stores.reports.sales');
+                Route::get('reports/profit', [ReportController::class, 'profit'])->name('stores.reports.profit');
+                Route::get('reports/delivery', [ReportController::class, 'delivery'])->name('stores.reports.delivery');
 
                 Route::get('categories', [CategoryController::class, 'index'])->name('stores.categories.index');
                 Route::post('categories', [CategoryController::class, 'store'])->name('stores.categories.store');
@@ -295,6 +307,26 @@ Route::prefix('v1')->group(function (): void {
         Route::get('subscription', [BillingController::class, 'subscription'])->name('subscription.show');
         Route::get('features', [BillingController::class, 'features'])->name('features.index');
 
+        // --- Phase 7 (7.2): platform billing (PHASE-7-CONTRACT §6.1; tenant-level, no {store}) ---
+        Route::prefix('billing')->group(function (): void {
+            Route::middleware('throttle:billing')->group(function (): void {
+                Route::post('quote', [BillingChangeController::class, 'quote'])->name('billing.quote');
+                Route::post('change-plan', [BillingChangeController::class, 'change'])->name('billing.change-plan');
+                Route::delete('scheduled-change', [BillingChangeController::class, 'cancelScheduled'])->name('billing.scheduled-change.destroy');
+                Route::post('invoices/{invoice}/pay', [BillingInvoiceController::class, 'pay'])->name('billing.invoices.pay');
+            });
+            Route::middleware('throttle:merchant')->group(function (): void {
+                Route::get('invoices', [BillingInvoiceController::class, 'index'])->name('billing.invoices.index');
+                Route::get('invoices/{invoice}', [BillingInvoiceController::class, 'show'])->name('billing.invoices.show');
+                Route::get('invoices/{invoice}/pdf', [BillingInvoiceController::class, 'pdf'])->name('billing.invoices.pdf');
+                Route::get('payments/{payment}', [BillingInvoiceController::class, 'payment'])->name('billing.payments.show');
+            });
+        });
+        // Phase 7 (§4.6): TESTING-ONLY billing clock (404 unless BILLING_FAKE=true; never registered in production).
+        if (! app()->environment('production')) {
+            Route::post('dev/billing/clock', DevBillingController::class)->middleware('throttle:60,1,dev.billing')->name('dev.billing.clock');
+        }
+
         Route::get('audit-logs', AuditLogController::class)->name('audit-logs.index');
     });
 
@@ -340,6 +372,12 @@ Route::prefix('v1')->group(function (): void {
     // (tenant from the route key). Public; no tenant header; responses carry no tenant data.
     Route::match(['GET', 'POST'], 'payments/return/{provider}/{payment}', PaymentReturnController::class)
         ->where(['provider' => 'bkash|sslcommerz', 'payment' => '[0-9A-Za-z]{26}'])->middleware('throttle:payment-returns')->name('payments.return');
+    // Phase 7 (§6.2, B22/B23): platform billing returns (signed 26 h; tenant from the payment id) and the ONE platform
+    // SSLCommerz IPN. Public; no tenant header; no CSRF; answers carry no tenant data.
+    Route::match(['GET', 'POST'], 'billing/payments/return/{provider}/{payment}', BillingReturnController::class)
+        ->where(['provider' => 'bkash|sslcommerz', 'payment' => '[0-9A-Za-z]{26}'])->middleware('throttle:payment-returns')->name('billing.payments.return');
+    Route::post('billing/webhooks/sslcommerz', [BillingWebhookController::class, 'sslcommerz'])->middleware('throttle:webhooks')->name('billing.webhooks.sslcommerz');
+
     Route::middleware('throttle:webhooks')->group(function (): void {
         Route::post('webhooks/sslcommerz/{routeKey}', [PaymentWebhookController::class, 'sslcommerz'])->where('routeKey', '[A-Za-z0-9]{32}')->name('webhooks.sslcommerz');
         Route::post('webhooks/bkash/{routeKey}', [PaymentWebhookController::class, 'bkash'])->where('routeKey', '[A-Za-z0-9]{32}')->name('webhooks.bkash');
@@ -379,6 +417,15 @@ Route::prefix('v1')->group(function (): void {
             ->middleware(['signed', 'throttle:60,1,dev.fake-gateway.show'])->name('dev.fake-gateway.show');
         Route::post('dev/fake-gateway/{payment}/{outcome}', [FakeGatewayController::class, 'outcome'])->where('outcome', 'pay|fail|cancel')
             ->middleware(['signed', 'throttle:60,1,dev.fake-gateway.outcome'])->name('dev.fake-gateway.outcome');
+    }
+
+    // Phase 7 (P7-20): fake hosted billing payment page. Never registered in production; 404 unless BILLING_FAKE=true.
+    if (! app()->environment('production')) {
+        Route::get('dev/fake-billing-gateway/{payment}', [FakeBillingGatewayController::class, 'show'])
+            ->middleware(['signed:relative', 'throttle:60,1,dev.fake-billing-gateway.show'])->name('dev.fake-billing-gateway.show');
+        Route::post('dev/fake-billing-gateway/{payment}/{outcome}', [FakeBillingGatewayController::class, 'outcome'])
+            ->where('outcome', 'pay|wrong_amount|fail|cancel|timeout')
+            ->middleware(['signed:relative', 'throttle:60,1,dev.fake-billing-gateway.outcome'])->name('dev.fake-billing-gateway.outcome');
     }
 
     Route::get('documents/{document}/download', [DocumentController::class, 'download'])

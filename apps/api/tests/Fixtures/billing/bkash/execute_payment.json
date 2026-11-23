@@ -1,0 +1,18 @@
+{
+  "_source": "docs",
+  "_billing": "PHASE-7 §7.2: copy of the 5b fixture for the platform billing adapters; replaced by sandbox recordings at certification (§13)",
+  "_doc": "https://developer.bka.sh/docs/execute-payment-4",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "paymentID": "TR0011ON1565154754797",
+  "customerMsisdn": "01770618575",
+  "payerReference": "01770618575",
+  "paymentExecuteTime": "2026-11-22T10:16:02:456 GMT+0600",
+  "trxID": "6H7801QFYM",
+  "transactionStatus": "Completed",
+  "amount": "{amount}",
+  "currency": "BDT",
+  "intent": "sale",
+  "merchantInvoiceNumber": "{merchantInvoiceNumber}",
+  "maxRefundableAmount": "{amount}"
+}

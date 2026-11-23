@@ -131,17 +131,20 @@ describe('Connect dialog', () => {
     expect(await within(dialog).findByText(/already connected to a shop/)).toBeInTheDocument();
   });
 
-  it('maps 402 plan_limit_reached', async () => {
+  it('maps 402 plan_limit_reached to the app-wide upgrade dialog (Phase 7 §8.3, upgrade_plan hint)', async () => {
     signedIn('owner', {
       'GET /stores/S1/domains': domainsResponse([platformDomain()]),
-      'POST /stores/S1/domains': jsonResponse(402, { error: { code: 'plan_limit_reached', message: 'Limit' } }),
+      'POST /stores/S1/domains': jsonResponse(402, { error: { code: 'plan_limit_reached', message: 'Your plan allows 2 custom domains.', details: { custom_domains: ['x'], upgrade_plan: ['growth'] } } }),
     });
     renderApp(<AppRoutes />, { route });
     await userEvent.click((await screen.findAllByRole('button', { name: 'Connect a domain' }, SLOW))[0]!);
     const dialog = await screen.findByRole('dialog', { name: 'Connect a domain' });
     await userEvent.type(within(dialog).getByLabelText('Domain'), 'shop.acme.com');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Connect' }));
-    expect(await within(dialog).findByText('Your plan allows 2 custom domains. Remove one or upgrade.')).toBeInTheDocument();
+    const upgrade = await screen.findByRole('dialog', { name: 'You’ve reached your plan’s limit' });
+    expect(within(upgrade).getByText(/Your plan allows 2 custom domains\./)).toBeInTheDocument();
+    expect(within(upgrade).getByRole('button', { name: 'Upgrade to Growth' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Connect a domain' })).not.toBeInTheDocument();
   });
 });
 

@@ -78,12 +78,13 @@ class ShipmentController
     public function bulk(Request $request, Store $store): JsonResponse
     {
         Gate::authorize('view', $store);
+        // Phase 7 (§2.1): the plan gate answers before body validation (402, never 422, on a plan without the feature).
+        FeatureGate::assertAllows($this->context->tenant(), Feature::BulkCourierBooking);
         $input = $request->validate([
             'provider' => ['required', 'string', Rule::in(self::PROVIDERS)],
             'order_ids' => ['required', 'array', 'min:1', 'max:500'],
             'order_ids.*' => ['required', 'string', 'distinct', 'max:26'],
         ]);
-        FeatureGate::assertAllows($this->context->tenant(), Feature::BulkCourierBooking);
         $ids = array_map(fn ($id) => strtolower((string) $id), $input['order_ids']);
         $known = Order::query()->where('store_id', $store->id)->whereIn('id', $ids)->pluck('id')->flip();
         $errors = [];

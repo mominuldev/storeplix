@@ -2,44 +2,26 @@
 
 namespace App\Domain\Billing\Console;
 
-use App\Domain\Billing\Models\Plan;
+use App\Domain\Billing\Jobs\ProcessSubscriptionJob;
 use App\Domain\Billing\Models\Subscription;
-use App\Domain\Tenancy\Support\AuditLogger;
-use App\Domain\Tenancy\TenantContext;
 use Illuminate\Console\Command;
 
+/** Kept as an ops alias (PHASE-7 §12): ends due trials through the billing:run job; removed from the schedule. */
 class EndTrials extends Command
 {
     protected $signature = 'subscriptions:end-trials';
 
-    protected $description = 'Move expired trials to the Free plan (nothing is locked).';
+    protected $description = 'Move expired trials to the Free plan (nothing is locked). Alias of the billing:run trial step.';
 
-    public function handle(TenantContext $context, AuditLogger $audit): int
+    public function handle(): int
     {
-        $free = Plan::query()->where('code', Plan::FREE)->firstOrFail();
-        $count = 0;
-
-        // Platform job across tenants: explicit opt-out, then act inside each tenant's context.
-        Subscription::withoutTenancy()
-            ->where('status', Subscription::TRIALING)
-            ->where('trial_ends_at', '<', now())
-            ->orderBy('id')
-            ->each(function (Subscription $row) use ($context, $audit, $free, &$count) {
-                $context->run($row->tenant_id, function () use ($row, $audit, $free) {
-                    $from = $row->plan?->code;
-                    $row->forceFill([
-                        'status' => Subscription::ACTIVE,
-                        'plan_id' => $free->id,
-                        'current_period_start' => now(),
-                        'current_period_end' => now()->addMonth(),
-                    ])->save();
-
-                    $audit->log('subscription.trial_ended', $row, ['plan' => ['from' => $from, 'to' => $free->code]], actor: null, system: true);
-                });
-                $count++;
-            });
-
-        $this->info("Ended {$count} trial(s).");
+        // cross-tenant: billing schedule (B24) — discovery only.
+        $tenants = Subscription::withoutTenancy()->where('status', Subscription::TRIALING)->where('trial_ends_at', '<', now())
+            ->orderBy('id')->pluck('tenant_id')->unique();
+        foreach ($tenants as $tenantId) {
+            dispatch_sync(new ProcessSubscriptionJob((string) $tenantId));
+        }
+        $this->info("Ended {$tenants->count()} trial(s).");
 
         return self::SUCCESS;
     }

@@ -183,6 +183,19 @@ jobs:
           echo "domains tests executed: ${ran}"
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'domains'"; exit 1; }
 
+      # Phase 7 (PHASE-7-CONTRACT §11): the `billing`, `plans` and `reports` groups must exist and pass on sqlite.
+      - name: phase 7 groups (billing, plans, reports)
+        run: |
+          mkdir -p build
+          fail=0
+          for g in billing plans reports; do
+            php artisan test --group="$g" --exclude-group perf --exclude-group race --log-junit "build/${g}.xml" || fail=1
+            ran=$(grep -o 'tests="[0-9]*"' "build/${g}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
+            echo "${g} tests executed: ${ran}"
+            [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group '${g}'"; fail=1; }
+          done
+          exit $fail
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -278,6 +291,13 @@ jobs:
       # Phase 6: partial unique primary, CHECK constraints, timestamptz conversion only behave for real on Postgres.
       - name: domains (postgres)
         run: php artisan test --group=domains --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 7: timestamptz conversion, partial unique open invoice, gapless invoice counter, CHECK constraints.
+      - name: phase 7 groups (postgres)
+        run: php artisan test --group=billing --group=plans --group=reports --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -396,7 +416,11 @@ jobs:
             test_concurrent_ipn_and_return_apply_the_payment_once \
             test_concurrent_bookings_create_one_shipment \
             test_concurrent_make_primary_keeps_one_primary \
-            test_concurrent_remove_and_make_primary_do_not_deadlock; do
+            test_concurrent_remove_and_make_primary_do_not_deadlock \
+            test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
+            test_concurrent_courier_connects_at_the_limit_give_one_success_and_one_402 \
+            test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
+            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -595,7 +619,11 @@ jobs:
             test_concurrent_ipn_and_return_apply_the_payment_once \
             test_concurrent_bookings_create_one_shipment \
             test_concurrent_make_primary_keeps_one_primary \
-            test_concurrent_remove_and_make_primary_do_not_deadlock; do
+            test_concurrent_remove_and_make_primary_do_not_deadlock \
+            test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
+            test_concurrent_courier_connects_at_the_limit_give_one_success_and_one_402 \
+            test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
+            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
@@ -603,6 +631,14 @@ jobs:
       # the `ask` endpoint, domains:check discovery and the domain isolation tests with RLS on.
       - name: domains (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" domains lenient --group=domains --exclude-group perf --exclude-group race'
+      # Phase 7 (PHASE-7-CONTRACT §11, S56, S63): billing tables (forced RLS), sp_billing_payment_owner (B22/B23),
+      # billing:run / reconcile discovery on pgsql_admin, report aggregates under RLS.
+      - name: phase 7 billing (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" billing lenient --group=billing --exclude-group perf --exclude-group race'
+      - name: phase 7 plans (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" plans lenient --group=plans --exclude-group perf --exclude-group race'
+      - name: phase 7 reports (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" reports lenient --group=reports --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
