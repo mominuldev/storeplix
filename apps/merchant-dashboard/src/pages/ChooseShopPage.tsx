@@ -111,7 +111,7 @@ export function ChooseShopPage() {
                           t.role === 'staff' ? 'bg-surface-subtle text-text-secondary' : 'bg-brand-50 text-brand-700',
                         )}
                       >
-                        {roleLabel[t.role] ?? t.role}
+                        {t.role_name || roleLabel[t.role] || t.role}
                       </span>
                     </span>
                     <span className="truncate text-caption text-text-secondary">

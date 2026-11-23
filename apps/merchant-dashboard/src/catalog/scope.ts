@@ -7,19 +7,34 @@ export function useStoreScope() {
   const { tenantId, activeTenant } = useAuth();
   const store = useTenantStore().data ?? null;
   const role = activeTenant?.role;
+  const m = activeTenant;
   return {
     tenantId,
     storeId: store?.id ?? null,
     store,
     role,
-    canViewCosts: can.viewCosts(role),
-    canManageCatalog: can.manageCatalog(role),
-    canBulkData: can.bulkData(role),
-    canManageMarketing: can.manageMarketing(role),
-    canManageRefunds: can.manageRefunds(role),
-    canManageSettings: can.manageSettings(role),
-    canManageIntegrations: can.manageIntegrations(role),
-    canManageDomains: can.manageDomains(role),
+    /** The active membership (pass to `can.*`). */
+    membership: m,
+    canViewCosts: can.viewCosts(m),
+    /** `products.delete`. */
+    canManageCatalog: can.manageCatalog(m),
+    canDeleteCustomers: can.deleteCustomers(m),
+    /** `data.import` (import links and the import page). */
+    canBulkData: can.importData(m),
+    canExportData: can.exportData(m),
+    canManageMarketing: can.manageMarketing(m),
+    canManageRefunds: can.manageRefunds(m),
+    canManageSettings: can.manageSettings(m),
+    canManageIntegrations: can.manageIntegrations(m),
+    canManageDomains: can.manageDomains(m),
+    canViewBilling: can.viewBilling(m),
+    canEditProducts: can.editProducts(m),
+    canAdjustInventory: can.adjustInventory(m),
+    canViewOrders: can.viewOrders(m),
+    canProcessOrders: can.processOrders(m),
+    canManageShipments: can.manageShipments(m),
+    canCancelShipments: can.cancelShipments(m),
+    canEditCustomers: can.editCustomers(m),
   };
 }
 

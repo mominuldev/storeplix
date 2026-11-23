@@ -664,7 +664,8 @@ function DomainsTab({ tenantId }: { tenantId: string }) {
   );
 }
 
-const memberRole = { owner: 'Owner', admin: 'Admin', staff: 'Staff' } as const;
+/** Fallback when an older API omits `role_name` (PHASE-8-3 §7.5: the tab shows the tenant's role name). */
+const memberRole: Record<string, string> = { owner: 'Owner', admin: 'Manager', staff: 'Staff', custom: 'Custom role' };
 
 function StaffTab({ tenantId }: { tenantId: string }) {
   const members = useQuery({
@@ -696,7 +697,7 @@ function StaffTab({ tenantId }: { tenantId: string }) {
       key: 'role',
       header: 'Role',
       width: 100,
-      cell: (m) => <span className="text-body text-text-primary">{memberRole[m.role]}</span>,
+      cell: (m) => <span className="text-body text-text-primary">{m.role_name || memberRole[m.role] || m.role}</span>,
     },
     {
       key: 'status',

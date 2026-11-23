@@ -1,25 +1,23 @@
-import type { AuditLog, StaffMember, TenantRole } from '@storeplix/types';
+import type { AuditLog, Role, StaffMember } from '@storeplix/types';
 import { Avatar, Badge, Button, Card, cn, EmptyState, ProgressBar, Spinner } from '@storeplix/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Mail, Shield, Users } from 'lucide-react';
+import { ChevronRight, Mail, Shield } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
+import { ErrorBlock } from '../catalog/states';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
-import { can, permissionMatrix, roleDescription, roleLabel } from '../lib/permissions';
 import { auditActivityText, auditActorName, mergeRecentActivity } from '../lib/audit';
+import { can, roleNameOf } from '../lib/permissions';
 import { formatBdPhone } from '../lib/phone';
 import { InviteStaffModal } from '../staff/InviteStaffModal';
 import { MemberActions } from '../staff/MemberActions';
+import { PermissionMatrix } from '../staff/PermissionMatrix';
+import { listNames, peopleCount, rolePillClass, useNewRole, useRoles } from '../staff/roles';
 
-const rolePill: Record<TenantRole, string> = {
-  owner: 'bg-brand-50 text-brand-700',
-  admin: 'bg-info-bg text-info',
-  staff: 'bg-surface-subtle text-text-secondary',
-};
-
-function RolePill({ role }: { role: TenantRole }) {
-  return <span className={cn('rounded-full px-2 py-0.5 text-caption font-medium', rolePill[role])}>{roleLabel[role]}</span>;
+export function RolePill({ name, className }: { name: string; className: string }) {
+  return <span className={cn('inline-flex shrink-0 rounded-full px-2 py-0.5 text-caption font-medium whitespace-nowrap', className)}>{name}</span>;
 }
 
 function relative(iso: string | null): string {
@@ -43,26 +41,27 @@ function SectionTitle({ title, subtitle, action }: { title: string; subtitle?: s
   );
 }
 
-// Figma Staff & roles 89:26676 · Main 60:15365 (Online now, Actions today, sign-in security and per-person
-// toggles skipped per contract) · Invite modal 90:26879. Labels: owner → Owner, admin → Manager, staff → Staff.
+// Figma Staff & roles 89:26676 · Main 60:15365 (Online now, Actions today, sign-in security and Add seats skipped per
+// contract) · Invite modal 90:26879. PHASE-8-3 §7.2: role names from the API, Roles card, editable matrix.
 export function StaffPage() {
   const { activeTenant } = useAuth();
-  const role = activeTenant?.role;
-  const manage = can.manageStaff(role);
+  const manage = can.manageStaff(activeTenant);
   const [inviting, setInviting] = useState(false);
+  const newRole = useNewRole();
 
   const staff = useQuery({ queryKey: ['staff', activeTenant?.id], queryFn: () => api.staff.list(), enabled: manage, retry: false });
+  const roles = useRoles(manage);
   const activity = useQuery({
     queryKey: ['audit', 'staff', activeTenant?.id],
     queryFn: () => api.auditLogs.list({ action: 'staff.*', per_page: 5 }),
-    enabled: can.viewAuditLog(role),
+    enabled: can.viewAuditLog(activeTenant),
     retry: false,
   });
   // P8-QA-1 / PHASE-8-1 §7.2: Store Plix support actions on this shop (billing, suspension, support sessions) show here too.
   const supportActivity = useQuery({
     queryKey: ['audit', 'platform', activeTenant?.id],
     queryFn: () => api.auditLogs.list({ actor_type: 'platform_user', per_page: 5 }),
-    enabled: can.viewAuditLog(role),
+    enabled: can.viewAuditLog(activeTenant),
     retry: false,
   });
   const recentActivity = mergeRecentActivity([activity.data?.data, supportActivity.data?.data], 5);
@@ -72,7 +71,7 @@ export function StaffPage() {
       <>
         <PageHeader title="Staff" subtitle="Everyone who helps run your shop." />
         <Card>
-          <EmptyState icon={<Shield />} title="Only the owner and managers can manage staff" description="Ask your shop owner if you need someone added or your role changed." />
+          <EmptyState icon={<Shield />} title="You can’t manage staff" description="Ask your shop owner if you need someone added or your role changed." />
         </Card>
       </>
     );
@@ -80,21 +79,19 @@ export function StaffPage() {
 
   const members = staff.data?.data ?? [];
   const seats = staff.data?.meta;
+  const roleList = roles.data?.data;
+  const meta = roles.data?.meta;
+  const customEnabled = !!meta?.custom_roles_enabled;
   const active = members.filter((m) => m.kind === 'member');
   const invited = members.filter((m) => m.kind === 'invitation');
   const seatsText = seats ? (seats.seats_limit === null ? `${seats.seats_used} seats used · unlimited` : `${seats.seats_used} of ${seats.seats_limit} staff seats used`) : '';
-  const countByRole = (r: TenantRole) => active.filter((m) => m.role === r).length;
 
   return (
     <>
       <PageHeader
         title="Staff"
         subtitle={`Everyone who helps run ${activeTenant?.name ?? 'your shop'} — what they can see and do.`}
-        actions={
-          <>
-            <Button onClick={() => setInviting(true)}>+ Invite staff</Button>
-          </>
-        }
+        actions={<Button onClick={() => setInviting(true)}>+ Invite staff</Button>}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Team summary">
@@ -117,7 +114,7 @@ export function StaffPage() {
         ))}
       </section>
 
-      <div className="flex flex-col gap-6 xl:flex-row">
+      <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
         <Card className="flex min-w-0 flex-1 flex-col gap-4 p-6">
           <SectionTitle title="Team" subtitle={`${members.length} people · ${seatsText}`} />
           {seats && seats.seats_limit !== null && <ProgressBar value={seats.seats_used / seats.seats_limit} label="Seats used" className="h-1.5 rounded-full" />}
@@ -126,14 +123,14 @@ export function StaffPage() {
               <Spinner label="Loading team" />
             </div>
           ) : staff.isError ? (
-            <EmptyState icon={<Users />} title="Couldn’t load your team" description={staff.error.message} />
+            <ErrorBlock error={staff.error} title="Couldn’t load your team" onRetry={() => void staff.refetch()} />
           ) : (
             <div className="relative overflow-x-auto rounded-lg border border-border-default">
               <table className="w-full min-w-[560px] text-left">
                 <thead className="bg-surface-subtle text-caption font-medium text-text-muted uppercase">
                   <tr>
                     <th className="py-2.5 pl-4 font-medium">Member</th>
-                    <th className="w-[112px] py-2.5 pl-3 font-medium">Role</th>
+                    <th className="w-[128px] py-2.5 pl-3 font-medium">Role</th>
                     <th className="w-[102px] py-2.5 pl-3 font-medium">Joined</th>
                     <th className="w-[96px] py-2.5 pl-3 font-medium">Status</th>
                     <th className="w-[60px] py-2.5 pr-4 pl-3">
@@ -143,84 +140,29 @@ export function StaffPage() {
                 </thead>
                 <tbody>
                   {members.map((m) => (
-                    <MemberRow key={`${m.kind}-${m.id}`} member={m} viewerRole={role} />
+                    <MemberRow key={`${m.kind}-${m.id}`} member={m} roles={roleList} customRolesEnabled={customEnabled} />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {invited.filter((m) => m.status === 'invited').slice(0, 1).map((m) => (
-            <p key={m.id} className="flex flex-wrap items-center gap-2.5 rounded-lg bg-warning-bg px-3.5 py-2.5 text-body text-text-primary">
-              <Mail aria-hidden className="size-4 text-warning" />
-              <span className="flex-1">
-                {m.name ?? m.email} hasn’t accepted yet — invite link sent by email to {m.email}.
-              </span>
-            </p>
-          ))}
+          {invited
+            .filter((m) => m.status === 'invited')
+            .slice(0, 1)
+            .map((m) => (
+              <p key={m.id} className="flex flex-wrap items-center gap-2.5 rounded-lg bg-warning-bg px-3.5 py-2.5 text-body text-text-primary">
+                <Mail aria-hidden className="size-4 text-warning" />
+                <span className="flex-1">
+                  {m.name ?? m.email} hasn’t accepted yet — invite link sent by email to {m.email}.
+                </span>
+              </p>
+            ))}
         </Card>
 
-        <Card className="flex w-full flex-col gap-3 p-5 xl:w-[340px]">
-          <h2 className="text-body-lg font-medium text-text-primary">Roles</h2>
-          {(['owner', 'admin', 'staff'] as const).map((r) => (
-            <div key={r} className="flex flex-col gap-0.5 rounded-lg border border-border-default px-3 py-2.5">
-              <span className="flex items-center gap-1.5">
-                <RolePill role={r} />
-                <span className="text-caption text-text-muted">
-                  {countByRole(r)} {countByRole(r) === 1 ? 'person' : 'people'}
-                </span>
-              </span>
-              <span className="text-caption text-text-secondary">{roleDescription[r]}</span>
-            </div>
-          ))}
-          <p className="flex items-start gap-2 rounded-lg bg-warning-bg px-3 py-2.5 text-caption text-text-primary">
-            <Shield aria-hidden className="size-4 shrink-0 text-warning" />
-            Custom roles like Order staff and Packer arrive in a later update.
-          </p>
-        </Card>
+        <RolesCard roles={roleList} loading={roles.isPending} error={roles.isError ? roles.error : null} onRetry={() => void roles.refetch()} onNew={() => newRole(meta)} />
       </div>
 
-      <Card className="flex flex-col gap-4 p-6">
-        <SectionTitle title="Roles & permissions" subtitle="What each role can do. Owner always has full access." />
-        <div className="relative overflow-x-auto rounded-lg border border-border-default">
-          <table className="w-full min-w-[520px] text-left">
-            <thead className="bg-surface-subtle text-caption font-medium text-text-muted uppercase">
-              <tr>
-                <th className="py-2.5 pl-4 font-medium">Permission</th>
-                {(['owner', 'admin', 'staff'] as const).map((r) => (
-                  <th key={r} className={cn('py-2.5 pl-4 text-center font-medium', r === 'staff' ? 'w-32 pr-4' : 'w-28')}>
-                    {roleLabel[r]}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {permissionMatrix.map((p) => (
-                <tr key={p.label} className="border-t border-border-default">
-                  <td className="py-3 pl-4">
-                    <span className="block text-body font-medium text-text-primary">{p.label}</span>
-                    {p.hint && <span className="mt-0.5 block text-caption text-text-secondary">{p.hint}</span>}
-                  </td>
-                  {(['owner', 'admin', 'staff'] as const).map((r) => (
-                    <td key={r} className={cn('py-3 pl-4 text-center', r === 'staff' && 'pr-4')}>
-                      <span
-                        role="img"
-                        aria-label={p[r] ? `${roleLabel[r]}: allowed` : `${roleLabel[r]}: not allowed`}
-                        className={cn(
-                          'inline-flex size-5 items-center justify-center rounded-sm align-middle',
-                          p[r] ? 'bg-brand-600 text-text-inverse' : 'border-[1.5px] border-border-strong bg-surface-card',
-                          r === 'owner' && 'opacity-50',
-                        )}
-                      >
-                        {p[r] && <Check aria-hidden className="size-3.5" />}
-                      </span>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <PermissionMatrix roles={roleList} meta={meta} rolesLoading={roles.isPending} rolesError={roles.isError ? roles.error : null} onNew={() => newRole(meta)} onRetry={() => void roles.refetch()} />
 
       <Card className="flex flex-col gap-1 p-6">
         <SectionTitle title="Recent staff activity" subtitle="Every important action is logged with who did it and when." />
@@ -241,12 +183,71 @@ export function StaffPage() {
         )}
       </Card>
 
-      <InviteStaffModal open={inviting} onClose={() => setInviting(false)} seats={seats} />
+      <InviteStaffModal open={inviting} onClose={() => setInviting(false)} seats={seats} roles={roleList} rolesLoading={roles.isPending} customRolesEnabled={customEnabled} />
     </>
   );
 }
 
-function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole: TenantRole | undefined }) {
+// Figma Card / Roles 89:26720 — w 340, p 20, gap 12; rows: 1px border, radius 12, px 12 py 10; pill + "N people",
+// description Caption/12 text-secondary, member avatars (24px), chevron; warning note when a role hides cost.
+function RolesCard({ roles, loading, error, onRetry, onNew }: { roles: Role[] | undefined; loading: boolean; error: unknown; onRetry: () => void; onNew: () => void }) {
+  const noCost = (roles ?? []).filter((r) => !r.permissions.includes('costs.view')).map((r) => r.name);
+  return (
+    <Card className="flex w-full flex-col gap-3 p-5 xl:w-[340px]" aria-label="Roles">
+      <div className="flex items-center gap-2">
+        <h2 className="flex-1 text-body-lg font-medium text-text-primary">Roles</h2>
+        <Button size="sm" variant="ghost" onClick={onNew}>
+          + Custom role
+        </Button>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Spinner label="Loading roles" />
+        </div>
+      ) : error ? (
+        <ErrorBlock error={error} title="Couldn’t load roles" onRetry={onRetry} className="px-2 py-6" />
+      ) : (
+        <>
+          <ul className="flex flex-col gap-3">
+            {(roles ?? []).map((r) => (
+              <li key={r.id}>
+                <Link
+                  to={`/staff/roles/${r.id}`}
+                  aria-label={`${r.name} role`}
+                  className="flex items-center gap-2.5 rounded-lg border border-border-default px-3 py-2.5 outline-none hover:bg-surface-subtle focus-visible:shadow-focus"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5">
+                      <RolePill name={r.name} className={rolePillClass(r.key ?? 'custom', r.id, roles)} />
+                      <span className="text-caption whitespace-nowrap text-text-muted">{peopleCount(r.members_count)}</span>
+                    </span>
+                    {r.description && <span className="text-caption text-text-secondary">{r.description}</span>}
+                  </span>
+                  {r.members_preview.length > 0 && (
+                    <span className="flex shrink-0 -space-x-1.5" aria-hidden>
+                      {r.members_preview.slice(0, 3).map((p) => (
+                        <Avatar key={p.id} name={p.name} className="size-6 border-2 border-surface-card text-caption" />
+                      ))}
+                    </span>
+                  )}
+                  <ChevronRight aria-hidden className="size-4 shrink-0 text-text-muted" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {noCost.length > 0 && (
+            <p className="flex items-start gap-2 rounded-lg bg-warning-bg px-3 py-2.5 text-caption text-text-primary">
+              <Shield aria-hidden className="size-4 shrink-0 text-warning" />
+              {listNames(noCost)} never see cost price or profit.
+            </p>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function MemberRow({ member: m, roles, customRolesEnabled }: { member: StaffMember; roles: Role[] | undefined; customRolesEnabled: boolean }) {
   const name = m.name ?? m.email;
   return (
     <tr className="border-t border-border-default">
@@ -263,7 +264,7 @@ function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole:
         </span>
       </td>
       <td className="py-3 pl-3">
-        <RolePill role={m.role} />
+        <RolePill name={roleNameOf(m)} className={rolePillClass(m.role, m.role_id, roles)} />
       </td>
       <td className="py-3 pl-3 text-caption text-text-secondary">{m.kind === 'member' ? relative(m.joined_at) : '—'}</td>
       <td className="py-3 pl-3">
@@ -282,7 +283,7 @@ function MemberRow({ member: m, viewerRole }: { member: StaffMember; viewerRole:
         )}
       </td>
       <td className="py-3 pr-4 pl-3">
-        <MemberActions member={m} viewerRole={viewerRole} />
+        <MemberActions member={m} roles={roles} customRolesEnabled={customRolesEnabled} />
       </td>
     </tr>
   );

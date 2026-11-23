@@ -14,18 +14,23 @@ import {
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
+import { can, type PermissionHolder } from '../lib/permissions';
+
+/** PHASE-8-3 §7.1: hide the entry unless the membership passes (the route gates itself too). */
+export type NavRequirement = (m: PermissionHolder) => boolean;
 
 export interface NavChild {
   label: string;
   to: string;
-  /** Hide the link unless the role passes this check (the page gates itself too). */
-  requires?: 'bulkData';
+  /** Hide the link unless the membership passes this check (the page gates itself too). */
+  requires?: NavRequirement;
 }
 
 export interface NavEntry {
   label: string;
   to: string;
   icon: LucideIcon;
+  requires?: NavRequirement;
   children?: NavChild[];
 }
 
@@ -37,14 +42,15 @@ export const mainNav: NavEntry[] = [
     label: 'Orders',
     to: '/orders',
     icon: ShoppingBag,
+    requires: (m) => can.seeOrders(m) || can.seeShipments(m),
     // 5b §10: Returns, Shipments (5b-3) and Invoices & labels (Figma sidebar order 39:10347). Unfinished orders and
     // Fake order guard stay hidden.
     children: [
-      { label: 'All orders', to: '/orders' },
-      { label: 'Create order', to: '/orders/new' },
-      { label: 'Returns', to: '/returns' },
-      { label: 'Shipments', to: '/shipments' },
-      { label: 'Invoices & labels', to: '/orders/print' },
+      { label: 'All orders', to: '/orders', requires: can.seeOrders },
+      { label: 'Create order', to: '/orders/new', requires: can.viewOrders },
+      { label: 'Returns', to: '/returns', requires: can.viewOrders },
+      { label: 'Shipments', to: '/shipments', requires: can.seeShipments },
+      { label: 'Invoices & labels', to: '/orders/print', requires: can.seeShipments },
     ],
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },
@@ -57,14 +63,14 @@ export const mainNav: NavEntry[] = [
     children: [
       { label: 'All products', to: '/products' },
       { label: 'Categories', to: '/products/categories' },
-      { label: 'Import', to: '/products/import', requires: 'bulkData' },
+      { label: 'Import', to: '/products/import', requires: can.importData },
     ],
   },
   { label: 'Inventory', to: '/inventory', icon: Warehouse },
-  { label: 'Customers', to: '/customers', icon: Users },
+  { label: 'Customers', to: '/customers', icon: Users, requires: can.viewCustomers },
   // Phase 5a §9: Marketing → Coupons only (overview, campaigns, abandoned cart are Phase 8).
   { label: 'Marketing', to: '/marketing', icon: Megaphone, children: [{ label: 'Coupons', to: '/marketing/coupons' }] },
-  { label: 'Reports', to: '/reports', icon: BarChart3 },
+  { label: 'Reports', to: '/reports', icon: BarChart3, requires: can.viewReports },
   {
     label: 'Online store',
     to: '/online-store',
@@ -80,7 +86,7 @@ export const mainNav: NavEntry[] = [
   },
   // 5b §10: top-level Integrations (payments live in 5b-2, couriers in 5b-3).
   { label: 'Integrations', to: '/integrations', icon: Plug },
-  { label: 'Staff', to: '/staff', icon: UserCheck },
+  { label: 'Staff', to: '/staff', icon: UserCheck, requires: can.manageStaff },
   { label: 'Settings', to: '/settings', icon: Settings },
 ];
 
@@ -91,5 +97,12 @@ export const mobileMoreGroups: { heading: string; items: string[] }[] = [
   { heading: 'Grow', items: ['/marketing', '/reports'] },
   { heading: 'Setup', items: ['/online-store', '/integrations', '/settings'] },
 ];
+
+/** Entries (and children) the membership may see; hidden items are removed, not disabled (§7.1). */
+export function visibleNav(m: PermissionHolder, nav: NavEntry[] = mainNav): NavEntry[] {
+  return nav
+    .filter((n) => !n.requires || n.requires(m))
+    .map((n) => (n.children ? { ...n, children: n.children.filter((c) => !c.requires || c.requires(m)) } : n));
+}
 
 export const allRoutes = mainNav.flatMap((n) => [n, ...(n.children ?? []).filter((c) => c.to !== n.to)]);

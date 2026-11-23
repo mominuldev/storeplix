@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { GuestRoute, ProtectedRoute } from './auth/ProtectedRoute';
 import { AppShell } from './layout/AppShell';
 import { allRoutes } from './layout/nav';
+import { RequirePermission } from './layout/RequirePermission';
+import { can, type PermissionHolder } from './lib/permissions';
 import { ChooseShopPage } from './pages/ChooseShopPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -66,9 +68,13 @@ const DeliveryPage = lazy(() => import('./onboarding/DeliveryPage'));
 const GetPaidPage = lazy(() => import('./onboarding/GetPaidPage'));
 const LivePage = lazy(() => import('./onboarding/LivePage'));
 // Phase 7 §8.3 reports (code-split).
+// Phase 8.3 role editor (code-split).
+const RolePage = lazy(() => import('./staff/RolePage'));
 const ReportsPage = lazy(() => import('./reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
+/** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
+const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => <RequirePermission allow={allow}>{lazyEl(el)}</RequirePermission>;
 
 /** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
@@ -185,26 +191,28 @@ export function AppRoutes() {
               <Route path="/products/import" element={lazyEl(<ImportPage />)} />
               <Route path="/products/:productId" element={lazyEl(<ProductEditorPage />)} />
               <Route path="/inventory" element={lazyEl(<InventoryPage />)} />
-              <Route path="/customers" element={lazyEl(<CustomersPage />)} />
-              <Route path="/customers/:customerId" element={lazyEl(<CustomerDetailPage />)} />
-              <Route path="/orders" element={lazyEl(<OrdersPage />)} />
-              <Route path="/orders/new" element={lazyEl(<CreateOrderPage />)} />
-              <Route path="/orders/print" element={lazyEl(<PrintPage />)} />
-              <Route path="/returns/:returnId?" element={lazyEl(<ReturnsPage />)} />
-              <Route path="/shipments" element={lazyEl(<ShipmentsPage />)} />
-              <Route path="/shipments/:shipmentId" element={lazyEl(<ShipmentDetailPage />)} />
-              <Route path="/orders/:orderId" element={lazyEl(<OrderDetailPage />)} />
-              <Route path="/orders/:orderId/edit" element={lazyEl(<OrderEditPage />)} />
+              <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
+              <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
+              <Route path="/orders" element={gated(can.seeOrders, <OrdersPage />)} />
+              <Route path="/orders/new" element={gated(can.viewOrders, <CreateOrderPage />)} />
+              <Route path="/orders/print" element={gated(can.seeShipments, <PrintPage />)} />
+              <Route path="/returns/:returnId?" element={gated(can.viewOrders, <ReturnsPage />)} />
+              <Route path="/shipments" element={gated(can.seeShipments, <ShipmentsPage />)} />
+              <Route path="/shipments/:shipmentId" element={gated(can.seeShipments, <ShipmentDetailPage />)} />
+              <Route path="/orders/:orderId" element={gated(can.seeOrders, <OrderDetailPage />)} />
+              <Route path="/orders/:orderId/edit" element={gated(can.processOrders, <OrderEditPage />)} />
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
               <Route path="/marketing" element={<Navigate to="/marketing/coupons" replace />} />
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/marketing/coupons/:couponId" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/reports" element={<ReportsIndex />} />
-              <Route path="/reports/sales" element={lazyEl(<ReportsPage type="sales" />)} />
-              <Route path="/reports/profit" element={lazyEl(<ReportsPage type="profit" />)} />
-              <Route path="/reports/delivery" element={lazyEl(<ReportsPage type="delivery" />)} />
+              <Route path="/reports/sales" element={gated(can.viewReports, <ReportsPage type="sales" />)} />
+              <Route path="/reports/profit" element={gated(can.viewReports, <ReportsPage type="profit" />)} />
+              <Route path="/reports/delivery" element={gated(can.viewReports, <ReportsPage type="delivery" />)} />
               <Route path="/staff" element={<StaffPage />} />
+              <Route path="/staff/roles/new" element={lazyEl(<RolePage />)} />
+              <Route path="/staff/roles/:roleId" element={lazyEl(<RolePage />)} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/settings" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="store" replace />} />

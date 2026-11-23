@@ -154,8 +154,8 @@ export function ImportPage() {
           <span className="flex size-12 items-center justify-center rounded-full bg-surface-subtle text-text-secondary">
             <Lock aria-hidden className="size-6" />
           </span>
-          <h1 className="text-body-lg font-medium text-text-primary">Imports are for owners and managers</h1>
-          <p className="text-body text-text-secondary">Ask a manager to import the spreadsheet for you.</p>
+          <h1 className="text-body-lg font-medium text-text-primary">Importing isn’t part of your role</h1>
+          <p className="text-body text-text-secondary">Ask your shop owner or a manager to import the spreadsheet for you.</p>
           <Link to={backTo} className="font-semibold text-brand-600">
             Go back
           </Link>

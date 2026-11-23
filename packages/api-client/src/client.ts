@@ -1,5 +1,11 @@
 import type {
   AcceptInvitationInput,
+  CreateRoleInput,
+  PermissionGroup,
+  Role,
+  RoleDetail,
+  RolesMeta,
+  UpdateRoleInput,
   ApiSuccess,
   AuditLog,
   AuditLogFilters,
@@ -634,6 +640,30 @@ export function createApiClient(options: ApiClientOptions) {
         request<StaffMember>(`/staff/${enc(memberId)}`, { method: 'PATCH', body: input }),
       /** Removing yourself = leaving the shop. */
       remove: (memberId: string) => request<void>(`/staff/${enc(memberId)}`, { method: 'DELETE' }),
+    },
+
+    /** PHASE-8-3 §6.1: the code-defined permission catalogue (needs `staff.manage`). */
+    permissions: {
+      list: () => request<PermissionGroup[]>('/permissions'),
+    },
+
+    /**
+     * PHASE-8-3 §6.1 roles. Writes: 402 `feature_not_in_plan` (custom roles need Growth), 403 `permission_not_held` /
+     * `cannot_edit_own_role`, 409 `system_role_locked` / `revision_conflict` / `role_limit_reached` / `role_in_use`.
+     */
+    roles: {
+      list: async (): Promise<{ data: Role[]; meta: RolesMeta }> =>
+        listOf<Role, RolesMeta>('/roles', undefined, { custom_roles_used: 0, custom_roles_limit: 20, custom_roles_enabled: false }),
+      get: (roleId: string) => request<RoleDetail>(`/roles/${enc(roleId)}`),
+      create: (input: CreateRoleInput) => request<RoleDetail>('/roles', { method: 'POST', body: input }),
+      /** `revision` is required; `permissions` replaces the set. */
+      update: (roleId: string, input: UpdateRoleInput) => request<RoleDetail>(`/roles/${enc(roleId)}`, { method: 'PATCH', body: input }),
+      /**
+       * 409 `role_in_use` (details.members / details.invitations) unless `reassign_to` moves them first.
+       * `revision` is required (SEC-L3): a stale one → 409 `revision_conflict`.
+       */
+      remove: (roleId: string, opts: { revision: number; reassign_to?: string }) =>
+        request<void>(`/roles/${enc(roleId)}`, { method: 'DELETE', query: { revision: opts.revision, reassign_to: opts.reassign_to || undefined } }),
     },
 
     invitations: {

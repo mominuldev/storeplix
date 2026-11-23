@@ -231,14 +231,16 @@ export function ProductsPage() {
               {isEmptyShop ? 'Import' : 'Import CSV'}
             </Link>
           )}
-          {scope.canBulkData && !isEmptyShop && (
+          {scope.canExportData && !isEmptyShop && (
             <Button variant="secondary" loading={exporter.running} onClick={() => void exporter.start({ type: 'products', filters: { status: filters.status, category_id: filters.category_id, stock, q: filters.q } })}>
               Export
             </Button>
           )}
-          <Link to="/products/new" className={buttonVariants()}>
-            + Add product
-          </Link>
+          {scope.canEditProducts && (
+            <Link to="/products/new" className={buttonVariants()}>
+              + Add product
+            </Link>
+          )}
         </>
       }
     />
@@ -499,6 +501,7 @@ function MobileProducts({
   onToggle: (p: ProductSummary) => void;
   busy: boolean;
 }) {
+  const { canEditProducts } = useStoreScope();
   const chips: { value: MobileChip; label: string; count?: number }[] = [
     { value: 'all', label: 'All', count: counts?.all },
     { value: 'active', label: 'Active', count: counts?.active },
@@ -515,9 +518,11 @@ function MobileProducts({
             {summary && summary.low_stock_variants > 0 ? ` · ${formatCount(summary.low_stock_variants)} running low` : ''}
           </p>
         </div>
-        <Link to="/products/new" aria-label="Add product" className={cn(iconButton, 'size-11 rounded-full [&_svg]:size-[22px]')}>
-          <Plus aria-hidden />
-        </Link>
+        {canEditProducts && (
+          <Link to="/products/new" aria-label="Add product" className={cn(iconButton, 'size-11 rounded-full [&_svg]:size-[22px]')}>
+            <Plus aria-hidden />
+          </Link>
+        )}
       </div>
       <SearchBox value={q} onChange={onQ} placeholder="Search product name or SKU" label="Search products" className="h-12 rounded-lg border border-border-default bg-surface-card px-[15px] gap-2.5 [&>svg]:size-5" />
       <div role="tablist" aria-label="Filter products" className="-mx-4 flex gap-2 overflow-x-auto px-4">

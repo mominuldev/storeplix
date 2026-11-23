@@ -1,19 +1,24 @@
-import type { StaffMember, TenantRole } from '@storeplix/types';
+import type { Role, StaffMember } from '@storeplix/types';
 import { Button, Modal } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { api } from '../lib/api';
-import { can, roleLabel } from '../lib/permissions';
+import { can } from '../lib/permissions';
+import { RolePickerModal } from './RolePickerModal';
 
 type Action = { label: string; danger?: boolean; run: () => void };
 
-/** Row action menu (Figma: 32px icon button with ChevronDown). Only actions the viewer may perform are shown. */
-export function MemberActions({ member, viewerRole }: { member: StaffMember; viewerRole: TenantRole | undefined }) {
+/**
+ * Row action menu (Figma: 32px icon button with ChevronDown). Only actions the viewer may perform are shown
+ * (PHASE-8-3 N5–N7: the member's current role must be within the viewer's permissions).
+ */
+export function MemberActions({ member, roles, customRolesEnabled }: { member: StaffMember; roles: readonly Role[] | undefined; customRolesEnabled: boolean }) {
   const queryClient = useQueryClient();
-  const { logout, refreshUser } = useAuth();
+  const { logout, refreshUser, activeTenant: me } = useAuth();
   const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -28,11 +33,10 @@ export function MemberActions({ member, viewerRole }: { member: StaffMember; vie
   const done = async () => {
     setOpen(false);
     setConfirm(false);
-    await queryClient.invalidateQueries({ queryKey: ['staff'] });
+    await Promise.all([queryClient.invalidateQueries({ queryKey: ['staff'] }), queryClient.invalidateQueries({ queryKey: ['roles'] })]);
   };
   const onError = (e: Error) => setError(e.message);
 
-  const role = useMutation({ mutationFn: (r: 'admin' | 'staff') => api.staff.updateRole(member.id, { role: r }), onSuccess: done, onError });
   const remove = useMutation({
     mutationFn: () => api.staff.remove(member.id),
     onSuccess: async () => {
@@ -48,15 +52,20 @@ export function MemberActions({ member, viewerRole }: { member: StaffMember; vie
   const revoke = useMutation({ mutationFn: () => api.staff.revokeInvitation(member.id), onSuccess: done, onError });
 
   const actions: Action[] = [];
-  if (can.changeRole(viewerRole, member)) {
-    const other = member.role === 'admin' ? 'staff' : 'admin';
-    actions.push({ label: `Make ${roleLabel[other]}`, run: () => role.mutate(other) });
+  if (can.changeRole(me, member, roles)) {
+    actions.push({
+      label: 'Change role',
+      run: () => {
+        setOpen(false);
+        setPicking(true);
+      },
+    });
   }
-  if (can.manageInvitation(viewerRole, member)) {
+  if (can.manageInvitation(me, member, roles)) {
     actions.push({ label: 'Resend invite', run: () => resend.mutate() });
     actions.push({ label: 'Cancel invite', danger: true, run: () => revoke.mutate() });
   }
-  if (can.removeMember(viewerRole, member)) {
+  if (can.removeMember(me, member, roles)) {
     actions.push({ label: member.is_you ? 'Leave shop' : 'Remove from shop', danger: true, run: () => setConfirm(true) });
   }
   if (actions.length === 0) return <span className="size-8" />;
@@ -111,6 +120,7 @@ export function MemberActions({ member, viewerRole }: { member: StaffMember; vie
       >
         {error && <p className="text-body text-danger">{error}</p>}
       </Modal>
+      {picking && <RolePickerModal member={member} roles={roles} customRolesEnabled={customRolesEnabled} onClose={() => setPicking(false)} />}
     </div>
   );
 }

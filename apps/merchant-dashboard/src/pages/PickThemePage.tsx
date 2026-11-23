@@ -45,7 +45,7 @@ export function PickThemePage() {
   const [logo, setLogo] = useState<{ id: string; url: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canEdit = can.editSettings(activeTenant?.role);
+  const canEdit = can.editSettings(activeTenant);
 
   const themes = (catalog.data ?? []).slice().sort((a, b) => Number(b.status === 'available') - Number(a.status === 'available')).slice(0, 4);
   const selectable = (t: ThemeCatalogEntry) => t.status === 'available' && t.tier === 'free';

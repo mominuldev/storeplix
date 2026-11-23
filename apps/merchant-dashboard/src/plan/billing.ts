@@ -21,7 +21,7 @@ export function useSubscription() {
   return useQuery({
     queryKey: billingKeys.subscription(tenantId),
     queryFn: () => api.subscription.get(),
-    enabled: !!tenantId && can.viewBilling(activeTenant?.role),
+    enabled: !!tenantId && can.viewBilling(activeTenant),
     retry: false,
     staleTime: 60_000,
   });

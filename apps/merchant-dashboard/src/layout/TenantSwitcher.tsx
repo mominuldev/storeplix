@@ -35,7 +35,7 @@ export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   }, [open]);
 
   const name = store?.name ?? activeTenant?.name ?? 'No shop yet';
-  const sub = store ? storeDomain(store) : (activeTenant?.role ?? '');
+  const sub = store ? storeDomain(store) : (activeTenant?.role_name || activeTenant?.role || '');
 
   return (
     <div ref={ref} className="relative">
@@ -86,7 +86,7 @@ export function TenantSwitcher({ collapsed = false }: { collapsed?: boolean }) {
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-body font-semibold text-text-primary">{t.name}</span>
-                  <span className="truncate text-caption text-text-muted capitalize">{t.role}</span>
+                  <span className="truncate text-caption text-text-muted capitalize">{t.role_name || t.role}</span>
                 </span>
                 {t.id === activeTenant?.id && <Check className="size-4 text-brand-600" aria-hidden />}
               </button>

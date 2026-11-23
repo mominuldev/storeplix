@@ -10,7 +10,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
 import { acceptInviteSchema, type AcceptInviteInput, type AcceptInviteValues } from '../auth/schemas';
 import { api } from '../lib/api';
-import { roleLabel } from '../lib/permissions';
+import { roleNameOf } from '../lib/permissions';
 import { session } from '../lib/session';
 import { AuthShell, FormAlert, FormTitle } from '../onboarding/AuthShell';
 import { PhoneField } from '../otp/PhoneField';
@@ -127,7 +127,7 @@ export function InvitePage() {
       </span>
       <FormTitle
         title={`Join ${shopName}`}
-        subtitle={`${inv.invited_by_name} invited ${inv.email} as ${roleLabel[inv.role]}. The invitation expires ${new Date(inv.expires_at).toLocaleDateString()}.`}
+        subtitle={`${inv.invited_by_name} invited ${inv.email} as ${roleNameOf(inv)}. The invitation expires ${new Date(inv.expires_at).toLocaleDateString()}.`}
       />
     </div>
   );

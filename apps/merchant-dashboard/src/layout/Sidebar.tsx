@@ -2,14 +2,15 @@ import { cn, Logo, NavItem } from '@storeplix/ui';
 import { ChevronDown, ChevronRight, LifeBuoy } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
-import { mainNav, type NavEntry } from './nav';
-import { useStoreScope } from '../catalog/scope';
+import { visibleNav, type NavEntry } from './nav';
+import { useAuth } from '../auth/AuthProvider';
 import { PlanCard } from '../plan/PlanCard';
 import { TenantSwitcher } from './TenantSwitcher';
 
 // Figma Merchant Admin – Desktop · Sidebar 10:601 — 256 wide (72 collapsed), surface-card,
 // right border, padding 16; logo 32h; store switcher; nav; spacer; Help & support.
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
+  const { activeTenant } = useAuth();
   return (
     <aside
       aria-label="Main navigation"
@@ -24,7 +25,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       </div>
       <TenantSwitcher collapsed={collapsed} />
       <nav className="mt-1 flex flex-col">
-        {mainNav.map((item) => (
+        {visibleNav(activeTenant).map((item) => (
           <SidebarEntry key={item.to} item={item} collapsed={collapsed} />
         ))}
       </nav>
@@ -41,9 +42,8 @@ function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean 
   const { pathname } = useLocation();
   const inSection = item.to !== '/' && (pathname.startsWith(item.to) || !!item.children?.some((c) => pathname.startsWith(c.to)));
   const [expanded, setExpanded] = useState(inSection);
-  const { canBulkData } = useStoreScope();
   const Icon = item.icon;
-  const children = item.children?.filter((c) => c.requires !== 'bulkData' || canBulkData);
+  const children = item.children;
 
   if (!item.children || collapsed) {
     return (
