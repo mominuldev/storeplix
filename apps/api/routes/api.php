@@ -439,4 +439,5 @@ Route::prefix('v1')->group(function (): void {
     require __DIR__.'/admin.php';
     require __DIR__.'/admin-merchants.php';
     require __DIR__.'/impersonation.php';
+    require __DIR__.'/admin-analytics.php'; // Phase 8.2
 });

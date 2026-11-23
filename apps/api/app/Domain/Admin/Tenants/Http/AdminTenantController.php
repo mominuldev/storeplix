@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Admin\Tenants\Http;
 
+use App\Domain\Admin\Analytics\TenantMetrics;
 use App\Domain\Admin\Tenants\AdminPresenter;
 use App\Domain\Admin\Tenants\TenantDirectory;
 use App\Domain\Billing\FeatureGate;
@@ -43,13 +44,18 @@ class AdminTenantController
         }
 
         $query = TenantDirectory::tab(TenantDirectory::query($filter), (string) ($filter['status'] ?? 'all'));
+        $asOf = TenantMetrics::asOf();
         $column = ltrim($sort, '-');
-        $query->orderBy($column === 'current_period_end' ? 'cs.current_period_end' : 't.'.$column, str_starts_with($sort, '-') ? 'desc' : 'asc')
-            ->orderByDesc('t.id');
+        if (in_array($sort, TenantMetrics::SORTS, true)) {
+            TenantMetrics::sort($query, $sort, $asOf); // PHASE-8-2 §6.1 (snapshot of meta.metrics_as_of, nulls last)
+        } else {
+            $query->orderBy($column === 'current_period_end' ? 'cs.current_period_end' : 't.'.$column, str_starts_with($sort, '-') ? 'desc' : 'asc');
+        }
+        $query->orderByDesc('t.id');
         $page = $query->select(['t.id'])->paginate((int) ($input['per_page'] ?? 25));
         $ids = collect($page->items())->map(fn ($row) => (string) $row->id)->unique()->values()->all();
 
-        return AdminPresenter::paginated($page, TenantDirectory::summaries($ids), ['counts' => $counts]);
+        return AdminPresenter::paginated($page, TenantDirectory::summaries($ids), ['counts' => $counts, 'metrics_as_of' => $asOf]);
     }
 
     public function show(string $tenant): JsonResponse

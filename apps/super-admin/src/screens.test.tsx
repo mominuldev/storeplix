@@ -476,7 +476,7 @@ describe('top bar', () => {
     expect(api.find('GET', '/admin/search').at(-1)!.url.searchParams.get('q')).toBe('gad');
   });
 
-  it('dashboard error state and needs-attention box', async () => {
+  it('dashboard needs-attention box; Support (no view_analytics) keeps the 8.1 layout', async () => {
     mockApi([
       on('GET', '/admin/overview', () =>
         jsonResponse(200, {
@@ -497,7 +497,7 @@ describe('top bar', () => {
           },
         }),
       ),
-    ]);
+    ], { session: adminSession('support') });
     renderApp(<AppRoutes />, { route: '/' });
     expect(await screen.findByText('4 paying · 3 free')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /2 subscriptions past due/ })).toHaveAttribute('href', '/merchants?tab=past_due');

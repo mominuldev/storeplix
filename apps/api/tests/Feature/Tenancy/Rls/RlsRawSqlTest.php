@@ -53,6 +53,11 @@ class RlsRawSqlTest extends TestCase
 
         $this->setGuc(null, null);
         foreach (RlsTables::TENANT as $table) {
+            if (in_array($table, RlsTables::APP_REVOKED, true)) { // PHASE-8-2 S84: no privilege at all
+                $this->assertSame('42501', $this->sqlState(fn () => DB::selectOne("select count(*) as c from \"{$table}\"")), $table);
+
+                continue;
+            }
             // sms_messages: account-level OTP rows (tenant_id null) stay readable without a tenant (RlsPolicies).
             $sql = $table === 'sms_messages'
                 ? 'select count(*) as c from "sms_messages" where tenant_id is not null'

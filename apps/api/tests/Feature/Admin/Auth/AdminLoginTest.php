@@ -51,7 +51,7 @@ class AdminLoginTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.user.id', $user->id)
             ->assertJsonPath('data.user.platform_role', 'billing')
-            ->assertJsonPath('data.user.permissions', ['view_merchants', 'manage_billing'])
+            ->assertJsonPath('data.user.permissions', ['view_merchants', 'manage_billing', 'view_analytics'])
             ->assertJsonPath('data.user.totp_enrolled', true)
             ->assertJsonStructure(['data' => ['user' => ['id', 'name', 'email', 'platform_role', 'permissions', 'totp_enrolled', 'recovery_codes_left'], 'session_expires_at', 'idle_expires_at']]);
 

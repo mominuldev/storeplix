@@ -264,6 +264,7 @@ Redis cache.
 | `data:prune-imports` | daily | |
 | `carts:prune` | daily | |
 | `orders:expire-confirmation-tokens` | daily | |
+| `analytics:aggregate` | hourly at :20 Asia/Dhaka, no overlap, one server, in-process | Phase 8.2 nightly analytics snapshot + 35-day restatement; later runs are the catch-up (§12) |
 
 Without the scheduler unpaid holds never expire, links never expire and a lost IPN is never reconciled. The `payments:*`,
 `payment-links:expire`, `couriers:sync` and `couriers:reconcile-bookings` take `--sync` to run the per-tenant jobs inline during an incident.
@@ -644,3 +645,82 @@ support" and every storefront host answers the "temporarily unavailable" page (H
   work if you are also a merchant.
 - Exit ends the session at once; otherwise it ends after 15 minutes. Start and end are on the shop's audit log and in
   the merchant's Activity log as "Store Plix support".
+
+## 12. Platform analytics (Phase 8.2)
+
+Sources: PHASE-8-2-CONTRACT §1 (P82-1 – P82-20), §4, §11; ADR 0016. Owner: QA (ARCH reviews).
+
+How it fits together: the scheduler runs `analytics:aggregate` **hourly at :20 Asia/Dhaka** (in-process, no queue job,
+`withoutOverlapping`, `onOneServer`). The first run after Dhaka midnight (00:20) snapshots the day that just closed into
+`tenant_daily_metrics` (one row per shop) and `platform_daily_metrics` (one row per day), then restates orders/GMV for
+the 35 days before it. Later runs find nothing missing and exit in under a second; they are the catch-up if 00:20
+failed. Every super-admin analytics page reads only these tables; "Data as of {day} · updated {time}" in the UI is
+`meta.as_of` / `meta.computed_at`.
+
+### 12.1 Environment (web and scheduler)
+| Key | Default | Notes |
+|---|---|---|
+| `ANALYTICS_TIMEZONE` | `Asia/Dhaka` | Day boundaries for every metric. Don't change once data exists |
+| `ANALYTICS_RESTATE_DAYS` | `35` | Orders/GMV of older days are frozen |
+| `ANALYTICS_CATCHUP_DAYS` | `7` | Missing days older than this are never snapshotted from current state; only the backfill fills them |
+| `ANALYTICS_TRIAL_CONVERSION_DAYS` | `7` | A payment up to 7 days after the trial ended still counts as trial → paid |
+| `ANALYTICS_CACHE_SECONDS` | `3600` | Response cache; a new run changes the cache key, so no manual flush is needed |
+
+No queue or worker change. The scheduler process needs `pgsql_admin` credentials (it already has them for billing).
+`POST /api/v1/dev/analytics/aggregate` exists only with `APP_ENV` `local`/`testing`; a production route list must not
+show `/dev/analytics/*` (S90).
+
+### 12.2 First deploy: backfill once
+History before the deploy is reconstructed once (Q110). Flows (orders, GMV) are exact; stocks (plan, MRR) are rebuilt
+from **paid invoices** and labelled `source = backfill` (comp plans, past-due grace and suspension history can't be
+known and count as not paying / active).
+1. Deploy, migrate, let the scheduler produce the first `nightly` row (next 00:20 Dhaka), or run
+   `php artisan analytics:aggregate` once by hand for yesterday.
+2. Find the start: `select min(created_at at time zone 'Asia/Dhaka')::date from tenants;` (as `storeplix_admin`).
+3. `php artisan analytics:backfill --from=<that date> --force` (default `--to` = the day before the first `nightly`
+   row). It prints a per-month summary; it refuses to overwrite `nightly`/`late` rows. Expect minutes, not hours
+   (one transaction per day, 300 s statement timeout each).
+4. Check: `/revenue` 12 months shows bars back to the start; `meta.data_starts_on` = that date.
+
+### 12.3 Re-running a day
+- **Flows only (safe, any time):** `php artisan analytics:aggregate --date=YYYY-MM-DD` (or `--from= --to=`). Re-runs
+  restate orders/GMV and `computed_at`; they never change a stored plan, status or MRR (stocks are insert-only).
+  Use after fixing an order-data incident inside the 35-day window.
+- **A missing day within 7 days:** the same command fills it from **current** state (`source = late`), or just wait
+  for the next hourly catch-up.
+- **A missing day older than 7 days:** the command exits 1 with "use analytics:backfill"; run
+  `php artisan analytics:backfill --from=D --to=D --force` (approximate stocks, `source = backfill`).
+- **Wrong stocks for a day** (e.g. a bug in the snapshot query): `php artisan analytics:aggregate --date=D
+  --rebuild-stocks --force` replaces the stocks with the invoice reconstruction. This loses comp/past-due/suspension
+  detail for that day; record why in the incident ticket.
+- A day ≥ today (Dhaka) is refused in production: an unclosed day has no end-of-day state.
+
+### 12.4 Reading `source`
+| `source` | Meaning | Trust |
+|---|---|---|
+| `nightly` | Snapshot taken before 06:00 Dhaka the next morning | Exact end-of-day state (± 20 min of activity) |
+| `late` | Snapshot taken after 06:00 (the night run failed, a later catch-up made it) | Current state at the time of the run; may include the next morning's upgrades/cancellations |
+| `backfill` | Reconstructed from invoices | Approximate stocks, exact flows |
+
+The platform row carries the worst source of its tenant rows. Many `late` days in a row = the 00:20 run is failing;
+see 12.5. Query: `select day, source, computed_at from platform_daily_metrics order by day desc limit 14;`.
+
+### 12.5 When the catch-up logs `analytics.aggregate_failed`
+The log line carries the day. The whole day was rolled back (one transaction), so no partial row exists; the next
+hourly run tries again.
+1. Read the exception in the same log entry. Typical causes and fixes:
+   - **Assertion failed** (partition `active ≠ paying + trialing + comp + free`, or MRR ≠ Σ by plan): a data bug, not
+     an infrastructure one. Do **not** re-run with `--force`. Find the tenant (a subscription in an unexpected status,
+     a plan without a price), fix the data or the code, then run `analytics:aggregate --date=D`.
+   - **`statement_timeout` (300 s)**: check for lock contention or a missing index (`orders(placed_at)`,
+     `billing_invoices(tenant_id, paid_at) where status = 'paid'`); re-run by hand off-peak.
+   - **Permission denied / connection refused**: the scheduler lost `pgsql_admin` credentials (§2.4).
+2. If the failure lasts more than 7 days the day falls out of the catch-up window: fill it with the backfill (12.3)
+   and note in the incident that the day's stocks are approximate.
+3. The dashboard keeps showing the last good `as_of` meanwhile ("Data as of …" stops moving). No data is wrong, only
+   stale.
+
+### 12.6 Rollback
+The tables are additive. Rolling back the release only stops the scheduler entry and hides the pages; keep the tables
+(forward-only migrations). Restoring the release later: the hourly catch-up fills up to 7 missing days, the backfill
+anything older.

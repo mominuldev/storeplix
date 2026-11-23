@@ -1,9 +1,26 @@
-import type { AdminTenant, AdminTenantMember, BillingInvoiceStatus } from '@storeplix/types';
-import { Avatar, Badge, Button, Card, DataTable, Pagination, ProgressBar, Skeleton, Tabs, Toggle, formatCount, type DataTableColumn } from '@storeplix/ui';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AdminTenant, AdminTenantMember, AdminTenantMetrics, BillingInvoiceStatus } from '@storeplix/types';
+import {
+  Avatar,
+  Badge,
+  BarChart,
+  Button,
+  Card,
+  DataTable,
+  Pagination,
+  ProgressBar,
+  Skeleton,
+  Tabs,
+  Toggle,
+  formatBdtCompact,
+  formatCount,
+  type DataTableColumn,
+} from '@storeplix/ui';
+import { keepPreviousData, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Calendar, ChevronRight, ExternalLink, Globe, Phone, ScrollText, ShieldAlert, User, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
+import { delta, monthShort } from '../analytics/format';
+import { DeltaPill, NoAnalytics } from '../analytics/ui';
 import { AuditTable } from '../audit/AuditTable';
 import { CursorFooter } from '../audit/CursorFooter';
 import { useCursorPages } from '../audit/useCursorPages';
@@ -31,8 +48,9 @@ const usageLabels: Record<string, string> = {
 };
 
 // Merchant detail 33:4851 (§7.1): breadcrumb, header card (name, plan + status pills, host, owner, phone, joined) with
-// actions Change plan · Extend trial/period · Suspend ↔ Reactivate · Impersonate (each per permission). KPI tiles hidden
-// except Lifetime paid. Past-due banner without Send reminder / Retry now. Tabs Overview / Billing / Domains / Staff · N
+// actions Change plan · Extend trial/period · Suspend ↔ Reactivate · Impersonate (each per permission). Quick stats
+// (PHASE-8-2 §7.1, `view_merchants`): MRR 33:5043, Orders · 30d 33:5047, GMV · 30d 33:5051, Lifetime paid 33:5055;
+// Health score 33:5059 hidden (Q105). Overview gains "GMV & platform revenue" 33:5128 after Usage. Past-due banner without Send reminder / Retry now. Tabs Overview / Billing / Domains / Staff · N
 // / Audit log (Orders, Integrations, Notes hidden).
 export function MerchantDetailPage() {
   const { id = '' } = useParams();
@@ -45,6 +63,11 @@ export function MerchantDetailPage() {
   const tenant = useQuery({
     queryKey: ['admin', 'tenant', id],
     queryFn: () => api.admin.tenants.get(id),
+  });
+  const metrics = useQuery({
+    queryKey: ['admin', 'tenant', id, 'metrics'],
+    queryFn: () => api.admin.tenantMetrics(id),
+    enabled: tenant.isSuccess,
   });
 
   const setTab = (t: TabKey) => {
@@ -165,9 +188,7 @@ export function MerchantDetailPage() {
             {can('impersonate') && <p className="text-caption text-text-muted">Impersonation needs a reason and shows on the shop’s activity log.</p>}
           </div>
         </div>
-        <div className="grid gap-4 border-t border-border-default pt-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Lifetime paid" value={money(t.lifetime_paid_amount)} hint="Sum of paid invoices" />
-        </div>
+        <MetricStats tenant={t} metrics={metrics} />
       </Card>
 
       {suspended && t.suspension && (
@@ -200,7 +221,7 @@ export function MerchantDetailPage() {
           { value: 'audit', label: 'Audit log' },
         ]}
       />
-      {tab === 'overview' && <OverviewTab tenant={t} onTab={setTab} onChangePlan={can('manage_billing') ? () => setDialog('plan') : undefined} />}
+      {tab === 'overview' && <OverviewTab tenant={t} metrics={metrics} onTab={setTab} onChangePlan={can('manage_billing') ? () => setDialog('plan') : undefined} />}
       {tab === 'billing' && <BillingTab tenantId={t.id} />}
       {tab === 'domains' && <DomainsTab tenantId={t.id} />}
       {tab === 'staff' && <StaffTab tenantId={t.id} />}
@@ -267,11 +288,11 @@ function Breadcrumb({ name }: { name: string }) {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
+function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="text-caption text-text-muted">{label}</span>
-      <span className="truncate text-heading text-text-primary">{value}</span>
+      <span className="truncate text-heading text-text-primary tabular-nums">{value}</span>
       <span className="truncate text-caption text-text-muted">{hint}</span>
     </div>
   );
@@ -314,7 +335,107 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: Reac
   );
 }
 
-function OverviewTab({ tenant: t, onTab, onChangePlan }: { tenant: AdminTenant; onTab: (t: TabKey) => void; onChangePlan?: () => void }) {
+type MetricsQuery = UseQueryResult<{ data: AdminTenantMetrics; meta: { as_of: string | null } }>;
+
+/** "Starter · monthly" / "Comp · not billed" / "Trial" / "Free" (§7.1 Stat/MRR caption). */
+function mrrCaption(t: AdminTenant, m: AdminTenantMetrics): string {
+  if (m.is_comp) return 'Comp · not billed';
+  if (t.subscription_status === 'trialing') return 'Trial';
+  const plan = m.plan_code ?? t.plan_code;
+  if (!plan || plan === 'free' || !m.mrr_amount) return 'Free';
+  return `${planName(plan)} · ${m.billing_interval === 'year' ? 'yearly' : 'monthly'}`;
+}
+
+/** Quick stats row (4 columns): MRR, Orders · 30d, GMV · 30d, Lifetime paid. */
+function MetricStats({ tenant: t, metrics }: { tenant: AdminTenant; metrics: MetricsQuery }) {
+  const m = metrics.data?.data;
+  const pending = metrics.isPending;
+  const failed = metrics.isError;
+  const value = (v: string) => (pending ? <Skeleton className="h-7 w-20" /> : failed ? '—' : v);
+  const orders = m ? delta(m.orders_30d, m.previous_orders_30d, 'ratio') : null;
+  const ordersHint = orders ? `${orders.label} vs previous 30 days` : 'Last 30 days';
+  return (
+    <div className="flex flex-col gap-2 border-t border-border-default pt-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="MRR" value={value(formatBdtCompact(m?.mrr_amount))} hint={m ? mrrCaption(t, m) : ' '} />
+        <Stat label="Orders · 30d" value={value(formatCount(m?.orders_30d))} hint={m ? ordersHint : ' '} />
+        <Stat label="GMV · 30d" value={value(formatBdtCompact(m?.gmv_30d_amount))} hint={m ? `AOV ${money(m.aov_30d_amount)}` : ' '} />
+        <Stat label="Lifetime paid" value={money(t.lifetime_paid_amount)} hint="Sum of paid invoices" />
+      </div>
+      {failed && (
+        <p role="alert" className="flex items-center gap-2 text-caption text-danger">
+          We couldn’t load this shop’s metrics.
+          <button type="button" onClick={() => void metrics.refetch()} className="font-medium text-brand-600 hover:underline">
+            Try again
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** GMV & platform revenue 33:5128: values 33:5135, 12 monthly bars 33:5145 (current month highlighted 33:5179). */
+function GmvCard({ metrics }: { metrics: MetricsQuery }) {
+  const m = metrics.data?.data;
+  const change = m ? delta(m.gmv_30d_amount, m.previous_gmv_30d_amount, 'ratio') : null;
+  const empty = !!m && (!metrics.data?.meta.as_of || m.monthly.every((x) => x.gmv_amount === null));
+  return (
+    <SectionCard title="GMV & platform revenue" subtitle="Last 12 months" action={<DeltaPill delta={change} />}>
+      <div className="flex flex-col gap-4 px-5 pb-5">
+        {metrics.isError ? (
+          <ErrorState error={metrics.error} onRetry={() => void metrics.refetch()} />
+        ) : metrics.isPending ? (
+          <div role="status" aria-label="Loading GMV">
+            <Skeleton className="h-44 w-full rounded-lg" />
+          </div>
+        ) : empty || !m ? (
+          <NoAnalytics />
+        ) : (
+          <>
+            <dl className="flex flex-wrap gap-x-8 gap-y-3">
+              <Kv label="GMV this month" value={formatBdtCompact(m.gmv_month_amount)} />
+              <Kv label="Paid to Storeplix (12 mo)" value={money(m.paid_12m_amount)} />
+              <Kv label="Avg orders / day" value={m.avg_orders_per_day_30d === null ? '—' : m.avg_orders_per_day_30d.toLocaleString('en-IN', { maximumFractionDigits: 1 })} />
+            </dl>
+            <BarChart
+              caption="GMV per month"
+              axis={false}
+              height={140}
+              formatValue={(n) => formatBdtCompact(n)}
+              bars={m.monthly.map((x, i) => ({
+                label: monthShort(x.month),
+                value: x.gmv_amount,
+                note: 'No data',
+                tone: i === m.monthly.length - 1 ? 'brand' : 'soft',
+              }))}
+            />
+          </>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+function Kv({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-caption text-text-muted">{label}</dt>
+      <dd className="text-heading text-text-primary tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function OverviewTab({
+  tenant: t,
+  metrics,
+  onTab,
+  onChangePlan,
+}: {
+  tenant: AdminTenant;
+  metrics: MetricsQuery;
+  onTab: (t: TabKey) => void;
+  onChangePlan?: () => void;
+}) {
   const invoices = useQuery({
     queryKey: ['admin', 'tenant', t.id, 'invoices', 'recent'],
     queryFn: () => api.admin.tenants.invoices(t.id, { per_page: 5 }),
@@ -355,6 +476,8 @@ function OverviewTab({ tenant: t, onTab, onChangePlan }: { tenant: AdminTenant; 
             </ul>
           )}
         </SectionCard>
+
+        <GmvCard metrics={metrics} />
 
         <SectionCard
           title="Recent invoices"

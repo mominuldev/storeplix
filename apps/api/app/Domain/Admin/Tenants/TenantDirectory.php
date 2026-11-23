@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Admin\Tenants;
 
+use App\Domain\Admin\Analytics\TenantMetrics;
 use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Shared\Http\ApiException;
@@ -21,7 +22,9 @@ final class TenantDirectory
 {
     public const TABS = ['all', 'active', 'paying', 'trial', 'past_due', 'suspended'];
 
-    public const SORTS = ['-created_at', 'created_at', 'name', '-name', 'current_period_end', '-current_period_end'];
+    /** 8.1 sorts + the PHASE-8-2 metric sorts (TenantMetrics::SORTS, nulls last). */
+    public const SORTS = ['-created_at', 'created_at', 'name', '-name', 'current_period_end', '-current_period_end',
+        '-mrr', 'mrr', '-gmv_30d', '-orders_30d', '-last_active_at', 'last_active_at'];
 
     /** @throws ApiException 404 not_found */
     public static function find(string $tenantId): object
@@ -138,15 +141,12 @@ final class TenantDirectory
         $db = PlatformDb::connection(); // cross-tenant: admin merchant summaries
         $tenants = $db->table('tenants')->whereIn('id', $ids)->get()->keyBy('id');
         $stores = $db->table('stores')->whereIn('tenant_id', $ids)->get(['id', 'tenant_id', 'name', 'slug', 'status'])->keyBy('tenant_id');
-        $hosts = $db->table('store_domains')->whereIn('tenant_id', $ids)->where('status', StoreDomain::STATUS_ACTIVE)
-            ->orderByDesc('is_primary')->orderByRaw("case when type = 'platform' then 0 else 1 end")->get(['tenant_id', 'hostname'])
-            ->groupBy('tenant_id')->map(fn ($rows) => (string) $rows->first()->hostname);
-        $fallbackHosts = $db->table('store_domains')->whereIn('tenant_id', $ids)->where('type', StoreDomain::TYPE_PLATFORM)
-            ->get(['tenant_id', 'hostname'])->keyBy('tenant_id');
+        $hosts = self::primaryHosts($ids);
         $owners = $db->table('tenant_users as tu')->join('users as u', 'u.id', '=', 'tu.user_id')
             ->whereIn('tu.tenant_id', $ids)->where('tu.role', TenantUser::ROLE_OWNER)->orderBy('tu.created_at')
             ->get(['tu.tenant_id', 'u.id', 'u.name', 'u.email', 'u.phone'])->keyBy('tenant_id');
         $subs = self::currentSubscriptions($ids);
+        $metrics = TenantMetrics::summaries($ids, TenantMetrics::asOf()); // PHASE-8-2 §6.2
 
         $out = [];
         foreach ($ids as $id) {
@@ -164,7 +164,7 @@ final class TenantDirectory
                 'store' => $store === null ? null : [
                     'id' => (string) $store->id, 'name' => (string) $store->name, 'slug' => (string) $store->slug,
                     'status' => (string) $store->status,
-                    'primary_host' => (string) ($hosts->get($id) ?? $fallbackHosts->get($id)?->hostname ?? ''),
+                    'primary_host' => (string) ($hosts[$id] ?? ''),
                 ],
                 'owner' => $owner === null ? null : [
                     'id' => (string) $owner->id, 'name' => (string) $owner->name, 'email' => (string) $owner->email,
@@ -176,7 +176,37 @@ final class TenantDirectory
                 'trial_ends_at' => AdminPresenter::ts($sub->trial_ends_at ?? null),
                 'current_period_end' => AdminPresenter::ts($sub->current_period_end ?? null),
                 'created_at' => AdminPresenter::ts($t->created_at),
+                'last_active_at' => AdminPresenter::ts($t->last_active_at ?? null),
+                'metrics' => $metrics[$id] ?? null,
             ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Primary host per tenant: the active primary (platform first), else the platform hostname.
+     *
+     * @param  list<string>  $ids
+     * @return array<string, string>
+     */
+    public static function primaryHosts(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $db = PlatformDb::connection(); // cross-tenant: admin merchant hosts
+        $hosts = $db->table('store_domains')->whereIn('tenant_id', $ids)->where('status', StoreDomain::STATUS_ACTIVE)
+            ->orderByDesc('is_primary')->orderByRaw("case when type = 'platform' then 0 else 1 end")->get(['tenant_id', 'hostname'])
+            ->groupBy('tenant_id')->map(fn ($rows) => (string) $rows->first()->hostname);
+        $fallbackHosts = $db->table('store_domains')->whereIn('tenant_id', $ids)->where('type', StoreDomain::TYPE_PLATFORM)
+            ->get(['tenant_id', 'hostname'])->keyBy('tenant_id');
+        $out = [];
+        foreach ($ids as $id) {
+            $host = $hosts->get($id) ?? $fallbackHosts->get($id)?->hostname;
+            if ($host !== null) {
+                $out[$id] = (string) $host;
+            }
         }
 
         return $out;

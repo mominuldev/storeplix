@@ -1,10 +1,11 @@
 import type { AdminTenantFilters } from '@storeplix/api-client';
 import type { AdminTenantSummary, AdminTenantTab } from '@storeplix/types';
-import { Avatar, DataTable, FloatingMenu, Pagination, Select, formatCount, type DataTableColumn } from '@storeplix/ui';
+import { Avatar, DataTable, FloatingMenu, Pagination, Select, formatBdt, formatBdtCompact, formatCount, type DataTableColumn } from '@storeplix/ui';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Building, ExternalLink, Eye, MoreHorizontal, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { relativeTime } from '../analytics/format';
 import { TenantStatusBadge } from '../components/badges';
 import { PillTabs } from '../components/PillTabs';
 import { Empty, ErrorState, LoadingRows } from '../components/States';
@@ -39,7 +40,11 @@ const SORTS: {
   value: NonNullable<AdminTenantFilters['sort']>;
   label: string;
 }[] = [
-  { value: '-created_at', label: 'Newest first' },
+  { value: '-created_at', label: 'Newest' },
+  { value: '-mrr', label: 'MRR · high to low' },
+  { value: '-gmv_30d', label: 'GMV 30d · high to low' },
+  { value: '-orders_30d', label: 'Orders 30d · high to low' },
+  { value: '-last_active_at', label: 'Last active · recent first' },
   { value: 'created_at', label: 'Oldest first' },
   { value: 'name', label: 'Name A–Z' },
   { value: 'current_period_end', label: 'Renewal soonest' },
@@ -83,10 +88,11 @@ function planLine(t: AdminTenantSummary): string {
   return intervalLabel(t.billing_interval);
 }
 
-// Figma Merchants 32:5527 (§7.1): header counts without MRR; tabs All / Paying / Trial / Past due / Suspended with
-// counts; search; Plan + Signed up filters (District, Health, More filters hidden); columns Shop, Owner, Plan, Status,
-// Signed up (MRR, Orders 30d, GMV 30d, Health, Last active hidden); no checkboxes, bulk bar, Export or Add merchant;
-// row menu Open / Impersonate.
+// Figma Merchants 32:5527 (8.1 §7.1 + PHASE-8-2 §7.1): header "{n} shops · {paying} paying · {MRR} MRR" (MRR part
+// only with `view_analytics`); tabs All / Paying / Trial / Past due / Suspended with counts; search; Plan + Signed up
+// filters (District, Health, More filters hidden); columns Shop, Owner, Plan, MRR ৳, Orders 30d, GMV 30d ৳, Last
+// active, Status, Signed up (Health hidden, Q105); sort incl. the metric sorts; no checkboxes, bulk bar, Export or Add
+// merchant; row menu Open / Impersonate. `metrics` null → "—" in the three metric cells.
 export function MerchantsPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -122,6 +128,17 @@ export function MerchantsPage() {
     placeholderData: keepPreviousData,
   });
   const counts = list.data?.meta.counts;
+  const analyticsOn = can('view_analytics');
+  const mrr = useQuery({
+    queryKey: ['admin', 'analytics', 'overview', { range: '30d' }],
+    queryFn: () => api.admin.analyticsOverview({ range: '30d' }),
+    enabled: analyticsOn,
+    staleTime: 5 * 60_000,
+  });
+  const mrrAmount = analyticsOn && mrr.data?.meta.as_of ? mrr.data.data.mrr.amount : null;
+  const metricCell = (t: AdminTenantSummary, value: (m: NonNullable<AdminTenantSummary['metrics']>) => string) => (
+    <span className="text-body text-text-primary tabular-nums">{t.metrics ? value(t.metrics) : '—'}</span>
+  );
 
   const columns: DataTableColumn<AdminTenantSummary>[] = [
     {
@@ -141,7 +158,7 @@ export function MerchantsPage() {
     {
       key: 'owner',
       header: 'Owner',
-      width: 200,
+      width: 150,
       cell: (t) =>
         t.owner ? (
           <span className="flex min-w-0 flex-col">
@@ -155,11 +172,42 @@ export function MerchantsPage() {
     {
       key: 'plan',
       header: 'Plan',
-      width: 150,
+      width: 130,
       cell: (t) => (
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-body text-text-primary">{planName(t.plan_code)}</span>
           <span className="truncate text-caption text-text-muted">{planLine(t)}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'mrr',
+      header: 'MRR ৳',
+      align: 'end',
+      width: 72,
+      cell: (t) => metricCell(t, (m) => (m.is_comp ? 'Comp' : formatBdt(m.mrr_amount, { symbol: false }))),
+    },
+    {
+      key: 'orders_30d',
+      header: 'Orders 30d',
+      align: 'end',
+      width: 84,
+      cell: (t) => metricCell(t, (m) => formatCount(m.orders_30d)),
+    },
+    {
+      key: 'gmv_30d',
+      header: 'GMV 30d ৳',
+      align: 'end',
+      width: 100,
+      cell: (t) => metricCell(t, (m) => formatBdt(m.gmv_30d_amount, { symbol: false })),
+    },
+    {
+      key: 'last_active',
+      header: 'Last active',
+      width: 96,
+      cell: (t) => (
+        <span className="text-body text-text-secondary" title={t.last_active_at ?? undefined}>
+          {relativeTime(t.last_active_at)}
         </span>
       ),
     },
@@ -172,7 +220,7 @@ export function MerchantsPage() {
     {
       key: 'created',
       header: 'Signed up',
-      width: 110,
+      width: 100,
       cell: (t) => <span className="text-body text-text-secondary">{formatDate(t.created_at)}</span>,
     },
     {
@@ -216,7 +264,11 @@ export function MerchantsPage() {
     <>
       <PageHeader
         title="Merchants"
-        subtitle={counts ? `${formatCount(counts.all)} shops · ${formatCount(counts.paying)} paying` : 'All shops on Storeplix'}
+        subtitle={
+          counts
+            ? `${formatCount(counts.all)} shops · ${formatCount(counts.paying)} paying${mrrAmount !== null ? ` · ${formatBdtCompact(mrrAmount)} MRR` : ''}`
+            : 'All shops on Storeplix'
+        }
       />
       {/* Figma tabs row 32:5666: status tabs · spacer · "Sort" + sort select. */}
       <div className="flex flex-wrap items-center gap-3">
@@ -240,7 +292,7 @@ export function MerchantsPage() {
                 sort: e.target.value === '-created_at' ? null : e.target.value,
               })
             }
-            containerClassName="w-48"
+            containerClassName="w-56"
           >
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -281,7 +333,7 @@ export function MerchantsPage() {
       <div className="relative overflow-x-auto rounded-card">
         <DataTable
           label="Merchants"
-          className="relative min-w-[880px]"
+          className="relative min-w-[1320px]"
           columns={columns}
           rows={list.data?.data ?? []}
           getRowId={(t) => t.id}

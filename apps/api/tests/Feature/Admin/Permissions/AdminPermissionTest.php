@@ -161,14 +161,31 @@ class AdminPermissionTest extends TestCase
         $this->assertGreaterThan(0, $checked);
     }
 
+    /** PHASE-8-2 S83: the analytics routes need view_analytics (Support → 403); one shop's metrics stay view_merchants. */
+    public function test_analytics_routes_carry_the_phase_8_2_permissions(): void
+    {
+        $perm = [];
+        foreach ($this->adminRoutes() as $row) {
+            $perm[$row['route']->uri()] = $row['permission']?->value;
+        }
+        $this->assertSame('view_analytics', $perm['api/v1/admin/analytics/overview']);
+        $this->assertSame('view_analytics', $perm['api/v1/admin/analytics/revenue']);
+        $this->assertSame('view_merchants', $perm['api/v1/admin/tenants/{tenant}/metrics']);
+        $this->assertFalse(PlatformRole::Support->can(PlatformPermission::ViewAnalytics));
+
+        $this->asAdminSurface();
+        $this->hit('GET', '/api/v1/admin/analytics/overview', $this->adminHeaders($this->staffUser(PlatformRole::Support)))
+            ->assertForbidden()->assertJsonPath('error.code', 'forbidden');
+    }
+
     /** The §2.1 matrix itself (single source: PlatformRole::permissions()). */
     public function test_permission_matrix_matches_the_contract(): void
     {
         $expected = [
-            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team'],
-            'billing' => ['view_merchants', 'manage_billing'],
+            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics'],
+            'billing' => ['view_merchants', 'manage_billing', 'view_analytics'], // + PHASE-8-2 §2.1
             'support' => ['view_merchants', 'impersonate', 'manage_domains'],
-            'read_only' => ['view_merchants'],
+            'read_only' => ['view_merchants', 'view_analytics'],
         ];
         foreach (PlatformRole::cases() as $role) {
             $this->assertSame($expected[$role->value], array_map(fn (PlatformPermission $p) => $p->value, $role->permissions()), $role->value);

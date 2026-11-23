@@ -58,3 +58,32 @@ export function formatCount(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return '—';
   return `${n < 0 ? '−' : ''}${groupIndian(n)}`;
 }
+
+/**
+ * Paisa → compact taka with Bangladeshi units (Figma platform analytics): "৳ 965", "৳ 35 K", "৳ 18.4 L", "৳ 2.21 Cr".
+ * Three significant digits, trailing zeros trimmed. `tight` drops the space before the unit for axis ticks ("৳ 20L").
+ */
+export function formatBdtCompact(
+  paisa: number | null | undefined,
+  { symbol = true, tight = false }: { symbol?: boolean; tight?: boolean } = {},
+): string {
+  if (paisa === null || paisa === undefined || !Number.isFinite(paisa)) return '—';
+  const neg = paisa < 0;
+  const taka = Math.abs(paisa) / 100;
+  const units: [number, string][] = [
+    [10_000_000, 'Cr'],
+    [100_000, 'L'],
+    [1_000, 'K'],
+  ];
+  const unit = units.find(([size]) => taka >= size);
+  let body: string;
+  if (!unit) body = groupIndian(Math.round(taka));
+  else {
+    const n = taka / unit[0];
+    const digits = n >= 100 ? 0 : n >= 10 ? 1 : 2;
+    const raw = (Math.round(n * 10 ** digits) / 10 ** digits).toFixed(digits);
+    const fixed = raw.includes('.') ? raw.replace(/\.?0+$/, '') : raw;
+    body = `${n >= 1000 ? groupIndian(Math.round(n)) : fixed}${tight ? '' : ' '}${unit[1]}`;
+  }
+  return `${neg ? '−' : ''}${symbol ? '৳ ' : ''}${body}`;
+}

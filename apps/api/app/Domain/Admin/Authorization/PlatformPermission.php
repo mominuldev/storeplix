@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Admin\Authorization;
 
-/** PHASE-8-1 §2.1. Route middleware: `platform.can:<value>`. */
+/** PHASE-8-1 §2.1 (+ PHASE-8-2 §2.1 `view_analytics`). Route middleware: `platform.can:<value>`. */
 enum PlatformPermission: string
 {
     case ViewMerchants = 'view_merchants';
@@ -13,4 +13,5 @@ enum PlatformPermission: string
     case ManageDomains = 'manage_domains';
     case Suspend = 'suspend';
     case ManageTeam = 'manage_team';
+    case ViewAnalytics = 'view_analytics';
 }

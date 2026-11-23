@@ -5,6 +5,7 @@ namespace App\Domain\Tenancy\Middleware;
 use App\Domain\Admin\Impersonation\Http\ReadOnlyImpersonation;
 use App\Domain\Admin\Impersonation\ImpersonationSession;
 use App\Domain\Admin\Impersonation\Models\PlatformImpersonation;
+use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\Database\RlsSession;
 use App\Domain\Tenancy\Models\Tenant;
@@ -12,6 +13,7 @@ use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -64,6 +66,9 @@ class ResolveTenant
             [$tenant, $role] = $this->impersonated($request, $tenantId);
         } else {
             [$tenant, $role] = $this->member($user->getAuthIdentifier(), $tenantId);
+            if (SessionSurface::of($request) === SessionSurface::MERCHANT) {
+                self::touchLastActive($tenant->id);
+            }
         }
 
         $this->context->set($tenant, $role);
@@ -93,6 +98,17 @@ class ResolveTenant
         }
 
         return [$tenant, $membership->role];
+    }
+
+    /**
+     * PHASE-8-2 P82-16 (B29): `tenants.last_active_at` after a successful merchant-surface membership check, at most
+     * once per 15 minutes per tenant. `tenants` is a platform table without RLS: app connection, own tenant id only.
+     */
+    public static function touchLastActive(string $tenantId): void
+    {
+        if (Cache::add('sp:tenant-active:'.$tenantId, 1, 900)) {
+            Tenant::query()->whereKey($tenantId)->toBase()->update(['last_active_at' => now()]);
+        }
     }
 
     /** @return array{0: Tenant, 1: string} */
