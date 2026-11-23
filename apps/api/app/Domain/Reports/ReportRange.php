@@ -118,6 +118,17 @@ final class ReportRange
 
     private ?\DateTimeZone $utcZone = null;
 
+    /** @var array<string, int> "Y-m-d H|offset" → UTC timestamp of that hour (memo, see local()) */
+    private array $hourTs = [];
+
+    private ?\DateTimeZone $zone = null;
+
+    /** @var array<int, int|false> UTC hour → zone offset in seconds, false if it changes inside the hour (memo) */
+    private array $hourOffset = [];
+
+    /** @var array<string, string> format|local day number → label (memo) */
+    private array $dayLabel = [];
+
     /** Local date (Y-m-d) of a stored UTC timestamp. */
     public function localDate(mixed $value): string
     {
@@ -138,14 +149,44 @@ final class ReportRange
     {
         if ($value instanceof \DateTimeInterface) {
             $ts = $value->getTimestamp();
+        } elseif (is_string($value) && strlen($value) >= 19 && $value[10] === ' ' && $value[13] === ':' && $value[16] === ':'
+            && ctype_digit(substr($value, 14, 2).substr($value, 17, 2))) {
+            // DB string "Y-m-d H:i:s[.u][offset]": parse once per distinct hour (+ offset suffix), then add minutes and
+            // seconds arithmetically. Exact (fractions are ignored, as getTimestamp() does) and ~6x fewer parses.
+            $this->utcZone ??= new \DateTimeZone('UTC');
+            $suffix = ltrim(substr($value, 19), '.0123456789');
+            $hour = substr($value, 0, 13).'|'.$suffix;
+            $base = $this->hourTs[$hour] ??= (new \DateTimeImmutable(substr($value, 0, 13).':00:00'.$suffix, $this->utcZone))->getTimestamp();
+            $ts = $base + 60 * (int) substr($value, 14, 2) + (int) substr($value, 17, 2);
         } else {
             $this->utcZone ??= new \DateTimeZone('UTC');
             $ts = (new \DateTimeImmutable((string) $value, $this->utcZone))->getTimestamp();
+        }
+        // Date-only formats: shift by the zone offset of the UTC hour (looked up once per hour, used only when it is the
+        // same at both ends of the hour, i.e. no transition inside it) and format the local day once with gmdate().
+        if ($format === 'Y-m-d' || $format === 'o-\\WW') {
+            $hour = intdiv($ts, 3600) - ($ts < 0 && $ts % 3600 !== 0 ? 1 : 0);
+            $offset = $this->hourOffset[$hour] ??= $this->stableOffset($hour * 3600);
+            if ($offset !== false) {
+                $local = $ts + $offset;
+                $day = intdiv($local, 86400) - ($local < 0 && $local % 86400 !== 0 ? 1 : 0);
+
+                return $this->dayLabel[$format.'|'.$day] ??= gmdate($format, $day * 86400);
+            }
         }
         $bucket = intdiv($ts, 900) - ($ts < 0 && $ts % 900 !== 0 ? 1 : 0);
         $key = $format.'|'.$bucket;
 
         return $this->memo[$key] ??= CarbonImmutable::createFromTimestampUTC($bucket * 900)->setTimezone($this->timezone)->format($format);
+    }
+
+    /** Zone offset (seconds) for the UTC hour starting at $start, or false when it changes inside that hour. */
+    private function stableOffset(int $start): int|false
+    {
+        $this->zone ??= new \DateTimeZone($this->timezone);
+        $a = $this->zone->getOffset(new \DateTimeImmutable('@'.$start));
+
+        return $a === $this->zone->getOffset(new \DateTimeImmutable('@'.($start + 3599))) ? $a : false;
     }
 
     public static function parse(mixed $value): CarbonImmutable
