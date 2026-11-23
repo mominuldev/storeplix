@@ -180,22 +180,7 @@ export type FeatureKey =
 export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
   /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
   | 'custom_domains';
-export interface Plan {
-  id: string; code: 'free' | 'starter' | 'growth' | (string & {}); name: string;
-  price_amount: number; currency: string; interval: 'month' | 'year';
-  limits: Record<LimitKey, number | null>; features: FeatureKey[];
-}
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
-export interface Subscription {
-  id: string; status: SubscriptionStatus; plan: Plan;
-  trial_ends_at: string | null; current_period_start: string | null; current_period_end: string | null;
-  cancel_at_period_end: boolean;
-}
-export interface FeatureAccess {
-  plan_code: string; subscription_status: SubscriptionStatus; trial_ends_at: string | null;
-  features: Record<FeatureKey, boolean>;
-  limits: Record<LimitKey, { limit: number | null; used: number }>;
-}
 
 // ---------- Audit ----------
 export interface AuditLog {
@@ -384,6 +369,8 @@ export const ROLE_CAN = {
   manage_settings: ['owner', 'admin'],  // shipping, checkout, notifications, publish
   manage_integrations: ['owner', 'admin'], // gateways, couriers (5b)
   manage_domains: ['owner', 'admin'],   // custom domains (Phase 6)
+  view_billing: ['owner', 'admin'],     // plan, invoices, payments (Phase 7)
+  manage_billing: ['owner'],            // change plan, pay (Phase 7, Q88)
 } as const satisfies Record<string, readonly TenantRole[]>;
 
 // ---------- Catalog (Phase 4) ----------
@@ -1135,7 +1122,8 @@ export type DomainType = 'platform' | 'custom';
 export type DomainFailureCode =
   | 'txt_missing' | 'txt_mismatch' | 'cname_missing' | 'cname_mismatch' | 'dns_error' | 'verification_timeout'
   | 'provider_error' | 'provider_blocked' | 'provider_moved' | 'ssl_validation_failed' | 'ssl_timeout' | 'ssl_lost'
-  | 'suspended';
+  | 'suspended'
+  | 'plan_limit';
 export type DnsRecordStatus = 'pending' | 'ok' | 'missing' | 'mismatch';
 export interface DomainDnsRecord {
   purpose: 'ownership' | 'routing';
@@ -1195,3 +1183,140 @@ export interface DomainListMeta {
 }
 /** GET /internal/domains/allowed (6.5, server-to-server only) */
 export interface DomainAllowed { allowed: true }
+
+// ==================== Phase 7: monetization (PHASE-7-CONTRACT §9) ====================
+export type BillingInterval = 'month' | 'year';
+export interface Plan {
+  id: string; code: 'free' | 'starter' | 'growth' | (string & {}); name: string;
+  price_amount: number; currency: string; interval: 'month' | 'year';
+  limits: Record<LimitKey, number | null>; features: FeatureKey[];
+  /** Phase 7 (P7-3): yearly price (10 × monthly); null = no yearly option (Free) */
+  price_yearly_amount: number | null;
+}
+export interface SubscriptionScheduledChange { plan: Plan; interval: BillingInterval; effective_at: string }
+export interface Subscription {
+  id: string; status: SubscriptionStatus; plan: Plan;
+  trial_ends_at: string | null; current_period_start: string | null; current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  /** Phase 7 */
+  billing_interval: BillingInterval;
+  scheduled_change: SubscriptionScheduledChange | null;
+  past_due_at: string | null; grace_ends_at: string | null; domain_grace_ends_at: string | null;
+  open_invoice: BillingInvoiceSummary | null;
+}
+export interface FeatureAccess {
+  plan_code: string; subscription_status: SubscriptionStatus; trial_ends_at: string | null;
+  features: Record<FeatureKey, boolean>;
+  limits: Record<LimitKey, { limit: number | null; used: number }>;
+  /** Phase 7: end of the past_due grace (null unless past_due) and the custom-domain detach date (P7-16) */
+  grace_ends_at: string | null; domain_grace_ends_at: string | null;
+}
+
+export type BillingInvoiceKind = 'new' | 'upgrade' | 'renewal';
+export type BillingInvoiceStatus = 'open' | 'paid' | 'void';
+export type BillingVoidReason = 'superseded' | 'expired' | 'unpaid' | 'cancelled' | 'manual';
+export interface BillingInvoiceLine {
+  description: string; plan_code: string | null; interval: BillingInterval | null;
+  period_start: string | null; period_end: string | null;
+  quantity: number; unit_amount: number; amount: number;
+}
+export interface BillingInvoiceSummary {
+  id: string; number: string; kind: BillingInvoiceKind; status: BillingInvoiceStatus;
+  description: string; total_amount: number; currency: 'BDT';
+  issued_at: string; due_at: string; paid_at: string | null; is_overdue: boolean; can_pay: boolean;
+}
+export interface BillingBillTo { name: string; address: string | null; email: string | null; phone: string | null }
+export type BillingPaymentStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled';
+export interface BillingPayment {
+  id: string; invoice_id: string; provider: GatewayProvider | 'manual'; status: BillingPaymentStatus;
+  amount: number; currency: 'BDT';
+  /** Only while pending and not expired; an https provider page (http://localhost fake page in dev). */
+  redirect_url: string | null;
+  failure_code: string | null; is_duplicate: boolean;
+  created_at: string; expires_at: string; verified_at: string | null;
+}
+export interface BillingInvoice extends BillingInvoiceSummary {
+  plan_code: string; interval: BillingInterval;
+  subtotal_amount: number; tax_amount: number; tax_rate_bps: number; credit_amount: number;
+  lines: BillingInvoiceLine[]; bill_to: BillingBillTo;
+  period_start: string | null; period_end: string | null;
+  voided_at: string | null; void_reason: BillingVoidReason | null; paid_late: boolean;
+  payments: BillingPayment[];
+}
+export interface BillingInvoiceListMeta extends PaginationMeta { providers: GatewayProvider[] }
+export interface BillingQuoteInput { plan_code: string; interval: BillingInterval }
+export type BillingChangeKind = 'new' | 'upgrade' | 'downgrade' | 'cancel';
+export interface BillingDowngradeWarning {
+  key: LimitKey | FeatureKey; used: number | null; limit: number | null; message: string;
+}
+export interface BillingQuote {
+  kind: BillingChangeKind; plan: Plan; interval: BillingInterval;
+  amount: number; credit_amount: number; currency: 'BDT';
+  requires_payment: boolean; effective_at: string;
+  period_start: string | null; period_end: string | null;
+  lines: BillingInvoiceLine[]; warnings: BillingDowngradeWarning[];
+}
+export interface ChangePlanResult { subscription: Subscription; invoice: BillingInvoice | null }
+export interface PayInvoiceInput { provider: GatewayProvider }
+
+// ---------- Reports (PHASE-7-CONTRACT §6.3–6.4) ----------
+export interface ReportRangeQuery { from?: string; to?: string }  // YYYY-MM-DD, store-local
+export interface ReportMeta {
+  from: string; to: string; previous_from: string; previous_to: string;
+  timezone: string; currency: string; generated_at: string;
+}
+export interface SalesSummary {
+  sales_amount: number; sold_orders_count: number; orders_count: number; orders_per_day: number;
+  average_order_value_amount: number | null; items_per_order: number | null;
+  cancelled_count: number; cancelled_rate: number | null; fake_cancelled_count: number;
+}
+export interface SalesReport {
+  summary: SalesSummary; previous: SalesSummary;
+  best_day: { date: string; sales_amount: number; orders_count: number } | null;
+  weekend_share: number | null;
+  daily: { date: string; orders_count: number; sold_orders_count: number; sales_amount: number }[];
+  channels: { channel: OrderChannel; orders_count: number; sales_amount: number; share: number }[];
+  top_products: { product_id: string | null; name: string; image: MediaRef | null; units: number; sales_amount: number; share: number }[];
+  areas: {
+    inside_dhaka_share: number | null;
+    districts: { district_code: string; district_name: string; orders_count: number; sales_amount: number; share: number }[];
+  };
+}
+export interface ProfitSummary {
+  revenue_amount: number; delivered_orders_count: number;
+  product_cost_amount: number; delivery_cost_amount: number; cod_fee_amount: number;
+  gateway_fee_amount: number | null; ad_spend_amount: number | null;
+  total_cost_amount: number; net_profit_amount: number; margin: number | null;
+  profit_per_order_amount: number | null;
+}
+export interface ProfitReport {
+  summary: ProfitSummary; previous: ProfitSummary;
+  per_order: {
+    order_value_amount: number; product_cost_amount: number; delivery_cost_amount: number;
+    cod_fee_amount: number; gateway_fee_amount: number | null; profit_amount: number;
+  } | null;
+  weekly: { week: string; week_start: string; revenue_amount: number; net_profit_amount: number; margin: number | null }[];
+  daily: ({ date: string; orders_count: number } & Omit<ProfitSummary, 'delivered_orders_count' | 'profit_per_order_amount'>)[];
+  data_quality: { items_without_cost: number; shipments_without_fee: number };
+}
+export interface DeliverySummary {
+  parcels_count: number; delivered_count: number; returned_count: number; returning_count: number;
+  in_progress_count: number; success_rate: number | null; return_rate: number | null;
+  returning_charges_amount: number;
+  avg_delivery_days: number | null; avg_delivery_days_inside_dhaka: number | null; avg_delivery_days_outside_dhaka: number | null;
+}
+export interface DeliveryReport {
+  summary: DeliverySummary; previous: DeliverySummary;
+  couriers: {
+    provider: CourierProvider; parcels_count: number; delivered_share: number; returned_share: number;
+    in_progress_share: number; avg_delivery_days: number | null; cod_held_amount: number;
+  }[];
+  returns_count: number;
+  return_reasons: { reason: ReturnReason; count: number; share: number }[];
+  weekly: { week: string; week_start: string; parcels_count: number; success_rate: number | null }[];
+  returning: {
+    shipment_id: string; order_id: string; order_number: string; customer_name: string; district_name: string | null;
+    provider: CourierProvider; problem: string | null; last_location: string | null; last_event_at: string | null;
+  }[];
+  districts: { district_code: string; district_name: string; parcels_count: number; success_rate: number | null }[];
+}

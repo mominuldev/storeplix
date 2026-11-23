@@ -1,0 +1,19 @@
+{
+  "_source": "docs",
+  "_billing": "PHASE-7 §7.2: copy of the 5b fixture for the platform billing adapters; replaced by sandbox recordings at certification (§13)",
+  "_doc": "https://developer.bka.sh/docs/create-payment-3",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "paymentID": "TR0011ON1565154754797",
+  "bkashURL": "https://sandbox.payment.bkash.com/redirect/tokenized/?paymentID=TR0011ON1565154754797&hash=fake",
+  "callbackURL": "{callbackURL}",
+  "successCallbackURL": "{callbackURL}&status=success",
+  "failureCallbackURL": "{callbackURL}&status=failure",
+  "cancelledCallbackURL": "{callbackURL}&status=cancel",
+  "amount": "{amount}",
+  "intent": "sale",
+  "currency": "BDT",
+  "paymentCreateTime": "2026-11-22T10:15:30:123 GMT+0600",
+  "transactionStatus": "Initiated",
+  "merchantInvoiceNumber": "{merchantInvoiceNumber}"
+}

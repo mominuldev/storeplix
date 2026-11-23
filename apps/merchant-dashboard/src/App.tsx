@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { GuestRoute, ProtectedRoute } from './auth/ProtectedRoute';
 import { AppShell } from './layout/AppShell';
 import { allRoutes } from './layout/nav';
@@ -62,14 +62,23 @@ const InvoicesSettingsPage = lazy(() => import('./settings/CommerceSettingsPages
 const DeliveryPage = lazy(() => import('./onboarding/DeliveryPage'));
 const GetPaidPage = lazy(() => import('./onboarding/GetPaidPage'));
 const LivePage = lazy(() => import('./onboarding/LivePage'));
+// Phase 7 §8.3 reports (code-split).
+const ReportsPage = lazy(() => import('./reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 
 /** Routes implemented in Phase 3/4; excluded from the generic placeholders. */
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
+const reportRoutes = ['/reports'];
 const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
+
+/** `/reports` → Sales, keeping the range in the query string. */
+function ReportsIndex() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/reports/sales', search }} replace />;
+}
 
 export function AppRoutes() {
   return (
@@ -184,6 +193,10 @@ export function AppRoutes() {
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/marketing/coupons/:couponId" element={lazyEl(<CouponEditorPage />)} />
+              <Route path="/reports" element={<ReportsIndex />} />
+              <Route path="/reports/sales" element={lazyEl(<ReportsPage type="sales" />)} />
+              <Route path="/reports/profit" element={lazyEl(<ReportsPage type="profit" />)} />
+              <Route path="/reports/delivery" element={lazyEl(<ReportsPage type="delivery" />)} />
               <Route path="/staff" element={<StaffPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/settings" element={<SettingsLayout />}>
@@ -202,7 +215,7 @@ export function AppRoutes() {
                   ))}
               </Route>
               {allRoutes
-                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes, ...catalogRoutes, ...commerceRoutes].includes(r.to))
+                .filter((r) => !['/', '/staff', '/settings', ...onlineStoreRoutes, ...catalogRoutes, ...commerceRoutes, ...reportRoutes].includes(r.to))
                 .map((r) => (
                   <Route key={r.to} path={r.to} element={<PlaceholderPage title={r.label} />} />
                 ))}

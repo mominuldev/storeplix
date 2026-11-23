@@ -5,8 +5,10 @@ use Illuminate\Support\Facades\Schedule;
 // D3: expired Sanctum tokens are pruned daily (24h after expiry).
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
 
-// Phase 2: expired trials move to the Free plan.
-Schedule::command('subscriptions:end-trials')->daily();
+// Phase 7 (PHASE-7 §4, §12): billing lifecycle hourly (trial ends, renewals, past_due, expiry, domain detachment) and
+// the platform payment reconciler. `subscriptions:end-trials` stays as an ops alias, no longer scheduled.
+Schedule::command('billing:run')->hourly()->withoutOverlapping();
+Schedule::command('billing:reconcile-payments')->everyFiveMinutes()->withoutOverlapping();
 
 // Phase 4: bulk-data retention.
 Schedule::command('data:prune-imports')->daily();

@@ -91,3 +91,5 @@ export { CopyValue } from './components/CopyValue';
 export type { CopyValueProps } from './components/CopyValue';
 export { WizardModal } from './components/WizardModal';
 export type { WizardModalProps } from './components/WizardModal';
+export { BarChart, ChartLegend, chartToneClass, DonutMeter, LineChart, niceCeil, StackedMeter, thinIndexes } from './components/Charts';
+export type { BarDatum, ChartSeries, ChartTone, LineChartProps, MeterSegment } from './components/Charts';

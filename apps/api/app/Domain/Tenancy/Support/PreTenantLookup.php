@@ -2,6 +2,7 @@
 
 namespace App\Domain\Tenancy\Support;
 
+use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -104,6 +105,23 @@ class PreTenantLookup
 
         return $domain !== null && Store::withoutTenancy()->whereKey($domain->store_id)->where('tenant_id', $domain->tenant_id)
             ->where('status', '!=', Store::STATUS_SUSPENDED)->exists();
+    }
+
+    /** B22 / B23 (Phase 7): the tenant of a billing payment (billing return URL, platform SSLCommerz IPN). Ids only. */
+    public function billingPaymentOwner(string $paymentId): ?string
+    {
+        $paymentId = strtolower($paymentId);
+        if (preg_match('/^[0-9a-hjkmnp-tv-z]{26}$/', $paymentId) !== 1) {
+            return null;
+        }
+        if ($this->rls->enabled()) {
+            $row = DB::selectOne('select tenant_id from sp_billing_payment_owner(?)', [$paymentId]);
+
+            return $row === null ? null : trim((string) $row->tenant_id);
+        }
+        $tenant = BillingPayment::withoutTenancy()->whereKey($paymentId)->value('tenant_id');
+
+        return $tenant === null ? null : (string) $tenant;
     }
 
     /** B5 / P5B-8: store slugs are unique across all tenants. */

@@ -35,6 +35,9 @@ jobs:
             # /api/v1/dev/domains/*. CI never calls Cloudflare or a public DoH resolver.
             echo 'DOMAINS_FAKE=true'
             echo 'DOMAINS_ASK_KEY=ci-domains-ask-key-0b7d4e19a3c2'
+            # Phase 7 (PHASE-7-CONTRACT §11 QA, §12): fake platform billing gateway + /api/v1/dev/billing/clock.
+            # CI never calls bKash or SSLCommerz; the sandbox certification spec (§13) is manual-only, never here.
+            echo 'BILLING_FAKE=true'
           } >> .env
           cp apps/api/.env.example apps/api/.env
           docker compose up -d --build --wait
@@ -63,6 +66,8 @@ jobs:
           # with this key (must equal the compose value above).
           DOMAINS_FAKE: 'true'
           DOMAINS_ASK_KEY: ci-domains-ask-key-0b7d4e19a3c2
+          # Phase 7 phase7.* specs: fake platform gateway page + dev billing clock (must equal the compose value above).
+          BILLING_FAKE: 'true'
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()

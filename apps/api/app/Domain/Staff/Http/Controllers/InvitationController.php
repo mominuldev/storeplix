@@ -11,6 +11,7 @@ use App\Domain\Staff\Http\Resources\StaffMemberPresenter;
 use App\Domain\Staff\Mail\StaffInvitationMail;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
@@ -49,7 +50,11 @@ class InvitationController
 
         $token = StaffInvitation::newToken();
 
-        $invitation = DB::transaction(function () use ($existing, $data, $token, $request) {
+        $invitation = DB::transaction(function () use ($tenant, $existing, $data, $token, $request) {
+            // Phase 7 (§2.2, S60): serialise invites per tenant (tenant row lock) and re-check the seat limit under it,
+            // so two parallel invites at limit − 1 give one 201 and one 402.
+            Tenant::query()->whereKey($tenant->id)->lockForUpdate()->first(['id']);
+            FeatureGate::assertWithin($tenant, Limit::StaffSeats);
             // An expired open invitation would block the partial unique index: close it first.
             $existing?->update(['revoked_at' => now()]);
 

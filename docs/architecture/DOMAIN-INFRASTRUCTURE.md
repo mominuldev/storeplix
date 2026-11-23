@@ -67,7 +67,10 @@ Validation on add (`POST /api/v1/stores/{store}/domains`, PHASE-6-CONTRACT P6-4โ
   the existing row is `verification_failed` or `expired` for more than 7 days, in which case it is released and the
   new requester must still prove TXT (takeover protection: ownership is decided by DNS, not first-come; Q73).
 - Plan gate: feature `custom_domain` (402 `feature_not_in_plan`) and limit `custom_domains` (Free 0, Starter 2,
-  Growth 5; 402 `plan_limit_reached`; Q70). Downgrades are not enforced before Phase 7 (Q71).
+  Growth 5; 402 `plan_limit_reached`; Q70). **Phase 7 (PHASE-7 ยง2.3, P7-16, Q81 resolving Q71):** when the
+  effective plan drops below the shop's custom domains, the excess rows move to `expired` with failure code
+  `plan_limit` at `subscriptions.domain_grace_ends_at` (7 days after the drop; immediately after a non-payment expiry);
+  primary falls back to the platform subdomain; re-checking a `verification_failed`/`expired` row needs the plan.
 
 ## 4. State machine (as built in Phase 6)
 ```mermaid

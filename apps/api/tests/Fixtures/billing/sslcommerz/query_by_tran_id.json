@@ -1,0 +1,31 @@
+{
+  "_source": "docs",
+  "_billing": "PHASE-7 §7.2: copy of the 5b fixture for the platform billing adapters; replaced by sandbox recordings at certification (§13)",
+  "_doc": "https://developer.sslcommerz.com/doc/v4/#by-session-id-or-tran-id",
+  "APIConnect": "DONE",
+  "no_of_trans_found": 1,
+  "element": [
+    {
+      "val_id": "2611221016021Z4fKRg8bGkAuWq",
+      "status": "VALID",
+      "validated_on": "2026-11-22 10:16:05",
+      "currency_type": "BDT",
+      "currency_amount": "{amount}",
+      "currency_rate": "1.0000",
+      "base_fair": "0.00",
+      "value_a": "SP-1042",
+      "value_b": "",
+      "value_c": "",
+      "value_d": "",
+      "risk_title": "Safe",
+      "risk_level": "0",
+      "APIConnect": "DONE",
+      "tran_date": "2026-11-22 10:16:02",
+      "tran_id": "{tran_id}",
+      "amount": "{amount}",
+      "store_amount": "{amount}",
+      "bank_tran_id": "2611221016020LZvlXBRe6Y9vR",
+      "card_type": "BKASH-BKash"
+    }
+  ]
+}

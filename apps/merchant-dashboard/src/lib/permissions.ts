@@ -30,7 +30,10 @@ export const can = {
   manageDomains: (role: TenantRole | undefined) => has(ROLE_CAN.manage_domains, role),
   manageStaff: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   editSettings: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
-  viewBilling: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
+  /** Phase 7: plan, invoices and payments (O A). */
+  viewBilling: (role: TenantRole | undefined) => has(ROLE_CAN.view_billing, role),
+  /** Phase 7 Q88: change plan, cancel a scheduled change, pay (owner only). */
+  manageBilling: (role: TenantRole | undefined) => has(ROLE_CAN.manage_billing, role),
   viewAuditLog: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   createStore: (role: TenantRole | undefined) => role === 'owner' || role === 'admin',
   /** Change someone's role: managers only, never the owner, never yourself. */

@@ -175,12 +175,18 @@ screens (Phase 8.1), slug change.
 | 6.5 | `ask` endpoint (Caddy fallback / allowlist) | API | `GET /internal/domains/allowed` returns 200 only for `verified`/`ssl_provisioning`/`active` hosts of non-suspended stores |
 
 ## Phase 7 — Monetization
+Binding contract: `docs/development/PHASE-7-CONTRACT.md` (2026-11-23; branch `phase-7-monetization` from `main` @
+1b9843f; openapi 1.8.0; ADR 0008 amended). One build cycle on fake drivers (`BILLING_FAKE`) and one QA gate
+(`docs/reviews/phase-7-qa.md`), then certification against the platform's own bKash/SSLCommerz sandbox accounts
+(contract §13, OPEN-QUESTIONS Q90). PO accepted the defaults Q77–Q89 on 2026-11-23; Q90 (platform gateway accounts) open. **SF has no Phase 7 work** (non-payment drops to
+Free, Q77). Out of scope: auto-debit (Q83), SMS credit packs and domain purchases (Q84), Money & COD and Product
+performance reports (Q85), super-admin billing screens (8.1), refunds of platform payments through the API.
 | # | Task | Owner | AC |
 |---|---|---|---|
-| 7.1 | Plans/limits enforcement across modules | API | 402 `plan_limit_reached` tests |
-| 7.2 | Invoices + renewal payment via platform bKash/SSLCommerz (ADR 0008) | API/WEB | Paid invoice extends period; past_due → expired flow |
-| 7.3 | Billing UI (Account 148:33261) | WEB | Plan compare, upgrade, invoice history |
-| 7.4 | Reports: sales/profit/delivery (60:11810) | API/WEB | Matches order data; tenant timezone |
+| 7.1 | Plans/limits enforcement across modules (contract §2) | API | 402 `plan_limit_reached` / `feature_not_in_plan` with `upgrade_plan` for every enforced row of §2.1; downgrade deletes nothing; custom domains above the plan detached after the grace |
+| 7.2 | Invoices + renewal payment via platform bKash/SSLCommerz (ADR 0008 as amended) | API/WEB | Paid (verified) invoice extends period; past_due → expired → Free flow; proration; late/duplicate payments |
+| 7.3 | Billing UI: Settings → Plan & billing `60:16361` (**amended** from "Account 148:33261", which is the profile page) + banner `148:35383` | WEB | Plan compare (monthly/yearly), upgrade/downgrade with quote, pay, invoice history with PDF; 390 px |
+| 7.4 | Reports: Sales `60:11864`, Profit `60:12262`, Delivery `60:12660` (section 60:11810) | API/WEB | Matches order data; store (tenant) timezone; Profit Growth + O A |
 
 ## Phase 8 — Super admin, analytics, extended modules
 | # | Task | Owner | AC |

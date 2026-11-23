@@ -23,8 +23,12 @@ use Illuminate\Http\Client\Response;
  * as an error for 5 minutes.
  *
  * Every undocumented detail is marked `VERIFY against sandbox` and isolated in one method.
+ *
+ * Phase 7 (P7-10): not final so the platform billing adapter (Billing\Gateways\BkashBillingGateway) reuses the
+ * protocol with Storeplix's own credentials: it overrides only the create body (billing payer fields) and the token
+ * cache identity (global cache, one token across tenants). Behaviour for merchant accounts is unchanged.
  */
-final class BkashGateway implements PaymentGateway
+class BkashGateway implements PaymentGateway
 {
     public function __construct(
         private readonly SafeHttpClient $http,
@@ -246,7 +250,7 @@ final class BkashGateway implements PaymentGateway
     }
 
     /** Cache identity: account + mode + a keyed fingerprint of the credentials (new credentials → new token). */
-    private function cacheKey(PaymentGatewayAccount $account): string
+    protected function cacheKey(PaymentGatewayAccount $account): string
     {
         $fingerprint = substr(hash_hmac('sha256', $account->mode.'|'.json_encode($account->credentials), (string) config('app.key')), 0, 16);
 
@@ -320,7 +324,7 @@ final class BkashGateway implements PaymentGateway
      *
      * @return array<string, string>
      */
-    private function createBody(Payment $payment, string $returnUrl): array
+    protected function createBody(Payment $payment, string $returnUrl): array
     {
         $phone = $payment->order_id !== null ? (string) $payment->order?->customer_phone : '';
 

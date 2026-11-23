@@ -100,8 +100,9 @@ test('cancel through the UI releases committed stock and the customer count; ret
   await page.goto(`${urls.merchant}/orders/${id}`);
   await page.getByRole('button', { name: 'Cancel order' }).first().click();
   const dlg = page.getByRole('dialog');
-  await dlg.getByLabel('Reason').selectOption('unreachable');
-  await dlg.getByLabel('Note (optional)').fill('No answer 3 times');
+  // PR #3 (UI parity): the reason is a radio list, the note is "Note for your team (optional)"
+  await dlg.getByRole('radio', { name: /Couldn[’']t reach the customer/ }).check();
+  await dlg.getByLabel(/^Note.*\(optional\)/).fill('No answer 3 times');
   await dlg.getByRole('button', { name: 'Cancel order' }).click();
   await expect.poll(async () => (await order(id)).status).toBe('cancelled');
   inv = await inventoryOf(shop.s, shop.simple.id, v);

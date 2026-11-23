@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -25,6 +25,14 @@ info:
     GET /internal/domains/allowed (Caddy `ask` allowlist); StorefrontConfig.store.redirect_host (P6-15); LimitKey gains
     custom_domains. New error codes domain_invalid, domain_reserved, domain_taken (422), domain_not_active,
     platform_domain_locked (409), domain_not_allowed (404). Testing-only /dev/domains/* routes are not part of this spec.
+    1.8.0 (2026-11-23, Phase 7, PHASE-7-CONTRACT.md): additive only. Billing: POST /billing/quote, POST /billing/change-plan,
+    DELETE /billing/scheduled-change, GET /billing/invoices, GET /billing/invoices/{invoice}, GET /billing/invoices/{invoice}/pdf,
+    POST /billing/invoices/{invoice}/pay, GET /billing/payments/{payment}; public GET|POST /billing/payments/return/{provider}/{payment}
+    and POST /billing/webhooks/sslcommerz. Reports: GET /stores/{store}/reports/{sales,profit,delivery}. Plan gains
+    price_yearly_amount; Subscription gains billing_interval, scheduled_change, past_due_at, grace_ends_at, domain_grace_ends_at,
+    open_invoice; FeatureAccess gains grace_ends_at, domain_grace_ends_at; DomainFailureCode gains plan_limit; every 402 may carry
+    details.upgrade_plan. New error codes plan_unchanged, invoice_overdue, invoice_not_open (409), plan_unavailable,
+    billing_gateway_unavailable (422). Testing-only /dev/billing/* and /dev/fake-billing-gateway/* routes are not part of this spec.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -40,6 +48,7 @@ tags:
 - name: staff
 - name: media
 - name: billing
+  description: 'Plans, subscription, features (Phase 2); invoices, plan changes and platform payments (Phase 7, PHASE-7 §6.1–6.2)'
 - name: audit
 - name: storefront
 - name: themes
@@ -66,6 +75,8 @@ tags:
   description: 'Phase 5b: public payment returns and provider webhooks (PHASE-5B §4.3)'
 - name: domains
   description: 'Phase 6: custom domains (PHASE-6 §4.1)'
+- name: reports
+  description: 'Phase 7: sales, profit and delivery reports (PHASE-7 §6.3–6.4)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -8553,8 +8564,556 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /billing/quote:
+    post:
+      tags:
+      - billing
+      summary: Quote a plan change
+      operationId: quoteBillingChange
+      description: Owner/admin. No side effects (PHASE-7 §3.3, P7-6). `warnings` list what the target plan won't cover.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingQuoteInput'
+      responses:
+        '200':
+          description: Quote
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BillingQuote'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '409':
+          description: '`plan_unchanged` | `invoice_overdue`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`plan_unavailable` (details.plan_code) or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /billing/change-plan:
+    post:
+      tags:
+      - billing
+      summary: Change plan
+      operationId: changePlan
+      description: Owner only (ManageBilling). `new`/`upgrade` → 201 with an open invoice to pay; `downgrade`/`cancel` → 200 with
+        `subscription.scheduled_change` (or, in past_due, an immediate drop to Free) and `invoice` null (PHASE-7 §3).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingQuoteInput'
+      responses:
+        '201':
+          description: Invoice issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ChangePlanResult'
+        '200':
+          description: Change scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ChangePlanResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '409':
+          description: '`plan_unchanged` | `invoice_overdue` | `idempotency_key_in_use` | `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`plan_unavailable` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/scheduled-change:
+    delete:
+      tags:
+      - billing
+      summary: Cancel the scheduled plan change
+      operationId: cancelScheduledChange
+      description: Owner only. Keeps the current plan.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /billing/invoices:
+    get:
+      tags:
+      - billing
+      summary: List Storeplix invoices
+      operationId: listBillingInvoices
+      description: Owner/admin. Newest first. `meta.providers` = platform gateways currently offered.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BillingInvoiceSummary'
+                  meta:
+                    $ref: '#/components/schemas/BillingInvoiceListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /billing/invoices/{invoice}:
+    get:
+      tags:
+      - billing
+      summary: Get an invoice
+      operationId: getBillingInvoice
+      description: Owner/admin. Includes payments.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BillingInvoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /billing/invoices/{invoice}/pdf:
+    get:
+      tags:
+      - billing
+      summary: Download the invoice PDF
+      operationId: downloadBillingInvoicePdf
+      description: Owner/admin. A4 PDF, attachment, `Cache-Control private, no-store`; void invoices carry a VOID watermark.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: '`provider_unavailable` (renderer down)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /billing/invoices/{invoice}/pay:
+    post:
+      tags:
+      - billing
+      summary: Pay an invoice
+      operationId: payBillingInvoice
+      description: Owner only. Starts a platform gateway payment; the browser goes to `redirect_url`. Paid only after server-side
+        verification (P7-9). Same Idempotency-Key → same payment.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayInvoiceInput'
+      responses:
+        '201':
+          description: Payment started
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BillingPayment'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invoice_not_open` | idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`billing_gateway_unavailable` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /billing/payments/{payment}:
+    get:
+      tags:
+      - billing
+      summary: Get a billing payment
+      operationId: getBillingPayment
+      description: Owner/admin. While pending and the last provider query is older than 10 s, the API queries the provider once
+        before answering. Used by the dashboard after the gateway return.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/BillingPaymentPath'
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BillingPayment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /billing/payments/return/{provider}/{payment}:
+    get:
+      tags:
+      - webhooks
+      summary: Platform gateway return (signed)
+      operationId: billingPaymentReturn
+      description: Public, signed (26 h). Triggers verification, then 303 to `{MERCHANT_APP_URL}/settings/plan?payment={id}`
+        (or `?payment_error=1`). Never redirects elsewhere (S59).
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/GatewayProviderPath'
+      - $ref: '#/components/parameters/BillingPaymentPath'
+      - $ref: '#/components/parameters/SignedExpires'
+      - $ref: '#/components/parameters/SignedSignature'
+      responses:
+        '303':
+          description: Redirect to the merchant dashboard
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - webhooks
+      summary: Platform gateway return (signed, POST form from SSLCommerz)
+      operationId: billingPaymentReturnPost
+      description: Same as GET.
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/GatewayProviderPath'
+      - $ref: '#/components/parameters/BillingPaymentPath'
+      - $ref: '#/components/parameters/SignedExpires'
+      - $ref: '#/components/parameters/SignedSignature'
+      responses:
+        '303':
+          description: Redirect to the merchant dashboard
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/webhooks/sslcommerz:
+    post:
+      tags:
+      - webhooks
+      summary: SSLCommerz IPN for platform billing
+      operationId: billingSslcommerzIpn
+      description: Public. `verify_sign` with the platform store password, then the Validation API decides (P7-12). Always 200
+        with the same body (unknown or invalid IPNs are ignored).
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookAck'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/reports/sales:
+    get:
+      tags:
+      - reports
+      summary: Sales report
+      operationId: getSalesReport
+      description: All roles, all plans. Orders placed in the range, store timezone (PHASE-7 §6.4).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SalesReport'
+                  meta:
+                    $ref: '#/components/schemas/ReportMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/reports/profit:
+    get:
+      tags:
+      - reports
+      summary: Profit report
+      operationId: getProfitReport
+      description: Owner/admin (ViewCosts) on a plan with `profit_reports`. Delivered orders by delivery date (PHASE-7 §6.4).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ProfitReport'
+                  meta:
+                    $ref: '#/components/schemas/ReportMeta'
+        '402':
+          description: '`feature_not_in_plan` (details.feature = profit_reports, details.upgrade_plan)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/reports/delivery:
+    get:
+      tags:
+      - reports
+      summary: Delivery report
+      operationId: getDeliveryReport
+      description: All roles, all plans. Courier parcels booked in the range (PHASE-7 §6.4).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DeliveryReport'
+                  meta:
+                    $ref: '#/components/schemas/ReportMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   parameters:
+    BillingInvoicePath:
+      in: path
+      name: invoice
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: billing_invoices.id of this tenant, else 404
+    BillingPaymentPath:
+      in: path
+      name: payment
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: billing_payments.id of this tenant, else 404
+    ReportFrom:
+      in: query
+      name: from
+      required: false
+      schema:
+        type: string
+        format: date
+      description: Store-local date (YYYY-MM-DD), default 1st of the current month; ≥ 2020-01-01; span ≤ 366 days
+    ReportTo:
+      in: query
+      name: to
+      required: false
+      schema:
+        type: string
+        format: date
+      description: Store-local date (YYYY-MM-DD), default today; future dates are clipped to today
     GatewayProviderPath:
       in: path
       name: provider
@@ -9119,6 +9678,7 @@ components:
       - ssl_timeout
       - ssl_lost
       - suspended
+      - plan_limit
     DnsRecordStatus:
       type: string
       enum:
@@ -10521,6 +11081,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FeatureKey'
+        price_yearly_amount:
+          type:
+          - integer
+          - 'null'
+          description: Phase 7 (P7-3). Yearly price in paisa (10 × monthly); null = no yearly option
     SubscriptionStatus:
       type: string
       enum:
@@ -10563,6 +11128,31 @@ components:
           format: date-time
         cancel_at_period_end:
           type: boolean
+        billing_interval:
+          $ref: '#/components/schemas/BillingInterval'
+        scheduled_change:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionScheduledChange'
+          - type: 'null'
+        past_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        grace_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        domain_grace_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        open_invoice:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInvoiceSummary'
+          - type: 'null'
     FeatureAccess:
       type: object
       required:
@@ -10671,6 +11261,18 @@ components:
                   - 'null'
                 used:
                   type: integer
+        grace_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Phase 7. End of the past_due grace
+        domain_grace_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Phase 7 (P7-16). Custom domains above the plan are detached at this time
     AuditLog:
       type: object
       required:
@@ -17699,3 +18301,1019 @@ components:
       properties:
         received:
           type: boolean
+    BillingInterval:
+      type: string
+      enum:
+      - month
+      - year
+    SubscriptionScheduledChange:
+      type: object
+      required:
+      - plan
+      - interval
+      - effective_at
+      properties:
+        plan:
+          $ref: '#/components/schemas/Plan'
+        interval:
+          $ref: '#/components/schemas/BillingInterval'
+        effective_at:
+          type: string
+          format: date-time
+    BillingInvoiceKind:
+      type: string
+      enum:
+      - new
+      - upgrade
+      - renewal
+      description: Clients must tolerate new values (e.g. sms_credits later, Q84)
+    BillingInvoiceStatus:
+      type: string
+      enum:
+      - open
+      - paid
+      - void
+    BillingVoidReason:
+      type: string
+      enum:
+      - superseded
+      - expired
+      - unpaid
+      - cancelled
+      - manual
+    BillingInvoiceLine:
+      type: object
+      required:
+      - description
+      - plan_code
+      - interval
+      - period_start
+      - period_end
+      - quantity
+      - unit_amount
+      - amount
+      properties:
+        description:
+          type: string
+        plan_code:
+          type:
+          - string
+          - 'null'
+        interval:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
+        period_start:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        period_end:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        quantity:
+          type: integer
+        unit_amount:
+          type: integer
+        amount:
+          type: integer
+    BillingBillTo:
+      type: object
+      required:
+      - name
+      - address
+      - email
+      - phone
+      properties:
+        name:
+          type: string
+        address:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        phone:
+          type:
+          - string
+          - 'null'
+    BillingInvoiceSummary:
+      type: object
+      required:
+      - id
+      - number
+      - kind
+      - status
+      - description
+      - total_amount
+      - currency
+      - issued_at
+      - due_at
+      - paid_at
+      - is_overdue
+      - can_pay
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+          example: SP-2026-000123
+        kind:
+          $ref: '#/components/schemas/BillingInvoiceKind'
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+        description:
+          type: string
+        total_amount:
+          type: integer
+        currency:
+          type: string
+          enum:
+          - BDT
+        issued_at:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        paid_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        is_overdue:
+          type: boolean
+        can_pay:
+          type: boolean
+    BillingInvoice:
+      type: object
+      required:
+      - id
+      - number
+      - kind
+      - status
+      - description
+      - total_amount
+      - currency
+      - issued_at
+      - due_at
+      - paid_at
+      - is_overdue
+      - can_pay
+      - plan_code
+      - interval
+      - subtotal_amount
+      - tax_amount
+      - tax_rate_bps
+      - credit_amount
+      - lines
+      - bill_to
+      - period_start
+      - period_end
+      - voided_at
+      - void_reason
+      - paid_late
+      - payments
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+          example: SP-2026-000123
+        kind:
+          $ref: '#/components/schemas/BillingInvoiceKind'
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+        description:
+          type: string
+        total_amount:
+          type: integer
+        currency:
+          type: string
+          enum:
+          - BDT
+        issued_at:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        paid_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        is_overdue:
+          type: boolean
+        can_pay:
+          type: boolean
+        plan_code:
+          type: string
+        interval:
+          $ref: '#/components/schemas/BillingInterval'
+        subtotal_amount:
+          type: integer
+        tax_amount:
+          type: integer
+        tax_rate_bps:
+          type: integer
+        credit_amount:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingInvoiceLine'
+        bill_to:
+          $ref: '#/components/schemas/BillingBillTo'
+        period_start:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        period_end:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        voided_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        void_reason:
+          oneOf:
+          - $ref: '#/components/schemas/BillingVoidReason'
+          - type: 'null'
+        paid_late:
+          type: boolean
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingPayment'
+    BillingPaymentStatus:
+      type: string
+      enum:
+      - pending
+      - succeeded
+      - failed
+      - cancelled
+    BillingPayment:
+      type: object
+      required:
+      - id
+      - invoice_id
+      - provider
+      - status
+      - amount
+      - currency
+      - redirect_url
+      - failure_code
+      - is_duplicate
+      - created_at
+      - expires_at
+      - verified_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        invoice_id:
+          $ref: '#/components/schemas/Ulid'
+        provider:
+          type: string
+          enum:
+          - bkash
+          - sslcommerz
+          - manual
+        status:
+          $ref: '#/components/schemas/BillingPaymentStatus'
+        amount:
+          type: integer
+        currency:
+          type: string
+          enum:
+          - BDT
+        redirect_url:
+          type:
+          - string
+          - 'null'
+          description: Only while pending and not expired
+        failure_code:
+          type:
+          - string
+          - 'null'
+        is_duplicate:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        verified_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+    BillingInvoiceListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - providers
+        properties:
+          providers:
+            type: array
+            items:
+              $ref: '#/components/schemas/GatewayProvider'
+    BillingQuoteInput:
+      type: object
+      required:
+      - plan_code
+      - interval
+      properties:
+        plan_code:
+          type: string
+          maxLength: 40
+        interval:
+          $ref: '#/components/schemas/BillingInterval'
+    BillingChangeKind:
+      type: string
+      enum:
+      - new
+      - upgrade
+      - downgrade
+      - cancel
+    BillingDowngradeWarning:
+      type: object
+      required:
+      - key
+      - used
+      - limit
+      - message
+      properties:
+        key:
+          type: string
+          description: LimitKey or FeatureKey
+        used:
+          type:
+          - integer
+          - 'null'
+        limit:
+          type:
+          - integer
+          - 'null'
+        message:
+          type: string
+    BillingQuote:
+      type: object
+      required:
+      - kind
+      - plan
+      - interval
+      - amount
+      - credit_amount
+      - currency
+      - requires_payment
+      - effective_at
+      - period_start
+      - period_end
+      - lines
+      - warnings
+      properties:
+        kind:
+          $ref: '#/components/schemas/BillingChangeKind'
+        plan:
+          $ref: '#/components/schemas/Plan'
+        interval:
+          $ref: '#/components/schemas/BillingInterval'
+        amount:
+          type: integer
+        credit_amount:
+          type: integer
+        currency:
+          type: string
+          enum:
+          - BDT
+        requires_payment:
+          type: boolean
+        effective_at:
+          type: string
+          format: date-time
+        period_start:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        period_end:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingInvoiceLine'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingDowngradeWarning'
+    ChangePlanResult:
+      type: object
+      required:
+      - subscription
+      - invoice
+      properties:
+        subscription:
+          $ref: '#/components/schemas/Subscription'
+        invoice:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInvoice'
+          - type: 'null'
+    PayInvoiceInput:
+      type: object
+      required:
+      - provider
+      properties:
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+    ReportMeta:
+      type: object
+      required:
+      - from
+      - to
+      - previous_from
+      - previous_to
+      - timezone
+      - currency
+      - generated_at
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        previous_from:
+          type: string
+          format: date
+        previous_to:
+          type: string
+          format: date
+        timezone:
+          type: string
+        currency:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+    SalesSummary:
+      type: object
+      required:
+      - sales_amount
+      - sold_orders_count
+      - orders_count
+      - orders_per_day
+      - average_order_value_amount
+      - items_per_order
+      - cancelled_count
+      - cancelled_rate
+      - fake_cancelled_count
+      properties:
+        sales_amount:
+          type: integer
+        sold_orders_count:
+          type: integer
+        orders_count:
+          type: integer
+        orders_per_day:
+          type: number
+        average_order_value_amount:
+          type:
+          - integer
+          - 'null'
+        items_per_order:
+          type:
+          - number
+          - 'null'
+        cancelled_count:
+          type: integer
+        cancelled_rate:
+          type:
+          - number
+          - 'null'
+        fake_cancelled_count:
+          type: integer
+    SalesReport:
+      type: object
+      required:
+      - summary
+      - previous
+      - best_day
+      - weekend_share
+      - daily
+      - channels
+      - top_products
+      - areas
+      properties:
+        summary:
+          $ref: '#/components/schemas/SalesSummary'
+        previous:
+          $ref: '#/components/schemas/SalesSummary'
+        best_day:
+          oneOf:
+          - type: object
+            required:
+            - date
+            - sales_amount
+            - orders_count
+            properties:
+              date:
+                type: string
+                format: date
+              sales_amount:
+                type: integer
+              orders_count:
+                type: integer
+          - type: 'null'
+        weekend_share:
+          type:
+          - number
+          - 'null'
+        daily:
+          type: array
+          items:
+            type: object
+            required:
+            - date
+            - orders_count
+            - sold_orders_count
+            - sales_amount
+            properties:
+              date:
+                type: string
+                format: date
+              orders_count:
+                type: integer
+              sold_orders_count:
+                type: integer
+              sales_amount:
+                type: integer
+        channels:
+          type: array
+          items:
+            type: object
+            required:
+            - channel
+            - orders_count
+            - sales_amount
+            - share
+            properties:
+              channel:
+                $ref: '#/components/schemas/OrderChannel'
+              orders_count:
+                type: integer
+              sales_amount:
+                type: integer
+              share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+        top_products:
+          type: array
+          items:
+            type: object
+            required:
+            - product_id
+            - name
+            - image
+            - units
+            - sales_amount
+            - share
+            properties:
+              product_id:
+                type:
+                - string
+                - 'null'
+              name:
+                type: string
+              image:
+                oneOf:
+                - $ref: '#/components/schemas/MediaRef'
+                - type: 'null'
+              units:
+                type: integer
+              sales_amount:
+                type: integer
+              share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+        areas:
+          type: object
+          required:
+          - inside_dhaka_share
+          - districts
+          properties:
+            inside_dhaka_share:
+              type:
+              - number
+              - 'null'
+            districts:
+              type: array
+              items:
+                type: object
+                required:
+                - district_code
+                - district_name
+                - orders_count
+                - sales_amount
+                - share
+                properties:
+                  district_code:
+                    type: string
+                  district_name:
+                    type: string
+                  orders_count:
+                    type: integer
+                  sales_amount:
+                    type: integer
+                  share:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    description: 0–1, 4 decimals
+    ProfitSummary:
+      type: object
+      required:
+      - revenue_amount
+      - delivered_orders_count
+      - product_cost_amount
+      - delivery_cost_amount
+      - cod_fee_amount
+      - gateway_fee_amount
+      - ad_spend_amount
+      - total_cost_amount
+      - net_profit_amount
+      - margin
+      - profit_per_order_amount
+      properties:
+        revenue_amount:
+          type: integer
+        delivered_orders_count:
+          type: integer
+        product_cost_amount:
+          type: integer
+        delivery_cost_amount:
+          type: integer
+        cod_fee_amount:
+          type: integer
+        gateway_fee_amount:
+          type:
+          - integer
+          - 'null'
+        ad_spend_amount:
+          type:
+          - integer
+          - 'null'
+        total_cost_amount:
+          type: integer
+        net_profit_amount:
+          type: integer
+        margin:
+          type:
+          - number
+          - 'null'
+        profit_per_order_amount:
+          type:
+          - integer
+          - 'null'
+    ProfitReport:
+      type: object
+      required:
+      - summary
+      - previous
+      - per_order
+      - weekly
+      - daily
+      - data_quality
+      properties:
+        summary:
+          $ref: '#/components/schemas/ProfitSummary'
+        previous:
+          $ref: '#/components/schemas/ProfitSummary'
+        per_order:
+          oneOf:
+          - type: object
+            required:
+            - order_value_amount
+            - product_cost_amount
+            - delivery_cost_amount
+            - cod_fee_amount
+            - gateway_fee_amount
+            - profit_amount
+            properties:
+              order_value_amount:
+                type: integer
+              product_cost_amount:
+                type: integer
+              delivery_cost_amount:
+                type: integer
+              cod_fee_amount:
+                type: integer
+              gateway_fee_amount:
+                type:
+                - integer
+                - 'null'
+              profit_amount:
+                type: integer
+          - type: 'null'
+        weekly:
+          type: array
+          items:
+            type: object
+            required:
+            - week
+            - week_start
+            - revenue_amount
+            - net_profit_amount
+            - margin
+            properties:
+              week:
+                type: string
+                example: 2026-W47
+              week_start:
+                type: string
+                format: date
+              revenue_amount:
+                type: integer
+              net_profit_amount:
+                type: integer
+              margin:
+                type:
+                - number
+                - 'null'
+        daily:
+          type: array
+          items:
+            type: object
+            required:
+            - date
+            - orders_count
+            - revenue_amount
+            - product_cost_amount
+            - delivery_cost_amount
+            - cod_fee_amount
+            - gateway_fee_amount
+            - ad_spend_amount
+            - total_cost_amount
+            - net_profit_amount
+            - margin
+            properties:
+              date:
+                type: string
+                format: date
+              orders_count:
+                type: integer
+              revenue_amount:
+                type: integer
+              product_cost_amount:
+                type: integer
+              delivery_cost_amount:
+                type: integer
+              cod_fee_amount:
+                type: integer
+              gateway_fee_amount:
+                type:
+                - integer
+                - 'null'
+              ad_spend_amount:
+                type:
+                - integer
+                - 'null'
+              total_cost_amount:
+                type: integer
+              net_profit_amount:
+                type: integer
+              margin:
+                type:
+                - number
+                - 'null'
+        data_quality:
+          type: object
+          required:
+          - items_without_cost
+          - shipments_without_fee
+          properties:
+            items_without_cost:
+              type: integer
+            shipments_without_fee:
+              type: integer
+    DeliverySummary:
+      type: object
+      required:
+      - parcels_count
+      - delivered_count
+      - returned_count
+      - returning_count
+      - in_progress_count
+      - success_rate
+      - return_rate
+      - returning_charges_amount
+      - avg_delivery_days
+      - avg_delivery_days_inside_dhaka
+      - avg_delivery_days_outside_dhaka
+      properties:
+        parcels_count:
+          type: integer
+        delivered_count:
+          type: integer
+        returned_count:
+          type: integer
+        returning_count:
+          type: integer
+        in_progress_count:
+          type: integer
+        success_rate:
+          type:
+          - number
+          - 'null'
+        return_rate:
+          type:
+          - number
+          - 'null'
+        returning_charges_amount:
+          type: integer
+        avg_delivery_days:
+          type:
+          - number
+          - 'null'
+        avg_delivery_days_inside_dhaka:
+          type:
+          - number
+          - 'null'
+        avg_delivery_days_outside_dhaka:
+          type:
+          - number
+          - 'null'
+    DeliveryReport:
+      type: object
+      required:
+      - summary
+      - previous
+      - couriers
+      - returns_count
+      - return_reasons
+      - weekly
+      - returning
+      - districts
+      properties:
+        summary:
+          $ref: '#/components/schemas/DeliverySummary'
+        previous:
+          $ref: '#/components/schemas/DeliverySummary'
+        couriers:
+          type: array
+          items:
+            type: object
+            required:
+            - provider
+            - parcels_count
+            - delivered_share
+            - returned_share
+            - in_progress_share
+            - avg_delivery_days
+            - cod_held_amount
+            properties:
+              provider:
+                $ref: '#/components/schemas/CourierProvider'
+              parcels_count:
+                type: integer
+              delivered_share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+              returned_share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+              in_progress_share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+              avg_delivery_days:
+                type:
+                - number
+                - 'null'
+              cod_held_amount:
+                type: integer
+        returns_count:
+          type: integer
+        return_reasons:
+          type: array
+          items:
+            type: object
+            required:
+            - reason
+            - count
+            - share
+            properties:
+              reason:
+                $ref: '#/components/schemas/ReturnReason'
+              count:
+                type: integer
+              share:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: 0–1, 4 decimals
+        weekly:
+          type: array
+          items:
+            type: object
+            required:
+            - week
+            - week_start
+            - parcels_count
+            - success_rate
+            properties:
+              week:
+                type: string
+              week_start:
+                type: string
+                format: date
+              parcels_count:
+                type: integer
+              success_rate:
+                type:
+                - number
+                - 'null'
+        returning:
+          type: array
+          items:
+            type: object
+            required:
+            - shipment_id
+            - order_id
+            - order_number
+            - customer_name
+            - district_name
+            - provider
+            - problem
+            - last_location
+            - last_event_at
+            properties:
+              shipment_id:
+                $ref: '#/components/schemas/Ulid'
+              order_id:
+                $ref: '#/components/schemas/Ulid'
+              order_number:
+                type: string
+              customer_name:
+                type: string
+              district_name:
+                type:
+                - string
+                - 'null'
+              provider:
+                $ref: '#/components/schemas/CourierProvider'
+              problem:
+                type:
+                - string
+                - 'null'
+              last_location:
+                type:
+                - string
+                - 'null'
+              last_event_at:
+                format: date-time
+                type:
+                - string
+                - 'null'
+        districts:
+          type: array
+          items:
+            type: object
+            required:
+            - district_code
+            - district_name
+            - parcels_count
+            - success_rate
+            properties:
+              district_code:
+                type: string
+              district_name:
+                type: string
+              parcels_count:
+                type: integer
+              success_rate:
+                type:
+                - number
+                - 'null'

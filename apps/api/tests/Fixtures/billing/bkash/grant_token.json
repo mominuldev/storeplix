@@ -1,0 +1,11 @@
+{
+  "_source": "docs",
+  "_billing": "PHASE-7 §7.2: copy of the 5b fixture for the platform billing adapters; replaced by sandbox recordings at certification (§13)",
+  "_doc": "https://developer.bka.sh/docs/grant-token",
+  "statusCode": "0000",
+  "statusMessage": "Successful",
+  "id_token": "eyJraWQiOiJmYWtlLWlkLXRva2VuIn0.sandbox",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "eyJjdHkiOiJmYWtlLXJlZnJlc2gifQ.sandbox"
+}

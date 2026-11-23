@@ -20,6 +20,8 @@ enum DomainFailureCode: string
     case SslTimeout = 'ssl_timeout';
     case SslLost = 'ssl_lost';
     case Suspended = 'suspended';
+    // Phase 7 (PHASE-7 §2.3): detached because the plan no longer allows it.
+    case PlanLimit = 'plan_limit';
 
     /** Merchant-facing default text (failure_message); the dashboard maps the code to its own copy (§8). */
     public function message(): string
@@ -38,6 +40,7 @@ enum DomainFailureCode: string
             self::SslTimeout => 'The certificate was not issued within 24 hours.',
             self::SslLost => 'The certificate for this domain is no longer active.',
             self::Suspended => 'This domain was suspended by Store Plix.',
+            self::PlanLimit => 'This domain was disconnected because your plan no longer includes it. Upgrade to connect it again.',
         };
     }
 }

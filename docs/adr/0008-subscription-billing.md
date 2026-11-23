@@ -26,3 +26,19 @@ Plans with trials, limits and feature gates; merchants pay in BDT; card recurrin
 ## Alternatives
 - Stripe/Paddle: not viable for BD entity/payers today.
 - Annual-only prepaid: simpler but worse conversion.
+
+## Amendment 2026-11-23 — Phase 7 binding detail (PHASE-7-CONTRACT P7-1–P7-22)
+- **Non-payment drops to Free** (PO accepted Q77, 2026-11-23): `past_due` keeps the paid plan for a 7-day grace, then the
+  subscription row becomes `expired` and a new `active` Free row starts. The shop is never read-only and the storefront
+  never shows "temporarily unavailable" because of billing; `402 subscription_inactive` stays reserved. Data retention
+  after expiry is therefore moot for billing (tenant closure keeps Q15).
+- **Yearly interval** = 10 × monthly (Q79). **Proration** as decided above, rounded up to whole taka; `month → year`
+  is an immediate upgrade with a credit (Q80). Unused trial days carry into the first paid period (Q78).
+- **Invoices** `billing_invoices` (one open per tenant, gapless `SP-YYYY-NNNNNN`, VAT-inclusive, Q82) and
+  `billing_payments`; `subscription_items` is not built.
+- **Platform credentials** for bKash/SSLCommerz come from env; the 5b provider protocol code is shared through a
+  behaviour-preserving refactor (credentials value object, charge request, token store) and the platform bKash token is
+  cached globally. Paid only after a server-side provider answer with exact amount, BDT and our reference.
+- **Downgrades** delete nothing; creates above the limit get 402; custom domains above the plan are detached after a
+  7-day grace (immediately after a non-payment expiry) (Q81, resolves Q71).
+- **bKash tokenized agreements / auto-debit** evaluated and deferred (Q83).

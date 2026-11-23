@@ -594,6 +594,26 @@ BEGIN
   END IF;
 END
 $$;
+-- table: billing_invoices
+DO $$
+BEGIN
+  IF to_regclass('public.billing_invoices') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "billing_invoices";
+    ALTER TABLE "billing_invoices" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "billing_invoices" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: billing_payments
+DO $$
+BEGIN
+  IF to_regclass('public.billing_payments') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "billing_payments";
+    ALTER TABLE "billing_payments" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "billing_payments" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

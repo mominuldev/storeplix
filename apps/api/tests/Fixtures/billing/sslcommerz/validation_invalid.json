@@ -1,0 +1,15 @@
+{
+  "_source": "docs",
+  "_billing": "PHASE-7 §7.2: copy of the 5b fixture for the platform billing adapters; replaced by sandbox recordings at certification (§13)",
+  "_doc": "https://developer.sslcommerz.com/doc/v4/#order-validation-api (invalid)",
+  "status": "INVALID_TRANSACTION",
+  "tran_date": "",
+  "tran_id": "",
+  "val_id": "",
+  "amount": "",
+  "store_amount": "",
+  "currency": "",
+  "bank_tran_id": "",
+  "card_type": "",
+  "APIConnect": "DONE"
+}

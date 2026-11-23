@@ -1,4 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
+import { handlePlanLimit } from '../../plan/Banners';
+import { usePlans } from '../../plan/billing';
 import type { DomainListMeta, StoreDomain } from '@storeplix/types';
 import { Badge, Button, Dialog, DomainStatusBadge, EmptyState, Input, Menu, type MenuEntry } from '@storeplix/ui';
 import { ArrowRight, Globe, Lock, RefreshCw, Star, Trash2, FileText } from 'lucide-react';
@@ -53,6 +55,8 @@ export function DomainsPage() {
           cooldowns.start(d.id, e.retryAfter ?? 60);
           toast(`Checked too often. Try again in ${e.retryAfter ?? 60} seconds.`, 'error');
         } else if (isApiError(e) && e.code === 'invalid_state_transition') toast('This domain is suspended. Contact support.', 'error');
+        // Phase 7 §2.1 b: re-checking a detached (`plan_limit`) domain needs the plan → upgrade dialog.
+        else if (handlePlanLimit(e)) return;
         else toast(isApiError(e) && e.message ? e.message : 'We couldn’t check this domain. Try again.', 'error');
       },
     });
@@ -213,17 +217,25 @@ function PlanNotice({ meta, canManage }: { meta: DomainListMeta; canManage: bool
     );
   }
   if (canManage && !meta.can_add && meta.limit.max !== null && meta.limit.used >= meta.limit.max) {
-    return (
-      <p role="note" className="rounded-lg bg-surface-subtle px-4 py-3 text-body text-text-secondary">
-        Your plan allows {meta.limit.max} custom domain{meta.limit.max === 1 ? '' : 's'}. Remove one or{' '}
-        <Link to="/settings/plan" className="font-medium text-brand-600 hover:underline">
-          upgrade
-        </Link>{' '}
-        to connect another.
-      </p>
-    );
+    return <LimitNote max={meta.limit.max} />;
   }
   return null;
+}
+
+/** Limit reached: names the cheapest plan with more custom domains (Phase 7 §8.3 upgrade prompts). */
+function LimitNote({ max }: { max: number }) {
+  const plans = usePlans().data ?? [];
+  const next = [...plans].sort((a, b) => a.price_amount - b.price_amount).find((p) => p.limits.custom_domains === null || p.limits.custom_domains > max);
+  return (
+    <p role="note" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-surface-subtle px-4 py-3 text-body text-text-secondary">
+      <span className="min-w-0 flex-1">
+        Your plan allows {max} custom domain{max === 1 ? '' : 's'}. Remove one to connect another, or upgrade.
+      </span>
+      <Link to={next ? `/settings/plan?upgrade=${next.code}` : '/settings/plan'} className="font-semibold text-brand-600 hover:underline">
+        {next ? `Upgrade to ${next.name}${next.limits.custom_domains !== null ? ` · up to ${next.limits.custom_domains}` : ''}` : 'See plans'}
+      </Link>
+    </p>
+  );
 }
 
 function rowSubline(d: StoreDomain, primary: StoreDomain | undefined): string {

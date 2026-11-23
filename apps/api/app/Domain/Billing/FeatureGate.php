@@ -45,7 +45,9 @@ final class FeatureGate
     /**
      * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29);
      * orders_per_month = orders placed this calendar month in the store timezone, any status (P5-27);
-     * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26); courier_connections = connected courier accounts (P5B-31). Other limits return 0 until their module exists.
+     * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26); courier_connections = connected courier accounts (P5B-31);
+     * custom_domains = custom store_domains rows in any status (P6-7). Phase 7 (§2.1 d): every Limit case has a module;
+     * an unknown key would return 0.
      */
     public static function usage(Tenant $tenant, Limit $limit): int
     {
@@ -77,16 +79,44 @@ final class FeatureGate
     {
         $max = self::limit($tenant, $limit);
 
-        if ($max !== null && self::usage($tenant, $limit) + $adding > $max) {
-            throw new PlanLimitReached($limit, $max);
+        if ($max !== null && ($used = self::usage($tenant, $limit)) + $adding > $max) {
+            throw new PlanLimitReached($limit, $max, self::upgradePlanForLimit($limit, $used + $adding));
         }
     }
 
     public static function assertAllows(Tenant $tenant, Feature $feature): void
     {
         if (! self::allows($tenant, $feature)) {
-            throw new FeatureNotInPlan($feature);
+            throw new FeatureNotInPlan($feature, self::upgradePlanForFeature($feature));
         }
+    }
+
+    /** P7-17: the cheapest active plan (by sort) whose limit is unlimited or ≥ $needed; null when none qualifies. */
+    public static function upgradePlanForLimit(Limit $limit, int $needed): ?string
+    {
+        foreach (Plan::query()->where('is_active', true)->orderBy('sort')->get(['code', 'limits', 'features']) as $plan) {
+            if ($plan->code === Plan::FREE) {
+                continue;
+            }
+            $value = $plan->limits[$limit->value] ?? null;
+            if ($value === null || (int) $value >= $needed) {
+                return $plan->code;
+            }
+        }
+
+        return null;
+    }
+
+    /** P7-17: the cheapest active plan (by sort) that includes the feature. */
+    public static function upgradePlanForFeature(Feature $feature): ?string
+    {
+        foreach (Plan::query()->where('is_active', true)->orderBy('sort')->get(['code', 'features']) as $plan) {
+            if (in_array($feature->value, $plan->features ?? [], true)) {
+                return $plan->code;
+            }
+        }
+
+        return null;
     }
 
     public static function forget(string $tenantId): void
@@ -95,7 +125,7 @@ final class FeatureGate
     }
 
     /**
-     * @return array{code: string, features: list<string>, limits: array<string, int|null>, status: string, trial_ends_at: string|null}
+     * @return array{code: string, features: list<string>, limits: array<string, int|null>, status: string, trial_ends_at: string|null, grace_ends_at?: string|null, domain_grace_ends_at?: string|null}
      */
     public static function plan(Tenant $tenant): array
     {
@@ -109,6 +139,8 @@ final class FeatureGate
                 'limits' => $plan?->limits ?? [],
                 'status' => $subscription?->status ?? Subscription::ACTIVE,
                 'trial_ends_at' => $subscription?->trial_ends_at?->toIso8601ZuluString(),
+                'grace_ends_at' => $subscription?->status === Subscription::PAST_DUE ? $subscription->grace_ends_at?->toIso8601ZuluString() : null,
+                'domain_grace_ends_at' => $subscription?->domain_grace_ends_at?->toIso8601ZuluString(),
             ];
         }));
     }

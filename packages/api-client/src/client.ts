@@ -138,6 +138,20 @@ import type {
   RestockInput,
   ReturnEvent,
   ReturnListMeta,
+  BillingInvoice,
+  BillingInvoiceListMeta,
+  BillingInvoiceStatus,
+  BillingInvoiceSummary,
+  BillingPayment,
+  BillingQuote,
+  BillingQuoteInput,
+  ChangePlanResult,
+  DeliveryReport,
+  PayInvoiceInput,
+  ProfitReport,
+  ReportMeta,
+  ReportRangeQuery,
+  SalesReport,
   ReturnRequest,
   ReturnSummary,
   StoreDocument,
@@ -533,6 +547,12 @@ export function createApiClient(options: ApiClientOptions) {
   const store = (storeId: string) => `/stores/${enc(storeId)}`;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function report<T>(storeId: string, type: 'sales' | 'profit' | 'delivery', range: ReportRangeQuery): Promise<{ data: T; meta: ReportMeta }> {
+    const envelope = await requestEnvelope<T>(`${store(storeId)}/reports/${type}`, { query: { from: range.from || undefined, to: range.to || undefined } });
+    if (!envelope) throw new Error('Empty report response');
+    return { data: envelope.data, meta: envelope.meta as unknown as ReportMeta };
+  }
 
   return {
     request,
@@ -1033,6 +1053,47 @@ export function createApiClient(options: ApiClientOptions) {
       makePrimary: (storeId: string, id: string) => request<StoreDomain[]>(`${store(storeId)}/domains/${enc(id)}/primary`, { method: 'POST' }),
       /** 204; when it was the primary, the slug platform address becomes primary again. */
       remove: (storeId: string, id: string) => request<void>(`${store(storeId)}/domains/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    /**
+     * Phase 7 §6.1 billing (tenant-level). Reads O A (`ViewBilling`); writes owner only (`ManageBilling`, 403 otherwise).
+     * quote / changePlan → 409 `plan_unchanged` | `invoice_overdue`, 422 `plan_unavailable`. pay → 409 `invoice_not_open`,
+     * 422 `billing_gateway_unavailable`, 502 `provider_unavailable`. `idempotencyKey` is created once per dialog open.
+     */
+    billing: {
+      quote: (input: BillingQuoteInput) => request<BillingQuote>('/billing/quote', { method: 'POST', body: { plan_code: input.plan_code, interval: input.interval } }),
+      /** new/upgrade → 201 with an open invoice; downgrade/cancel → 200 with `invoice: null` (scheduled). */
+      changePlan: (input: BillingQuoteInput, idempotencyKey: string) =>
+        request<ChangePlanResult>('/billing/change-plan', {
+          method: 'POST',
+          body: { plan_code: input.plan_code, interval: input.interval },
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** "Keep {plan}": drops a scheduled downgrade/cancel. 404 when nothing is scheduled. */
+      cancelScheduledChange: () => request<Subscription>('/billing/scheduled-change', { method: 'DELETE' }),
+      invoices: async (filters: { page?: number; per_page?: number; status?: BillingInvoiceStatus } = {}): Promise<{ data: BillingInvoiceSummary[]; meta: BillingInvoiceListMeta }> =>
+        listOf<BillingInvoiceSummary, BillingInvoiceListMeta>(
+          '/billing/invoices',
+          { page: filters.page, per_page: filters.per_page, 'filter[status]': filters.status },
+          { ...emptyPage(), providers: [] },
+        ),
+      invoice: (id: string) => request<BillingInvoice>(`/billing/invoices/${enc(id)}`),
+      invoicePdf: (id: string, number?: string) => requestBlob(`/billing/invoices/${enc(id)}/pdf`, { fallbackName: `${number ?? 'invoice'}.pdf` }),
+      /** 201 pending payment with `redirect_url`; the same key returns the same payment. */
+      pay: (invoiceId: string, input: PayInvoiceInput, idempotencyKey: string) =>
+        request<BillingPayment>(`/billing/invoices/${enc(invoiceId)}/pay`, {
+          method: 'POST',
+          body: { provider: input.provider },
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      payment: (id: string, opts?: Pick<RequestOptions, 'signal'>) => request<BillingPayment>(`/billing/payments/${enc(id)}`, { signal: opts?.signal }),
+    },
+
+    /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */
+    reports: {
+      sales: (storeId: string, range: ReportRangeQuery = {}) => report<SalesReport>(storeId, 'sales', range),
+      profit: (storeId: string, range: ReportRangeQuery = {}) => report<ProfitReport>(storeId, 'profit', range),
+      delivery: (storeId: string, range: ReportRangeQuery = {}) => report<DeliveryReport>(storeId, 'delivery', range),
     },
 
     /** Phase 5a §3.8 go-live. Publish → 409 `launch_blocked` with `details.<item_key>`. */
