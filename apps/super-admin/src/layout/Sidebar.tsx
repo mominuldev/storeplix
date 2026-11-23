@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { useHealth } from '../lib/health';
+import { roleLabel } from '../lib/permissions';
 import { navGroups } from './nav';
 
 function initials(name: string | undefined) {
@@ -35,7 +36,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
       aria-label="Platform navigation"
       className={cn(
         'fixed inset-y-0 left-0 z-40 flex w-sidebar flex-col gap-0.5 overflow-y-auto bg-text-primary px-4 py-5 transition-transform lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0',
-        open ? 'translate-x-0' : '-translate-x-full'
+        open ? 'translate-x-0' : '-translate-x-full',
       )}
     >
       <div className="flex flex-col gap-1.5 pb-3 pl-2">
@@ -62,7 +63,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   className={({ isActive }) =>
                     cn(
                       'flex h-[38px] shrink-0 items-center gap-2.5 rounded-md px-3 py-[9px] text-body text-text-inverse outline-none focus-visible:shadow-focus',
-                      isActive ? 'bg-white/10 font-semibold' : 'font-medium hover:bg-white/6'
+                      isActive ? 'bg-white/10 font-semibold' : 'font-medium hover:bg-white/6',
                     )
                   }
                 >
@@ -84,8 +85,10 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
           {initials(user?.name)}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-body font-semibold text-text-inverse">{user?.name}</span>
-          <span className="truncate text-caption text-text-muted">{user?.email}</span>
+          <span className="truncate text-body font-semibold text-text-inverse" title={user?.email}>
+            {user?.name}
+          </span>
+          <span className="truncate text-caption text-text-muted">{user ? `${roleLabel[user.platform_role]} · 2FA on` : ''}</span>
         </span>
         <button
           type="button"

@@ -2,15 +2,17 @@
 
 namespace Tests\Feature\Audit;
 
+use App\Domain\Admin\Authorization\PlatformRole;
 use App\Domain\Tenancy\Models\TenantUser;
 use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\PlatformStaffFixtures;
 use Tests\TestCase;
 
 class AuditLogTest extends TestCase
 {
-    use RefreshDatabase;
+    use PlatformStaffFixtures, RefreshDatabase;
 
     public function test_lists_this_tenants_logs_with_filters(): void
     {
@@ -61,5 +63,28 @@ class AuditLogTest extends TestCase
         $this->flushHeaders()->withHeaders($this->tenantHeaders($ownerB, $tenantA))->getJson('/api/v1/audit-logs')->assertForbidden();
         $this->flushHeaders()->withHeaders($this->tenantHeaders($staffA, $tenantA))->getJson('/api/v1/audit-logs')
             ->assertForbidden()->assertJsonPath('error.code', 'forbidden');
+    }
+
+    /** P8-QA-1: filter[actor_type]=platform_user lists only "Store Plix support" rows, for this tenant only. */
+    #[Group('tenancy')]
+    public function test_filters_by_actor_type_and_platform_rows_stay_tenant_scoped(): void
+    {
+        $staff = $this->staffUser(PlatformRole::Billing, ['name' => 'Secret Staffer']);
+        [$ownerA, $tenantA] = $this->merchant();
+        [$ownerB, $tenantB] = $this->merchant();
+        $this->inTenant($tenantA, fn () => app(AuditLogger::class)->log('billing.period_extended', $tenantA, ['days' => 7], actor: $staff, tenantId: $tenantA->id, platform: true));
+        $this->inTenant($tenantA, fn () => app(AuditLogger::class)->log('staff.invited', $tenantA, [], actor: $ownerA, tenantId: $tenantA->id));
+
+        $this->withHeaders($this->tenantHeaders($ownerA, $tenantA))->getJson('/api/v1/audit-logs?filter[actor_type]=platform_user')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.action', 'billing.period_extended')
+            ->assertJsonPath('data.0.actor', ['type' => 'platform_user', 'id' => null, 'name' => 'Store Plix support']);
+        $this->getJson('/api/v1/audit-logs?filter[actor_type]=user&filter[action]=staff.*')
+            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.actor.id', $ownerA->id);
+        $this->getJson('/api/v1/audit-logs?filter[actor_type]=admin')->assertStatus(422);
+
+        $this->flushHeaders()->withHeaders($this->tenantHeaders($ownerB, $tenantB))->getJson('/api/v1/audit-logs?filter[actor_type]=platform_user')
+            ->assertOk()->assertJsonPath('meta.total', 0);
     }
 }

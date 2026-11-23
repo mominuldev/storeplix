@@ -1,12 +1,16 @@
 import { ThemeNotFound } from '@/themes/modern-commerce/not-found';
-import { findCurrentStore } from '@/lib/store';
+import { findCurrentStore, isCurrentStoreSuspended } from '@/lib/store';
+import { StoreUnavailable } from '@/components/store-unavailable';
 
 /**
  * Two cases share Next's single root 404 boundary:
  *  - unknown host            -> platform-branded "Store not found"
  *  - known store, bad path   -> "Page not found" inside the store's theme
+ * Phase 8.1: a suspended shop has no store here; it gets the bare "temporarily unavailable" page (normally the
+ * proxy already answered with the 503 version).
  */
 export default async function NotFound() {
+  if (await isCurrentStoreSuspended().catch(() => false)) return <StoreUnavailable />;
   const store = await findCurrentStore().catch(() => null);
 
   if (store?.mode === 'coming_soon') {

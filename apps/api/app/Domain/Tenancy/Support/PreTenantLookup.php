@@ -20,13 +20,18 @@ class PreTenantLookup
 {
     public function __construct(private readonly RlsSession $rls) {}
 
-    /** B1: an ACTIVE domain of a non-suspended store. @return array{tenant_id: string, store_id: string}|null */
+    /**
+     * B1: an ACTIVE domain of a draft, active or suspended store. PHASE-8-1 §4.1 (amends MULTI-TENANCY §9.4 B1):
+     * `suspended` = the store is suspended (the storefront answers "temporarily unavailable", nothing else).
+     *
+     * @return array{tenant_id: string, store_id: string, suspended: bool}|null
+     */
     public function resolveHost(string $host): ?array
     {
         if ($this->rls->enabled()) {
-            $row = DB::selectOne('select tenant_id, store_id from sp_resolve_host(?)', [$host]);
+            $row = DB::selectOne('select tenant_id, store_id, suspended from sp_resolve_host(?)', [$host]);
 
-            return $row === null ? null : ['tenant_id' => (string) $row->tenant_id, 'store_id' => (string) $row->store_id];
+            return $row === null ? null : ['tenant_id' => (string) $row->tenant_id, 'store_id' => (string) $row->store_id, 'suspended' => (bool) $row->suspended];
         }
 
         $domain = StoreDomain::withoutTenancy()
@@ -38,13 +43,15 @@ class PreTenantLookup
             return null;
         }
 
-        $storeIsServable = Store::withoutTenancy()
+        $status = Store::withoutTenancy()
             ->whereKey($domain->store_id)
             ->where('tenant_id', $domain->tenant_id)
-            ->where('status', '!=', Store::STATUS_SUSPENDED)
-            ->exists();
+            ->value('status');
 
-        return $storeIsServable ? ['tenant_id' => (string) $domain->tenant_id, 'store_id' => (string) $domain->store_id] : null;
+        return $status === null ? null : [
+            'tenant_id' => (string) $domain->tenant_id, 'store_id' => (string) $domain->store_id,
+            'suspended' => $status === Store::STATUS_SUSPENDED,
+        ];
     }
 
     /** B4: invitation by its sha256 token hash. @return array{invitation_id: string, tenant_id: string}|null */

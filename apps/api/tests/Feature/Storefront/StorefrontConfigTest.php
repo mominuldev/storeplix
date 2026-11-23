@@ -124,7 +124,7 @@ class StorefrontConfigTest extends TestCase
         ])->getJson('/api/v1/storefront/config')->assertStatus(400);
     }
 
-    public function test_inactive_domains_and_suspended_stores_do_not_resolve(): void
+    public function test_inactive_domains_do_not_resolve_and_suspended_stores_answer_suspended(): void
     {
         [, $tenant] = $this->merchant();
         $store = $this->storeFor($tenant, 'demo');
@@ -141,7 +141,8 @@ class StorefrontConfigTest extends TestCase
 
         $this->config('demo.storeplix.test')->assertOk();
         $this->tenancy()->run($tenant, fn () => $store->update(['status' => Store::STATUS_SUSPENDED]));
-        $this->config('demo.storeplix.test')->assertNotFound();
+        // PHASE-8-1 §4.1 (amended): a suspended store answers StorefrontSuspended only.
+        $this->config('demo.storeplix.test')->assertOk()->assertExactJson(['data' => ['availability' => 'suspended']]);
     }
 
     public function test_domain_cache_uses_tenant_neutral_key_and_is_invalidated_on_change(): void
@@ -182,7 +183,7 @@ class StorefrontConfigTest extends TestCase
         $this->config('bravo.storeplix.test')->assertOk()->assertJsonPath('data.store.id', $b->id);
     }
 
-    public function test_draft_store_resolves_with_draft_status_and_suspended_stays_404(): void
+    public function test_draft_store_resolves_with_draft_status_and_suspended_answers_suspended(): void
     {
         [, $tenant] = $this->merchant();
         $store = $this->storeFor($tenant, 'soon', status: Store::STATUS_DRAFT);
@@ -192,6 +193,7 @@ class StorefrontConfigTest extends TestCase
             ->assertJsonPath('data.preview', false);
 
         $this->tenancy()->run($tenant, fn () => $store->update(['status' => Store::STATUS_SUSPENDED]));
-        $this->config('soon.storeplix.test')->assertNotFound()->assertJsonPath('error.code', 'store_not_found');
+        // PHASE-8-1 §4.1 (amended): config answers StorefrontSuspended; every other storefront endpoint stays 404.
+        $this->config('soon.storeplix.test')->assertOk()->assertJsonPath('data.availability', 'suspended')->assertJsonMissingPath('data.store');
     }
 }

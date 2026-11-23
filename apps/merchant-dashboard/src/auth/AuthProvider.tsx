@@ -1,7 +1,9 @@
 import type { LoginInput, MeResponse, RegisterInput } from '@storeplix/api-client';
-import type { AuthSession, TenantMembership } from '@storeplix/types';
+import type { AuthSession, MeImpersonation, TenantMembership } from '@storeplix/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { expireSession, impersonation } from '../impersonation/store';
+import { suspension } from '../impersonation/suspension';
 import { api } from '../lib/api';
 import { session } from '../lib/session';
 
@@ -17,7 +19,8 @@ interface AuthContextValue {
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   /** Adopt a session started elsewhere (OTP login, invitation accept, password change). */
-  startSession: (auth: AuthSession, opts?: { keepTenant?: boolean }) => void;
+  /** Phase 8.1: `impersonation` = a read-only support session started from an admin ticket (tenant from the row). */
+  startSession: (auth: AuthSession, opts?: { keepTenant?: boolean; impersonation?: MeImpersonation }) => void;
   /** Re-fetch /auth/me (after profile, phone or membership changes). */
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
@@ -62,10 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useQuery({
     queryKey: meKey,
     queryFn: async () => {
-      const { user, session_expires_at } = await api.auth.session();
+      const { user, session_expires_at, impersonation: imp } = await api.auth.sessionInfo();
+      // Phase 8.1: an impersonation session sees exactly the impersonated tenant (P8-10).
+      impersonation.set(imp);
+      if (imp) session.setTenantId(imp.tenant_id);
       // Past the absolute expiry (clock skew, stale tab): treat as signed out instead of looping.
       if (session_expires_at && Date.parse(session_expires_at) <= Date.now()) {
-        session.expire();
+        expireSession();
         throw new Error('session_expired');
       }
       // Persist a valid tenant before any tenant-scoped query runs (X-Tenant-Id is read from the session store).
@@ -83,10 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const ms = session.msUntilExpiry();
     if (ms === null) return;
     if (ms <= 0) {
-      session.expire();
+      expireSession();
       return;
     }
-    const id = setTimeout(() => session.expire(), Math.min(ms, MAX_TIMEOUT));
+    const id = setTimeout(expireSession, Math.min(ms, MAX_TIMEOUT));
     return () => clearTimeout(id);
   }, [expiresAt]);
 
@@ -109,10 +115,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const startSession = useCallback(
-    (auth: AuthSession, opts?: { keepTenant?: boolean }) => {
-      // Fresh sign-in: unless the user asked to reopen the same shop, post-login routing asks again
-      // when they belong to several shops (contract D1).
-      if (!opts?.keepTenant && !rememberDefaultTenant()) session.setTenantId(null);
+    (auth: AuthSession, opts?: { keepTenant?: boolean; impersonation?: MeImpersonation }) => {
+      suspension.reset();
+      if (opts?.impersonation) {
+        // The session was replaced by the staff user's read-only session: drop every cached tenant query.
+        queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'health' && q.queryKey[0] !== 'auth' });
+        impersonation.begin(opts.impersonation);
+        session.setTenantId(opts.impersonation.tenant_id);
+      } else {
+        impersonation.reset();
+        // Fresh sign-in: unless the user asked to reopen the same shop, post-login routing asks again
+        // when they belong to several shops (contract D1).
+        if (!opts?.keepTenant && !rememberDefaultTenant()) session.setTenantId(null);
+      }
       adoptTenants(auth.user);
       session.start({ expires_at: auth.expires_at });
       queryClient.setQueryData(['auth', 'me', session.getEpoch()], auth.user);
@@ -136,6 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* session may already be gone — clear locally regardless */
     }
+    impersonation.reset();
+    suspension.reset();
     session.clear();
     session.consumeNotice();
     queryClient.clear();

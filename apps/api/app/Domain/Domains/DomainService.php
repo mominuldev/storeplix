@@ -162,8 +162,9 @@ final class DomainService
     /**
      * Re-check now (§4.1): from verification_failed/expired first back to pending_verification with a new 72 h window,
      * then the check for the status, synchronously. Errors are recorded on the row, never thrown (no 502).
+     * `$throttle = false`: the admin re-check (PHASE-8-1 §4.2), same Action without the merchant cooldown.
      */
-    public function recheck(StoreDomain $domain, ?Authenticatable $user): StoreDomain
+    public function recheck(StoreDomain $domain, ?Authenticatable $user, bool $throttle = true): StoreDomain
     {
         if ($domain->isPlatform()) {
             throw self::platformLocked();
@@ -177,7 +178,9 @@ final class DomainService
             FeatureGate::assertAllows($this->tenant(), Feature::CustomDomain);
             FeatureGate::assertWithin($this->tenant(), Limit::CustomDomains, adding: 0);
         }
-        $this->throttleRecheck($domain);
+        if ($throttle) { // PHASE-8-1 §4.2: the admin re-check ignores the merchant cooldown (admin-write applies)
+            $this->throttleRecheck($domain);
+        }
         $this->audit->log('domain.recheck_requested', $domain, ['hostname' => $domain->hostname, 'status' => $domain->status], $user);
 
         return DomainLock::run($domain->id, function () use ($domain, $user) {

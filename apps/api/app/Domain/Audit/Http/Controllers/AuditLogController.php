@@ -15,6 +15,10 @@ use Illuminate\Support\Carbon;
  */
 class AuditLogController
 {
+    public const PLATFORM_ACTOR = 'platform_user';
+
+    public const PLATFORM_ACTOR_NAME = 'Store Plix support';
+
     public function __invoke(ListAuditLogsRequest $request, TenantContext $context): JsonResponse
     {
         $filter = $request->validated('filter', []);
@@ -33,7 +37,11 @@ class AuditLogController
             });
         }
         if (isset($filter['actor_id'])) {
-            $query->where('actor_id', strtolower($filter['actor_id']));
+            // S81: staff ids are never exposed, so they can't be filtered on either.
+            $query->where('actor_id', strtolower($filter['actor_id']))->where('actor_type', '!=', 'platform_user');
+        }
+        if (isset($filter['actor_type'])) {
+            $query->where('actor_type', $filter['actor_type']);
         }
         if (isset($filter['subject_type'])) {
             $query->where('subject_type', $filter['subject_type']);
@@ -55,20 +63,7 @@ class AuditLogController
             ->pluck('name', 'id');
 
         return new JsonResponse([
-            'data' => $page->getCollection()->map(fn (AuditLog $log) => [
-                'id' => $log->id,
-                'action' => $log->action,
-                'actor' => $log->actor_type === null ? null : [
-                    'type' => $log->actor_type,
-                    'id' => $log->actor_id,
-                    'name' => $log->actor_id ? ($actorNames[$log->actor_id] ?? null) : null,
-                ],
-                'subject' => $log->subject_type && $log->subject_id ? ['type' => $log->subject_type, 'id' => $log->subject_id] : null,
-                'meta' => (object) ($log->meta ?? []),
-                'ip' => $log->ip,
-                'user_agent' => $log->user_agent,
-                'created_at' => $log->created_at?->toIso8601ZuluString(),
-            ])->all(),
+            'data' => $page->getCollection()->map(fn (AuditLog $log) => self::row($log, $actorNames->all()))->all(),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'per_page' => $page->perPage(),
@@ -76,5 +71,40 @@ class AuditLogController
                 'last_page' => $page->lastPage(),
             ],
         ]);
+    }
+
+    /**
+     * PHASE-8-1 P8-8 / S81: a platform actor is shown as "Store Plix support" — never the staff member's id, name,
+     * email, IP, user agent or platform role.
+     *
+     * @param  array<string, string>  $actorNames
+     * @return array<string, mixed>
+     */
+    private static function row(AuditLog $log, array $actorNames): array
+    {
+        $platform = $log->actor_type === self::PLATFORM_ACTOR;
+        $meta = $log->meta ?? [];
+        if ($platform) {
+            unset($meta['platform_role']);
+        }
+
+        return [
+            'id' => $log->id,
+            'action' => $log->action,
+            'actor' => match (true) {
+                $log->actor_type === null => null,
+                $platform => ['type' => self::PLATFORM_ACTOR, 'id' => null, 'name' => self::PLATFORM_ACTOR_NAME],
+                default => [
+                    'type' => $log->actor_type,
+                    'id' => $log->actor_id,
+                    'name' => $log->actor_id ? ($actorNames[$log->actor_id] ?? null) : null,
+                ],
+            },
+            'subject' => $log->subject_type && $log->subject_id ? ['type' => $log->subject_type, 'id' => $log->subject_id] : null,
+            'meta' => (object) $meta,
+            'ip' => $platform ? null : $log->ip,
+            'user_agent' => $platform ? null : $log->user_agent,
+            'created_at' => $log->created_at?->toIso8601ZuluString(),
+        ];
     }
 }

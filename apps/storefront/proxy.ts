@@ -11,6 +11,8 @@ import {
 import { parseEditorOrigins } from './lib/editor-origins';
 import { isLocalDevHost } from './lib/seo';
 import { STOREFRONT_PATH_HEADER, redirectablePath } from './lib/primary-host';
+import { isHostSuspended, needsSuspensionCheck } from './lib/suspension';
+import { UNAVAILABLE_HEADERS, UNAVAILABLE_STATUS, unavailableHtml } from './lib/unavailable';
 
 /**
  * Tenant resolution edge: normalize the request host, reject malformed hosts with 400, and hand
@@ -28,8 +30,28 @@ import { STOREFRONT_PATH_HEADER, redirectablePath } from './lib/primary-host';
  *
  * Framing: only responses to a request carrying `sp_preview` may be framed, and only by the exact
  * STOREFRONT_EDITOR_ORIGINS; everything else sends `frame-ancestors 'none'` + `X-Frame-Options: DENY`.
+ *
+ * Suspended shops (PHASE-8-1-CONTRACT P8-12, §7.3): every page GET/HEAD of a suspended shop's host (platform or
+ * custom) is answered here with the bare "temporarily unavailable" page, HTTP 503, `Retry-After: 86400`,
+ * `Cache-Control: no-store`, `noindex`. Only the proxy can set that status; see lib/suspension.ts.
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const host = resolveRequestHost(request.headers, { trustedProxy: isTrustedProxy() });
+  if (host && needsSuspensionCheck(request.method, request.nextUrl.pathname) && (await isHostSuspended(host))) {
+    return unavailableProxyResponse(request.method);
+  }
+  return routeRequest(request);
+}
+
+/** The 503 "temporarily unavailable" answer for a suspended shop (exported for tests). */
+export function unavailableProxyResponse(method: string): NextResponse {
+  const res = new NextResponse(method === 'HEAD' ? null : unavailableHtml(), { status: UNAVAILABLE_STATUS, headers: UNAVAILABLE_HEADERS });
+  setFramingHeaders(res, false);
+  return res;
+}
+
+/** Everything the proxy does for a shop that is not suspended (synchronous; exported for tests). */
+export function routeRequest(request: NextRequest): NextResponse {
   const host = resolveRequestHost(request.headers, { trustedProxy: isTrustedProxy() });
   if (!host) {
     return new NextResponse('Bad Request: invalid host', {

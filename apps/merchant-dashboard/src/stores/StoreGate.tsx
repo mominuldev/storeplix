@@ -1,7 +1,10 @@
 import { Button, EmptyState, Spinner } from '@storeplix/ui';
 import { Store as StoreIcon } from 'lucide-react';
 import { Navigate, Outlet } from 'react-router';
+import { isTenantSuspended } from '@storeplix/api-client';
 import { useAuth } from '../auth/AuthProvider';
+import { SuspendedShopScreen } from '../impersonation/screens';
+import { useSuspendedTenantId } from '../impersonation/suspension';
 import { useTenantStore } from './useTenantStore';
 
 function FullPageSpinner() {
@@ -17,11 +20,16 @@ function FullPageSpinner() {
  * active tenant without a store → Name your shop; otherwise the dashboard.
  */
 export function StoreGate() {
-  const { tenants, tenantId } = useAuth();
+  const { tenants, tenantId, logout } = useAuth();
   const store = useTenantStore();
+  const suspendedTenantId = useSuspendedTenantId();
 
   if (tenants.length === 0) return <Navigate to="/onboarding/shop" replace />;
   if (!tenantId) return tenants.length > 1 ? <Navigate to="/choose-shop" replace /> : <FullPageSpinner />;
+  // Phase 8.1 (P8-12): 403 `tenant_suspended` on any merchant call for this shop.
+  if ((tenantId && suspendedTenantId === tenantId) || (store.isError && isTenantSuspended(store.error))) {
+    return <SuspendedShopScreen onSignOut={() => void logout()} canSwitch={tenants.length > 1} />;
+  }
   if (store.isPending) return <FullPageSpinner />;
   if (store.isError) {
     return (

@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Domains\Console;
 
-use App\Domain\Domains\DomainFailureCode;
-use App\Domain\Domains\DomainLock;
-use App\Domain\Domains\DomainStateMachine;
+use App\Domain\Billing\Ops\OpsActor;
+use App\Domain\Domains\Ops\SuspendDomain as SuspendDomainAction;
 use App\Domain\Stores\Models\StoreDomain;
-use App\Domain\Tenancy\Support\AuditLogger;
-use App\Domain\Tenancy\TenantContext;
 use Illuminate\Console\Command;
 
-/** P6-18 ops: any custom state → suspended (unroutable at once, primary falls back, provider hostname kept). */
+/** P6-18 ops: any custom state → suspended. Thin caller of the shared Action (PHASE-8-1 P8-7). */
 class SuspendDomain extends Command
 {
     protected $signature = 'domains:suspend {hostname} {--reason= : Why (kept in the audit log)}';
 
     protected $description = 'Suspend a custom domain (abuse / phishing)';
 
-    public function handle(TenantContext $context, DomainStateMachine $machine, AuditLogger $audit): int
+    public function handle(SuspendDomainAction $action): int
     {
         $host = strtolower(rtrim(trim((string) $this->argument('hostname')), '.'));
         $reason = mb_substr(trim((string) $this->option('reason')) ?: 'ops', 0, 200);
@@ -31,18 +28,7 @@ class SuspendDomain extends Command
             return self::FAILURE;
         }
 
-        $done = $context->run((string) $owner->tenant_id, fn () => DomainLock::run((string) $owner->id, function () use ($owner, $machine, $audit, $reason) {
-            $row = StoreDomain::query()->findOrFail($owner->id);
-            if ($row->status === StoreDomain::STATUS_SUSPENDED) {
-                return false;
-            }
-            $moved = $machine->transition($row, StoreDomain::STATUS_SUSPENDED, [], DomainFailureCode::Suspended, reason: 'suspend');
-            if ($moved !== null) {
-                $audit->log('domain.suspended', $row, ['hostname' => $row->hostname, 'reason' => $reason], tenantId: $row->tenant_id, system: true);
-            }
-
-            return $moved !== null;
-        }));
+        $done = $action->handle((string) $owner->tenant_id, (string) $owner->id, OpsActor::system($reason)) !== null;
 
         $this->info($done ? "Suspended {$host}." : "{$host} was already suspended.");
 

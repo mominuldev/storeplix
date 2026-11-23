@@ -14,7 +14,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
     <aside
       aria-label="Main navigation"
       className={cn(
-        'sticky top-0 hidden h-dvh shrink-0 flex-col overflow-y-auto border-r border-border-default bg-surface-card p-4 lg:flex',
+        'sticky top-[var(--sp-banner-h,0px)] hidden h-[calc(100dvh-var(--sp-banner-h,0px))] shrink-0 flex-col overflow-y-auto border-r border-border-default bg-surface-card p-4 lg:flex',
         collapsed ? 'w-sidebar-collapsed' : 'w-sidebar',
       )}
     >

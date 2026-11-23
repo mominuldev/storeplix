@@ -196,6 +196,19 @@ jobs:
           done
           exit $fail
 
+      # Phase 8.1 (PHASE-8-1-CONTRACT §10): the `admin` and `impersonation` groups must exist and pass on sqlite.
+      - name: phase 8.1 groups (admin, impersonation)
+        run: |
+          mkdir -p build
+          fail=0
+          for g in admin impersonation; do
+            php artisan test --group="$g" --exclude-group perf --exclude-group race --log-junit "build/${g}.xml" || fail=1
+            ran=$(grep -o 'tests="[0-9]*"' "build/${g}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
+            echo "${g} tests executed: ${ran}"
+            [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group '${g}'"; fail=1; }
+          done
+          exit $fail
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -298,6 +311,12 @@ jobs:
       # Phase 7: timestamptz conversion, partial unique open invoice, gapless invoice counter, CHECK constraints.
       - name: phase 7 groups (postgres)
         run: php artisan test --group=billing --group=plans --group=reports --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      - name: phase 8.1 groups (postgres)
+        run: php artisan test --group=admin --group=impersonation --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -639,6 +658,12 @@ jobs:
         run: '"$RUNNER_TEMP/run-group.sh" plans lenient --group=plans --exclude-group perf --exclude-group race'
       - name: phase 7 reports (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" reports lenient --group=reports --exclude-group perf --exclude-group race'
+      # Phase 8.1 (PHASE-8-1-CONTRACT §10, §14.7): admin reads on pgsql_admin, sp_resolve_host with the suspended
+      # flag, impersonation scoped to one tenant with RLS on.
+      - name: phase 8.1 admin (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" admin lenient --group=admin --exclude-group perf --exclude-group race'
+      - name: phase 8.1 impersonation (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" impersonation lenient --group=impersonation --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

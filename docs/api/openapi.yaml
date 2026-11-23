@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.8.0
+  version: 1.9.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -33,6 +33,14 @@ info:
     open_invoice; FeatureAccess gains grace_ends_at, domain_grace_ends_at; DomainFailureCode gains plan_limit; every 402 may carry
     details.upgrade_plan. New error codes plan_unchanged, invoice_overdue, invoice_not_open (409), plan_unavailable,
     billing_gateway_unavailable (422). Testing-only /dev/billing/* and /dev/fake-billing-gateway/* routes are not part of this spec.
+    1.9.0 (2026-11-23, Phase 8.1, PHASE-8-1-CONTRACT.md): additive only. New tag admin: /admin/auth/* (password + TOTP),
+    /admin/invitations/{token}[/accept], /admin/overview, /admin/search, /admin/tenants[/{tenant}[/members|domains|invoices|audit-logs|
+    suspend|reactivate|billing/quote|billing/change-plan|subscription/extend|impersonations]], /admin/invoices[/{invoice}[/pdf|mark-paid|
+    void|resend]], /admin/domains[/{domain}/recheck|suspend|reinstate], /admin/audit-logs, /admin/impersonations[/{id}/revoke],
+    /admin/team[...]. Merchant auth: POST|DELETE /auth/impersonation; /auth/me meta.impersonation. AuditLog actor type gains
+    platform_user (shown as "Store Plix support", id null). /storefront/config may answer StorefrontSuspended. New error codes
+    impersonation_read_only (403), impersonation_ended (401), invalid_totp (422), last_super_admin, staff_self_action (409).
+    Every /admin/* route needs an admin-surface session; merchant routes refuse it (403 forbidden).
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -77,6 +85,8 @@ tags:
   description: 'Phase 6: custom domains (PHASE-6 §4.1)'
 - name: reports
   description: 'Phase 7: sales, profit and delivery reports (PHASE-7 §6.3–6.4)'
+- name: admin
+  description: 'Phase 8.1: super admin for platform staff (PHASE-8-1 §6); session `surface: admin` only'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -406,6 +416,8 @@ paths:
       - auth
       summary: Me
       operationId: me
+      description: 'Phase 8.1: in an impersonation session (`surface: impersonation`) `data` is the staff user with only the
+        impersonated tenant (role owner) and `meta.impersonation` is set; otherwise it is null.'
       security:
       - bearerAuth: []
       responses:
@@ -420,6 +432,18 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/User'
+                  meta:
+                    type: object
+                    properties:
+                      session_expires_at:
+                        type:
+                        - string
+                        - 'null'
+                        format: date-time
+                      impersonation:
+                        oneOf:
+                        - $ref: '#/components/schemas/MeImpersonation'
+                        - type: 'null'
         '401':
           $ref: '#/components/responses/Unauthenticated'
     patch:
@@ -1374,6 +1398,15 @@ paths:
         schema:
           $ref: '#/components/schemas/Ulid'
       - in: query
+        name: filter[actor_type]
+        schema:
+          type: string
+          enum:
+          - user
+          - system
+          - platform_user
+        description: Phase 8.1 (P8-QA-1). `platform_user` = Store Plix support actions (actor shown without id/name).
+      - in: query
         name: filter[subject_type]
         schema:
           type: string
@@ -1956,7 +1989,10 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/StorefrontConfig'
+                    oneOf:
+                    - $ref: '#/components/schemas/StorefrontConfig'
+                    - $ref: '#/components/schemas/StorefrontSuspended'
+                    description: 'Phase 8.1: `StorefrontSuspended` when the shop is suspended (P8-12).'
         '401':
           description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
           content:
@@ -9082,8 +9118,2077 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /admin/auth/login:
+    post:
+      tags:
+      - admin
+      summary: Staff sign-in, step 1 (password)
+      operationId: adminLogin
+      description: PHASE-8-1 §3.1. No session yet. Wrong password, non-staff, disabled, locked or a domain outside ADMIN_EMAIL_DOMAINS
+        all answer the same 422. Limiter `admin-login`. CSRF required.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginInput'
+      responses:
+        '200':
+          description: Next step
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminLoginStep'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/auth/enroll:
+    get:
+      tags:
+      - admin
+      summary: TOTP enrolment data
+      operationId: getAdminTotpEnrollment
+      description: Only for a login token at step `enroll`; once per token.
+      security: []
+      parameters:
+      - in: query
+        name: login_token
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Enrolment
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TotpEnrollment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - admin
+      summary: Confirm TOTP enrolment and sign in
+      operationId: confirmAdminTotpEnrollment
+      description: 'Stores the secret, creates the admin session (`surface: admin`) and returns 10 recovery codes once.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - login_token
+              - code
+              properties:
+                login_token:
+                  type: string
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSession'
+                  meta:
+                    type: object
+                    required:
+                    - recovery_codes
+                    properties:
+                      recovery_codes:
+                        type: array
+                        items:
+                          type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`invalid_totp` (details.attempts_left) | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/auth/totp:
+    post:
+      tags:
+      - admin
+      summary: Staff sign-in, step 2 (TOTP or recovery code)
+      operationId: adminTotp
+      description: 'Five failures drop the login token and lock the account for 15 minutes. Success regenerates the session
+        with `surface: admin`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTotpInput'
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSession'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`invalid_totp` (details.attempts_left) | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/auth/me:
+    get:
+      tags:
+      - admin
+      summary: Current staff session
+      operationId: getAdminSession
+      description: Refreshes the idle timer.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSession'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/auth/logout:
+    post:
+      tags:
+      - admin
+      summary: Sign out of the admin surface
+      operationId: adminLogout
+      security:
+      - sessionCookie: []
+      responses:
+        '204':
+          description: Signed out
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invitations/{token}:
+    get:
+      tags:
+      - admin
+      summary: Look up a staff invitation (guest)
+      operationId: getPlatformInvitation
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformInvitationToken'
+      responses:
+        '200':
+          description: Invitation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - email
+                    - role
+                    - existing_user
+                    properties:
+                      email:
+                        type: string
+                      role:
+                        $ref: '#/components/schemas/PlatformRole'
+                      existing_user:
+                        type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/invitations/{token}/accept:
+    post:
+      tags:
+      - admin
+      summary: Accept a staff invitation (guest)
+      operationId: acceptPlatformInvitation
+      description: 'New user: name + password + confirmation. Existing user with that email: current password. Continues with
+        TOTP enrolment.'
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformInvitationToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - password
+              properties:
+                name:
+                  type: string
+                password:
+                  type: string
+                password_confirmation:
+                  type: string
+      responses:
+        '200':
+          description: Next step (always `enroll`)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminLoginStep'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/overview:
+    get:
+      tags:
+      - admin
+      summary: Platform overview counts
+      operationId: getAdminOverview
+      description: Counts only (P8-18); no analytics. Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminOverview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/search:
+    get:
+      tags:
+      - admin
+      summary: Global search
+      operationId: adminSearch
+      description: Up to 5 tenants, 5 domains, 5 invoices (P8-17). Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 2
+      responses:
+        '200':
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSearchResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants:
+    get:
+      tags:
+      - admin
+      summary: List merchants
+      operationId: listAdminTenants
+      description: Tab counts in `meta.counts`. Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+          enum:
+          - all
+          - active
+          - paying
+          - trial
+          - past_due
+          - suspended
+      - in: query
+        name: filter[plan]
+        schema:
+          type: string
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+        description: Shop name, slug, owner email or phone, hostname
+      - in: query
+        name: filter[created_from]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[created_to]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - -created_at
+          - created_at
+          - name
+          - -name
+          - current_period_end
+          - -current_period_end
+      responses:
+        '200':
+          description: Merchants
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminTenantSummary'
+                  meta:
+                    allOf:
+                    - $ref: '#/components/schemas/PaginationMeta'
+                    - type: object
+                      required:
+                      - counts
+                      properties:
+                        counts:
+                          $ref: '#/components/schemas/AdminTenantCounts'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}:
+    get:
+      tags:
+      - admin
+      summary: Merchant detail
+      operationId: getAdminTenant
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      responses:
+        '200':
+          description: Merchant
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminTenant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/members:
+    get:
+      tags:
+      - admin
+      summary: Merchant members and pending invitations
+      operationId: listAdminTenantMembers
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminTenantMember'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/domains:
+    get:
+      tags:
+      - admin
+      summary: Merchant domains
+      operationId: listAdminTenantDomains
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      responses:
+        '200':
+          description: Domains
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/invoices:
+    get:
+      tags:
+      - admin
+      summary: Merchant invoices
+      operationId: listAdminTenantInvoices
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminInvoiceSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/audit-logs:
+    get:
+      tags:
+      - admin
+      summary: Merchant audit log
+      operationId: listAdminTenantAuditLogs
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[actor]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[actor_type]
+        schema:
+          $ref: '#/components/schemas/AuditActorType'
+      - in: query
+        name: filter[action]
+        schema:
+          type: string
+        description: Prefix, e.g. `billing.`
+      - in: query
+        name: filter[from]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[to]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[impersonation]
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminAuditEntry'
+                  meta:
+                    type: object
+                    required:
+                    - next_cursor
+                    - prev_cursor
+                    - per_page
+                    properties:
+                      next_cursor:
+                        type:
+                        - string
+                        - 'null'
+                      prev_cursor:
+                        type:
+                        - string
+                        - 'null'
+                      per_page:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/suspend:
+    post:
+      tags:
+      - admin
+      summary: Suspend a shop
+      operationId: suspendAdminTenant
+      description: Tenant and store suspended; dashboard 403 `tenant_suspended`; storefront config `suspended` (P8-12). Platform
+        permission `suspend` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSuspendInput'
+      responses:
+        '200':
+          description: Merchant
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminTenant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/reactivate:
+    post:
+      tags:
+      - admin
+      summary: Reactivate a suspended shop
+      operationId: reactivateAdminTenant
+      description: Restores the store status from before the suspension. Platform permission `suspend` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReactivateInput'
+      responses:
+        '200':
+          description: Merchant
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminTenant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/billing/quote:
+    post:
+      tags:
+      - admin
+      summary: Quote a staff plan change
+      operationId: quoteAdminPlanChange
+      description: No side effects. Platform permission `manage_billing` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - plan_code
+              - interval
+              - effective
+              properties:
+                plan_code:
+                  type: string
+                interval:
+                  $ref: '#/components/schemas/BillingInterval'
+                effective:
+                  $ref: '#/components/schemas/AdminPlanChangeEffective'
+      responses:
+        '200':
+          description: Quote
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BillingQuote'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`plan_unchanged`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/billing/change-plan:
+    post:
+      tags:
+      - admin
+      summary: Change a shop plan (staff)
+      operationId: changeAdminPlan
+      description: '`now` = comp change without an invoice; `next_renewal` = scheduled change (P8-13). Platform permission `manage_billing`
+        (PHASE-8-1 §2.1).'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangePlanInput'
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '400':
+          description: Idempotency-Key missing or malformed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`plan_unchanged` | idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/subscription/extend:
+    post:
+      tags:
+      - admin
+      summary: Extend trial, period or grace
+      operationId: extendAdminSubscription
+      description: Trialing → trial_ends_at; past_due → grace_ends_at; else current_period_end (P8-14). Platform permission
+        `manage_billing` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - days
+              - reason
+              properties:
+                days:
+                  type: integer
+                  minimum: 1
+                  maximum: 90
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/impersonations:
+    post:
+      tags:
+      - admin
+      summary: Start a read-only impersonation
+      operationId: createImpersonation
+      description: Returns a 60-second single-use ticket URL on the merchant app (P8-9). Platform permission `impersonate` (PHASE-8-1
+        §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+                ticket_ref:
+                  type:
+                  - string
+                  - 'null'
+                  maxLength: 64
+      responses:
+        '201':
+          description: Ticket
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ImpersonationTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invoices:
+    get:
+      tags:
+      - admin
+      summary: List invoices across shops
+      operationId: listAdminInvoices
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+      - in: query
+        name: filter[provider]
+        schema:
+          type: string
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+        description: Invoice number or shop name
+      - in: query
+        name: filter[from]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[to]
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminInvoiceSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invoices/{invoice}:
+    get:
+      tags:
+      - admin
+      summary: Invoice detail
+      operationId: getAdminInvoice
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminInvoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invoices/{invoice}/pdf:
+    get:
+      tags:
+      - admin
+      summary: Invoice PDF
+      operationId: getAdminInvoicePdf
+      description: As PHASE-7 §6.1. Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /admin/invoices/{invoice}/mark-paid:
+    post:
+      tags:
+      - admin
+      summary: Record a manual payment
+      operationId: markAdminInvoicePaid
+      description: '`provider: manual`, applied like a verified payment (PHASE-7 billing:mark-paid). Platform permission `manage_billing`
+        (PHASE-8-1 §2.1).'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reference
+              - reason
+              properties:
+                reference:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminInvoice'
+        '400':
+          description: Idempotency-Key missing or malformed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invoice_not_open` | idempotency conflicts'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invoices/{invoice}/void:
+    post:
+      tags:
+      - admin
+      summary: Void an open invoice
+      operationId: voidAdminInvoice
+      description: Platform permission `manage_billing` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminInvoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invoice_not_open`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/invoices/{invoice}/resend:
+    post:
+      tags:
+      - admin
+      summary: Email the invoice to the owner again
+      operationId: resendAdminInvoice
+      description: Limited to 3 per hour per invoice. Platform permission `manage_billing` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/BillingInvoicePath'
+      responses:
+        '202':
+          description: Queued
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/domains:
+    get:
+      tags:
+      - admin
+      summary: List custom domains across shops
+      operationId: listAdminDomains
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[state]
+        schema:
+          type: string
+          enum:
+          - all
+          - dns_pending
+          - ssl_failing
+          - active
+          - suspended
+          - expired
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Domains
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminDomain'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/domains/{domain}/recheck:
+    post:
+      tags:
+      - admin
+      summary: Re-check a domain now
+      operationId: recheckAdminDomain
+      description: Merchant re-check Action without the cooldown; plan gate applies. Platform permission `manage_domains` (PHASE-8-1
+        §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminDomainPath'
+      responses:
+        '202':
+          description: Domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` | `plan_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/domains/{domain}/suspend:
+    post:
+      tags:
+      - admin
+      summary: Suspend a custom domain
+      operationId: suspendAdminDomain
+      description: Platform permission `suspend` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminDomainPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/domains/{domain}/reinstate:
+    post:
+      tags:
+      - admin
+      summary: Reinstate a suspended custom domain
+      operationId: reinstateAdminDomain
+      description: Platform permission `suspend` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminDomainPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminDomain'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/audit-logs:
+    get:
+      tags:
+      - admin
+      summary: Platform audit log
+      operationId: listAdminAuditLogs
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[tenant]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[actor]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[actor_type]
+        schema:
+          $ref: '#/components/schemas/AuditActorType'
+      - in: query
+        name: filter[action]
+        schema:
+          type: string
+        description: Prefix, e.g. `billing.`
+      - in: query
+        name: filter[from]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[to]
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: filter[impersonation]
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminAuditEntry'
+                  meta:
+                    type: object
+                    required:
+                    - next_cursor
+                    - prev_cursor
+                    - per_page
+                    properties:
+                      next_cursor:
+                        type:
+                        - string
+                        - 'null'
+                      prev_cursor:
+                        type:
+                        - string
+                        - 'null'
+                      per_page:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/impersonations:
+    get:
+      tags:
+      - admin
+      summary: List impersonation sessions
+      operationId: listImpersonations
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/ImpersonationStatus'
+      - in: query
+        name: filter[staff]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[tenant]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Impersonation'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/impersonations/{impersonation}/revoke:
+    post:
+      tags:
+      - admin
+      summary: Revoke an impersonation
+      operationId: revokeImpersonation
+      description: Platform permission `suspend` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/ImpersonationPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Impersonation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (already ended)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team:
+    get:
+      tags:
+      - admin
+      summary: List platform staff and invitations
+      operationId: listPlatformStaff
+      description: Platform permission `view_merchants` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+          enum:
+          - all
+          - active
+          - invited
+          - disabled
+      - in: query
+        name: filter[role]
+        schema:
+          $ref: '#/components/schemas/PlatformRole'
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformStaff'
+                  meta:
+                    $ref: '#/components/schemas/PlatformTeamMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/invitations:
+    post:
+      tags:
+      - admin
+      summary: Invite a staff member
+      operationId: invitePlatformStaff
+      description: Email must match ADMIN_EMAIL_DOMAINS. Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              - role
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  $ref: '#/components/schemas/PlatformRole'
+      responses:
+        '201':
+          description: Invitation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/invitations/{invitation}:
+    delete:
+      tags:
+      - admin
+      summary: Revoke a staff invitation
+      operationId: revokePlatformInvitation
+      description: Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformInvitationPath'
+      responses:
+        '204':
+          description: Revoked
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/members/{user}:
+    patch:
+      tags:
+      - admin
+      summary: Change a staff role
+      operationId: updatePlatformStaffRole
+      description: Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformUserPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - role
+              - reason
+              properties:
+                role:
+                  $ref: '#/components/schemas/PlatformRole'
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformStaff'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_super_admin` | `staff_self_action`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/members/{user}/disable:
+    post:
+      tags:
+      - admin
+      summary: Disable a staff member (ends their admin sessions and impersonations)
+      operationId: disablePlatformStaff
+      description: Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformUserPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformStaff'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_super_admin` | `staff_self_action`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/members/{user}/enable:
+    post:
+      tags:
+      - admin
+      summary: Re-enable a staff member
+      operationId: enablePlatformStaff
+      description: Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformUserPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformStaff'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_super_admin` | `staff_self_action`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/team/members/{user}/reset-2fa:
+    post:
+      tags:
+      - admin
+      summary: Reset a staff member's TOTP (enrol on next sign-in)
+      operationId: resetPlatformStaffTotp
+      description: Platform permission `manage_team` (PHASE-8-1 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/PlatformUserPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Why (stored in the audit log, PHASE-8-1 conventions).
+      responses:
+        '200':
+          description: Staff
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformStaff'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`last_super_admin` | `staff_self_action`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/impersonation:
+    post:
+      tags:
+      - auth
+      summary: Start an impersonation session on the merchant app
+      operationId: consumeImpersonationTicket
+      description: 'Exchanges a single-use ticket for a new session (`surface: impersonation`) as the staff user, read-only,
+        15 minutes (P8-9, P8-10). Unknown, used or expired tickets all answer the same 404. CSRF required.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ticket
+              properties:
+                ticket:
+                  type: string
+      responses:
+        '200':
+          description: Impersonation started
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ImpersonationStart'
+        '403':
+          description: '`forbidden` (IP allowlist)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - auth
+      summary: End the impersonation session
+      operationId: endImpersonation
+      security:
+      - sessionCookie: []
+      responses:
+        '204':
+          description: Ended and signed out
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
 components:
   parameters:
+    AdminTenantPath:
+      in: path
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    AdminDomainPath:
+      in: path
+      name: domain
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    ImpersonationPath:
+      in: path
+      name: impersonation
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    PlatformUserPath:
+      in: path
+      name: user
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    PlatformInvitationPath:
+      in: path
+      name: invitation
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    PlatformInvitationToken:
+      in: path
+      name: token
+      required: true
+      schema:
+        type: string
     BillingInvoicePath:
       in: path
       name: invoice
@@ -9396,6 +11501,13 @@ components:
       name: X-Storefront-Key
       description: Shared secret STOREFRONT_API_KEY (server-to-server only).
   responses:
+    AdminForbidden:
+      description: Not an admin session (`surface`), not active staff, IP not allowed, or the role lacks the platform permission
+        (code `forbidden`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
     RevisionConflict:
       description: The resource changed since the client read it (code `revision_conflict`). Refetch and retry.
       content:
@@ -11303,6 +13415,7 @@ components:
                 enum:
                 - user
                 - system
+                - platform_user
               id:
                 oneOf:
                 - $ref: '#/components/schemas/Ulid'
@@ -19317,3 +21430,1066 @@ components:
                 type:
                 - number
                 - 'null'
+    PlatformRole:
+      type: string
+      enum:
+      - super_admin
+      - billing
+      - support
+      - read_only
+    PlatformPermission:
+      type: string
+      enum:
+      - view_merchants
+      - impersonate
+      - manage_billing
+      - manage_domains
+      - suspend
+      - manage_team
+    AuditActorType:
+      type: string
+      enum:
+      - user
+      - system
+      - platform_user
+    SuspensionReasonCode:
+      type: string
+      enum:
+      - unpaid
+      - fraud
+      - terms_violation
+      - merchant_request
+      - other
+    AdminPlanChangeEffective:
+      type: string
+      enum:
+      - now
+      - next_renewal
+    ImpersonationStatus:
+      type: string
+      enum:
+      - pending
+      - active
+      - ended
+      - expired
+    AdminLoginInput:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    AdminTotpInput:
+      oneOf:
+      - type: object
+        required:
+        - login_token
+        - code
+        properties:
+          login_token:
+            type: string
+          code:
+            type: string
+            pattern: ^[0-9]{6}$
+      - type: object
+        required:
+        - login_token
+        - recovery_code
+        properties:
+          login_token:
+            type: string
+          recovery_code:
+            type: string
+            minLength: 10
+            maxLength: 10
+    AdminLoginStep:
+      type: object
+      required:
+      - step
+      - login_token
+      - expires_at
+      properties:
+        step:
+          type: string
+          enum:
+          - totp
+          - enroll
+        login_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    TotpEnrollment:
+      type: object
+      required:
+      - otpauth_uri
+      - qr_svg
+      - secret
+      properties:
+        otpauth_uri:
+          type: string
+        qr_svg:
+          type: string
+        secret:
+          type: string
+    PlatformUser:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - platform_role
+      - permissions
+      - totp_enrolled
+      - recovery_codes_left
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        email:
+          type: string
+        platform_role:
+          $ref: '#/components/schemas/PlatformRole'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformPermission'
+        totp_enrolled:
+          type: boolean
+        recovery_codes_left:
+          type: integer
+    AdminSession:
+      type: object
+      required:
+      - user
+      - session_expires_at
+      - idle_expires_at
+      properties:
+        user:
+          $ref: '#/components/schemas/PlatformUser'
+        session_expires_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+    AdminOverview:
+      type: object
+      required:
+      - tenants
+      - subscriptions
+      - past_due
+      - open_invoices
+      - domains
+      - active_impersonations
+      - newest_tenants
+      properties:
+        tenants:
+          type: object
+          required:
+          - total
+          - active
+          - suspended
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            suspended:
+              type: integer
+        subscriptions:
+          type: object
+          required:
+          - paying
+          - trialing
+          - free
+          - past_due
+          - by_plan
+          properties:
+            paying:
+              type: integer
+            trialing:
+              type: integer
+            free:
+              type: integer
+            past_due:
+              type: integer
+            by_plan:
+              type: array
+              items:
+                type: object
+                required:
+                - plan_code
+                - count
+                properties:
+                  plan_code:
+                    type: string
+                  count:
+                    type: integer
+        past_due:
+          type: object
+          required:
+          - count
+          - amount
+          - currency
+          properties:
+            count:
+              type: integer
+            amount:
+              type: integer
+              description: Paisa
+            currency:
+              type: string
+              const: BDT
+        open_invoices:
+          type: integer
+        domains:
+          type: object
+          required:
+          - active
+          - pending
+          - failing
+          - suspended
+          properties:
+            active:
+              type: integer
+            pending:
+              type: integer
+            failing:
+              type: integer
+            suspended:
+              type: integer
+        active_impersonations:
+          type: integer
+        newest_tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminTenantSummary'
+    AdminSearchResult:
+      type: object
+      required:
+      - tenants
+      - domains
+      - invoices
+      properties:
+        tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminTenantSummary'
+        domains:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminDomain'
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminInvoiceSummary'
+    AdminTenantCounts:
+      type: object
+      required:
+      - all
+      - paying
+      - trial
+      - past_due
+      - suspended
+      properties:
+        all:
+          type: integer
+        paying:
+          type: integer
+        trial:
+          type: integer
+        past_due:
+          type: integer
+        suspended:
+          type: integer
+    AdminTenantStatus:
+      type: string
+      enum:
+      - active
+      - suspended
+    AdminTenantSummary:
+      type: object
+      required:
+      - id
+      - name
+      - status
+      - store
+      - owner
+      - plan_code
+      - billing_interval
+      - subscription_status
+      - trial_ends_at
+      - current_period_end
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/AdminTenantStatus'
+        store:
+          type:
+          - object
+          - 'null'
+          description: Null while the merchant has not created their shop yet (onboarding).
+          required:
+          - id
+          - name
+          - slug
+          - status
+          - primary_host
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+            status:
+              type: string
+              enum:
+              - draft
+              - active
+              - suspended
+            primary_host:
+              type: string
+        owner:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - email
+            - phone
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              email:
+                type: string
+              phone:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        plan_code:
+          type: string
+        billing_interval:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
+        subscription_status:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionStatus'
+          - type: 'null'
+        trial_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current_period_end:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    AdminTenant:
+      allOf:
+      - $ref: '#/components/schemas/AdminTenantSummary'
+      - type: object
+        required:
+        - suspension
+        - subscription
+        - usage
+        - member_count
+        - domain_count
+        - lifetime_paid_amount
+        - open_invoice
+        properties:
+          suspension:
+            oneOf:
+            - type: object
+              required:
+              - suspended_at
+              - reason_code
+              - store_status_before
+              properties:
+                suspended_at:
+                  type: string
+                  format: date-time
+                reason_code:
+                  $ref: '#/components/schemas/SuspensionReasonCode'
+                store_status_before:
+                  type: string
+                  enum:
+                  - draft
+                  - active
+            - type: 'null'
+          subscription:
+            oneOf:
+            - $ref: '#/components/schemas/Subscription'
+            - type: 'null'
+          usage:
+            type: array
+            items:
+              type: object
+              required:
+              - key
+              - used
+              - limit
+              properties:
+                key:
+                  $ref: '#/components/schemas/LimitKey'
+                used:
+                  type: integer
+                limit:
+                  type:
+                  - integer
+                  - 'null'
+          member_count:
+            type: integer
+          domain_count:
+            type: integer
+          lifetime_paid_amount:
+            type: integer
+            description: Paisa
+          open_invoice:
+            oneOf:
+            - $ref: '#/components/schemas/AdminInvoiceSummary'
+            - type: 'null'
+    AdminTenantMember:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - phone
+      - role
+      - status
+      - joined_at
+      properties:
+        id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - staff
+        status:
+          type: string
+          enum:
+          - active
+          - invited
+        joined_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdminDomain:
+      type: object
+      required:
+      - id
+      - hostname
+      - tenant
+      - kind
+      - status
+      - failure_code
+      - is_primary
+      - dns_ok
+      - ssl_ok
+      - last_checked_at
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        hostname:
+          type: string
+        tenant:
+          type: object
+          required:
+          - id
+          - name
+          - slug
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+        kind:
+          type: string
+          enum:
+          - platform
+          - custom
+        status:
+          $ref: '#/components/schemas/DomainStatus'
+        failure_code:
+          oneOf:
+          - $ref: '#/components/schemas/DomainFailureCode'
+          - type: 'null'
+        is_primary:
+          type: boolean
+        dns_ok:
+          type:
+          - boolean
+          - 'null'
+        ssl_ok:
+          type:
+          - boolean
+          - 'null'
+        last_checked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    AdminInvoiceSummary:
+      type: object
+      required:
+      - id
+      - number
+      - tenant
+      - kind
+      - status
+      - plan_code
+      - billing_interval
+      - total_amount
+      - currency
+      - provider
+      - issued_at
+      - due_at
+      - paid_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+        tenant:
+          type: object
+          required:
+          - id
+          - name
+          - slug
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+        kind:
+          type: string
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+        plan_code:
+          type: string
+        billing_interval:
+          $ref: '#/components/schemas/BillingInterval'
+        total_amount:
+          type: integer
+          description: Paisa
+        currency:
+          type: string
+          const: BDT
+        provider:
+          type:
+          - string
+          - 'null'
+          description: Provider of the paying payment (bkash, sslcommerz, manual)
+        issued_at:
+          type: string
+          format: date-time
+        due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        paid_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdminInvoice:
+      allOf:
+      - $ref: '#/components/schemas/BillingInvoice'
+      - type: object
+        required:
+        - tenant
+        - payments
+        properties:
+          tenant:
+            type: object
+            required:
+            - id
+            - name
+            - slug
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              slug:
+                type: string
+          payments:
+            type: array
+            items:
+              allOf:
+              - $ref: '#/components/schemas/BillingPayment'
+              - type: object
+                required:
+                - provider_reference
+                - is_duplicate
+                properties:
+                  provider_reference:
+                    type:
+                    - string
+                    - 'null'
+                  is_duplicate:
+                    type: boolean
+    AdminAuditEntry:
+      type: object
+      required:
+      - id
+      - action
+      - actor
+      - tenant
+      - subject
+      - reason
+      - ip
+      - user_agent
+      - meta
+      - impersonation_id
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        action:
+          type: string
+        actor:
+          type: object
+          required:
+          - type
+          - id
+          - name
+          - email
+          properties:
+            type:
+              $ref: '#/components/schemas/AuditActorType'
+            id:
+              oneOf:
+              - $ref: '#/components/schemas/Ulid'
+              - type: 'null'
+            name:
+              type:
+              - string
+              - 'null'
+            email:
+              type:
+              - string
+              - 'null'
+        tenant:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - slug
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              slug:
+                type: string
+          - type: 'null'
+        subject:
+          oneOf:
+          - type: object
+            required:
+            - type
+            - id
+            properties:
+              type:
+                type: string
+              id:
+                $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        reason:
+          type:
+          - string
+          - 'null'
+        ip:
+          type:
+          - string
+          - 'null'
+        user_agent:
+          type:
+          - string
+          - 'null'
+        meta:
+          type:
+          - object
+          - 'null'
+          additionalProperties: true
+        impersonation_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    Impersonation:
+      type: object
+      required:
+      - id
+      - status
+      - staff
+      - tenant
+      - reason
+      - ticket_ref
+      - started_at
+      - expires_at
+      - ended_at
+      - ended_by
+      - request_count
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        status:
+          $ref: '#/components/schemas/ImpersonationStatus'
+        staff:
+          type: object
+          required:
+          - id
+          - name
+          - email
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            email:
+              type: string
+        tenant:
+          type: object
+          required:
+          - id
+          - name
+          - slug
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+        reason:
+          type: string
+        ticket_ref:
+          type:
+          - string
+          - 'null'
+        started_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        ended_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        ended_by:
+          type:
+          - string
+          - 'null'
+          enum:
+          - staff
+          - expiry
+          - revoked
+          - null
+        request_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    ImpersonationTicket:
+      type: object
+      required:
+      - id
+      - url
+      - ticket_expires_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        url:
+          type: string
+          description: '{MERCHANT_APP_URL}/impersonate#ticket=…'
+        ticket_expires_at:
+          type: string
+          format: date-time
+    MeImpersonation:
+      type: object
+      required:
+      - id
+      - tenant_id
+      - tenant_name
+      - owner_name
+      - reason
+      - expires_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        tenant_id:
+          $ref: '#/components/schemas/Ulid'
+        tenant_name:
+          type: string
+        owner_name:
+          type:
+          - string
+          - 'null'
+        reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    ImpersonationStart:
+      type: object
+      required:
+      - user
+      - impersonation
+      - session_expires_at
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        impersonation:
+          $ref: '#/components/schemas/MeImpersonation'
+        session_expires_at:
+          type: string
+          format: date-time
+    PlatformStaff:
+      type: object
+      required:
+      - id
+      - kind
+      - name
+      - email
+      - role
+      - status
+      - totp_enrolled
+      - invited_at
+      - expires_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          type: string
+          enum:
+          - user
+          - invitation
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/PlatformRole'
+        status:
+          type: string
+          enum:
+          - active
+          - invited
+          - disabled
+          - locked
+        totp_enrolled:
+          type: boolean
+        invited_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Invitations only
+    PlatformInvitation:
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - expires_at
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/PlatformRole'
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    PlatformRoleMatrix:
+      type: object
+      required:
+      - roles
+      - permissions
+      - grants
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformRole'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformPermission'
+        grants:
+          type: object
+          description: role → permissions
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/PlatformPermission'
+    PlatformTeamMeta:
+      type: object
+      required:
+      - counts
+      - matrix
+      - security
+      properties:
+        counts:
+          type: object
+          required:
+          - all
+          - active
+          - invited
+          - disabled
+          properties:
+            all:
+              type: integer
+            active:
+              type: integer
+            invited:
+              type: integer
+            disabled:
+              type: integer
+        matrix:
+          $ref: '#/components/schemas/PlatformRoleMatrix'
+        security:
+          type: object
+          required:
+          - totp_required
+          - ip_allowlist_enabled
+          - session_idle_minutes
+          - impersonation_minutes
+          properties:
+            totp_required:
+              type: boolean
+              const: true
+            ip_allowlist_enabled:
+              type: boolean
+            session_idle_minutes:
+              type: integer
+            impersonation_minutes:
+              type: integer
+    AdminSuspendInput:
+      type: object
+      required:
+      - reason_code
+      - reason
+      - notify
+      properties:
+        reason_code:
+          $ref: '#/components/schemas/SuspensionReasonCode'
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Why (stored in the audit log, PHASE-8-1 conventions).
+        notify:
+          type: boolean
+    AdminReactivateInput:
+      type: object
+      required:
+      - reason
+      - notify
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Why (stored in the audit log, PHASE-8-1 conventions).
+        notify:
+          type: boolean
+    AdminChangePlanInput:
+      type: object
+      required:
+      - plan_code
+      - interval
+      - effective
+      - reason
+      - notify
+      properties:
+        plan_code:
+          type: string
+        interval:
+          $ref: '#/components/schemas/BillingInterval'
+        effective:
+          $ref: '#/components/schemas/AdminPlanChangeEffective'
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Why (stored in the audit log, PHASE-8-1 conventions).
+        notify:
+          type: boolean
+    StorefrontSuspended:
+      type: object
+      required:
+      - availability
+      properties:
+        availability:
+          type: string
+          const: suspended
+      description: 'Phase 8.1 (P8-12): the whole config for a suspended shop. The storefront renders the 503 "temporarily unavailable"
+        page.'

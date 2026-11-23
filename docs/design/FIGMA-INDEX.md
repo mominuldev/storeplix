@@ -190,3 +190,28 @@ everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352`.
 | `/checkout/thank-you` | `1:11788`, mobile `33:5751` | **Built**: payment status line, retry / switch to COD |
 | `/pay/[token]`, `/pay/result` | none in Figma: composed from checkout / thank-you components | **Built** (5b-2), `noindex` |
 | `/track` | `1:11959`, mobile `33:5864` | **Built** (5b-3): courier status and times only (no rider data) |
+
+## Phase 8.1 — super admin (page 5:189 "Platform Admin – Desktop"; PHASE-8-1-CONTRACT §7)
+1440-wide frames, PlatformSidebar `15:2`. Sections: `26:2330` Overview · `26:2331` Components · `31:6763` Merchants ·
+`31:6764` Billing & plans · `49:7263` Sign in · `49:7264` Merchant actions · `49:7265` Revenue & integration health ·
+`49:7266` Risk network · `49:7267` Support & announcements · `49:7268` Themes & templates · `49:7269` Team & audit ·
+`49:7270` Settings. The page has **no** empty/loading/error states: use `148:34032`.
+
+| Screen | Frame | 8.1 |
+|---|---|---|
+| Sign in / 2FA | `44:4707` / `44:4784` | Build (no "keep me signed in", no security key, no trust device) |
+| Dashboard | `15:123` | Subset: shop counts + "Needs attention" + new merchants; metrics are 8.2 |
+| Merchants | `32:5527` | Build without MRR/GMV/orders/health/last-active columns, bulk bar, Export, Add merchant |
+| Add merchant | `46:6071` | Not built (Q99) |
+| Merchant detail | `33:4851` | Overview, Billing, Domains (composed), Staff, Audit log tabs; Orders, Integrations, Notes hidden |
+| Change plan | `45:4989` | Build without "Charge today" (Q95) |
+| Suspend | `45:8866` | Build; reactivate + impersonation reason dialogs composed from it |
+| Impersonation mode (merchant app) | `44:15709` | Build (banner + amber frame in the merchant dashboard) |
+| Billing & subscriptions | `34:859` | Invoice table only (KPIs, retry queue, dunning hidden, Q97) |
+| Invoice drawer | `36:1598` | Build without Refund; + Mark paid / Void / Resend menu |
+| Settings – Domains & SSL | `45:8156` | Custom domains table only, as its own "Domains" page |
+| Team & roles / Invite | `39:12019` / `45:9344` | Build; matrix read-only (Q96), no active sessions |
+| Audit log | `39:16118` | Build without hash chain, diff, Export CSV (Q100) |
+| Plans & pricing | `35:1193` | Not built (Q98) |
+| Components | StatusPill `31:6633`, Checkbox `31:6638`, MerchantRow `31:6639`, InvoiceRow `31:6672`, PlanCard `31:6696`, AuditLogRow `39:16461` | Reuse |
+| Later | Revenue `39:12705`, Integration health `39:13048`, Incident `43:12377`, Risk `39:13391` / `43:13011`, Support `39:15432`, Announcements `39:15775`, Themes `39:11676` / `43:11825`, Settings `39:12362`, `45:5681`, `46:6794`, `46:7881`, `47:7183`, `48:7165` | 8.2+ |

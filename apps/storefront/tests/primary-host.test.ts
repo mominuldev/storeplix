@@ -28,7 +28,7 @@ vi.mock('next/navigation', () => ({
 
 const { STOREFRONT_PATH_HEADER, parseRedirectHost, primaryRedirectTarget, redirectablePath } = await import('@/lib/primary-host');
 const { STOREFRONT_HOST_HEADER } = await import('@/lib/host');
-const { proxy } = await import('@/proxy');
+const { routeRequest: proxy } = await import('@/proxy');
 const { getStorefrontConfig } = await import('@/lib/storefront-api');
 const { requireCurrentStore } = await import('@/lib/store');
 const robots = await import('@/app/robots.txt/route');

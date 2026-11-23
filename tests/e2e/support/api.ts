@@ -252,6 +252,8 @@ export async function createMember(owner: Session, role: 'staff' | 'admin'): Pro
 
 export interface ThrowawayTenant {
   email: string;
+  /** owner phone used at registration */
+  phone: string;
   session: Session;
   slug: string;
   /** storefront host once `activateStorefront()` ran */
@@ -284,6 +286,7 @@ export async function createTenant(label = 'eve'): Promise<ThrowawayTenant> {
   const host = `${slug}.localhost`;
   return {
     email,
+    phone,
     session,
     slug,
     host,

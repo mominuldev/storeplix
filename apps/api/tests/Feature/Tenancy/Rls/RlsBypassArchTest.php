@@ -21,6 +21,7 @@ class RlsBypassArchTest extends TestCase
         '#^app/Console/#',
         '#^app/Domain/[A-Za-z]+/Console/#',
         '#^app/Domain/Tenancy/#',
+        '#^app/Domain/Admin/#', // PHASE-8-1 P8-6: the admin API reads on pgsql_admin
         '#^database/seeders/#',
     ];
 

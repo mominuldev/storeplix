@@ -46,6 +46,7 @@ export { Drawer } from './components/Drawer';
 export type { DrawerProps } from './components/Drawer';
 export { Menu } from './components/Menu';
 export type { MenuEntry, MenuProps } from './components/Menu';
+export { FloatingMenu } from './components/FloatingMenu';
 export { SortableList, gripProps } from './components/SortableList';
 export type { SortableHandleProps, SortableListProps } from './components/SortableList';
 export { SortableTree, buildTree, flattenTree, getProjection, moveTreeNode, validParentIds } from './components/SortableTree';

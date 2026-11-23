@@ -14,6 +14,7 @@ use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -78,8 +79,13 @@ final class InvoiceService
         return $invoice;
     }
 
-    /** open → void (conditional). Returns false when the invoice was no longer open. */
-    public function void(BillingInvoice $invoice, string $reason, bool $system = true): bool
+    /**
+     * open → void (conditional). Returns false when the invoice was no longer open.
+     * PHASE-8-1 P8-8: `$actor` (staff) and `$meta` (merged over the default meta) for the admin void.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public function void(BillingInvoice $invoice, string $reason, bool $system = true, ?Authenticatable $actor = null, array $meta = []): bool
     {
         $now = now();
         $affected = DB::table('billing_invoices')->where('id', $invoice->id)->where('tenant_id', $invoice->tenant_id)
@@ -89,7 +95,8 @@ final class InvoiceService
             return false;
         }
         $invoice->forceFill(['status' => BillingInvoice::VOID, 'void_reason' => $reason, 'voided_at' => $now]);
-        $this->audit->log('billing.invoice_voided', $invoice, ['number' => $invoice->number, 'reason' => $reason], system: $system);
+        $this->audit->log('billing.invoice_voided', $invoice, $meta + ['number' => $invoice->number, 'reason' => $reason], $actor,
+            system: $system && $actor === null, platform: $actor !== null ? true : null);
 
         return true;
     }

@@ -1,14 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@storeplix/api-client';
 import type { TenantRole } from '@storeplix/types';
-import { Avatar, Badge, Button, cn, Input, Modal, Select, Toggle } from '@storeplix/ui';
+import { Avatar, Badge, Button, cn, EmptyState, Input, Modal, Select, Toggle } from '@storeplix/ui';
 import { useMutation, useQueries } from '@tanstack/react-query';
+import { ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router';
 import { z } from 'zod';
 import { useAuth } from '../auth/AuthProvider';
 import { applyApiErrors } from '../auth/formErrors';
+import { useImpersonation } from '../impersonation/hooks';
 import { changePasswordSchema, type ChangePasswordValues } from '../auth/schemas';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
@@ -49,6 +51,31 @@ const rolePill: Record<TenantRole, string> = { owner: 'bg-brand-50 text-brand-70
 // disabled), Sign-in & security 148:33899 (password → modal; SMS two-step, authenticator, backup codes
 // disabled), Your shops 148:33973, Transfer ownership 148:34025 (disabled). Sessions & My alerts hidden.
 export function AccountPage() {
+  const impersonation = useImpersonation();
+  return impersonation ? <SupportSessionAccount shopName={impersonation.tenant_name} /> : <OwnAccount />;
+}
+
+/**
+ * Contract §3.2/§7.2 (QA P8-QA-2): in a read-only support session `/auth/me` is the platform staff member, not the
+ * shop's owner. Never present them as the owner or offer their personal profile, password or sign-out here — show the
+ * Figma empty state (148:34032) instead. Leaving the session is the banner's "Exit impersonation".
+ */
+function SupportSessionAccount({ shopName }: { shopName: string }) {
+  return (
+    <>
+      <PageHeader title="Your account" subtitle={`Read-only support session for ${shopName}.`} />
+      <Card title="Account settings" hideTitle>
+        <EmptyState
+          icon={<ShieldCheck />}
+          title="Account settings aren’t available in a support session."
+          description="Profile, password and sign-in settings belong to each person on the shop. Nothing here can be viewed or changed while impersonating."
+        />
+      </Card>
+    </>
+  );
+}
+
+function OwnAccount() {
   const { user, tenants, activeTenant, logout, refreshUser, startSession } = useAuth();
   const [changing, setChanging] = useState(false);
   const [saved, setSaved] = useState(false);

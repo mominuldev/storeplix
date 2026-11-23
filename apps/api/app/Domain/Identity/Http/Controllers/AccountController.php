@@ -6,8 +6,11 @@ use App\Domain\Identity\Http\Requests\ChangePasswordRequest;
 use App\Domain\Identity\Http\Requests\UpdateProfileRequest;
 use App\Domain\Identity\Http\Resources\UserResource;
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\Support\SessionSurface;
+use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AccountController
@@ -18,6 +21,7 @@ class AccountController
 
     public function update(UpdateProfileRequest $request): UserResource
     {
+        self::requireMerchantSurface($request);
         /** @var User $user */
         $user = $request->user();
         $data = collect($request->validated())->only(['name', 'email', 'phone'])->all();
@@ -44,6 +48,7 @@ class AccountController
     /** Rotates the current session; every other session dies on its next request (AuthenticateSession hash check). */
     public function changePassword(ChangePasswordRequest $request): JsonResponse
     {
+        self::requireMerchantSurface($request);
         /** @var User $user */
         $user = $request->user();
 
@@ -54,5 +59,16 @@ class AccountController
         $this->audit->log('auth.password_changed', $user, tenantId: false);
 
         return $this->sessionResponse($user);
+    }
+
+    /**
+     * PHASE-8-1 P8-1: account changes belong to the merchant surface. An admin session must not rotate itself into a
+     * 7-day merchant session (changePassword re-issues the session) or move a staff email outside ADMIN_EMAIL_DOMAINS.
+     */
+    private static function requireMerchantSurface(Request $request): void
+    {
+        if (SessionSurface::of($request) !== SessionSurface::MERCHANT) {
+            throw new ApiException(403, 'forbidden', 'This action is not available in this session.');
+        }
     }
 }

@@ -23,6 +23,9 @@ import { StoreDetailsPage } from './settings/StoreDetailsPage';
 import { LoadingState } from './online-store/components/Shell';
 import { Toaster } from './online-store/components/Toast';
 import { PickThemePage } from './pages/PickThemePage';
+import { ApiErrorWatcher } from './impersonation/ApiErrorWatcher';
+import { ImpersonatePage } from './impersonation/ImpersonatePage';
+import { ImpersonationFrame } from './impersonation/ImpersonationFrame';
 
 // Editors are code-split: ajv, Tiptap and dnd-heavy screens load only on these routes (contract §10).
 const BrandStylePage = lazy(() => import('./online-store/BrandStylePage').then((m) => ({ default: m.BrandStylePage })));
@@ -84,6 +87,8 @@ export function AppRoutes() {
   return (
     <>
       <Toaster />
+      <ApiErrorWatcher />
+      <ImpersonationFrame />
       <Routes>
         <Route element={<GuestRoute />}>
           <Route path="/login" element={<LoginPage />} />
@@ -93,6 +98,8 @@ export function AppRoutes() {
         </Route>
         {/* Public: works signed out (new user) and signed in (existing user accepts with the session cookie). */}
         <Route path="/invite" element={<InvitePage />} />
+        {/* Phase 8.1: read-only support session from a Store Plix admin ticket (works signed out or in). */}
+        <Route path="/impersonate" element={<ImpersonatePage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/choose-shop" element={<ChooseShopPage />} />
           <Route path="/onboarding/shop" element={<NameShopPage />} />

@@ -11,7 +11,7 @@ export function MobileAppBar() {
   // More 32:6541 has its own "More" app bar (rendered by MorePage).
   if (pathname === '/more') return null;
   return (
-    <header className="sticky top-0 z-20 flex h-15 items-center gap-3 bg-surface-card px-4 lg:hidden">
+    <header className="sticky top-[var(--sp-banner-h,0px)] z-20 flex h-15 items-center gap-3 bg-surface-card px-4 lg:hidden">
       <Link to="/more" className="flex min-w-0 flex-1 items-center gap-3" aria-label="Switch shop">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-body-lg font-medium text-accent-500">
           {(store?.name ?? '?').charAt(0).toUpperCase()}

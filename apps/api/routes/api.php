@@ -98,7 +98,8 @@ Route::prefix('v1')->group(function (): void {
     });
 
     // --- Merchant APIs: authenticated + tenant context from X-Tenant-Id ---
-    Route::middleware(['auth:sanctum', 'tenant'])->group(function (): void {
+    // Phase 8.1 (P8-1, S68): merchant routes refuse admin-surface sessions.
+    Route::middleware(['auth:sanctum', 'surface:merchant,impersonation', 'tenant'])->group(function (): void {
         Route::get('stores', [StoreController::class, 'index'])->name('stores.index');
         Route::post('stores', [StoreController::class, 'store'])->name('stores.store');
         Route::get('stores/{store}', [StoreController::class, 'show'])->name('stores.show');
@@ -434,4 +435,8 @@ Route::prefix('v1')->group(function (): void {
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])
         ->middleware(['signed', 'throttle:60,1,exports.download'])->name('exports.download');
+    // Phase 8.1 (PHASE-8-1-CONTRACT §6): one file per owner agent.
+    require __DIR__.'/admin.php';
+    require __DIR__.'/admin-merchants.php';
+    require __DIR__.'/impersonation.php';
 });

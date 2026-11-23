@@ -1,18 +1,4 @@
-import {
-  BarChart3,
-  Building,
-  Clock,
-  CreditCard,
-  LayoutDashboard,
-  LifeBuoy,
-  Megaphone,
-  Plug,
-  Settings,
-  Shield,
-  Store,
-  Users,
-  type LucideIcon,
-} from 'lucide-react';
+import { Building, Clock, CreditCard, Eye, Globe, LayoutDashboard, Users, type LucideIcon } from 'lucide-react';
 
 export interface NavEntry {
   label: string;
@@ -20,7 +6,10 @@ export interface NavEntry {
   icon: LucideIcon;
 }
 
-// Figma Platform Admin – Desktop · PlatformSidebar 15:2 (groups, order and icons as designed).
+// Figma Platform Admin – Desktop · PlatformSidebar 15:2 (groups, order and icons as designed). Phase 8.1 §7.1: items
+// not built yet (Revenue reports, Integration health, Risk network, Support tickets, Announcements, Plans & features,
+// Themes & templates, Platform settings) are removed, not shown as placeholders. Domains (from Platform settings →
+// Domains & SSL 45:8156) and Impersonations are their own items under Operations.
 export const navGroups: { heading: string; items: NavEntry[] }[] = [
   {
     heading: 'Overview',
@@ -28,26 +17,20 @@ export const navGroups: { heading: string; items: NavEntry[] }[] = [
       { label: 'Dashboard', to: '/', icon: LayoutDashboard },
       { label: 'Merchants', to: '/merchants', icon: Building },
       { label: 'Billing', to: '/billing', icon: CreditCard },
-      { label: 'Revenue reports', to: '/revenue', icon: BarChart3 },
     ],
   },
   {
     heading: 'Operations',
     items: [
-      { label: 'Integration health', to: '/integrations', icon: Plug },
-      { label: 'Risk network', to: '/risk', icon: Shield },
-      { label: 'Support tickets', to: '/support', icon: LifeBuoy },
-      { label: 'Announcements', to: '/announcements', icon: Megaphone },
+      { label: 'Domains', to: '/domains', icon: Globe },
+      { label: 'Impersonations', to: '/impersonations', icon: Eye },
     ],
   },
   {
     heading: 'Configuration',
     items: [
-      { label: 'Plans & features', to: '/plans', icon: Store },
-      { label: 'Themes & templates', to: '/themes', icon: Store },
       { label: 'Team & roles', to: '/team', icon: Users },
       { label: 'Audit log', to: '/audit-log', icon: Clock },
-      { label: 'Platform settings', to: '/settings', icon: Settings },
     ],
   },
 ];

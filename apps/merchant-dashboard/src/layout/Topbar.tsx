@@ -12,7 +12,7 @@ export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const shopUrl = store?.status === 'active' ? `https://${storeDomain(store)}` : undefined;
 
   return (
-    <header className="sticky top-0 z-20 hidden h-topbar items-center gap-3 border-b border-border-default bg-surface-card pr-8 pl-5 lg:flex">
+    <header className="sticky top-[var(--sp-banner-h,0px)] z-20 hidden h-topbar items-center gap-3 border-b border-border-default bg-surface-card pr-8 pl-5 lg:flex">
       <button
         type="button"
         onClick={onToggleSidebar}

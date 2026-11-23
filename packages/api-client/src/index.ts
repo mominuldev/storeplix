@@ -2,8 +2,12 @@ export { auditLogQuery, createApiClient, mediaListQuery, normalizeHost, readCook
 export type { ApiClient, ApiClientOptions, DownloadedFile, Paginated, RequestOptions, UploadMediaInput, UploadOptions } from './client';
 export { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery } from './queries';
 export type { ReturnListFilters } from './queries';
+export { adminAuditQuery, adminDomainQuery, adminImpersonationQuery, adminInvoiceQuery, adminTeamQuery, adminTenantQuery } from './admin';
+export type { AdminApi, AdminAuditFilters, AdminDomainFilters, AdminImpersonationFilters, AdminInvoiceFilters, AdminTeamFilters, AdminTenantFilters, AdminTenantListMeta } from './admin';
 export { ApiError, isApiError } from './errors';
 export type { ApiErrorDetails } from './errors';
 export { createSessionStore, SESSION_EXPIRED_MESSAGE } from './session';
+export { IMPERSONATION_ENDED, IMPERSONATION_READ_ONLY, TENANT_SUSPENDED, isImpersonationEnded, isImpersonationReadOnly, isTenantSuspended } from './impersonation';
+export type { MeSessionMeta, SessionInfo } from './impersonation';
 export type { SessionNotice, SessionStore, SessionStoreOptions } from './session';
 export type * from './models';

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { proxy } from '@/proxy';
+import { routeRequest as proxy } from '@/proxy';
 import { STOREFRONT_HOST_HEADER } from '@/lib/host';
 
 function run(headers: Record<string, string>) {

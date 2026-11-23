@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { PageHeader } from '../layout/PageHeader';
 import { api } from '../lib/api';
 import { can, permissionMatrix, roleDescription, roleLabel } from '../lib/permissions';
+import { auditActivityText, auditActorName, mergeRecentActivity } from '../lib/audit';
 import { formatBdPhone } from '../lib/phone';
 import { InviteStaffModal } from '../staff/InviteStaffModal';
 import { MemberActions } from '../staff/MemberActions';
@@ -29,16 +30,6 @@ function relative(iso: string | null): string {
   if (days < 2) return 'Yesterday';
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
-
-const activityText: Record<string, string> = {
-  'staff.invited': 'invited a team member',
-  'staff.invitation_resent': 'resent an invitation',
-  'staff.invitation_revoked': 'cancelled an invitation',
-  'staff.joined': 'joined the team',
-  'staff.role_changed': 'changed a team member’s role',
-  'staff.removed': 'removed a team member',
-  'staff.left': 'left the team',
-};
 
 function SectionTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
@@ -67,6 +58,14 @@ export function StaffPage() {
     enabled: can.viewAuditLog(role),
     retry: false,
   });
+  // P8-QA-1 / PHASE-8-1 §7.2: Store Plix support actions on this shop (billing, suspension, support sessions) show here too.
+  const supportActivity = useQuery({
+    queryKey: ['audit', 'platform', activeTenant?.id],
+    queryFn: () => api.auditLogs.list({ actor_type: 'platform_user', per_page: 5 }),
+    enabled: can.viewAuditLog(role),
+    retry: false,
+  });
+  const recentActivity = mergeRecentActivity([activity.data?.data, supportActivity.data?.data], 5);
 
   if (!manage) {
     return (
@@ -225,20 +224,20 @@ export function StaffPage() {
 
       <Card className="flex flex-col gap-1 p-6">
         <SectionTitle title="Recent staff activity" subtitle="Every important action is logged with who did it and when." />
-        {activity.data?.data.length ? (
+        {recentActivity.length ? (
           <ul>
-            {activity.data.data.map((a: AuditLog, i) => (
+            {recentActivity.map((a: AuditLog, i) => (
               <li key={a.id} className={cn('flex items-center gap-3 py-3', i > 0 && 'border-t border-border-default')}>
-                <Avatar name={a.actor?.name ?? 'System'} size="sm" />
+                <Avatar name={auditActorName(a)} size="sm" />
                 <span className="flex-1 text-body text-text-secondary">
-                  <strong className="font-semibold text-text-primary">{a.actor?.name ?? 'Storeplix'}</strong> {activityText[a.action] ?? a.action}
+                  <strong className="font-semibold text-text-primary">{auditActorName(a)}</strong> {auditActivityText(a.action)}
                 </span>
                 <span className="text-caption text-text-muted">{relative(a.created_at)}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="py-3 text-body text-text-muted">{activity.isPending ? 'Loading…' : 'No staff activity yet.'}</p>
+          <p className="py-3 text-body text-text-muted">{activity.isPending || supportActivity.isPending ? 'Loading…' : 'No staff activity yet.'}</p>
         )}
       </Card>
 
