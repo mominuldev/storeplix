@@ -1331,7 +1331,10 @@ export interface DeliveryReport {
 // ---------- Phase 8.1: super admin (PHASE-8-1-CONTRACT; openapi 1.9.0) ----------
 export type AuditActorType = 'user' | 'system' | 'platform_user';
 export type PlatformRole = 'super_admin' | 'billing' | 'support' | 'read_only';
-export type PlatformPermission = 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team';
+export type PlatformPermission =
+  | 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team'
+  /** Phase 8.2 (PHASE-8-2 §2.1): super_admin, billing, read_only */
+  | 'view_analytics';
 export type SuspensionReasonCode = 'unpaid' | 'fraud' | 'terms_violation' | 'merchant_request' | 'other';
 export type AdminPlanChangeEffective = 'now' | 'next_renewal';
 export type ImpersonationStatus = 'pending' | 'active' | 'ended' | 'expired';
@@ -1360,6 +1363,10 @@ export interface AdminTenantSummary {
   owner: AdminOwner | null;
   plan_code: string; billing_interval: BillingInterval | null; subscription_status: SubscriptionStatus | null;
   trial_ends_at: string | null; current_period_end: string | null; created_at: string;
+  /** Phase 8.2 (P82-16): last merchant-dashboard request by any member, 15-min resolution; null = never */
+  last_active_at: string | null;
+  /** Phase 8.2: snapshot on `as_of`; null when the tenant has no snapshot row yet */
+  metrics: AdminTenantMetricsSummary | null;
 }
 export interface AdminTenantCounts { all: number; paying: number; trial: number; past_due: number; suspended: number }
 export interface AdminTenant extends AdminTenantSummary {
@@ -1451,4 +1458,97 @@ export interface StorefrontSuspended { availability: 'suspended' }
 export type StorefrontConfigResponse = StorefrontConfig | StorefrontSuspended;
 export function isStorefrontSuspended(c: StorefrontConfigResponse): c is StorefrontSuspended {
   return (c as StorefrontSuspended).availability === 'suspended';
+}
+
+// ---------- Phase 8.2: platform analytics (PHASE-8-2-CONTRACT; openapi 1.10.0) ----------
+/** Money: integer paisa (BDT). Rates/shares: fractions in [0, 1], 4 decimals. Days and months are Asia/Dhaka. */
+export type AnalyticsRange = '30d' | 'quarter' | '12m' | 'custom';
+export type AnalyticsGranularity = 'day' | 'week' | 'month';
+export interface AnalyticsQuery { range?: AnalyticsRange; from?: string; to?: string; granularity?: AnalyticsGranularity }
+export type AdminTenantSort =
+  | '-created_at' | 'created_at' | 'name' | '-name' | 'current_period_end' | '-current_period_end'
+  | '-mrr' | 'mrr' | '-gmv_30d' | '-orders_30d' | '-last_active_at' | 'last_active_at';
+export interface AnalyticsMeta {
+  /** latest computed Dhaka day; null before the first nightly run */
+  as_of: string | null; computed_at: string | null; data_starts_on: string | null;
+  timezone: 'Asia/Dhaka'; currency: 'BDT';
+  range: AnalyticsRange; granularity: AnalyticsGranularity;
+  from: string; to: string; previous_from: string; previous_to: string;
+}
+export interface AdminTenantMetricsSummary { as_of: string; mrr_amount: number; is_comp: boolean; orders_30d: number; gmv_30d_amount: number }
+export interface AnalyticsPlanRef { code: string; name: string; sort: number; monthly_price_amount: number }
+export interface AnalyticsPlanCount { plan_code: string; plan_name: string; count: number }
+export interface AnalyticsMrrPoint { bucket_start: string; bucket_end: string; mrr_amount: number | null; by_plan: Record<string, number> }
+export interface AdminAnalyticsOverview {
+  mrr: { amount: number | null; previous_amount: number | null; arr_amount: number | null };
+  active_shops: {
+    total: number | null; paying: number | null; trialing: number | null; comp: number | null; free: number | null;
+    past_due: number | null; previous_total: number | null;
+  };
+  trial_conversion: { rate: number | null; previous_rate: number | null; converted: number; ended: number; trialing_now: number | null };
+  gmv: {
+    amount: number | null; previous_amount: number | null; orders_count: number | null; previous_orders_count: number | null;
+    aov_amount: number | null;
+  };
+  revenue_churn: {
+    rate: number | null; previous_rate: number | null; churned_amount: number | null; cancellations: number | null;
+    opening_mrr_amount: number | null;
+  };
+  mrr_series: AnalyticsMrrPoint[];
+  plan_mix: AnalyticsPlanCount[];
+  plans: AnalyticsPlanRef[];
+}
+export interface AnalyticsAmountPair { amount: number | null; previous_amount: number | null }
+/** P82-9: money fields are null together when the window lacks snapshots (then `counts` is null too). */
+export interface MrrMovementBucket {
+  bucket_start: string; bucket_end: string;
+  opening_mrr_amount: number | null; new_amount: number | null; expansion_amount: number | null;
+  contraction_amount: number | null; churned_amount: number | null; net_new_amount: number | null;
+  closing_mrr_amount: number | null;
+  counts: { new: number; expansion: number; contraction: number; churned: number } | null;
+}
+/** P82-14: cohort = Dhaka month (YYYY-MM) of the first paid invoice; retention[k] = month cohort+k */
+export interface RetentionCohort { cohort: string; size: number; retention: (number | null)[] }
+export interface RevenueByPlanRow {
+  plan_code: string; plan_name: string; monthly_price_amount: number;
+  /** paying shops on the plan; Free row = free shops */
+  shops: number | null;
+  mrr_amount: number | null; previous_mrr_amount: number | null; share: number | null; yearly_share: number | null;
+}
+export interface TopPayingMerchant {
+  tenant: AdminShopRef; primary_host: string | null; plan_code: string; billing_interval: BillingInterval | null;
+  last_payment_provider: 'bkash' | 'sslcommerz' | 'manual' | null;
+  orders_30d: number; mrr_amount: number; customer_since: string | null; lifetime_paid_amount: number;
+}
+export interface AdminRevenueReport {
+  kpis: {
+    mrr: AnalyticsAmountPair; arr: AnalyticsAmountPair;
+    net_new_mrr: AnalyticsAmountPair & {
+      new_amount: number | null; expansion_amount: number | null; contraction_amount: number | null; churned_amount: number | null;
+    };
+    churned_mrr: AnalyticsAmountPair & {
+      rate: number | null; previous_rate: number | null; opening_mrr_amount: number | null; count: number | null;
+    };
+    arpa: AnalyticsAmountPair & { paying: number | null };
+    ltv: { amount: number | null; lifetime_months: number | null };
+  };
+  movement: MrrMovementBucket[];
+  cohorts: { rows: RetentionCohort[]; m3_average: number | null };
+  by_plan: {
+    rows: RevenueByPlanRow[];
+    total: { shops: number | null; paying: number | null; mrr_amount: number | null; previous_mrr_amount: number | null };
+  };
+  trial_funnel: {
+    signed_up: number; store_published: number; trial_ended: number; converted: number;
+    trial_to_paid_rate: number | null; signup_to_paid_rate: number | null; median_days_to_paid: number | null;
+  };
+  top_merchants: TopPayingMerchant[];
+}
+export interface AdminTenantMetrics {
+  mrr_amount: number | null; is_comp: boolean; plan_code: string | null; billing_interval: BillingInterval | null;
+  orders_30d: number | null; previous_orders_30d: number | null;
+  gmv_30d_amount: number | null; previous_gmv_30d_amount: number | null; aov_30d_amount: number | null;
+  avg_orders_per_day_30d: number | null; gmv_month_amount: number | null; paid_12m_amount: number;
+  /** 12 Dhaka months ending with as_of's month, oldest first */
+  monthly: { month: string; gmv_amount: number | null; orders_count: number | null }[];
 }
