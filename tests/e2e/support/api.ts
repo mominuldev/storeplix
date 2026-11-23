@@ -215,9 +215,11 @@ export interface ThrowawayMember {
  * Invites a throwaway user to the owner's shop with `role`, accepts through the mailed token (one
  * `throttle:auth` call) and returns their session. Always call `cleanup()` in afterAll.
  */
-export async function createMember(owner: Session, role: 'staff' | 'admin'): Promise<ThrowawayMember> {
+export async function createMember(owner: Session, roleOrId: 'staff' | 'admin' | { role_id: string }): Promise<ThrowawayMember> {
+  // Phase 8.3: `{ role_id }` invites with any role (custom roles included); the legacy `role` input still works.
+  const role = typeof roleOrId === 'string' ? roleOrId : 'custom';
+  const roleInput = typeof roleOrId === 'string' ? { role: roleOrId } : { role_id: roleOrId.role_id };
   const email = `${unique(role)}@e2e.storeplix.test`;
-  const password = 'E2eMember12345';
   const cleanup = async () => {
     const staff = await api(owner, 'GET', '/staff');
     for (const m of (staff.json.data ?? []) as Array<{ id: string; email: string; kind: string }>) {
@@ -228,25 +230,30 @@ export async function createMember(owner: Session, role: 'staff' | 'admin'): Pro
   };
   try {
     const mark = mailMark();
-    const invite = await api(owner, 'POST', '/staff/invitations', { email, role, name: `E2E ${role}` });
+    const invite = await api(owner, 'POST', '/staff/invitations', { email, ...roleInput, name: `E2E ${role}` });
     expect(invite.status, JSON.stringify(invite.json)).toBe(201);
-    const link = await findMailLink(email, '/invite?token=', mark);
-    const token = new URL(link).searchParams.get('token')!;
-    const accepted = await spaAuthPost(`/invitations/${encodeURIComponent(token)}/accept`, {
-      name: `E2E ${role}`,
-      password,
-      password_confirmation: password,
-    });
-    try {
-      expect(accepted.status, JSON.stringify(accepted.json)).toBe(201);
-      const s = await saveSession(accepted.ctx, accepted.json, resolve(E2E_ROOT, `.auth/${email.split('@')[0]}.json`), owner.tenantId);
-      return { email, session: { ...s, storeId: owner.storeId }, cleanup };
-    } finally {
-      await accepted.ctx.dispose();
-    }
+    const session = await acceptInvitation(owner, email, mark, `E2E ${role}`);
+    return { email, session, cleanup };
   } catch (e) {
     await cleanup();
     throw e;
+  }
+}
+
+/**
+ * Accepts the invitation mailed to `email` after `mark` (one `throttle:auth` call) and returns the new member's
+ * session in the owner's shop. Use after an invite sent through the UI; the caller removes the member afterwards.
+ */
+export async function acceptInvitation(owner: Session, email: string, mark: number, name = 'E2E member', password = 'E2eMember12345'): Promise<Session> {
+  const link = await findMailLink(email, '/invite?token=', mark);
+  const token = new URL(link).searchParams.get('token')!;
+  const accepted = await spaAuthPost(`/invitations/${encodeURIComponent(token)}/accept`, { name, password, password_confirmation: password });
+  try {
+    expect(accepted.status, JSON.stringify(accepted.json)).toBe(201);
+    const s = await saveSession(accepted.ctx, accepted.json, resolve(E2E_ROOT, `.auth/${email.split('@')[0]}.json`), owner.tenantId);
+    return { ...s, storeId: owner.storeId };
+  } finally {
+    await accepted.ctx.dispose();
   }
 }
 
