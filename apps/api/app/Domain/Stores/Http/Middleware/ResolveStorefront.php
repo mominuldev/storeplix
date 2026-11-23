@@ -17,6 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
  * 1. X-Storefront-Key must equal STOREFRONT_API_KEY (constant-time compare; fails closed if unset).
  * 2. The tenant is resolved ONLY from X-Storefront-Host, validated against registered active
  *    store_domains. Host / X-Forwarded-Host are deliberately ignored.
+ * 3. A suspended store (PHASE-8-1 §4.1) answers only the config route; everything else is 404 store_not_found.
  */
 class ResolveStorefront
 {
@@ -29,6 +30,9 @@ class ResolveStorefront
     public const ATTRIBUTE = 'storefront';
 
     public const PREVIEW_ATTRIBUTE = 'storefront_preview';
+
+    /** The one route a suspended shop still answers (PHASE-8-1 §4.1). */
+    public const CONFIG_ROUTE = 'storefront.config';
 
     public function __construct(
         private readonly StorefrontResolver $resolver,
@@ -53,14 +57,16 @@ class ResolveStorefront
 
         $resolved = $this->resolver->resolve($host);
 
-        if (! $resolved instanceof ResolvedStorefront) {
+        // PHASE-8-1 §4.1 (P8-12, S80): a suspended shop answers only GET /storefront/config (StorefrontSuspended);
+        // cart, checkout, orders and every other storefront endpoint 404 exactly like an unknown host.
+        if (! $resolved instanceof ResolvedStorefront || ($resolved->suspended && $request->route()?->getName() !== self::CONFIG_ROUTE)) {
             throw new ApiException(404, 'store_not_found', 'No store is registered for this host.');
         }
 
         // D2: a preview token only counts when it is valid for THIS resolved store. Invalid/expired
         // tokens silently degrade to a public visitor (no error leak). The host cache only ever holds
         // {tenant_id, store_id}; preview state is computed per request and never cached.
-        $preview = $this->previews->isValidFor($request->header(self::PREVIEW_HEADER), $resolved->storeId);
+        $preview = ! $resolved->suspended && $this->previews->isValidFor($request->header(self::PREVIEW_HEADER), $resolved->storeId);
 
         $request->attributes->set(self::ATTRIBUTE, $resolved);
         $request->attributes->set(self::PREVIEW_ATTRIBUTE, $preview);

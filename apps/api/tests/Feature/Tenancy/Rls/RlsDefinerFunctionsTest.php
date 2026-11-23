@@ -49,7 +49,7 @@ class RlsDefinerFunctionsTest extends TestCase
         }
     }
 
-    public function test_resolve_host_returns_ids_only_and_nothing_for_unknown_or_suspended(): void
+    public function test_resolve_host_returns_ids_only_nothing_for_unknown_and_flags_suspended(): void
     {
         $t = $this->twoTenantsWithOrders();
         $this->setGuc(null, null);
@@ -59,7 +59,7 @@ class RlsDefinerFunctionsTest extends TestCase
 
         $rows = DB::select('select * from sp_resolve_host(?)', [$host]);
         $this->assertCount(1, $rows);
-        $this->assertSame(['tenant_id', 'store_id'], array_keys((array) $rows[0]));
+        $this->assertSame(['tenant_id', 'store_id', 'suspended'], array_keys((array) $rows[0])); // PHASE-8-1 §4.1
         $this->assertSame($t['b']['tenant']->id, trim($rows[0]->tenant_id));
         $this->assertSame($t['b']['store']->id, trim($rows[0]->store_id));
 
@@ -67,9 +67,12 @@ class RlsDefinerFunctionsTest extends TestCase
         $this->assertNull(app(PreTenantLookup::class)->resolveHost('unknown.storeplix.test'));
 
         $this->inTenant($t['b']['tenant'], fn () => Store::query()->whereKey($t['b']['store']->id)->update(['status' => Store::STATUS_SUSPENDED]));
-        $this->assertSame([], DB::select('select * from sp_resolve_host(?)', [$host]));
+        // PHASE-8-1 §4.1 (amends §9.4 B1): a suspended store still resolves, flagged.
+        $rows = DB::select('select * from sp_resolve_host(?)', [$host]);
+        $this->assertCount(1, $rows);
+        $this->assertTrue((bool) $rows[0]->suspended);
         app(StorefrontResolver::class)->forget($host);
-        $this->assertNull(app(StorefrontResolver::class)->resolve($host));
+        $this->assertTrue(app(StorefrontResolver::class)->resolve($host)?->suspended);
 
         // the storefront of A still resolves through the definer function (B1)
         $resolved = app(StorefrontResolver::class)->resolve($this->host($t['a']['store']));

@@ -193,6 +193,8 @@ export interface AuditLog {
 }
 export interface AuditLogFilters {
   action?: string; actor_id?: string; subject_id?: string;
+  /** Phase 8.1: `platform_user` lists Store Plix support actions only. */
+  actor_type?: AuditActorType;
   /** server allowlist; Phase 5 adds 'order' | 'coupon' | 'shipping' | 'store'; 5b 'payment_gateway' | 'courier' | 'shipment' | 'return' */
   subject_type?: string;
   created_from?: string; created_to?: string; page?: number; per_page?: number;
@@ -357,7 +359,11 @@ export type PreviewToEditorMessage =
 // ---------- Auth (Phase 4.7) ----------
 /** Response of register / login / login/otp / invitation accept / password change after 4.7. */
 export interface AuthSession { user: User; /** absolute session expiry, ISO-8601 */ expires_at: string }
-export interface MeMeta { session_expires_at: string | null }
+export interface MeMeta {
+  session_expires_at: string | null;
+  /** Phase 8.1: set only in a read-only impersonation session (PHASE-8-1 P8-10). */
+  impersonation?: MeImpersonation | null;
+}
 
 // ---------- Permissions surfaced to the UI ----------
 /** Mirrors App\Domain\Tenancy\Authorization\Permission (P4-14). UI derives from TenantMembership.role. */
@@ -1349,7 +1355,8 @@ export interface AdminShopRef { id: string; name: string; slug: string }
 export interface AdminOwner { id: string; name: string; email: string; phone: string | null }
 export interface AdminTenantSummary {
   id: string; name: string; status: AdminTenantStatus;
-  store: { id: string; name: string; slug: string; status: 'draft' | 'active' | 'suspended'; primary_host: string };
+  /** null while the merchant has not created their shop yet (onboarding) */
+  store: { id: string; name: string; slug: string; status: 'draft' | 'active' | 'suspended'; primary_host: string } | null;
   owner: AdminOwner | null;
   plan_code: string; billing_interval: BillingInterval | null; subscription_status: SubscriptionStatus | null;
   trial_ends_at: string | null; current_period_end: string | null; created_at: string;

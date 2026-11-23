@@ -23,6 +23,12 @@ use Illuminate\Support\Facades\Mail;
  * @property string|null $phone 8801XXXXXXXXX
  * @property Carbon|null $phone_verified_at
  * @property Carbon|null $password_changed_at
+ * @property string|null $platform_role PHASE-8-1 P8-2 (App\Domain\Admin\Authorization\PlatformRole)
+ * @property Carbon|null $platform_disabled_at
+ * @property Carbon|null $platform_locked_until
+ * @property string|null $totp_secret encrypted
+ * @property Carbon|null $totp_confirmed_at
+ * @property int|null $totp_last_step
  */
 class User extends Authenticatable
 {
@@ -31,7 +37,7 @@ class User extends Authenticatable
 
     protected $fillable = ['name', 'email', 'phone', 'password', 'email_verified_at', 'phone_verified_at', 'password_changed_at'];
 
-    protected $hidden = ['password', 'remember_token'];
+    protected $hidden = ['password', 'remember_token', 'totp_secret', 'totp_last_step'];
 
     protected function casts(): array
     {
@@ -40,6 +46,11 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'password_changed_at' => 'datetime',
             'password' => 'hashed',
+            'platform_disabled_at' => 'datetime',
+            'platform_locked_until' => 'datetime',
+            'totp_secret' => 'encrypted',
+            'totp_confirmed_at' => 'datetime',
+            'totp_last_step' => 'integer',
         ];
     }
 

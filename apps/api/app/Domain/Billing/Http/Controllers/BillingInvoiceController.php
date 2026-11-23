@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Billing\Http\Controllers;
 
+use App\Domain\Admin\Impersonation\ImpersonationSession;
 use App\Domain\Billing\BillingInvoicePdf;
 use App\Domain\Billing\BillingPaymentService;
 use App\Domain\Billing\Gateways\PlatformCredentials;
@@ -92,7 +93,9 @@ class BillingInvoiceController
         if ($row === null) {
             throw new ApiException(404, 'not_found', 'Resource not found.');
         }
+        // PHASE-8-1 P8-10 (S71): no provider query in a read-only impersonation session; answered from the database.
         if ($row->status === BillingPayment::PENDING && $row->provider !== BillingPayment::MANUAL
+            && ! ImpersonationSession::isImpersonating(request())
             && ($row->last_queried_at ?? $row->created_at)->lessThanOrEqualTo(now()->subSeconds(10))) {
             $row = $this->payments->refresh($row);
         }

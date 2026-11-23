@@ -4,19 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Billing\Console;
 
-use App\Domain\Billing\FeatureGate;
-use App\Domain\Billing\Models\Subscription;
-use App\Domain\Billing\Support\BillingLock;
-use App\Domain\Tenancy\Support\AuditLogger;
-use Illuminate\Support\Facades\DB;
+use App\Domain\Billing\Ops\ExtendSubscription;
+use App\Domain\Billing\Ops\OpsActor;
+use App\Domain\Shared\Http\ApiException;
 
+/** Thin caller of the shared Action (PHASE-8-1 P8-7). */
 class BillingExtend extends BillingOpsCommand
 {
     protected $signature = 'billing:extend {tenant} {--days=} {--reason=} {--force}';
 
     protected $description = 'Move current_period_end (and trial_ends_at while trialing, grace_ends_at while past_due) forward';
 
-    public function handle(AuditLogger $audit): int
+    public function handle(ExtendSubscription $action): int
     {
         $days = (int) $this->option('days');
         if (! $this->guard() || $days < 1 || $days > 366) {
@@ -31,26 +30,15 @@ class BillingExtend extends BillingOpsCommand
             return self::FAILURE;
         }
 
-        return $this->inTenant($tenant->id, fn () => BillingLock::run($tenant->id, fn () => DB::transaction(function () use ($tenant, $days, $audit) {
-            $sub = Subscription::query()->whereIn('status', Subscription::CURRENT_STATUSES)->lockForUpdate()->first();
-            if ($sub === null) {
-                $this->error('No current subscription.');
+        try {
+            $action->handle($tenant->id, $days, OpsActor::system((string) $this->option('reason')));
+        } catch (ApiException $e) {
+            $this->error($e->getMessage());
 
-                return self::FAILURE;
-            }
-            $set = [];
-            foreach (['current_period_end', 'trial_ends_at', 'grace_ends_at'] as $column) {
-                if ($sub->{$column} !== null && ($column !== 'trial_ends_at' || $sub->status === Subscription::TRIALING)
-                    && ($column !== 'grace_ends_at' || $sub->status === Subscription::PAST_DUE)) {
-                    $set[$column] = $sub->{$column}->copy()->addDays($days);
-                }
-            }
-            DB::table('subscriptions')->where('id', $sub->id)->where('tenant_id', $sub->tenant_id)->update($set + ['updated_at' => now()]);
-            FeatureGate::forget($tenant->id);
-            $audit->log('billing.period_extended', $sub, ['days' => $days, 'reason' => (string) $this->option('reason')], system: true);
-            $this->info("Extended by {$days} day(s).");
+            return self::FAILURE;
+        }
+        $this->info("Extended by {$days} day(s).");
 
-            return self::SUCCESS;
-        })));
+        return self::SUCCESS;
     }
 }

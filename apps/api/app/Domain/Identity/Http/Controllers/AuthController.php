@@ -2,6 +2,8 @@
 
 namespace App\Domain\Identity\Http\Controllers;
 
+use App\Domain\Admin\Impersonation\ImpersonationService;
+use App\Domain\Admin\Impersonation\ImpersonationSession;
 use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Http\Requests\ForgotPasswordRequest;
 use App\Domain\Identity\Http\Requests\LoginRequest;
@@ -137,14 +139,28 @@ class AuthController
         return response()->noContent();
     }
 
-    /** GET /auth/me — adds meta.session_expires_at (absolute session expiry). */
+    /**
+     * GET /auth/me — adds meta.session_expires_at (absolute session expiry) and meta.impersonation (PHASE-8-1 P8-10:
+     * in an impersonation session the staff user with only the impersonated tenant, role owner; null otherwise).
+     * Owner of this method: API-3.
+     */
     public function me(Request $request): JsonResponse
     {
         $at = self::isStateful($request) ? $request->session()->get(EnforceAbsoluteSessionExpiry::KEY) : null;
         $expires = is_int($at) ? Carbon::createFromTimestamp($at)->toIso8601ZuluString() : null;
 
+        if (self::isStateful($request) && ImpersonationSession::isImpersonating($request)) {
+            $row = app(ImpersonationSession::class)->current($request);
+            $service = app(ImpersonationService::class);
+
+            return new JsonResponse([
+                'data' => $service->userShape($request->user(), $row),
+                'meta' => ['session_expires_at' => $expires, 'impersonation' => $service->meShape($row)],
+            ]);
+        }
+
         return (new UserResource($request->user()->load('tenants')))
-            ->additional(['meta' => ['session_expires_at' => $expires]])
+            ->additional(['meta' => ['session_expires_at' => $expires, 'impersonation' => null]])
             ->response();
     }
 }

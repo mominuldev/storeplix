@@ -1,5 +1,8 @@
 <?php
 
+use App\Domain\Admin\Impersonation\Console\CloseImpersonations;
+use App\Domain\Admin\Suspension\Console\CheckSuspensions;
+use Illuminate\Console\Application;
 use Illuminate\Support\Facades\Schedule;
 
 // D3: expired Sanctum tokens are pruned daily (24h after expiry).
@@ -37,3 +40,11 @@ Schedule::command('couriers:reconcile-bookings')->everyTwoMinutes()->withoutOver
 Schedule::command('domains:check')->everyMinute()->withoutOverlapping();
 Schedule::command('domains:reconcile-provider')->dailyAt('03:30')->timezone('Asia/Dhaka')->withoutOverlapping()
     ->when(fn () => ! config('domains.fake'));
+
+// Phase 8.1 (PHASE-8-1 §4.4, owner API-3): impersonation expiry. Registered here (no Admin console provider owned by API-3).
+Application::starting(fn (Application $artisan) => $artisan->resolve(CloseImpersonations::class));
+Schedule::command('admin:close-impersonations')->everyFiveMinutes()->withoutOverlapping();
+
+// Phase 8.1 (PHASE-8-1 §4.4): repair store/tenant suspension mismatches (owner API-2).
+Application::starting(fn (Application $artisan) => $artisan->resolve(CheckSuspensions::class));
+Schedule::command('admin:check-suspensions')->hourly()->withoutOverlapping();

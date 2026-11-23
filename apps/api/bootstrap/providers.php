@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Admin\AdminServiceProvider;
 use App\Domain\Billing\BillingServiceProvider;
 use App\Domain\Catalog\CatalogServiceProvider;
 use App\Domain\Couriers\CouriersServiceProvider;
@@ -24,4 +25,5 @@ return [
     GatewaysServiceProvider::class,
     CouriersServiceProvider::class,
     DomainsServiceProvider::class,
+    AdminServiceProvider::class,
 ];

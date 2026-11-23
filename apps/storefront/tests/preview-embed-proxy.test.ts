@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { framingPolicy, proxy } from '@/proxy';
+import { framingPolicy, routeRequest as proxy } from '@/proxy';
 import { EMBED_COOKIE, PREVIEW_COOKIE } from '@/lib/preview-token';
 import { parseEditorOrigins } from '@/lib/editor-origins';
 

@@ -7,11 +7,13 @@ use Illuminate\Auth\Events\Authenticated;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Database\Events\ConnectionEstablished;
+use Illuminate\Database\Events\MigrationsStarted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
@@ -41,6 +43,26 @@ class TenancyServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->commands([Console\EnableRowLevelSecurity::class]);
+            Event::listen(MigrationsStarted::class, fn (MigrationsStarted $e) => $this->dropStaleResolveHost($e));
+        }
+    }
+
+    /**
+     * Functions survive `migrate:fresh` (it drops tables only). 2026_09_01_000200 changed the result type of
+     * sp_resolve_host, so the merged 2026_06_01_000100 (CREATE OR REPLACE with the old type, forward-only, not
+     * editable) fails on a re-migrated Postgres database. Drop the leftover only when that migration is about to
+     * run, i.e. on a fresh or new database; an already-migrated one (production) is never touched.
+     */
+    private function dropStaleResolveHost(MigrationsStarted $event): void
+    {
+        $db = DB::connection();
+        if ($event->method !== 'up' || ($event->options['pretend'] ?? false) || $db->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $ran = $this->app->make('migrator')->getRepository()->getRan();
+        if (! in_array('2026_06_01_000100_enable_row_level_security', $ran, true)) {
+            $db->statement('DROP FUNCTION IF EXISTS sp_resolve_host(text)');
         }
     }
 

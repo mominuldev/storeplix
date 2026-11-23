@@ -19,16 +19,30 @@ export interface CurrentStore {
   themeConfig: ReturnType<typeof resolveStoreTheme>['config'];
 }
 
-/** Current request's store, or null when the host is invalid / not registered. Per-request cached. */
+/**
+ * Current request's store, or null when the host is invalid / not registered / suspended (P8-12: a suspended shop has
+ * no renderable config; the proxy answers its pages with the 503 page, see lib/suspension.ts). Per-request cached.
+ */
 export const findCurrentStore = cache(async (): Promise<CurrentStore | null> => {
   const host = await getRequestHost();
   if (!host) return null;
   const result = await getStorefrontConfig(host, await getPreviewToken());
-  if (result.status === 'not_found') return null;
+  if (result.status !== 'found') return null;
   const { theme, config: themeConfig } = resolveStoreTheme(result.config.theme);
   // Bad stored config never breaks the page: defaults were used for the invalid parts. Log it.
   if (themeConfig.usedFallback) console.warn(`[theme] invalid theme config for ${host}; rendered with defaults where needed`);
   return { host, mode: storeMode(result.config), config: result.config, theme, themeConfig };
+});
+
+/**
+ * Phase 8.1: the host belongs to a suspended shop. Used by the root 404 boundary to render "temporarily unavailable"
+ * instead of "Store not found" when a page render (not the proxy) is the first to learn about the suspension.
+ */
+export const isCurrentStoreSuspended = cache(async (): Promise<boolean> => {
+  const host = await getRequestHost();
+  if (!host) return false;
+  const result = await getStorefrontConfig(host, await getPreviewToken());
+  return result.status === 'suspended';
 });
 
 /**

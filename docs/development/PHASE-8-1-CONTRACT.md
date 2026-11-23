@@ -48,7 +48,8 @@ the domains table.
 - **Foreign and unknown ids** on `/admin/*` → 404 `not_found`. There is no "other tenant" for the admin API, but every
   `{invoice}`, `{domain}`, `{member}` nested under `{tenant}` must belong to that tenant, else 404.
 - **Reason:** every admin write takes `reason` (string, 5–500 chars, trimmed) and stores it in the audit row. Missing
-  → 422 `validation_failed`.
+  → 422 `validation_failed`. **As built:** `POST /admin/invoices/{invoice}/resend` and `POST /admin/domains/{domain}/recheck`
+  take no body (no reason), and `POST /admin/tenants/{tenant}/impersonations` writes its audit row at ticket consume (P8-11).
 - **Money** is integer paisa with `currency: "BDT"`; dates are UTC ISO 8601; the UI shows them in Asia/Dhaka.
 
 ### Standing rules for every agent
@@ -201,9 +202,13 @@ write is refused before the permission check.
 - `suspend {reason}` / `reinstate {reason}` = the refactored `domains:suspend` / `domains:reinstate` Actions.
 
 ### 4.3 Billing (P8-13 – P8-15)
-Each endpoint calls the Phase 7 Action as the tenant. Audit actions keep the Phase 7 names (`billing.manual_payment`,
-`billing.invoice_voided`, `subscription.extended`, `subscription.plan_comped`, `subscription.change_scheduled`) with the
-platform actor (P8-8). Emails to the owner follow the Phase 7 templates; a comp change sends "Your plan changed to
+Each endpoint calls the Phase 7 Action as the tenant. Audit actions keep the names Phase 7 actually writes
+(`billing.manual_payment`, `billing.invoice_voided`, `billing.period_extended`, `subscription.plan_changed` with
+`meta.kind: comp`, `subscription.change_scheduled`) plus `billing.invoice_resent`, with the platform actor (P8-8).
+**As built:** mark paid accepts an `open` or `void` invoice (late payment, as the command) and answers 409
+`invoice_not_open` only for `paid`; change-plan idempotency is a 24 h cache record (no invoice row exists for a comp
+change); the comp change of P8-13 (void the open invoice, keep the period) is the staff variant of `CompPlanChange`, the
+`billing:change-plan` command keeps its Phase 7 behaviour. Emails to the owner follow the Phase 7 templates; a comp change sends "Your plan changed to
 {plan}" when `notify` is true.
 
 ### 4.4 Jobs and commands

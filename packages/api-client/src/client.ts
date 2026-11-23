@@ -80,7 +80,7 @@ import type {
   StaffMember,
   StaffSeatsMeta,
   Store,
-  StorefrontConfig,
+  StorefrontConfigResponse,
   StoreSettings,
   Subscription,
   TenantMembership,
@@ -166,6 +166,8 @@ import type {
   DomainListMeta,
   StoreDomain,
 } from '@storeplix/types';
+import { createAdminApi } from './admin';
+import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
 import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery, type ReturnListFilters } from './queries';
@@ -286,6 +288,7 @@ export function auditLogQuery(f: AuditLogFilters = {}): Record<string, string | 
   return {
     'filter[action]': f.action,
     'filter[actor_id]': f.actor_id,
+    'filter[actor_type]': f.actor_type,
     'filter[subject_type]': f.subject_type,
     'filter[subject_id]': f.subject_id,
     'filter[created_at][gte]': f.created_from,
@@ -560,9 +563,14 @@ export function createApiClient(options: ApiClientOptions) {
     /** Contract §7.3: fetch the XSRF-TOKEN cookie (boot, after login/logout). `force` re-fetches. */
     ensureCsrf,
 
+    /** Phase 8.1 super admin (`/admin/*`, see ./admin.ts). Never sends X-Tenant-Id. */
+    admin: createAdminApi({ request, requestEnvelope, requestBlob }),
+
     health: (opts?: RequestOptions) => request<HealthStatus>('/health', { anonymous: true, ...opts }),
 
     auth: {
+      /** Phase 8.1 impersonation: startImpersonation, endImpersonation, sessionInfo (see ./impersonation.ts). */
+      ...createImpersonationAuth({ request, requestEnvelope }),
       register: (input: RegisterInput) => request<AuthSessionResponse>('/auth/register', { method: 'POST', body: input, anonymous: true }),
       login: (input: LoginInput) => request<AuthSessionResponse>('/auth/login', { method: 'POST', body: input, anonymous: true }),
       logout: () => request<void>('/auth/logout', { method: 'POST', noTenant: true }),
@@ -1109,10 +1117,11 @@ export function createApiClient(options: ApiClientOptions) {
     storefront: {
       /**
        * Server-to-server only (Next.js storefront). Never call from a browser — `key` is a secret.
-       * Throws ApiError with code `store_not_found` (404) for unknown hosts.
+       * Throws ApiError with code `store_not_found` (404) for unknown hosts. A suspended shop answers `StorefrontSuspended`
+       * (check with `isStorefrontSuspended` from @storeplix/types).
        */
       getConfig: (host: string, key: string, opts?: Pick<RequestOptions, 'init' | 'signal'> & { previewToken?: string | null }) =>
-        request<StorefrontConfig>('/storefront/config', {
+        request<StorefrontConfigResponse>('/storefront/config', {
           init: opts?.init,
           signal: opts?.signal,
           anonymous: true,

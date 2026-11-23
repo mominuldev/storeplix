@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Billing\Console;
 
-use App\Domain\Billing\BillingPaymentService;
 use App\Domain\Billing\Models\BillingInvoice;
-use App\Domain\Billing\Models\BillingPayment;
-use App\Domain\Payments\Gateways\Verification;
-use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Billing\Ops\MarkInvoicePaid;
+use App\Domain\Billing\Ops\OpsActor;
+use App\Domain\Shared\Http\ApiException;
 
+/** Thin caller of the shared Action (PHASE-8-1 P8-7). */
 class BillingMarkPaid extends BillingOpsCommand
 {
     protected $signature = 'billing:mark-paid {invoice : invoice number or id} {--reference= : bank reference} {--reason=} {--force}';
 
     protected $description = 'Record a manual (bank transfer / support) payment of an open or void invoice and apply it';
 
-    public function handle(BillingPaymentService $payments, AuditLogger $audit): int
+    public function handle(MarkInvoicePaid $action): int
     {
         if (! $this->guard()) {
             return self::FAILURE;
@@ -29,26 +29,20 @@ class BillingMarkPaid extends BillingOpsCommand
         }
         [$tenantId, $invoiceId] = $located;
 
-        return $this->inTenant($tenantId, function () use ($invoiceId, $payments, $audit) {
-            $invoice = BillingInvoice::query()->findOrFail($invoiceId);
-            if ($invoice->status === BillingInvoice::PAID) {
-                $this->error("{$invoice->number} is already paid.");
+        try {
+            $invoice = $action->handle($tenantId, $invoiceId, $this->option('reference'), OpsActor::system((string) $this->option('reason')));
+        } catch (ApiException $e) {
+            $this->error($e->getMessage());
 
-                return self::FAILURE;
-            }
-            $payment = new BillingPayment;
-            $payment->forceFill([
-                'invoice_id' => $invoice->id, 'provider' => BillingPayment::MANUAL, 'status' => BillingPayment::PENDING,
-                'amount' => $invoice->total_amount, 'currency' => 'BDT', 'expires_at' => now()->addHour(),
-                'reference' => mb_substr((string) ($this->option('reference') ?? ''), 0, 120) ?: null,
-            ])->save();
-            $audit->log('billing.manual_payment', $payment, ['invoice' => $invoice->number, 'reference' => $payment->reference,
-                'reason' => (string) $this->option('reason')], system: true);
-            $payments->confirm($payment, new Verification(Verification::SUCCEEDED, $invoice->total_amount, 'BDT', $payment->id,
-                'MANUAL-'.strtoupper(substr($payment->id, -12)), null, ['manual' => true]));
-            $this->info("{$invoice->number} marked paid ({$payment->refresh()->status}).");
+            return self::FAILURE;
+        }
+        $this->info("{$invoice->number} marked paid ({$this->paymentStatus($tenantId, $invoice)}).");
 
-            return self::SUCCESS;
-        });
+        return self::SUCCESS;
+    }
+
+    private function paymentStatus(string $tenantId, BillingInvoice $invoice): string
+    {
+        return (string) $this->inTenant($tenantId, fn () => $invoice->payments()->where('provider', 'manual')->latest()->value('status'));
     }
 }

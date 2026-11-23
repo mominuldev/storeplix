@@ -41,5 +41,7 @@ final class RlsTables
     public const PLATFORM = [
         'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs',
         'personal_access_tokens', 'tenants', 'plans', 'otp_codes', 'migrations', 'platform_counters',
+        // Phase 8.1 (PHASE-8-1 §5.1)
+        'platform_recovery_codes', 'platform_invitations', 'platform_impersonations',
     ];
 }

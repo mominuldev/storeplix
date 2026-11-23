@@ -575,3 +575,72 @@ Needs from the PO (Q90, Q82): Storeplix's bKash PGW sandbox credentials and SSLC
   pay dialog) or both (`pay` answers 422 `billing_gateway_unavailable`; plans can still be quoted and scheduled).
 - **Never** set `BILLING_FAKE=true` in production (refused at boot) and never mark an invoice paid by editing the
   database: use `billing:mark-paid` so the plan change, audit and receipt happen.
+
+## 11. Super admin, impersonation and suspension (Phase 8.1)
+
+Sources: PHASE-8-1-CONTRACT §1–§4, §11; ADR 0015; SECURITY T32, T11. Owner: QA (ARCH reviews).
+
+How it fits together: platform staff sign in to the super-admin app (`ADMIN_APP_URL`) with password **and** TOTP. An
+admin session never works on merchant routes and a merchant session never works on `/api/v1/admin/*`. Every admin write
+needs a reason and leaves an `audit_logs` row with the platform actor; the merchant sees it as "Store Plix support".
+Impersonation is read-only, 15 minutes at most, and audited at start and end on the shop's log.
+
+### 11.1 Environment (web, every queue worker, scheduler)
+| Key | Production | Notes |
+|---|---|---|
+| `ADMIN_APP_URL` | `https://admin.storeplix.com` | Invitation links. Must also be in Sanctum stateful domains and CORS |
+| `ADMIN_EMAIL_DOMAINS` | `storeplix.com` (default) | Comma list. Staff outside it can't sign in or be invited. Empty only in local/testing |
+| `ADMIN_IP_ALLOWLIST` | office/VPN egress CIDRs, or empty | Applies to `/admin/*` and to `POST /auth/impersonation`. Blocked requests are audited once per hour per IP |
+| `ADMIN_SESSION_IDLE_MINUTES` / `ADMIN_SESSION_ABSOLUTE_HOURS` | 30 / 12 | Admin sessions only; merchant sessions keep their own limits |
+| `IMPERSONATION_MINUTES` | 15 | Capped at 15 in code |
+| `IMPERSONATION_TICKET_SECONDS` | 60 | Single-use ticket in the URL fragment; never logged or stored in plain text |
+
+### 11.2 Processes and schedule
+| Command | Schedule | Notes |
+|---|---|---|
+| `admin:close-impersonations` | scheduler, every 5 min, no overlap | Active sessions past `expires_at` → `ended` (`ended_by: expiry`) with the tenant audit row; unused tickets → `expired` |
+| `admin:check-suspensions` | scheduler, hourly, no overlap | Repairs a store whose suspension doesn't match its tenant (crash between the two writes). The tenant status wins; each fix logs a warning. Repeated warnings = investigate |
+
+### 11.3 First super admin (new environment)
+There is no sign-up for staff. The first one is granted from the console; everyone after is invited from **Team**.
+1. The person registers a normal account (merchant sign-up) with an `ADMIN_EMAIL_DOMAINS` address, or already has one.
+2. `php artisan platform:grant someone@storeplix.com super_admin --reason="initial super admin, ticket 123" --force`
+   (creates nothing: the user must exist; re-enables a disabled staff member).
+3. They sign in at `ADMIN_APP_URL`, enrol TOTP (QR or manual key) and store the 10 recovery codes.
+4. Invite the rest from **Team** (roles `super_admin`, `billing`, `support`, `read_only`). Keep at least two super
+   admins: the API refuses to remove or demote the last active one (409 `last_super_admin`).
+
+### 11.4 Break glass
+Every `platform:*` command writes an audit row with `actor_type: system` and the `--reason` (5–500 chars), and needs
+`--force` in production. Run them from a bastion shell, never from a merchant-facing host.
+- **Lost authenticator / used all recovery codes**: verify the person out of band (video call + a second super admin),
+  then `php artisan platform:reset-2fa {email} --reason="…"`. Clears TOTP and recovery codes and ends their admin
+  sessions; they enrol again at next sign-in. A super admin can do the same from Team without the console.
+- **Locked out** (5 wrong codes): wait 15 minutes; the lock clears on its own. Repeated locks on one account = treat as
+  an attack, reset 2FA and rotate the password.
+- **Revoke a staff member** (leaver, compromise): `php artisan platform:revoke {email} --reason="…"` (or Disable/Remove
+  in Team). Ends their admin sessions and any impersonation at its next request. Their merchant memberships, if any,
+  are untouched. On a suspected compromise also: check `/audit-log` filtered by that actor for the last 30 days.
+- **Kill a live impersonation**: Impersonations → Revoke (super admin). The merchant tab shows "Impersonation ended"
+  at its next request.
+
+### 11.5 Suspension procedure
+Suspend only with a reason code and a ticket reference; the shop owner sees "Your shop is suspended · Contact Store Plix
+support" and every storefront host answers the "temporarily unavailable" page (HTTP 503, `noindex`, `Retry-After`).
+1. Merchants → the shop → **Suspend**; choose the reason code, write the reason, type the shop name to confirm, choose
+   whether to notify the owner. Nothing is deleted.
+2. In-flight payments still settle: bKash/SSLCommerz callbacks and courier webhooks keep working for a suspended shop;
+   new carts and checkouts are refused.
+3. **Reactivate** restores the store's previous status (`draft` → Coming soon again, `active` → live). Storefront
+   caches are revalidated on both actions.
+4. If a shop looks half-suspended (dashboard blocked but storefront live, or the reverse), run
+   `php artisan admin:check-suspensions` and check the log line it writes.
+
+### 11.6 Impersonation (support)
+- Start from the shop (or "Impersonate shop" in the top bar) with a reason and an optional ticket ref; it opens the
+  merchant dashboard in a new tab with the amber frame and a countdown. Writes are refused (403
+  `impersonation_read_only`).
+- One impersonation replaces any merchant session in that browser profile. Use a separate browser profile for support
+  work if you are also a merchant.
+- Exit ends the session at once; otherwise it ends after 15 minutes. Start and end are on the shop's audit log and in
+  the merchant's Activity log as "Store Plix support".

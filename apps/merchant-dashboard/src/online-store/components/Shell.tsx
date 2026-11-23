@@ -2,6 +2,7 @@ import { Button, cn, Dialog, EmptyState, Spinner } from '@storeplix/ui';
 import { AlertTriangle, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
+import { ReadOnlyActions } from '../../impersonation/ReadOnlyActions';
 
 // V3 local component OS3/NavPill 2033:46029 inside the "OS3 / Section nav" track 2033:46088:
 // surface-subtle, radius 12, p 4, gap 2; pill px 14 py 7 radius 8; active = card + elevation; dividers after
@@ -66,7 +67,7 @@ export function OnlineStoreHeader({ title, description, actions, nav = true }: {
           <h1 className="text-heading-24 text-text-primary lg:text-[28px] lg:leading-9 lg:font-semibold lg:tracking-[-0.42px]">{title}</h1>
           <p className="text-body text-text-secondary lg:text-[15px] lg:leading-[22px]">{description}</p>
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <ReadOnlyActions className="flex shrink-0 items-center gap-2">{actions}</ReadOnlyActions>}
       </div>
       {nav && <SectionNav />}
     </div>

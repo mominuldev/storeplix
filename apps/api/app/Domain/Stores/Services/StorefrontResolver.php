@@ -8,7 +8,7 @@ use Illuminate\Contracts\Cache\Factory as CacheFactory;
 /**
  * Central hostname -> (tenant, store) resolution for the public storefront.
  *
- * Only ACTIVE domains of non-suspended stores resolve. Lookups are cached under the
+ * Only ACTIVE domains resolve; a suspended store resolves with `suspended = true` (PHASE-8-1 §4.1). Lookups are cached under the
  * tenant-neutral key "domain:{host}" (positive and short negative caching); the
  * StoreDomainObserver / StoreObserver invalidate entries whenever domains or store status change.
  */
@@ -43,7 +43,7 @@ class StorefrontResolver
         }
 
         if (is_array($cached)) {
-            return new ResolvedStorefront($host, $cached['tenant_id'], $cached['store_id']);
+            return new ResolvedStorefront($host, $cached['tenant_id'], $cached['store_id'], (bool) ($cached['suspended'] ?? false));
         }
 
         $resolved = $this->lookup($host);
@@ -54,7 +54,9 @@ class StorefrontResolver
             return null;
         }
 
-        $store->put($key, ['tenant_id' => $resolved->tenantId, 'store_id' => $resolved->storeId], (int) config('storeplix.domain_cache_ttl', 3600));
+        // The flag is cached only when set, so a live store's entry keeps its Phase 2 shape.
+        $entry = ['tenant_id' => $resolved->tenantId, 'store_id' => $resolved->storeId] + ($resolved->suspended ? ['suspended' => true] : []);
+        $store->put($key, $entry, (int) config('storeplix.domain_cache_ttl', 3600));
 
         return $resolved;
     }
@@ -73,6 +75,6 @@ class StorefrontResolver
         // Pre-tenant path B1: sp_resolve_host() with RLS on, an explicit scope opt-out otherwise (ids only).
         $ids = $this->preTenant->resolveHost($host);
 
-        return $ids === null ? null : new ResolvedStorefront($host, $ids['tenant_id'], $ids['store_id']);
+        return $ids === null ? null : new ResolvedStorefront($host, $ids['tenant_id'], $ids['store_id'], $ids['suspended']);
     }
 }

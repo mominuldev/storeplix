@@ -1398,6 +1398,15 @@ paths:
         schema:
           $ref: '#/components/schemas/Ulid'
       - in: query
+        name: filter[actor_type]
+        schema:
+          type: string
+          enum:
+          - user
+          - system
+          - platform_user
+        description: Phase 8.1 (P8-QA-1). `platform_user` = Store Plix support actions (actor shown without id/name).
+      - in: query
         name: filter[subject_type]
         schema:
           type: string
@@ -11126,6 +11135,8 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
     delete:
@@ -21724,7 +21735,10 @@ components:
         status:
           $ref: '#/components/schemas/AdminTenantStatus'
         store:
-          type: object
+          type:
+          - object
+          - 'null'
+          description: Null while the merchant has not created their shop yet (onboarding).
           required:
           - id
           - name

@@ -10,6 +10,7 @@ use App\Domain\Customers\Models\Customer;
 use App\Domain\DataTransfer\Models\DataExport;
 use App\Domain\DataTransfer\Models\DataImport;
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
@@ -66,6 +67,9 @@ class AuditLogger
      * @param  array<string, mixed>  $meta
      * @param  bool  $system  true for scheduler/queue actions with no human actor
      * @param  string|false|null  $tenantId  null = current context; false = force account-level (tenant_id null)
+     * @param  bool|null  $platform  PHASE-8-1 P8-8: true = the actor acts as Storeplix staff (`actor_type: platform_user`,
+     *                               `meta.platform_role`); null = inferred: the actor is the signed-in user on an
+     *                               `admin` or `impersonation` session surface
      */
     public function log(
         string $action,
@@ -74,14 +78,21 @@ class AuditLogger
         ?Authenticatable $actor = null,
         string|false|null $tenantId = null,
         bool $system = false,
+        ?bool $platform = null,
     ): AuditLog {
+        $requestUser = $system ? null : $this->request?->user();
         if (! $system) {
-            $actor ??= $this->request?->user();
+            $actor ??= $requestUser;
+        }
+
+        $platform = $actor !== null && ($platform ?? $this->onPlatformSurface($actor, $requestUser));
+        if ($platform) {
+            $meta['platform_role'] = $actor instanceof User ? $actor->platform_role : null;
         }
 
         return AuditLog::query()->create([
             'tenant_id' => $tenantId === false ? null : ($tenantId ?? $this->context->id()),
-            'actor_type' => $actor ? 'user' : 'system',
+            'actor_type' => $actor ? ($platform ? 'platform_user' : 'user') : 'system',
             'actor_id' => $actor?->getAuthIdentifier(),
             'action' => $action,
             'subject_type' => $subject ? (self::SUBJECT_TYPES[$subject::class] ?? Str::snake(class_basename($subject))) : null,
@@ -90,5 +101,15 @@ class AuditLogger
             'user_agent' => $system ? null : (Str::limit((string) $this->request?->userAgent(), 252, '...') ?: null),
             'meta' => $meta ?: null,
         ]);
+    }
+
+    private function onPlatformSurface(Authenticatable $actor, ?Authenticatable $requestUser): bool
+    {
+        if ($this->request === null || $requestUser === null || ! $this->request->hasSession()
+            || $requestUser->getAuthIdentifier() !== $actor->getAuthIdentifier()) {
+            return false;
+        }
+
+        return in_array(SessionSurface::of($this->request), [SessionSurface::ADMIN, SessionSurface::IMPERSONATION], true);
     }
 }

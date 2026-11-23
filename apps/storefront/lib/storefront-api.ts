@@ -9,6 +9,7 @@ import { normalizeHost } from './host';
 import { previewClientIp } from './preview-client-ip';
 import { parseRedirectHost } from './primary-host';
 import { sanitizeImageUrl } from './sanitize';
+import { isSuspendedConfigBody } from './suspended-config';
 import {
   isPageSlug,
   parseMediaMap,
@@ -92,9 +93,15 @@ export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'co
   theme?: unknown;
 };
 
+/**
+ * `/storefront/config` answer (openapi 1.9.0 `StorefrontConfig | StorefrontSuspended`). `suspended` (P8-12): the shop
+ * is suspended by Store Plix; render only the bare "temporarily unavailable" page, never its name, theme or contact.
+ */
 export type StorefrontConfigResult =
   | { status: 'found'; config: RawStorefrontConfig }
+  | { status: 'suspended' }
   | { status: 'not_found' };
+
 
 export class StorefrontApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -129,6 +136,7 @@ async function fetchStorefrontConfig(host: string, previewToken: string | null):
   if (!res.ok) throw new StorefrontApiError(`Storefront API responded ${res.status}`, res.status);
 
   const body: unknown = await res.json().catch(() => null);
+  if (isSuspendedConfigBody(body)) return { status: 'suspended' };
   const parsed = z.object({ data: StorefrontConfigSchema }).safeParse(body);
   if (!parsed.success) throw new StorefrontApiError('Storefront API returned an invalid config payload');
   return { status: 'found', config: finalizeConfig(parsed.data.data, host, previewToken) };
