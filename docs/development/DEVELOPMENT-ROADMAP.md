@@ -196,11 +196,15 @@ Figma (`5:189`) also designs 8.2 metrics (MRR, GMV, health), risk, support and s
 `feat/phase-8-2-analytics`; openapi 1.10.0; ADR 0016; Q103–Q112 defaults accepted): nightly snapshot tables, dashboard KPIs,
 Revenue reports `39:12705`, merchant MRR/GMV/last-active. Deferred from 8.2: health score (Q105), Integration health and
 incidents (Q106, → 9.1), analytics export (Q109).
+**8.3** contract: `docs/development/PHASE-8-3-CONTRACT.md` (accepted 2026-11-23; branch `feat/phase-8-3-roles`;
+openapi 1.11.0; ADR 0017; Q113–Q125 defaults accepted): granular permission catalogue, system + custom roles,
+`perm:` route enforcement with an O/A/S parity test, Staff & roles UI (`60:15365`, `90:26915`, `90:26879`). Deferred
+from 8.3: warehouse access per role (Q119), per-person overrides (Q120), invite by phone (Q121), ownership transfer (Q123).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
 | 8.2 | Platform analytics (GMV, MRR, churn): dashboard `15:123`, Revenue reports `39:12705`, merchant metrics | API/WEB | Nightly aggregates; PHASE-8-2 §14 |
-| 8.3 | Custom roles & permissions (89:26676) | API/WEB | Granular permissions enforced |
+| 8.3 | Custom roles & permissions (89:26676): 23 code-defined keys, system + custom roles, Growth-gated, non-delegation | API/WEB | Granular permissions enforced; PHASE-8-3 §13 |
 | 8.4 | Developer API keys + outbound webhooks (144:40725) | API/WEB | HMAC signatures; retries |
 | 8.5 | Marketing campaigns SMS/email (61:12479) | API/WEB | Opt-out respected |
 | 8.6 | Automations (140:30335) | API/WEB | Trigger → action runs logged |

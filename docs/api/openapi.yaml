@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.10.0
+  version: 1.11.1
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -47,6 +47,18 @@ info:
     days). AdminTenantSummary gains last_active_at and metrics; GET /admin/tenants gains sort values -mrr, mrr, -gmv_30d,
     -orders_30d, -last_active_at, last_active_at and meta.metrics_as_of. PlatformPermission gains view_analytics. No new
     error codes. Testing-only POST /dev/analytics/aggregate is not part of this spec.
+    1.11.1 (2026-11-24, Phase 8.3 security fixes): DELETE /roles/{role} requires `revision` (stale → 409
+    revision_conflict); imports also need the keys of what they write (products.edit + inventory.adjust, costs.view
+    when a row sets cost; customers.edit) → 403 forbidden; product exports fill cost_price only for a requester with
+    costs.view; accepting a custom-role invitation without custom_roles → 402 feature_not_in_plan; audit
+    filter[subject_type] accepts `role`.
+    1.11.0 (2026-11-23, Phase 8.3, PHASE-8-3-CONTRACT.md, ADR 0017): custom roles and granular permissions. New
+    GET /permissions, GET|POST /roles, GET|PATCH|DELETE /roles/{role} (staff.manage; writes need the custom_roles plan
+    feature). Every merchant tenant route now requires one of 23 PermissionKey values (contract §3); owner/admin/staff
+    keep identical access as system roles. TenantMembership gains role_id, role_name, permissions; StaffMember gains
+    role_id, role_name; InvitationPreview and AdminTenantMember gain role_name; TenantRole gains `custom` (clients must
+    tolerate it). POST /staff/invitations and PATCH /staff/{member} accept role_id (legacy role still accepted). New
+    error codes permission_not_held, cannot_edit_own_role (403), system_role_locked, role_in_use, role_limit_reached (409).
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -775,7 +787,8 @@ paths:
       - staff
       summary: List staff
       operationId: listStaff
-      description: Owner/admin. Members (owner first) then pending invitations. Not paginated.
+      description: Needs staff.manage. Members (owner first) then pending invitations. Not paginated. Phase 8.3 adds
+        role_id and role_name to every item.
       security:
       - bearerAuth: []
       parameters:
@@ -809,7 +822,9 @@ paths:
       - staff
       summary: Update staff role
       operationId: updateStaffRole
-      description: 'Owner/admin. Assignable roles: admin, staff.'
+      description: 'Needs staff.manage. Body `role_id` (any role of the tenant except the owner role) or legacy `role`
+        (admin, staff). The target role and the member''s current role must only hold permissions the actor holds
+        (`permission_not_held`); a custom role needs the custom_roles feature (402). PHASE-8-3 §4.'
       security:
       - bearerAuth: []
       parameters:
@@ -843,13 +858,19 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
-          description: '`tenant_forbidden`, `forbidden`, or `cannot_change_own_role`'
+          description: '`tenant_forbidden`, `forbidden`, `cannot_change_own_role` or `permission_not_held`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           $ref: '#/components/responses/NotFound'
+        '402':
+          description: '`feature_not_in_plan` (custom role without custom_roles)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '409':
           description: '`last_owner` (target is the owner)'
           content:
@@ -863,7 +884,8 @@ paths:
       - staff
       summary: Remove staff
       operationId: removeStaff
-      description: Owner/admin; any role may remove itself (leave).
+      description: Needs staff.manage (any member may remove itself = leave). Removing someone whose role holds a
+        permission the actor lacks → 403 `permission_not_held`.
       security:
       - bearerAuth: []
       parameters:
@@ -897,7 +919,9 @@ paths:
       - staff
       summary: Invite staff
       operationId: inviteStaff
-      description: Owner/admin. Emails a 7-day invite link.
+      description: Needs staff.manage. Emails a 7-day invite link. Body `role_id` or legacy `role`; the role must only
+        hold permissions the actor holds (403 `permission_not_held`); owner role → 422; custom role needs custom_roles
+        (402 `feature_not_in_plan`).
       security:
       - bearerAuth: []
       parameters:
@@ -925,7 +949,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '402':
-          description: '`plan_limit_reached` (details.staff_seats)'
+          description: '`plan_limit_reached` (details.staff_seats) or `feature_not_in_plan` (custom role)'
           content:
             application/json:
               schema:
@@ -1019,6 +1043,273 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /permissions:
+    get:
+      tags:
+      - staff
+      summary: Permission catalogue
+      operationId: listPermissions
+      description: Needs staff.manage. The code-defined catalogue (PHASE-8-3 §2.1) grouped for the role editor, including
+        the owner-only billing.manage with grantable false.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PermissionGroup'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /roles:
+    get:
+      tags:
+      - staff
+      summary: List roles
+      operationId: listRoles
+      description: Needs staff.manage. System roles first (owner, admin, staff), then custom roles by name. Works on every
+        plan.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
+                  meta:
+                    $ref: '#/components/schemas/RolesMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+    post:
+      tags:
+      - staff
+      summary: Create custom role
+      operationId: createRole
+      description: Needs staff.manage and the custom_roles feature. Every permission must be grantable, held by the actor
+        and have its prerequisites in the set. At most 20 custom roles. Audited as role.created.
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RoleDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_forbidden`, `forbidden` or `permission_not_held` (details.permissions = keys the actor lacks)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`role_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /roles/{role}:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - in: path
+      name: role
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: roles.id; another tenant's → 404.
+    get:
+      tags:
+      - staff
+      summary: Get role
+      operationId: getRole
+      description: Needs staff.manage. Role with its members and open invitations.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Role
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RoleDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - staff
+      summary: Update custom role
+      operationId: updateRole
+      description: Needs staff.manage and custom_roles. System roles → 409 system_role_locked; the actor's own role → 403
+        cannot_edit_own_role; the role's current and new permissions must be held by the actor. `permissions` replaces
+        the set. Each change increments revision. Audited as role.updated. Applies from each member's next request.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RoleDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_forbidden`, `forbidden`, `cannot_edit_own_role` or `permission_not_held`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`system_role_locked` or `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - staff
+      summary: Delete custom role
+      operationId: deleteRole
+      description: Needs staff.manage (custom_roles not required). A role with members or open invitations needs
+        `reassign_to`; they move to that role and the role is deleted in one transaction (staff.role_changed per member,
+        role.deleted). Same delegation rules as update; reassigning to a custom role needs custom_roles.
+        1.11.1 (SEC-L3) — `revision` is required like PATCH; the tenant and both role rows are locked and N2 / N5 are
+        re-checked on them; a stale revision → 409 `revision_conflict`.
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: query
+        name: revision
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: The role's `revision` as last read (1.11.1).
+      - in: query
+        name: reassign_to
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: Role (not the owner role, not this role) that receives the members and open invitations.
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (reassign_to is a custom role)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_forbidden`, `forbidden`, `cannot_edit_own_role` or `permission_not_held`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`system_role_locked`, `revision_conflict` (stale `revision`, 1.11.1), or `role_in_use` without
+            reassign_to (details.members, details.invitations = ids)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /invitations/{token}:
     get:
       tags:
@@ -1097,7 +1388,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '402':
-          description: '`plan_limit_reached`'
+          description: '`plan_limit_reached`, or `feature_not_in_plan` (details.upgrade_plan) when the invitation''s role
+            is a custom role and the shop no longer has `custom_roles` (N9 on accept, 1.11.1)'
           content:
             application/json:
               schema:
@@ -1427,6 +1719,8 @@ paths:
           - store_theme
           - store_page
           - store_navigation
+          - role
+        description: '1.11.1: `role` (PHASE-8-3 §6.4 `role.created|updated|deleted`).'
       - in: query
         name: filter[subject_id]
         schema:
@@ -2932,7 +3226,9 @@ paths:
       summary: Upload CSV for import
       operationId: createImport
       description: Owner/admin only (`BulkData`). CSV only, ≤ 10 MB, ≤ 5 000 rows, ≤ 50 columns. Archives/binaries/non-UTF-8
-        → 422 `unsupported_file`.
+        → 422 `unsupported_file`. 1.11.1 (PHASE-8-3 SEC-M2) — `data.import` plus the keys of what the file writes, else
+        403 `forbidden`. `type=products` needs `products.edit` and `inventory.adjust`; `type=customers` needs
+        `customers.edit`.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3058,7 +3354,8 @@ paths:
       - data
       summary: Validate import (dry run)
       operationId: validateImport
-      description: Owner/admin only (`BulkData`). Queued; poll GET until `validated`.
+      description: Owner/admin only (`BulkData`). Queued; poll GET until `validated`. 1.11.1 — also the import type's
+        keys (see createImport), else 403 `forbidden`.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3199,7 +3496,8 @@ paths:
       - data
       summary: Run import
       operationId: runImport
-      description: Owner/admin only (`BulkData`). Only from `validated`. Queued.
+      description: Owner/admin only (`BulkData`). Only from `validated`. Queued. 1.11.1 — also the import type's keys (see
+        createImport), and a product file in which any row sets `cost_price` needs `costs.view`; else 403 `forbidden`.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3249,6 +3547,8 @@ paths:
       summary: Start export
       operationId: createExport
       description: Owner/admin only (`BulkData`). Queued CSV (same columns as import). Customer exports are audited.
+        1.11.1 (SEC-M1) — a product export fills `cost_price` only when the requester held `costs.view` when it was
+        created (recorded on the export); otherwise the column is empty.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -12497,12 +12797,15 @@ components:
           $ref: '#/components/schemas/SocialLinks'
     TenantRole:
       type: string
+      description: Kind of the member's role. `custom` (Phase 8.3) = a custom role; see role_id / role_name.
       enum:
       - owner
       - admin
       - staff
+      - custom
     AssignableRole:
       type: string
+      description: Legacy input naming a system role; prefer role_id (Phase 8.3).
       enum:
       - admin
       - staff
@@ -12512,6 +12815,9 @@ components:
       - id
       - name
       - role
+      - role_id
+      - role_name
+      - permissions
       properties:
         id:
           $ref: '#/components/schemas/Ulid'
@@ -12519,6 +12825,16 @@ components:
           type: string
         role:
           $ref: '#/components/schemas/TenantRole'
+        role_id:
+          $ref: '#/components/schemas/Ulid'
+        role_name:
+          type: string
+        permissions:
+          type: array
+          description: Resolved permission set in catalogue order (owner and impersonation = all keys). UI hint only; the
+            API enforces.
+          items:
+            $ref: '#/components/schemas/PermissionKey'
     MessageResponse:
       type: object
       required:
@@ -12640,6 +12956,8 @@ components:
       - email
       - phone
       - role
+      - role_id
+      - role_name
       - status
       - is_you
       - invited_by
@@ -12671,6 +12989,10 @@ components:
           - 'null'
         role:
           $ref: '#/components/schemas/TenantRole'
+        role_id:
+          $ref: '#/components/schemas/Ulid'
+        role_name:
+          type: string
         status:
           type: string
           enum:
@@ -12718,9 +13040,9 @@ components:
           - 'null'
     InviteStaffInput:
       type: object
+      description: Exactly one of role_id (preferred) or legacy role.
       required:
       - email
-      - role
       properties:
         email:
           type: string
@@ -12731,15 +13053,28 @@ components:
           - string
           - 'null'
           maxLength: 120
+        role_id:
+          $ref: '#/components/schemas/Ulid'
         role:
           $ref: '#/components/schemas/AssignableRole'
+      oneOf:
+      - required:
+        - role_id
+      - required:
+        - role
     UpdateStaffRoleInput:
       type: object
-      required:
-      - role
+      description: Exactly one of role_id (preferred) or legacy role.
       properties:
+        role_id:
+          $ref: '#/components/schemas/Ulid'
         role:
           $ref: '#/components/schemas/AssignableRole'
+      oneOf:
+      - required:
+        - role_id
+      - required:
+        - role
     InvitationPreview:
       type: object
       required:
@@ -12747,6 +13082,7 @@ components:
       - store_name
       - email
       - role
+      - role_name
       - invited_by_name
       - expires_at
       - user_exists
@@ -12761,7 +13097,13 @@ components:
           type: string
           format: email
         role:
-          $ref: '#/components/schemas/AssignableRole'
+          type: string
+          enum:
+          - admin
+          - staff
+          - custom
+        role_name:
+          type: string
         invited_by_name:
           type: string
         expires_at:
@@ -12769,6 +13111,278 @@ components:
           format: date-time
         user_exists:
           type: boolean
+    PermissionKey:
+      type: string
+      description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable.
+      enum:
+      - orders.view
+      - orders.process
+      - orders.refund
+      - shipments.manage
+      - shipments.cancel
+      - products.edit
+      - products.delete
+      - inventory.adjust
+      - customers.view
+      - customers.edit
+      - customers.delete
+      - costs.view
+      - reports.view
+      - data.export
+      - data.import
+      - marketing.manage
+      - settings.manage
+      - integrations.manage
+      - domains.manage
+      - staff.manage
+      - audit.view
+      - billing.view
+      - billing.manage
+    PermissionDefinition:
+      type: object
+      required:
+      - key
+      - label
+      - description
+      - requires
+      - sensitive
+      - grantable
+      properties:
+        key:
+          $ref: '#/components/schemas/PermissionKey'
+        label:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        requires:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionKey'
+        sensitive:
+          type: boolean
+        grantable:
+          type: boolean
+    PermissionGroup:
+      type: object
+      required:
+      - key
+      - label
+      - permissions
+      properties:
+        key:
+          type: string
+          enum:
+          - orders
+          - shipping
+          - products
+          - customers
+          - money
+          - store
+          - team
+        label:
+          type: string
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionDefinition'
+    Role:
+      type: object
+      required:
+      - id
+      - key
+      - name
+      - description
+      - is_system
+      - permissions
+      - members_count
+      - invitations_count
+      - members_preview
+      - editable
+      - revision
+      - created_at
+      - updated_at
+      - updated_by
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        key:
+          description: System role key; null for custom roles.
+          oneOf:
+          - type: string
+            enum:
+            - owner
+            - admin
+            - staff
+          - type: 'null'
+        name:
+          type: string
+          maxLength: 40
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        is_system:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionKey'
+        members_count:
+          type: integer
+        invitations_count:
+          type: integer
+          description: Open (not accepted, not revoked) invitations.
+        members_preview:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+        editable:
+          type: boolean
+          description: False for system roles, the actor's own role, roles holding a permission the actor lacks, or
+            without custom_roles.
+        revision:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+    RoleMember:
+      type: object
+      required:
+      - id
+      - kind
+      - user_id
+      - name
+      - email
+      - phone
+      - status
+      - is_you
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          type: string
+          enum:
+          - member
+          - invitation
+        user_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          enum:
+          - active
+          - invited
+          - expired
+        is_you:
+          type: boolean
+    RoleDetail:
+      allOf:
+      - $ref: '#/components/schemas/Role'
+      - type: object
+        required:
+        - members
+        properties:
+          members:
+            type: array
+            items:
+              $ref: '#/components/schemas/RoleMember'
+    RolesMeta:
+      type: object
+      required:
+      - custom_roles_used
+      - custom_roles_limit
+      - custom_roles_enabled
+      properties:
+        custom_roles_used:
+          type: integer
+        custom_roles_limit:
+          type: integer
+          example: 20
+        custom_roles_enabled:
+          type: boolean
+          description: The tenant's plan has the custom_roles feature.
+    CreateRoleInput:
+      type: object
+      required:
+      - name
+      - permissions
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: Unique per shop, case-insensitive, including the system names Owner, Manager, Staff.
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        permissions:
+          type: array
+          uniqueItems: true
+          maxItems: 22
+          items:
+            $ref: '#/components/schemas/PermissionKey'
+    UpdateRoleInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        permissions:
+          type: array
+          uniqueItems: true
+          maxItems: 22
+          items:
+            $ref: '#/components/schemas/PermissionKey'
     AcceptInvitationInput:
       type: object
       required:
@@ -22763,6 +23377,7 @@ components:
       - email
       - phone
       - role
+      - role_name
       - status
       - joined_at
       properties:
@@ -22781,11 +23396,9 @@ components:
           - string
           - 'null'
         role:
+          $ref: '#/components/schemas/TenantRole'
+        role_name:
           type: string
-          enum:
-          - owner
-          - admin
-          - staff
         status:
           type: string
           enum:

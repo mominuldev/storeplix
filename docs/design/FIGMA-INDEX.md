@@ -215,3 +215,12 @@ everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352`.
 | Plans & pricing | `35:1193` | Not built (Q98) |
 | Components | StatusPill `31:6633`, Checkbox `31:6638`, MerchantRow `31:6639`, InvoiceRow `31:6672`, PlanCard `31:6696`, AuditLogRow `39:16461` | Reuse |
 | Later | Revenue `39:12705`, Integration health `39:13048`, Incident `43:12377`, Risk `39:13391` / `43:13011`, Support `39:15432`, Announcements `39:15775`, Themes `39:11676` / `43:11825`, Settings `39:12362`, `45:5681`, `46:6794`, `46:7881`, `47:7183`, `48:7165` | 8.2+ |
+
+## Phase 8.3 — custom roles & permissions (page 2:4, section `89:26676`; PHASE-8-3-CONTRACT §7)
+The section has three 1440-wide desktop frames and **no** mobile frames (Q125); states from `148:34032`.
+
+| Screen | Frame | 8.3 |
+|---|---|---|
+| Staff `/staff` | `60:15363` (Main `60:15365`) | Build: Team table with role names, **Roles** card, editable **Roles & permissions** matrix (rows = permission keys by group). Not built: Online now, Actions today, Staff sign-in security, Add seats |
+| Invite staff modal | `90:26504` (modal `90:26879`) | Build role radio list (Manager, Staff, custom roles). Not built: phone/SMS invite (Q121), Warehouse access (Q119), "Permissions for this person" (Q120) |
+| Role detail / new role `/staff/roles/:id`, `/staff/roles/new` | `90:26913` (Main `90:26915`) | Build: role details, People with this role + Assign, permission cards with toggles, Sensitive block, Duplicate role, Save role, Unsaved changes bar; + Delete role (composed). Not built: Warehouse access (Q119), "Change price on an order" and "Delete orders" rows (Q115) |
