@@ -36,10 +36,10 @@ export const unauthenticated = () =>
 
 // §2.1 matrix (mirrors App\Domain\Admin\Authorization\PlatformRole).
 export const grants: Record<PlatformRole, PlatformPermission[]> = {
-  super_admin: ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team'],
-  billing: ['view_merchants', 'manage_billing'],
+  super_admin: ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics'],
+  billing: ['view_merchants', 'manage_billing', 'view_analytics'],
   support: ['view_merchants', 'impersonate', 'manage_domains'],
-  read_only: ['view_merchants'],
+  read_only: ['view_merchants', 'view_analytics'],
 };
 
 export function adminSession(role: PlatformRole = 'super_admin', extra: Partial<AdminSession['user']> = {}): AdminSession {
@@ -204,6 +204,8 @@ export function tenant(overrides: Partial<AdminTenant> = {}): AdminTenant {
     trial_ends_at: null,
     current_period_end: '2026-12-17T04:00:00Z',
     created_at: '2025-03-14T04:00:00Z',
+    last_active_at: null,
+    metrics: null,
     suspension: null,
     subscription: null,
     usage: [{ key: 'orders_per_month', used: 40, limit: 100 }],

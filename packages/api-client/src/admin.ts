@@ -2,6 +2,7 @@
 // X-Tenant-Id is ever sent (the admin API never reads it). Writes take a `reason` (5–500 chars, stored in the audit log).
 import type {
   AcceptPlatformInvitationInput,
+  AdminAnalyticsOverview,
   AdminAuditEntry,
   AdminChangePlanInput,
   AdminDomain,
@@ -15,15 +16,20 @@ import type {
   AdminOverview,
   AdminQuoteInput,
   AdminReactivateInput,
+  AdminRevenueReport,
   AdminSearchResult,
   AdminSession,
   AdminSuspendInput,
   AdminTenant,
   AdminTenantCounts,
   AdminTenantMember,
+  AdminTenantMetrics,
+  AdminTenantSort,
   AdminTenantSummary,
   AdminTenantTab,
   AdminTotpInput,
+  AnalyticsMeta,
+  AnalyticsQuery,
   ApiSuccess,
   AuditActorType,
   BillingInvoiceStatus,
@@ -62,11 +68,19 @@ export interface AdminTenantFilters {
   /** YYYY-MM-DD */
   created_from?: string;
   created_to?: string;
-  sort?: '-created_at' | 'created_at' | 'name' | '-name' | 'current_period_end' | '-current_period_end';
+  /** Phase 8.2 adds the metric sorts (`-mrr`, `-gmv_30d`, `-orders_30d`, `±last_active_at`; nulls last). */
+  sort?: AdminTenantSort;
   page?: number;
   per_page?: number;
 }
-export interface AdminTenantListMeta extends PaginationMeta { counts: AdminTenantCounts }
+export interface AdminTenantListMeta extends PaginationMeta {
+  counts: AdminTenantCounts;
+  /** Phase 8.2: latest computed analytics day (null before the first nightly run). */
+  metrics_as_of?: string | null;
+}
+
+/** Phase 8.2 analytics responses keep `meta` (as_of, computed_at, data_starts_on, resolved range). */
+export interface AnalyticsResult<T> { data: T; meta: AnalyticsMeta }
 
 export interface AdminInvoiceFilters {
   status?: BillingInvoiceStatus;
@@ -111,6 +125,17 @@ export function adminTenantQuery(f: AdminTenantFilters = {}): Query {
     sort: f.sort,
     page: f.page,
     per_page: f.per_page,
+  };
+}
+
+/** PHASE-8-2 §6: `from`/`to` are only sent for `range=custom`; `granularity` only when set. */
+export function analyticsQuery(q: AnalyticsQuery = {}): Query {
+  const custom = q.range === 'custom';
+  return {
+    range: q.range,
+    from: custom ? blank(q.from) : undefined,
+    to: custom ? blank(q.to) : undefined,
+    granularity: q.granularity,
   };
 }
 
@@ -174,6 +199,10 @@ export function createAdminApi(t: AdminTransport) {
     const env = await t.requestEnvelope<T[]>(path, { query, noTenant: true });
     return { data: env?.data ?? [], meta: (env?.meta as M | undefined) ?? fallback };
   }
+  async function analytics<T>(path: string, query?: Query): Promise<AnalyticsResult<T>> {
+    const env = await t.requestEnvelope<T>(path, { query, noTenant: true });
+    return { data: env!.data, meta: env!.meta as unknown as AnalyticsMeta };
+  }
   const tenant = (id: string) => `/admin/tenants/${enc(id)}`;
   const invoice = (id: string) => `/admin/invoices/${enc(id)}`;
   const domain = (id: string) => `/admin/domains/${enc(id)}`;
@@ -221,6 +250,12 @@ export function createAdminApi(t: AdminTransport) {
     },
 
     overview: () => get<AdminOverview>('/admin/overview'),
+    /** Phase 8.2 (`view_analytics`): dashboard KPIs, MRR by plan and plan mix. Default range `30d`. */
+    analyticsOverview: (q: AnalyticsQuery = {}) => analytics<AdminAnalyticsOverview>('/admin/analytics/overview', analyticsQuery(q)),
+    /** Phase 8.2 (`view_analytics`): revenue report. Default range `12m`. */
+    revenueReport: (q: AnalyticsQuery = {}) => analytics<AdminRevenueReport>('/admin/analytics/revenue', analyticsQuery(q)),
+    /** Phase 8.2 (`view_merchants`): one shop's 30-day metrics and 12 monthly GMV bars. 404 for an unknown tenant. */
+    tenantMetrics: (id: string) => analytics<AdminTenantMetrics>(`/admin/tenants/${enc(id)}/metrics`),
     /** `q` ≥ 2 chars; up to 5 tenants, 5 domains, 5 invoices. */
     search: (q: string, opts?: Pick<RequestOptions, 'signal'>) =>
       t.request<AdminSearchResult>('/admin/search', { query: { q: q.trim() }, noTenant: true, signal: opts?.signal }),

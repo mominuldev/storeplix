@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.9.0
+  version: 1.10.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -41,6 +41,12 @@ info:
     platform_user (shown as "Store Plix support", id null). /storefront/config may answer StorefrontSuspended. New error codes
     impersonation_read_only (403), impersonation_ended (401), invalid_totp (422), last_super_admin, staff_self_action (409).
     Every /admin/* route needs an admin-surface session; merchant routes refuse it (403 forbidden).
+    1.10.0 (2026-11-23, Phase 8.2, PHASE-8-2-CONTRACT.md): additive only. GET /admin/analytics/overview and
+    GET /admin/analytics/revenue (new platform permission view_analytics: super_admin, billing, read_only) and
+    GET /admin/tenants/{tenant}/metrics (view_merchants), all read from nightly snapshot tables (as of meta.as_of, Dhaka
+    days). AdminTenantSummary gains last_active_at and metrics; GET /admin/tenants gains sort values -mrr, mrr, -gmv_30d,
+    -orders_30d, -last_active_at, last_active_at and meta.metrics_as_of. PlatformPermission gains view_analytics. No new
+    error codes. Testing-only POST /dev/analytics/aggregate is not part of this spec.
     Envelope: success `{data, meta?}`; error `{error:{code,message,details?}}`. IDs are ULIDs. snake_case JSON.
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
@@ -9416,6 +9422,86 @@ paths:
           $ref: '#/components/responses/AdminForbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /admin/analytics/overview:
+    get:
+      tags:
+      - admin
+      summary: Platform analytics for the dashboard
+      operationId: getAdminAnalyticsOverview
+      description: |
+        PHASE-8-2 §6. KPI row, MRR by plan series and plan mix from the nightly snapshot tables (as of `meta.as_of`,
+        the latest computed Dhaka day). No data yet → 200 with null metrics. Platform permission `view_analytics`
+        (PHASE-8-2 §2.1).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AnalyticsRangeParam'
+      - $ref: '#/components/parameters/AnalyticsFrom'
+      - $ref: '#/components/parameters/AnalyticsTo'
+      - $ref: '#/components/parameters/AnalyticsGranularityParam'
+      responses:
+        '200':
+          description: Overview metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminAnalyticsOverview'
+                  meta:
+                    $ref: '#/components/schemas/AnalyticsMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/analytics/revenue:
+    get:
+      tags:
+      - admin
+      summary: Revenue report
+      operationId: getAdminRevenueReport
+      description: |
+        PHASE-8-2 §6. MRR/ARR/ARPA/LTV, MRR movement, cohort retention (last 12 first-paid cohorts, independent of the
+        range), revenue by plan, trial funnel and top paying merchants. Default range `12m`. Platform permission
+        `view_analytics`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AnalyticsRangeParam'
+      - $ref: '#/components/parameters/AnalyticsFrom'
+      - $ref: '#/components/parameters/AnalyticsTo'
+      - $ref: '#/components/parameters/AnalyticsGranularityParam'
+      responses:
+        '200':
+          description: Revenue report
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminRevenueReport'
+                  meta:
+                    $ref: '#/components/schemas/AnalyticsMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /admin/search:
     get:
       tags:
@@ -9513,6 +9599,13 @@ paths:
           - -name
           - current_period_end
           - -current_period_end
+          - -mrr
+          - mrr
+          - -gmv_30d
+          - -orders_30d
+          - -last_active_at
+          - last_active_at
+        description: Metric sorts (PHASE-8-2) use the snapshot of `meta.metrics_as_of`; nulls last.
       responses:
         '200':
           description: Merchants
@@ -9534,9 +9627,16 @@ paths:
                     - type: object
                       required:
                       - counts
+                      - metrics_as_of
                       properties:
                         counts:
                           $ref: '#/components/schemas/AdminTenantCounts'
+                        metrics_as_of:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: PHASE-8-2; latest computed analytics day.
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -9566,6 +9666,43 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/AdminTenant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/metrics:
+    get:
+      tags:
+      - admin
+      summary: One merchant's metrics
+      operationId: getAdminTenantMetrics
+      description: |
+        PHASE-8-2 §6. MRR, orders and GMV over the 30 days ending `meta.as_of` (and the 30 days before), month-to-date
+        GMV, 12 monthly GMV bars (snapshots) and paid to Storeplix in the last 12 months (live). Platform permission
+        `view_merchants`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/AdminTenantPath'
+      responses:
+        '200':
+          description: Merchant metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminTenantMetrics'
+                  meta:
+                    $ref: '#/components/schemas/AnalyticsMeta'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -11484,6 +11621,32 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: data_exports.id of this store, else 404 `not_found`.
+    AnalyticsRangeParam:
+      in: query
+      name: range
+      description: PHASE-8-2 P82-17. Default `30d` (overview) or `12m` (revenue).
+      schema:
+        $ref: '#/components/schemas/AnalyticsRange'
+    AnalyticsFrom:
+      in: query
+      name: from
+      description: Dhaka date; required iff `range=custom`. `from ≥ 2024-01-01`, at most 731 days before `to`.
+      schema:
+        type: string
+        format: date
+    AnalyticsTo:
+      in: query
+      name: to
+      description: Dhaka date; required iff `range=custom`; clamped to `as_of`.
+      schema:
+        type: string
+        format: date
+    AnalyticsGranularityParam:
+      in: query
+      name: granularity
+      description: Overrides the default bucket size (caps day ≤ 92, week ≤ 106, month ≤ 25 buckets; over → 422).
+      schema:
+        $ref: '#/components/schemas/AnalyticsGranularity'
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -21446,6 +21609,7 @@ components:
       - manage_domains
       - suspend
       - manage_team
+      - view_analytics
     AuditActorType:
       type: string
       enum:
@@ -21689,6 +21853,718 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminInvoiceSummary'
+    AnalyticsRange:
+      type: string
+      enum:
+      - 30d
+      - quarter
+      - 12m
+      - custom
+    AnalyticsGranularity:
+      type: string
+      enum:
+      - day
+      - week
+      - month
+    NullableRate:
+      description: Fraction in [0, 1], 4 decimals (not percent); null when the denominator is 0 or data is missing.
+      type:
+      - number
+      - 'null'
+      minimum: 0
+      maximum: 1
+    NullableMoney:
+      description: Integer paisa (BDT); null when no snapshot covers the value.
+      type:
+      - integer
+      - 'null'
+    AnalyticsMeta:
+      type: object
+      description: PHASE-8-2 P82-17, P82-19. `as_of` = latest computed Dhaka day (null before the first run).
+      required:
+      - as_of
+      - computed_at
+      - data_starts_on
+      - timezone
+      - currency
+      - range
+      - granularity
+      - from
+      - to
+      - previous_from
+      - previous_to
+      properties:
+        as_of:
+          type:
+          - string
+          - 'null'
+          format: date
+        computed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        data_starts_on:
+          type:
+          - string
+          - 'null'
+          format: date
+        timezone:
+          type: string
+          enum:
+          - Asia/Dhaka
+        currency:
+          type: string
+          enum:
+          - BDT
+        range:
+          $ref: '#/components/schemas/AnalyticsRange'
+        granularity:
+          $ref: '#/components/schemas/AnalyticsGranularity'
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        previous_from:
+          type: string
+          format: date
+        previous_to:
+          type: string
+          format: date
+    AnalyticsPlanRef:
+      type: object
+      required:
+      - code
+      - name
+      - sort
+      - monthly_price_amount
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        sort:
+          type: integer
+        monthly_price_amount:
+          type: integer
+    AnalyticsPlanCount:
+      type: object
+      required:
+      - plan_code
+      - plan_name
+      - count
+      properties:
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        count:
+          type: integer
+    AnalyticsMrrPoint:
+      type: object
+      required:
+      - bucket_start
+      - bucket_end
+      - mrr_amount
+      - by_plan
+      properties:
+        bucket_start:
+          type: string
+          format: date
+        bucket_end:
+          type: string
+          format: date
+        mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        by_plan:
+          type: object
+          description: Paid plan code → MRR (paisa) on the bucket's last day; empty when `mrr_amount` is null.
+          additionalProperties:
+            type: integer
+    AdminAnalyticsOverview:
+      type: object
+      description: PHASE-8-2 §6.2 (dashboard 15:123). Stocks at `meta.to` / `meta.previous_to`; flows summed over the range.
+      required:
+      - mrr
+      - active_shops
+      - trial_conversion
+      - gmv
+      - revenue_churn
+      - mrr_series
+      - plan_mix
+      - plans
+      properties:
+        mrr:
+          type: object
+          required:
+          - amount
+          - previous_amount
+          - arr_amount
+          properties:
+            amount:
+              $ref: '#/components/schemas/NullableMoney'
+            previous_amount:
+              $ref: '#/components/schemas/NullableMoney'
+            arr_amount:
+              $ref: '#/components/schemas/NullableMoney'
+        active_shops:
+          type: object
+          required:
+          - total
+          - paying
+          - trialing
+          - comp
+          - free
+          - past_due
+          - previous_total
+          properties:
+            total:
+              type:
+              - integer
+              - 'null'
+            paying:
+              type:
+              - integer
+              - 'null'
+            trialing:
+              type:
+              - integer
+              - 'null'
+            comp:
+              type:
+              - integer
+              - 'null'
+            free:
+              type:
+              - integer
+              - 'null'
+            past_due:
+              type:
+              - integer
+              - 'null'
+            previous_total:
+              type:
+              - integer
+              - 'null'
+        trial_conversion:
+          type: object
+          required:
+          - rate
+          - previous_rate
+          - converted
+          - ended
+          - trialing_now
+          properties:
+            rate:
+              $ref: '#/components/schemas/NullableRate'
+            previous_rate:
+              $ref: '#/components/schemas/NullableRate'
+            converted:
+              type: integer
+            ended:
+              type: integer
+            trialing_now:
+              type:
+              - integer
+              - 'null'
+        gmv:
+          type: object
+          required:
+          - amount
+          - previous_amount
+          - orders_count
+          - previous_orders_count
+          - aov_amount
+          properties:
+            amount:
+              $ref: '#/components/schemas/NullableMoney'
+            previous_amount:
+              $ref: '#/components/schemas/NullableMoney'
+            orders_count:
+              type:
+              - integer
+              - 'null'
+            previous_orders_count:
+              type:
+              - integer
+              - 'null'
+            aov_amount:
+              $ref: '#/components/schemas/NullableMoney'
+        revenue_churn:
+          type: object
+          required:
+          - rate
+          - previous_rate
+          - churned_amount
+          - cancellations
+          - opening_mrr_amount
+          properties:
+            rate:
+              $ref: '#/components/schemas/NullableRate'
+            previous_rate:
+              $ref: '#/components/schemas/NullableRate'
+            churned_amount:
+              $ref: '#/components/schemas/NullableMoney'
+            cancellations:
+              type:
+              - integer
+              - 'null'
+            opening_mrr_amount:
+              $ref: '#/components/schemas/NullableMoney'
+        mrr_series:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMrrPoint'
+        plan_mix:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsPlanCount'
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsPlanRef'
+    AnalyticsAmountPair:
+      type: object
+      required:
+      - amount
+      - previous_amount
+      properties:
+        amount:
+          $ref: '#/components/schemas/NullableMoney'
+        previous_amount:
+          $ref: '#/components/schemas/NullableMoney'
+    MrrMovementBucket:
+      type: object
+      description: PHASE-8-2 P82-9. Money fields are null together when the window lacks snapshots.
+      required:
+      - bucket_start
+      - bucket_end
+      - opening_mrr_amount
+      - new_amount
+      - expansion_amount
+      - contraction_amount
+      - churned_amount
+      - net_new_amount
+      - closing_mrr_amount
+      - counts
+      properties:
+        bucket_start:
+          type: string
+          format: date
+        bucket_end:
+          type: string
+          format: date
+        opening_mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        new_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        expansion_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        contraction_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        churned_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        net_new_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        closing_mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        counts:
+          type:
+          - object
+          - 'null'
+          required:
+          - new
+          - expansion
+          - contraction
+          - churned
+          properties:
+            new:
+              type: integer
+            expansion:
+              type: integer
+            contraction:
+              type: integer
+            churned:
+              type: integer
+    RetentionCohort:
+      type: object
+      required:
+      - cohort
+      - size
+      - retention
+      properties:
+        cohort:
+          type: string
+          pattern: ^\d{4}-\d{2}$
+          description: Dhaka month of the first paid invoice (PHASE-8-2 P82-14).
+        size:
+          type: integer
+        retention:
+          type: array
+          maxItems: 12
+          description: Index k = month cohort+k; null when no snapshot covers that month end.
+          items:
+            $ref: '#/components/schemas/NullableRate'
+    RevenueByPlanRow:
+      type: object
+      required:
+      - plan_code
+      - plan_name
+      - monthly_price_amount
+      - shops
+      - mrr_amount
+      - previous_mrr_amount
+      - share
+      - yearly_share
+      properties:
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        monthly_price_amount:
+          type: integer
+        shops:
+          type:
+          - integer
+          - 'null'
+          description: Paying shops on the plan; Free row = free shops.
+        mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        previous_mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        share:
+          $ref: '#/components/schemas/NullableRate'
+        yearly_share:
+          $ref: '#/components/schemas/NullableRate'
+    TopPayingMerchant:
+      type: object
+      required:
+      - tenant
+      - primary_host
+      - plan_code
+      - billing_interval
+      - last_payment_provider
+      - orders_30d
+      - mrr_amount
+      - customer_since
+      - lifetime_paid_amount
+      properties:
+        tenant:
+          type: object
+          required:
+          - id
+          - name
+          - slug
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+        primary_host:
+          type:
+          - string
+          - 'null'
+        plan_code:
+          type: string
+        billing_interval:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
+        last_payment_provider:
+          type:
+          - string
+          - 'null'
+          enum:
+          - bkash
+          - sslcommerz
+          - manual
+          - null
+        orders_30d:
+          type: integer
+        mrr_amount:
+          type: integer
+        customer_since:
+          type:
+          - string
+          - 'null'
+          format: date
+        lifetime_paid_amount:
+          type: integer
+    AdminRevenueReport:
+      type: object
+      description: PHASE-8-2 §6.2 (Revenue reports 39:12705).
+      required:
+      - kpis
+      - movement
+      - cohorts
+      - by_plan
+      - trial_funnel
+      - top_merchants
+      properties:
+        kpis:
+          type: object
+          required:
+          - mrr
+          - arr
+          - net_new_mrr
+          - churned_mrr
+          - arpa
+          - ltv
+          properties:
+            mrr:
+              $ref: '#/components/schemas/AnalyticsAmountPair'
+            arr:
+              $ref: '#/components/schemas/AnalyticsAmountPair'
+            net_new_mrr:
+              type: object
+              required:
+              - amount
+              - previous_amount
+              - new_amount
+              - expansion_amount
+              - contraction_amount
+              - churned_amount
+              properties:
+                amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                previous_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                new_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                expansion_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                contraction_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                churned_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+            churned_mrr:
+              type: object
+              required:
+              - amount
+              - previous_amount
+              - rate
+              - previous_rate
+              - opening_mrr_amount
+              - count
+              properties:
+                amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                previous_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                rate:
+                  $ref: '#/components/schemas/NullableRate'
+                previous_rate:
+                  $ref: '#/components/schemas/NullableRate'
+                opening_mrr_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                count:
+                  type:
+                  - integer
+                  - 'null'
+            arpa:
+              type: object
+              required:
+              - amount
+              - previous_amount
+              - paying
+              properties:
+                amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                previous_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                paying:
+                  type:
+                  - integer
+                  - 'null'
+            ltv:
+              type: object
+              required:
+              - amount
+              - lifetime_months
+              properties:
+                amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                lifetime_months:
+                  type:
+                  - number
+                  - 'null'
+                  maximum: 60
+        movement:
+          type: array
+          items:
+            $ref: '#/components/schemas/MrrMovementBucket'
+        cohorts:
+          type: object
+          required:
+          - rows
+          - m3_average
+          properties:
+            rows:
+              type: array
+              maxItems: 12
+              items:
+                $ref: '#/components/schemas/RetentionCohort'
+            m3_average:
+              $ref: '#/components/schemas/NullableRate'
+        by_plan:
+          type: object
+          required:
+          - rows
+          - total
+          properties:
+            rows:
+              type: array
+              items:
+                $ref: '#/components/schemas/RevenueByPlanRow'
+            total:
+              type: object
+              required:
+              - shops
+              - paying
+              - mrr_amount
+              - previous_mrr_amount
+              properties:
+                shops:
+                  type:
+                  - integer
+                  - 'null'
+                paying:
+                  type:
+                  - integer
+                  - 'null'
+                mrr_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+                previous_mrr_amount:
+                  $ref: '#/components/schemas/NullableMoney'
+        trial_funnel:
+          type: object
+          required:
+          - signed_up
+          - store_published
+          - trial_ended
+          - converted
+          - trial_to_paid_rate
+          - signup_to_paid_rate
+          - median_days_to_paid
+          properties:
+            signed_up:
+              type: integer
+            store_published:
+              type: integer
+            trial_ended:
+              type: integer
+            converted:
+              type: integer
+            trial_to_paid_rate:
+              $ref: '#/components/schemas/NullableRate'
+            signup_to_paid_rate:
+              $ref: '#/components/schemas/NullableRate'
+            median_days_to_paid:
+              type:
+              - integer
+              - 'null'
+        top_merchants:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/TopPayingMerchant'
+    AdminTenantMetrics:
+      type: object
+      description: PHASE-8-2 §6.2 (merchant detail 33:4851). 30-day window ending `meta.as_of`; previous = the 30 days before.
+      required:
+      - mrr_amount
+      - is_comp
+      - plan_code
+      - billing_interval
+      - orders_30d
+      - previous_orders_30d
+      - gmv_30d_amount
+      - previous_gmv_30d_amount
+      - aov_30d_amount
+      - avg_orders_per_day_30d
+      - gmv_month_amount
+      - paid_12m_amount
+      - monthly
+      properties:
+        mrr_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        is_comp:
+          type: boolean
+        plan_code:
+          type:
+          - string
+          - 'null'
+        billing_interval:
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
+        orders_30d:
+          type:
+          - integer
+          - 'null'
+        previous_orders_30d:
+          type:
+          - integer
+          - 'null'
+        gmv_30d_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        previous_gmv_30d_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        aov_30d_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        avg_orders_per_day_30d:
+          type:
+          - number
+          - 'null'
+        gmv_month_amount:
+          $ref: '#/components/schemas/NullableMoney'
+        paid_12m_amount:
+          type: integer
+        monthly:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items:
+            type: object
+            required:
+            - month
+            - gmv_amount
+            - orders_count
+            properties:
+              month:
+                type: string
+                pattern: ^\d{4}-\d{2}$
+              gmv_amount:
+                $ref: '#/components/schemas/NullableMoney'
+              orders_count:
+                type:
+                - integer
+                - 'null'
+    AdminTenantMetricsSummary:
+      type: object
+      description: PHASE-8-2. Snapshot values on `as_of` (orders/GMV over the 30 days ending `as_of`).
+      required:
+      - as_of
+      - mrr_amount
+      - is_comp
+      - orders_30d
+      - gmv_30d_amount
+      properties:
+        as_of:
+          type: string
+          format: date
+        mrr_amount:
+          type: integer
+        is_comp:
+          type: boolean
+        orders_30d:
+          type: integer
+        gmv_30d_amount:
+          type: integer
     AdminTenantCounts:
       type: object
       required:
@@ -21727,6 +22603,8 @@ components:
       - trial_ends_at
       - current_period_end
       - created_at
+      - last_active_at
+      - metrics
       properties:
         id:
           $ref: '#/components/schemas/Ulid'
@@ -21803,6 +22681,16 @@ components:
         created_at:
           type: string
           format: date-time
+        last_active_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Last merchant-dashboard request by any member, 15-minute resolution (PHASE-8-2 P82-16).
+        metrics:
+          oneOf:
+          - $ref: '#/components/schemas/AdminTenantMetricsSummary'
+          - type: 'null'
     AdminTenant:
       allOf:
       - $ref: '#/components/schemas/AdminTenantSummary'

@@ -27,9 +27,11 @@ class RlsCoverageTest extends TestCase
 
     public function test_every_table_with_tenant_id_is_listed_and_has_forced_rls_with_a_policy(): void
     {
+        // pg_catalog, not information_schema: the latter hides tables the app role has no privilege on (PHASE-8-2 S84).
         $withTenantId = collect(DB::select(
-            "select distinct table_name from information_schema.columns
-              where table_schema = current_schema() and column_name = 'tenant_id'"
+            "select distinct c.relname as table_name from pg_attribute a
+               join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace
+              where n.nspname = current_schema() and c.relkind in ('r', 'p') and a.attname = 'tenant_id' and not a.attisdropped"
         ))->pluck('table_name')->sort()->values()->all();
 
         $listed = collect(RlsTables::TENANT)->sort()->values()->all();

@@ -209,6 +209,17 @@ jobs:
           done
           exit $fail
 
+      # Phase 8.2 (PHASE-8-2-CONTRACT §10, §14.1): the `analytics` group (§3 definitions fixture to the paisa,
+      # aggregate/backfill idempotency, /admin/analytics/* shapes) must exist and pass on sqlite.
+      - name: phase 8.2 group (analytics)
+        run: |
+          mkdir -p build
+          php artisan test --group=analytics --exclude-group perf --exclude-group race --log-junit build/analytics.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/analytics.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "analytics tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'analytics'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -321,10 +332,21 @@ jobs:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
           CACHE_STORE: array
+      # Phase 8.2: the §10 fixtures must match to the paisa on Postgres too (ON CONFLICT upserts, jsonb columns,
+      # Dhaka day boundaries on timestamptz, CHECK partition identities).
+      - name: phase 8.2 analytics (postgres)
+        run: php artisan test --group=analytics --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
   # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
   # (50 × -1 on 50 → 0, 50 ledger rows) fails. Also fails when the group is empty.
+  # Phase 8.2 (PHASE-8-2-CONTRACT §4.1, §10): the analytics budgets (aggregate one day for 5 000 tenants /
+  # 200 000 orders < 30 s; /admin/analytics/revenue?range=12m p95 < 500 ms) are tagged `perf` + `analytics`
+  # and run in the `perf group` step below.
   api-perf:
     name: api (perf group on postgres)
     needs: changes
@@ -664,6 +686,10 @@ jobs:
         run: '"$RUNNER_TEMP/run-group.sh" admin lenient --group=admin --exclude-group perf --exclude-group race'
       - name: phase 8.1 impersonation (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" impersonation lenient --group=impersonation --exclude-group perf --exclude-group race'
+      # Phase 8.2 (PHASE-8-2-CONTRACT §10, S84): analytics aggregate/backfill and /admin/analytics/* on pgsql_admin
+      # with RLS on; the app-role REVOKE and forced RLS on tenant_daily_metrics are covered by the `rls` step above.
+      - name: phase 8.2 analytics (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" analytics lenient --group=analytics --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

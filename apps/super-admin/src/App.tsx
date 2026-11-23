@@ -1,5 +1,6 @@
 import { Card } from '@storeplix/ui';
 import { Route, Routes } from 'react-router';
+import { RevenuePage } from './analytics/RevenuePage';
 import { AuditLogPage } from './audit/AuditLogPage';
 import { GuestRoute, ProtectedRoute } from './auth/ProtectedRoute';
 import { BillingPage } from './billing/BillingPage';
@@ -40,6 +41,7 @@ export function AppRoutes() {
           <Route path="/merchants" element={<MerchantsPage />} />
           <Route path="/merchants/:id" element={<MerchantDetailPage />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/revenue" element={<RevenuePage />} />
           <Route path="/domains" element={<DomainsPage />} />
           <Route path="/impersonations" element={<ImpersonationsPage />} />
           <Route path="/team" element={<TeamPage />} />

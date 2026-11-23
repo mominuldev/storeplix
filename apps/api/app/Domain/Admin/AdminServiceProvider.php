@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Admin;
 
+use App\Domain\Admin\Analytics\Console\AggregateAnalytics;
+use App\Domain\Admin\Analytics\Console\BackfillAnalytics;
 use App\Domain\Admin\Team\Console\PlatformGrant;
 use App\Domain\Admin\Team\Console\PlatformResetTotp;
 use App\Domain\Admin\Team\Console\PlatformRevoke;
@@ -21,7 +23,8 @@ final class AdminServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([PlatformGrant::class, PlatformRevoke::class, PlatformResetTotp::class]);
+            $this->commands([PlatformGrant::class, PlatformRevoke::class, PlatformResetTotp::class,
+                AggregateAnalytics::class, BackfillAnalytics::class]); // + PHASE-8-2 §4
         }
 
         $ip = fn (Request $r): string => (string) $r->ip();

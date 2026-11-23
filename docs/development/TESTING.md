@@ -21,6 +21,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | **Documents (Phase 5b-4)** | Pest group `documents` against a real Gotenberg (pinned in `docker-compose.yml`): Bangla font embedded (`pdffonts`), text round-trip (`pdftotext`, whitespace-insensitive), every kind × language with the expected pages, the queued job stores a PDF, 100 labels < 20 s. Skips without `GOTENBERG_URL` + poppler-utils | `apps/api/tests/Feature/Commerce/DocumentsGotenbergTest.php` | yes, job `api-documents` (fails when the group is empty or anything skips) |
 | **Phase 7 groups** | Pest groups `billing`, `plans`, `reports` (security items also in `security`, definer function + billing RLS in `rls`, races in `race`, report p95 in `perf`) | `apps/api/tests/**` | yes: `api` (sqlite, each group must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | **Phase 8.1 groups** | Pest groups `admin`, `impersonation` (security items also in `security`, RLS cases also in `rls`) | `apps/api/tests/Feature/Admin/**` | yes: `api` (sqlite, each group must be non-empty), `api-postgres`, `api-rls` (RLS on; admin reads on `pgsql_admin`) |
+| **Phase 8.2 group** | Pest group `analytics` (§3 definitions fixture to the paisa, GMV/restatement fixture, aggregate/backfill idempotency, `/admin/analytics/*` shapes; RLS cases also in `rls`, S83–S90 also in `security`, the aggregate and revenue p95 budgets in `perf`) | `apps/api/tests/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on, `pgsql_admin`); budgets in `api-perf` |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -121,6 +122,10 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase8.impersonation` | S71–S74: ticket needs a reason; link consumed once (hash cleared, reuse → "This link has expired…"); banner with shop, reason, Read-only, mm:ss; Orders and Plan & billing read; create action disabled (`data-read-only`); store-details save → 403 `impersonation_read_only` → toast; Exit → "Impersonation ended"; revoke from admin ends a second session at its next request; start/end audited on the shop |
 | `phase8.suspension` | S80: suspend needs `reason_code` + reason, double suspend 409; merchant API 403 `tenant_suspended` and the "Your shop is suspended" screen; storefront platform host → bare 503 page (`Retry-After: 86400`, `no-store`, `noindex`, no shop name) on every route, config `{availability: suspended}`, cart 404 `store_not_found`; reactivate → storefront 200 (≤ 15 s proxy TTL), COD checkout works, dashboard back; both on the audit log |
 | `phase8.team` | P8-16, S79: invite a Billing staff member (duplicate 422) → mailed `/accept-invite#token=` link → name + password → TOTP enrolment from the setup key → 10 recovery codes → Platform overview; signed in as Billing: Change plan visible, Suspend and Impersonate hidden, suspend API 403 `forbidden`; join on the platform audit log |
+| `phase8-2.dashboard` | PHASE-8-2 §10 QA, P82-11/12, S83: fresh shop, three storefront COD orders, one cancelled → dev aggregate (baseline and after, same Dhaka day) → platform `gmv.amount` / `orders_count` grow by exactly the two kept orders' `total_amount`, AOV floored; ARR = 12 × MRR, partition `active = paying + trialing + comp + free`, plan mix = active, MRR = Σ by plan, 30 daily buckets; the shop's `/admin/tenants/{id}/metrics` = 2 orders, its GMV, 0 MRR (trialing). UI: KPI tiles (Merchant GMV + "{n} orders", MRR + ARR, Active shops caption, Trial → paid, Revenue churn), MRR chart, Plan mix, "Data as of", no Integration health / Export / Pro; range tabs → `?range=quarter|12m|30d` with the matching numbers. Support: 403 `forbidden` on both analytics routes, no analytics tiles or "Revenue reports" nav, per-shop metrics 200; Read-only 200; merchant 401/403, guest 401 |
+| `phase8-2.revenue` | P82-7/8/9/13/14/15: baseline aggregate → fresh published shop → `dev clock trial_ended` → pays **Growth monthly** on the fake gateway → aggregate → MRR +149 900, paying +1, ARPA = ⌊MRR / paying⌋, Growth row +1 shop/+MRR, by-plan rows Growth, Starter, Free summing to MRR, funnel signed up/published/trial ended/converted +1 each, trial → paid ended/converted +1, movement identities per bucket; Top paying merchants row (growth, month, bkash, MRR, customer since today, lifetime paid = invoice total), current-month cohort. UI: KPIs, sections, top-merchant row (+ click → detail); custom range (`?range=custom&from&to`) and compare toggle ("vs …" shown/hidden; the previous period's last day is aggregated first); a range before `data_starts_on` → null KPIs/movement, "History starts" note, "—" |
+| `phase8-2.merchant-metrics` | §6.1/§6.2, P82-16: fresh shop pays Starter monthly, two COD orders → aggregate → `AdminTenantMetrics` (MRR 49 900, not comp, orders 2, GMV, AOV, month GMV, 0.1 orders/day, paid 12 mo, 12 monthly bars), unknown tenant 404; list `metrics` and `meta.metrics_as_of`; sorts `-mrr`, `-gmv_30d`, `-orders_30d`, `-last_active_at` ordered with nulls last. UI: Sort "MRR · high to low" → `sort=-mrr`, MRR / Orders 30d / GMV 30d / Last active cells; Last active "—" after a test-only reset, set after the merchant signs in (API timestamp now ± 1 min, relative time in the cell); detail tiles MRR "Starter · monthly", Orders · 30d, GMV · 30d + AOV, Lifetime paid, no Health score, "GMV & platform revenue" card values |
+| `phase8-2.visual` | Acceptance 5: `/`, `/?range=12m`, `/revenue`, `/merchants?sort=-mrr`, `/merchants/:id` (demo shop) at 1280 and 1024 px: widgets rendered (no skeletons), no horizontal page overflow, no console errors; screenshots in `test-results/admin-visual-8-2/{width}/` (or `$ADMIN_VISUAL_DIR/8-2`) |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -209,6 +214,30 @@ How they run:
   ```bash
   BILLING_FAKE=true MERCHANT_APP_URL=http://localhost:5173 php artisan serve --port=8000   # + the 5b and Phase 6 env above
   cd tests/e2e && pnpm exec playwright test phase7.
+  ```
+- **Platform analytics (Phase 8.2)** need the Phase 7 setup (`BILLING_FAKE=true`, `MERCHANT_APP_URL`, `APP_URL` =
+  `PUBLIC_API_URL`) plus the super-admin SPA on :5174 (`ADMIN_URL`) and `APP_ENV=local` (or `testing`): only then is the
+  testing-only `POST /api/v1/dev/analytics/aggregate {from?, to?}` registered (admin surface, super-admin session,
+  10/min; default day = today Dhaka, allowed only here; answers `{data: {days, as_of}}`). It runs
+  `analytics:aggregate` inline, so no queue worker or scheduler is needed for the numbers (the scheduler's hourly
+  `:20` catch-up is harmless). Platform totals include every other shop in the DB, so the specs assert **deltas between
+  two aggregate runs of the same Dhaka day** (flows are restated on a re-run, P82-5) and exact per-shop values; they
+  wait out the last minutes before Dhaka midnight (18:00Z). Each spec makes ≤ 3 aggregate calls (the helper retries
+  once after a 429). Role checks use fixed-secret staff seeded by tinker (`e2e-support82@`, `e2e-readonly82@`,
+  `e2e-visual@storeplix.com`, `support/analytics.ts` `seedStaff`); `resetLastActive()` clears
+  `tenants.last_active_at` + the `sp:tenant-active:{id}` throttle key (test-only). The aggregate writes snapshot rows
+  for today (and, in `phase8-2.revenue`, today − 4) into the dev DB as `source = late`; that is expected and harmless.
+  Helpers: `support/analytics.ts` (`aggregate`, `overview`, `revenue`, `tenantMetrics`, `tenantsList`, money/count
+  formatting mirrored from `@storeplix/ui`, UI selectors one per helper: `kpi` (prefers `role="group"` named by the
+  Figma label), `card` (by heading), `rangeTab`, `compareToggle`, `setCustomRange`, `sortMerchants`, `merchantCell`,
+  `topMerchantRow`, `gmvCard`, `dataAsOf`, `historyStarts`). On sqlite set `DB_JOURNAL_MODE=wal` and
+  `DB_BUSY_TIMEOUT=5000`; run the four files on their own rather than inside the full suite ("database is locked").
+  ```bash
+  APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true \
+    MERCHANT_APP_URL=http://localhost:5173 APP_URL=http://localhost:8000 PUBLIC_API_URL=http://localhost:8000 \
+    php artisan serve --port=8000                       # + INTEGRATION_CREDENTIALS_KEY etc. as for 5b
+  pnpm --filter @storeplix/super-admin dev              # :5174 (ADMIN_URL)
+  cd tests/e2e && pnpm exec playwright test phase8-2.
   ```
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the

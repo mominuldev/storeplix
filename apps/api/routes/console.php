@@ -48,3 +48,7 @@ Schedule::command('admin:close-impersonations')->everyFiveMinutes()->withoutOver
 // Phase 8.1 (PHASE-8-1 §4.4): repair store/tenant suspension mismatches (owner API-2).
 Application::starting(fn (Application $artisan) => $artisan->resolve(CheckSuspensions::class));
 Schedule::command('admin:check-suspensions')->hourly()->withoutOverlapping();
+
+// Phase 8.2 (PHASE-8-2 P82-3): nightly analytics; hourly catch-up at :20 Dhaka, in-process (no queue). The first run
+// after midnight does the work; a run with nothing missing exits at once.
+Schedule::command('analytics:aggregate')->hourlyAt(20)->timezone('Asia/Dhaka')->withoutOverlapping(60)->onOneServer()->runInBackground();

@@ -614,6 +614,16 @@ BEGIN
   END IF;
 END
 $$;
+-- table: tenant_daily_metrics
+DO $$
+BEGIN
+  IF to_regclass('public.tenant_daily_metrics') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "tenant_daily_metrics";
+    ALTER TABLE "tenant_daily_metrics" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "tenant_daily_metrics" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

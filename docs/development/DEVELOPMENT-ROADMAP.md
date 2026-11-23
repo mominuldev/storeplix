@@ -192,10 +192,14 @@ performance reports (Q85), super-admin billing screens (8.1), refunds of platfor
 One contract per task, each with its own build cycle and QA gate. **8.1** contract: `docs/development/PHASE-8-1-CONTRACT.md`
 (draft 2026-11-23 for PO review; branch `phase-8-super-admin`; openapi 1.9.0; ADR 0015; defaults Q91–Q102). The admin
 Figma (`5:189`) also designs 8.2 metrics (MRR, GMV, health), risk, support and settings screens; 8.1 hides them.
+**8.2** contract: `docs/development/PHASE-8-2-CONTRACT.md` (accepted 2026-11-23; branch
+`feat/phase-8-2-analytics`; openapi 1.10.0; ADR 0016; Q103–Q112 defaults accepted): nightly snapshot tables, dashboard KPIs,
+Revenue reports `39:12705`, merchant MRR/GMV/last-active. Deferred from 8.2: health score (Q105), Integration health and
+incidents (Q106, → 9.1), analytics export (Q109).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
-| 8.2 | Platform analytics (GMV, MRR, churn) | API/WEB | Nightly aggregates |
+| 8.2 | Platform analytics (GMV, MRR, churn): dashboard `15:123`, Revenue reports `39:12705`, merchant metrics | API/WEB | Nightly aggregates; PHASE-8-2 §14 |
 | 8.3 | Custom roles & permissions (89:26676) | API/WEB | Granular permissions enforced |
 | 8.4 | Developer API keys + outbound webhooks (144:40725) | API/WEB | HMAC signatures; retries |
 | 8.5 | Marketing campaigns SMS/email (61:12479) | API/WEB | Opt-out respected |

@@ -50,12 +50,13 @@ describe('merchants list (32:5527)', () => {
     expect(last.get('filter[plan]')).toBe('growth');
   });
 
-  it('has no hidden columns, checkboxes, Export or Add merchant', async () => {
+  it('has the 8.2 metric columns but no Health column, checkboxes, Export or Add merchant', async () => {
     mockApi([listOk]);
     renderApp(<AppRoutes />, { route: '/merchants' });
     await screen.findByText('Gadget Haat');
-    for (const h of ['Shop', 'Owner', 'Plan', 'Status', 'Signed up']) expect(screen.getByRole('columnheader', { name: h })).toBeInTheDocument();
-    for (const h of [/MRR/, /GMV/, /Health/, /Last active/, /Orders/]) expect(screen.queryByRole('columnheader', { name: h })).toBeNull();
+    for (const h of ['Shop', 'Owner', 'Plan', 'MRR ৳', 'Orders 30d', 'GMV 30d ৳', 'Last active', 'Status', 'Signed up'])
+      expect(screen.getByRole('columnheader', { name: h })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /Health/ })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /Export|Add merchant/ })).toBeNull();
   });
@@ -113,7 +114,7 @@ describe('merchant detail actions per role (§2.1)', () => {
     expect(screen.queryByRole('button', { name: 'Impersonate shop' }) !== null).toBe(role === 'super_admin' || role === 'support');
   });
 
-  it('shows Reactivate instead of Suspend for a suspended shop and only the Lifetime paid KPI', async () => {
+  it('shows Reactivate instead of Suspend for a suspended shop; no Health score tile', async () => {
     detailApi(
       'super_admin',
       tenant({
@@ -130,7 +131,8 @@ describe('merchant detail actions per role (§2.1)', () => {
     expect(screen.queryByRole('button', { name: 'Suspend' })).toBeNull();
     expect(screen.getByText(/Suspended .* · Fraud reports/)).toBeInTheDocument();
     expect(screen.getByText('Lifetime paid')).toBeInTheDocument();
-    for (const k of ['MRR', 'Health score', 'GMV · 30d']) expect(screen.queryByText(k)).toBeNull();
+    for (const k of ['MRR', 'Orders · 30d', 'GMV · 30d']) expect(screen.getByText(k)).toBeInTheDocument();
+    expect(screen.queryByText('Health score')).toBeNull();
     expect(screen.queryByRole('tab', { name: /Orders|Integrations|Notes/ })).toBeNull();
   });
 });

@@ -39,4 +39,8 @@ export const permissionMeta: Record<PlatformPermission, { label: string; hint: s
     label: 'Manage team',
     hint: 'Invite, change roles, disable, reset 2FA',
   },
+  view_analytics: {
+    label: 'View analytics',
+    hint: 'Platform MRR, GMV, churn and revenue reports',
+  },
 };

@@ -12,14 +12,14 @@ enum PlatformRole: string
     case Support = 'support';
     case ReadOnly = 'read_only';
 
-    /** @return list<PlatformPermission> PHASE-8-1 §2.1 matrix (single source; `AdminPermissionTest` covers every cell). */
+    /** @return list<PlatformPermission> PHASE-8-1 §2.1 matrix, amended by PHASE-8-2 §2.1 (`view_analytics`: SA, BI, RO) (single source; `AdminPermissionTest` covers every cell). */
     public function permissions(): array
     {
         return match ($this) {
             self::SuperAdmin => PlatformPermission::cases(),
-            self::Billing => [PlatformPermission::ViewMerchants, PlatformPermission::ManageBilling],
+            self::Billing => [PlatformPermission::ViewMerchants, PlatformPermission::ManageBilling, PlatformPermission::ViewAnalytics],
             self::Support => [PlatformPermission::ViewMerchants, PlatformPermission::Impersonate, PlatformPermission::ManageDomains],
-            self::ReadOnly => [PlatformPermission::ViewMerchants],
+            self::ReadOnly => [PlatformPermission::ViewMerchants, PlatformPermission::ViewAnalytics],
         };
     }
 

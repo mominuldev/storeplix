@@ -92,7 +92,7 @@ class TeamTest extends TestCase
         $list = $this->admin('GET', '/api/v1/admin/team', as: $ro)->assertOk()
             ->assertJsonPath('meta.counts', ['all' => 6, 'active' => 4, 'invited' => 1, 'disabled' => 1])
             ->assertJsonPath('meta.matrix.roles', ['super_admin', 'billing', 'support', 'read_only'])
-            ->assertJsonPath('meta.matrix.grants.billing', ['view_merchants', 'manage_billing'])
+            ->assertJsonPath('meta.matrix.grants.billing', ['view_merchants', 'manage_billing', 'view_analytics'])
             ->assertJsonPath('meta.security', ['totp_required' => true, 'ip_allowlist_enabled' => false, 'session_idle_minutes' => 30, 'impersonation_minutes' => 15])
             ->assertJsonCount(6, 'data');
         $rows = collect($list->json('data'))->keyBy('email');

@@ -3,7 +3,7 @@ import { LogOut } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { useHealth } from '../lib/health';
-import { roleLabel } from '../lib/permissions';
+import { roleLabel, useCan } from '../lib/permissions';
 import { navGroups } from './nav';
 
 function initials(name: string | undefined) {
@@ -25,6 +25,7 @@ function initials(name: string | undefined) {
 // White-alpha fills are raw values in Figma.
 export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
   const { user, logout } = useAuth();
+  const can = useCan();
   const health = useHealth();
   const status = health.isPending
     ? { dot: 'bg-text-muted', label: 'Production · checking status' }
@@ -52,7 +53,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
         {navGroups.map((group) => (
           <div key={group.heading} className="flex flex-col gap-0.5">
             <h2 className="pt-3.5 pb-1.5 pl-3 text-caption font-medium tracking-[0.72px] text-text-muted uppercase">{group.heading}</h2>
-            {group.items.map((item) => {
+            {group.items.filter((item) => !item.permission || can(item.permission)).map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink

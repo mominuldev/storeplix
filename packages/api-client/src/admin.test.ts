@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { adminAuditQuery, adminTenantQuery, createApiClient } from './index';
+import { adminAuditQuery, adminTenantQuery, analyticsQuery, createApiClient } from './index';
 
 function json(status: number, body?: unknown, headers: Record<string, string> = {}) {
   return new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -213,5 +213,54 @@ describe('Phase 8.1 admin writes', () => {
   it('surfaces 409 last_super_admin', async () => {
     const { client } = setup(json(409, { error: { code: 'last_super_admin', message: 'Last' } }));
     await expect(client.admin.team.disable('U1', 'reason here')).rejects.toMatchObject({ status: 409, code: 'last_super_admin' });
+  });
+});
+
+describe('Phase 8.2 analytics', () => {
+  const meta = {
+    as_of: '2026-11-22', computed_at: '2026-11-22T18:24:00Z', data_starts_on: '2025-03-01', timezone: 'Asia/Dhaka', currency: 'BDT',
+    range: '30d', granularity: 'day', from: '2026-10-24', to: '2026-11-22', previous_from: '2026-09-24', previous_to: '2026-10-23',
+  };
+
+  it('analyticsQuery sends from/to only for a custom range', () => {
+    expect(analyticsQuery({ range: '12m', from: '2026-01-01', to: '2026-02-01' })).toEqual({ range: '12m', from: undefined, to: undefined, granularity: undefined });
+    expect(analyticsQuery({ range: 'custom', from: '2026-01-01', to: '2026-02-01', granularity: 'week' })).toEqual({
+      range: 'custom', from: '2026-01-01', to: '2026-02-01', granularity: 'week',
+    });
+    expect(analyticsQuery()).toEqual({ range: undefined, from: undefined, to: undefined, granularity: undefined });
+  });
+
+  it('overview and revenue keep meta and never send X-Tenant-Id', async () => {
+    const { client, call } = setup(() => json(200, { data: { mrr: { amount: 1 } }, meta }));
+    const o = await client.admin.analyticsOverview({ range: 'quarter' });
+    const r = await client.admin.revenueReport({ range: 'custom', from: '2026-01-01', to: '2026-06-30', granularity: 'month' });
+    expect(call(0).url.pathname).toBe('/api/v1/admin/analytics/overview');
+    expect(call(0).url.searchParams.get('range')).toBe('quarter');
+    expect(call(0).url.searchParams.has('from')).toBe(false);
+    expect(call(1).url.pathname).toBe('/api/v1/admin/analytics/revenue');
+    expect(call(1).url.searchParams.get('from')).toBe('2026-01-01');
+    expect(call(1).url.searchParams.get('to')).toBe('2026-06-30');
+    expect(call(1).url.searchParams.get('granularity')).toBe('month');
+    expect(call(0).headers['X-Tenant-Id']).toBeUndefined();
+    expect(o.meta.as_of).toBe('2026-11-22');
+    expect(r.data).toEqual({ mrr: { amount: 1 } });
+  });
+
+  it('tenantMetrics hits the tenant path; 403 surfaces as forbidden', async () => {
+    const { client, call } = setup(() => json(200, { data: { mrr_amount: 49900 }, meta }));
+    const m = await client.admin.tenantMetrics('T/1');
+    expect(call().url.pathname).toBe('/api/v1/admin/tenants/T%2F1/metrics');
+    expect(m.data.mrr_amount).toBe(49900);
+    expect(m.meta.range).toBe('30d');
+    const denied = setup(json(403, { error: { code: 'forbidden', message: 'No' } }));
+    await expect(denied.client.admin.analyticsOverview()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+
+  it('tenants.list passes the metric sorts and exposes metrics_as_of', async () => {
+    const { client, call } = setup(json(200, { data: [], meta: { current_page: 1, per_page: 25, total: 0, last_page: 1, counts: {}, metrics_as_of: '2026-11-22' } }));
+    const res = await client.admin.tenants.list({ sort: '-mrr' });
+    expect(call().url.searchParams.get('sort')).toBe('-mrr');
+    expect(res.meta.metrics_as_of).toBe('2026-11-22');
+    expect(adminTenantQuery({ sort: '-last_active_at' }).sort).toBe('-last_active_at');
   });
 });
