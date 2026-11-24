@@ -1,6 +1,6 @@
 # Phase 8.5 contract: Marketing campaigns, SMS + email (binding for ARCH, API, WEB, QA)
 
-Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q138–Q151)**. Branch
+Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q138–Q151); QA re-gate PASS 2026-11-24 (`docs/reviews/phase-8-5-qa.md`)**. Branch
 `feat/phase-8-5-campaigns` (from `main` @ 323529f, Phase 8.4 accepted).
 Roadmap task **8.5** "Marketing campaigns SMS/email (Figma 61:12479)"; AC: **"Opt-out respected"**.
 Tasks 8.6–8.9 are **not** in this contract (abandoned-cart recovery and Automations are 8.6).
@@ -66,7 +66,7 @@ built. Campaign SMS/email have their own monthly allowances so marketing can nev
 | P85-1 | Channels **`sms`** and **`email`**. One channel per campaign. WhatsApp hidden | Roadmap says SMS/email; Figma's WhatsApp has no provider. Email takes the WhatsApp slot in the channel card (composition, same `ChoiceCard`) |
 | P85-2 | Campaigns are **store-scoped** `[S]`, routes `/api/v1/stores/{store}/campaigns/...` | Customers are store-scoped |
 | P85-3 | **Eligibility** (Q138): a customer may receive marketing on a channel iff they have an address for it **and** no `marketing_suppressions` row matches (store, channel, address) **and** (`accepts_marketing = true` **or** `orders_count ≥ 1`) | "Existing customer" soft opt-in: storefront checkout doesn't capture consent today, so pure opt-in would leave almost every merchant with an empty audience; customers added by hand without consent or orders are never messaged |
-| P85-4 | **Suppression is the source of truth for opt-out**: `marketing_suppressions(store, channel, address)` unique. Opt-out via link also sets the customer's `accepts_marketing = false` (if a row matches the address) | Survives customer delete/re-create, CSV re-import and merges; per-channel |
+| P85-4 | **Suppression is the source of truth for opt-out**: `marketing_suppressions(store, channel, address)` unique. Opt-out is **per channel only**: an unsubscribe (link or one-click) writes/removes that channel's suppression and **never touches `accepts_marketing`** (amended 2026-11-24, PO decision on QA finding P85-QA-4: clearing the flag also blocked the other channel for customers with no orders, and "Subscribe again" couldn't restore it) | Survives customer delete/re-create, CSV re-import and merges; per-channel |
 | P85-5 | A suppression with `source = link` (customer-initiated) **can't be removed by the merchant** (API, import, `accepts_marketing = true` edit); only the customer can, from the same unsubscribe page ("Subscribe again"). A merchant-added suppression (`source = merchant`) can be removed by the merchant | Opt-out must stick; merchants can still correct their own mistakes |
 | P85-6 | **Every message carries an opt-out link** to `https://{store primary host}/u/{code}`; `code` = 10 base62 chars (≈ 59 bits), random per recipient, stored as **sha256** only. SMS footer is appended by the server (language = campaign language): bn `বন্ধ করতে: {host}/u/{code}`, en `STOP: {host}/u/{code}`; it counts toward parts and is shown in preview/estimates (Q139). Email: footer link + `List-Unsubscribe: <https://{host}/u/{code}/one-click>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) | Revesms has no inbound SMS, so "reply STOP" can't work (Q141); the merchant's own domain is short and trusted |
 | P85-7 | **The storefront renders the unsubscribe page** (`/u/{code}`), not the API | Same host as the link (short, branded, the shopper trusts it), store theme/logo, already resolves tenant from host; the API host is never shown to shoppers. GET never unsubscribes (link scanners, SMS previewers): the page has a button; one-click POST is a separate route handler |
@@ -92,7 +92,7 @@ built. Campaign SMS/email have their own monthly allowances so marketing can nev
 | P85-27 | Limits: ≤ 50 non-terminal campaigns (`draft`, `scheduled`, `sending`) per store → 422 `limit_reached` (exists); ≤ 3 campaigns `sending` at once per store (others wait in `scheduled` until a slot frees, still respecting quiet hours) | Abuse/queue bound |
 | P85-28 | Retention: `campaign_recipients` kept 13 months then pruned daily (`campaigns:prune-recipients`), campaign rows and aggregate counters kept; suppressions kept forever | Reports a year back; opt-out permanent |
 
-### 1.1 Product-owner questions (OPEN-QUESTIONS Q138–Q151; proposed defaults, awaiting PO)
+### 1.1 Product-owner questions (OPEN-QUESTIONS Q138–Q151; defaults accepted by the PO 2026-11-24)
 
 | Q | Question | Proposed default |
 |---|---|---|
@@ -183,8 +183,8 @@ this message" = `recipients`. Counts are an estimate; the snapshot at send start
 
 `code` format `^[A-Za-z0-9]{10}$`; lookup by sha256 within the host's tenant/store (RLS normal path, no definer
 function). Limiter `storefront-unsubscribe` 20/min per shopper IP (forwarded `X-Shopper-Ip`, as checkout). Codes never
-expire. Unsubscribe also sets the recipient `unsubscribed_at` (stats) and the matching customer's
-`accepts_marketing = false`. Not audited in `audit_logs` (shopper action); the suppression row is the record.
+expire. Unsubscribe also sets the recipient `unsubscribed_at` (stats); it does **not** change
+`accepts_marketing` (P85-4 as amended). "Subscribe again" removes that channel's `source = link` suppression. Not audited in `audit_logs` (shopper action); the suppression row is the record.
 
 ### 4.3 Send-time checks (every recipient, inside the send job, P85-8)
 Skip with `skip_reason` when: suppression exists (`opted_out`); customer deleted (`customer_deleted`); address
@@ -378,6 +378,38 @@ inputs; `LimitKey` + 2 keys; `Customer.marketing`; audit action union), `package
 160/161, 134/135), ADR 0019, DATABASE-DESIGN §5.5 (replace the §6 campaigns sketch), SECURITY T35 (S113–S126),
 API-CONVENTIONS §3 codes + limiters, MULTI-TENANCY (storefront unsubscribe path), PHASE-7 §2.1 rows, PHASE-8-3 §2.1
 label, OPEN-QUESTIONS Q138–Q151, FIGMA-INDEX Marketing rows → built/omissions, roadmap 8.5. **Types first.**
+
+### 9.1 ARCH resolutions (binding via `packages/types` + openapi 1.13.0; where this file was silent or inconsistent)
+- **`send_mode`** (§3.1) has no column in §7.1 and is **not an API field**: the mode is which endpoint is called
+  (`/schedule` vs `/send`). Create/PATCH accept an optional nullable **`scheduled_at`**: stored on a draft without effect
+  (the composer's remembered time), re-validated (P85-14/15/16) when the campaign is `scheduled`.
+- **`audience.params`** is always present (`{}` for `all` / `one_time`); `exclude` is always present.
+- **`Customer.marketing.unsubscribed_source`** is per channel: `{ sms: source|null, email: source|null }` (the UI shows
+  "by customer / by you" and "Allow again" per channel).
+- `POST …/marketing-opt-out` and `DELETE …/marketing-opt-out/{channel}` return **`CustomerMarketing`** (200). POST is
+  idempotent and keeps an existing `link` row; POST for a customer without an address on that channel → 422; DELETE
+  with no suppression → 200.
+- Shopper IP for the `storefront-unsubscribe` limiter is the existing **`X-Storefront-Client-Ip`** header (§4.2's
+  "`X-Shopper-Ip`" means the checkout header; there is no new header).
+- **Send now while 3 campaigns are already `sending`** (P85-27) → 202 with the campaign in `scheduled` (it starts when a
+  slot frees, still respecting quiet hours).
+- **Estimate for email**: `parts_per_recipient` 1, `total_parts` = emails, `encoding` null, `characters` = body length.
+  For SMS `characters` = units of the rendered sample (GSM septets with extension chars counted 2, or UTF-16 units).
+- **SMS parts** (`docs/api/sms-parts-vectors.json`): plain `ceil(units / 153|67)` (no special handling of escape or
+  surrogate pairs at part boundaries), form feed is **not** in the extension set, empty text = 0 parts.
+- **`MarketingOverview`**: `series[].week_start` = ISO-week Monday (store tz) like reports; `messages_sent` counts the
+  range; `active_coupons[]` = `{id, code, type, percent_bps, amount, ends_at, used_count, usage_limit, revenue_amount}`.
+  The "n of allowance" caption uses `Subscription.limits` (the two new `LimitKey`s).
+- Campaigns list `meta` = `PaginationMeta` (no tab counts; tabs filter by `filter[status]`). Recipients: cursor meta,
+  `per_page` 50.
+- **Test-send codes**: §7 adds no storage for them; the API chooses how `GET /storefront/unsubscribe/{code}` recognizes
+  a test code (`is_test: true`) without a `campaign_recipients` row. Codes never expire (§4.2), so a TTL cache alone is
+  not enough.
+- Audit actions are listed as `CampaignAuditAction` in types (`AuditLog.action` stays `string`); there is no
+  `campaign.updated` audit row (§6.1 lists none).
+- `GET /dev/stores/{store}/message-sink` is not in openapi (dev route, API-CONVENTIONS §10.3); its shape is
+  `DevSinkMessage[]` in types (`{channel, to, subject, text, unsubscribe_url, campaign_id, is_test, created_at}`,
+  newest first).
 
 ## 10. Security checklist (S113–S126; each has a test)
 - **S113** opt-out wins at send time: suppression created after snapshot, before the batch runs → recipient

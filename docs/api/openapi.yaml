@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.12.0
+  version: 1.13.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -47,6 +47,17 @@ info:
     days). AdminTenantSummary gains last_active_at and metrics; GET /admin/tenants gains sort values -mrr, mrr, -gmv_30d,
     -orders_30d, -last_active_at, last_active_at and meta.metrics_as_of. PlatformPermission gains view_analytics. No new
     error codes. Testing-only POST /dev/analytics/aggregate is not part of this spec.
+    1.13.0 (2026-11-24, Phase 8.5, PHASE-8-5-CONTRACT.md, ADR 0019): additive only. Marketing campaigns (SMS + email),
+    consent and opt-out. New tag campaigns (marketing.manage): GET /stores/{store}/marketing/overview,
+    GET|POST /stores/{store}/campaigns, GET|PATCH|DELETE .../campaigns/{campaign}, POST .../campaigns/audience-preview,
+    POST .../campaigns/estimate, POST .../{campaign}/test|schedule|send|unschedule|cancel|duplicate (schedule and send need
+    Idempotency-Key), GET .../{campaign}/recipients (also customers.view; masked addresses). Customers (customers.edit):
+    POST /stores/{store}/customers/{customer}/marketing-opt-out, DELETE .../marketing-opt-out/{channel}. Storefront:
+    GET|POST /storefront/unsubscribe/{code} (limiter storefront-unsubscribe 20/min per shopper IP). Customer gains
+    marketing (CustomerMarketing); LimitKey gains campaign_sms_per_month, campaign_emails_per_month. New error codes
+    campaign_quiet_hours, campaign_unknown_merge_field, campaign_too_long, campaign_coupon_inactive,
+    campaign_no_recipients (422), suppression_customer_owned (409), unsubscribe_link_invalid (404). Testing-only
+    GET /dev/stores/{store}/message-sink is not part of this spec.
     1.12.0 (2026-11-24, Phase 8.4, PHASE-8-4-CONTRACT.md, ADR 0018): additive only. Developer API keys and outbound
     webhooks. New tags developers and external. Merchant (developers.manage; writes need the api_webhooks plan feature):
     GET|POST /api-keys, PATCH|DELETE /api-keys/{key}, GET /api-scopes, GET /webhook-event-types,
@@ -121,6 +132,8 @@ tags:
   description: 'Phase 8.4: API keys, webhook endpoints, signing secret and delivery log (PHASE-8-4 §6)'
 - name: external
   description: 'Phase 8.4: external API for merchant integrations, authenticated by an API key (PHASE-8-4 §3)'
+- name: campaigns
+  description: 'Phase 8.5: marketing overview, SMS/email campaigns and opt-out (PHASE-8-5 §4, §6)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -13084,6 +13097,936 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/marketing/overview:
+    get:
+      tags:
+      - campaigns
+      summary: Marketing overview
+      operationId: getMarketingOverview
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        KPIs for the range (P85-22 revenue = non-cancelled orders with a coupon redemption or a campaign conversion, each once),
+        8 ISO weeks of revenue by source, top 4 active coupons by revenue, 5 latest campaigns and tab counts.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: range
+        required: false
+        schema:
+          type: string
+          enum:
+          - 7d
+          - 30d
+          - 90d
+          default: 30d
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MarketingOverview'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/campaigns:
+    get:
+      tags:
+      - campaigns
+      summary: List campaigns
+      operationId: listCampaigns
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        Default sort -created_at; 25 per page.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of CampaignStatus
+      - in: query
+        name: filter[channel]
+        required: false
+        schema:
+          $ref: '#/components/schemas/CampaignChannel'
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+        description: Name contains
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - -created_at
+          - -started_at
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CampaignListItem'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - campaigns
+      summary: Create campaign (draft)
+      operationId: createCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        Creates a `draft`. Audited as campaign.created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`store_not_live` (draft or suspended store, P85-24)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `campaign_unknown_merge_field` (details.fields), `campaign_too_long` (details.parts,
+            details.max_parts), `campaign_coupon_inactive`, or `limit_reached` (50 non-terminal campaigns per store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/audience-preview:
+    post:
+      tags:
+      - campaigns
+      summary: Preview audience
+      operationId: previewCampaignAudience
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        §3.3 counts (estimate; the snapshot at send start is authoritative). Throttle 30/min per user (limiter campaign-preview).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AudiencePreviewInput'
+      responses:
+        '200':
+          description: Audience preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AudiencePreview'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/campaigns/estimate:
+    post:
+      tags:
+      - campaigns
+      summary: Estimate campaign size
+      operationId: estimateCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        Recipients (as audience-preview) × parts of the rendered sample (20-char sample name, shop prefix and opt-out footer
+        included) and the channel allowance for this month.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignEstimateInput'
+      responses:
+        '200':
+          description: Estimate
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CampaignEstimate'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`, `campaign_unknown_merge_field` (details.fields), `campaign_too_long` (details.parts,
+            details.max_parts), `campaign_coupon_inactive`, or `limit_reached` (50 non-terminal campaigns per store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}:
+    get:
+      tags:
+      - campaigns
+      summary: Get campaign
+      operationId: getCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '200':
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - campaigns
+      summary: Update campaign
+      operationId: updateCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `draft` / `scheduled` only. On a `scheduled` campaign the schedule and allowance are re-validated (P85-14/15/16).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignInput'
+      responses:
+        '200':
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (details.campaign_sms_per_month or details.campaign_emails_per_month = {limit,
+            used, needed}; details.upgrade_plan = starter on Free) — P85-13/14'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict` or `store_not_live` (draft or suspended store, P85-24)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `campaign_unknown_merge_field` (details.fields), `campaign_too_long` (details.parts,
+            details.max_parts), `campaign_coupon_inactive`, or `limit_reached` (50 non-terminal campaigns per store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+      - campaigns
+      summary: Delete draft campaign
+      operationId: deleteCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `draft` only (hard delete). Audited as campaign.deleted.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (wrong status for this action)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/test:
+    post:
+      tags:
+      - campaigns
+      summary: Send test to me
+      operationId: sendCampaignTest
+      description: 'Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        P85-26: SMS to the actor''s verified phone, email to the actor''s account email; real render with sample merge values
+        and a test unsubscribe code; counts toward the allowance; 5/hour per user (limiter campaign-test). Audited as campaign.test_sent.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CampaignTestResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (details.campaign_sms_per_month or details.campaign_emails_per_month = {limit,
+            used, needed}; details.upgrade_plan = starter on Free) — P85-13/14'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`store_not_live` (draft or suspended store, P85-24) or `invalid_state_transition` (terminal campaign)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed` (actor has no verified phone / email) or a content error as on create'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_error` — the SMS gateway or campaign mailer refused the test message; nothing is counted'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/schedule:
+    post:
+      tags:
+      - campaigns
+      summary: Schedule campaign
+      operationId: scheduleCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `draft → scheduled`. `scheduled_at` ≥ now + 5 min and ≤ now + 90 days, outside quiet hours (P85-15/16); estimate must
+        fit the remaining allowance (P85-14). Audited as campaign.scheduled.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCampaignInput'
+      responses:
+        '200':
+          description: Scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (details.campaign_sms_per_month or details.campaign_emails_per_month = {limit,
+            used, needed}; details.upgrade_plan = starter on Free) — P85-13/14'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `store_not_live` (draft or suspended store, P85-24), `idempotency_key_in_use`
+            or `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`campaign_quiet_hours` (details.allowed_from, store time 21:00–09:00), `campaign_no_recipients`, `limit_reached`,
+            `campaign_coupon_inactive`, or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/send:
+    post:
+      tags:
+      - campaigns
+      summary: Send campaign now
+      operationId: sendCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `draft|scheduled → sending`; same checks as schedule (quiet hours apply to now). At most 3 campaigns `sending` per store
+        (P85-27) — beyond that the campaign waits as `scheduled` for a free slot. Audited as campaign.sent.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      responses:
+        '202':
+          description: Sending (or scheduled when 3 are already sending)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`plan_limit_reached` (details.campaign_sms_per_month or details.campaign_emails_per_month = {limit,
+            used, needed}; details.upgrade_plan = starter on Free) — P85-13/14'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `store_not_live` (draft or suspended store, P85-24), `idempotency_key_in_use`
+            or `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`campaign_quiet_hours` (details.allowed_from, store time 21:00–09:00), `campaign_no_recipients`, `limit_reached`,
+            `campaign_coupon_inactive`, or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/unschedule:
+    post:
+      tags:
+      - campaigns
+      summary: Unschedule campaign
+      operationId: unscheduleCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `scheduled → draft`. Audited as campaign.unscheduled.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '200':
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (wrong status for this action)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/cancel:
+    post:
+      tags:
+      - campaigns
+      summary: Cancel campaign
+      operationId: cancelCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        `draft|scheduled|sending → cancelled`; remaining queued recipients become skipped/cancelled, sent stay sent. Audited
+        as campaign.cancelled.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '200':
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (wrong status for this action)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/duplicate:
+    post:
+      tags:
+      - campaigns
+      summary: Duplicate campaign
+      operationId: duplicateCampaign
+      description: Needs marketing.manage (PHASE-8-5 §2.1); impersonation sessions are read-only (writes → 403 impersonation_read_only).
+        New `draft` named "{name} (copy)" (truncated to 80) with the same content and audience. Audited as campaign.created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`store_not_live` (draft or suspended store, P85-24)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`limit_reached` (50 non-terminal campaigns per store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/campaigns/{campaign}/recipients:
+    get:
+      tags:
+      - campaigns
+      summary: List campaign recipients
+      operationId: listCampaignRecipients
+      description: Needs marketing.manage AND customers.view (S120). Addresses are masked. Cursor pages of 50, newest first.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CampaignPath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of CampaignRecipientStatus
+      - in: query
+        name: filter[skip_reason]
+        required: false
+        schema:
+          type: string
+        description: Comma list of SkipReason
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Recipients
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CampaignRecipient'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/customers/{customer}/marketing-opt-out:
+    post:
+      tags:
+      - customers
+      summary: Stop marketing messages
+      operationId: optOutCustomerMarketing
+      description: Needs customers.edit. Adds a `merchant` suppression for the customer's current address on that channel (idempotent;
+        an existing customer-owned suppression is kept). Audited as customer.marketing_opted_out.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CustomerPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarketingOptOutInput'
+      responses:
+        '200':
+          description: Marketing status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerMarketing'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed` (e.g. the customer has no address on that channel)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/customers/{customer}/marketing-opt-out/{channel}:
+    delete:
+      tags:
+      - customers
+      summary: Allow marketing again
+      operationId: removeCustomerMarketingOptOut
+      description: Needs customers.edit. Removes a `merchant` suppression only; a customer-owned (`link`) one → 409 `suppression_customer_owned`
+        (P85-5, S118). No suppression → 200 (idempotent). Audited as customer.marketing_opt_out_removed.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CustomerPath'
+      - in: path
+        name: channel
+        required: true
+        schema:
+          $ref: '#/components/schemas/MarketingChannel'
+      responses:
+        '200':
+          description: Marketing status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerMarketing'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`suppression_customer_owned`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/unsubscribe/{code}:
+    get:
+      tags:
+      - storefront
+      summary: Unsubscribe link status
+      operationId: getStorefrontUnsubscribe
+      description: 'Server-to-server (Next.js `/u/{code}`). Never changes state (P85-7). Lookup by sha256 within the host''s
+        store. Limiter storefront-unsubscribe 20/min per shopper IP. Response `Cache-Control: private, no-store`.'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/UnsubscribeCode'
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UnsubscribeStatus'
+        '401':
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`unsubscribe_link_invalid` (unknown or malformed code, or a code of another store — identical body)
+            or `store_not_found` (unknown host)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - storefront
+      summary: Unsubscribe or subscribe again
+      operationId: postStorefrontUnsubscribe
+      description: Server-to-server (page button, or `/u/{code}/one-click` with one_click true, RFC 8058). Idempotent. `unsubscribe`
+        creates a `link` suppression for (store, channel, address), sets the recipient unsubscribed_at and the matching customer's
+        accepts_marketing false; `resubscribe` removes only the `link` suppression for that address and channel. A test code
+        → 200 with is_test true and no change. Not written to audit_logs.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/UnsubscribeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnsubscribeInput'
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UnsubscribeStatus'
+        '401':
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`unsubscribe_link_invalid` (unknown or malformed code, or a code of another store — identical body)
+            or `store_not_found` (unknown host)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   parameters:
     AdminTenantPath:
@@ -13443,6 +14386,20 @@ components:
       description: Overrides the default bucket size (caps day ≤ 92, week ≤ 106, month ≤ 25 buckets; over → 422).
       schema:
         $ref: '#/components/schemas/AnalyticsGranularity'
+    CampaignPath:
+      in: path
+      name: campaign
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    UnsubscribeCode:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9]{10}$
+      description: 10 base62 chars from the message link; a malformed value answers the same 404 as an unknown one.
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -15423,6 +16380,8 @@ components:
       - courier_connections
       - sms_per_month
       - custom_domains
+      - campaign_sms_per_month
+      - campaign_emails_per_month
     Plan:
       type: object
       required:
@@ -17465,7 +18424,10 @@ components:
       - created_at
       - updated_at
       - created_by
+      - marketing
       properties:
+        marketing:
+          $ref: '#/components/schemas/CustomerMarketing'
         delivered_orders_count:
           type: integer
         returned_orders_count:
@@ -26060,4 +27022,977 @@ components:
           - string
           - 'null'
         per_page:
+          type: integer
+    MarketingChannel:
+      type: string
+      enum:
+      - sms
+      - email
+    CampaignChannel:
+      $ref: '#/components/schemas/MarketingChannel'
+    CampaignLanguage:
+      type: string
+      enum:
+      - bn
+      - en
+    CampaignStatus:
+      type: string
+      enum:
+      - draft
+      - scheduled
+      - sending
+      - sent
+      - cancelled
+      - failed
+      description: 'P85-17: draft → scheduled → sending → sent; draft|scheduled|sending → cancelled; scheduled|sending → failed'
+    CampaignFailureReason:
+      type: string
+      enum:
+      - limit
+      - plan
+      - store_unavailable
+      - no_recipients
+    CampaignSegment:
+      type: string
+      enum:
+      - all
+      - repeat_inactive
+      - vip
+      - new_customers
+      - one_time
+      - district
+      - tag
+    CampaignAudienceExclude:
+      type: object
+      required:
+      - risky
+      - ordered_within_days
+      properties:
+        risky:
+          type: boolean
+          description: Skip customers whose risk class is `risky` (P85-25)
+        ordered_within_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 60
+          description: Skip anyone who ordered in the last N days
+      additionalProperties: false
+    CampaignAudience:
+      description: §3.2. `params` is always present (`{}` for all / one_time). Unknown keys → 422. Opted-out and ineligible customers
+        (P85-3) are always excluded.
+      oneOf:
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: all
+          params:
+            type: object
+            additionalProperties: false
+            maxProperties: 0
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: repeat_inactive
+          params:
+            type: object
+            required:
+            - min_orders
+            - inactive_days
+            properties:
+              min_orders:
+                type: integer
+                minimum: 2
+                maximum: 20
+                default: 2
+              inactive_days:
+                type: integer
+                minimum: 14
+                maximum: 365
+                default: 60
+            additionalProperties: false
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: vip
+          params:
+            type: object
+            required:
+            - min_spent_amount
+            properties:
+              min_spent_amount:
+                type: integer
+                minimum: 1
+                default: 2000000
+                description: minor units
+            additionalProperties: false
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: new_customers
+          params:
+            type: object
+            required:
+            - days
+            properties:
+              days:
+                type: integer
+                minimum: 1
+                maximum: 365
+                default: 30
+            additionalProperties: false
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: one_time
+          params:
+            type: object
+            additionalProperties: false
+            maxProperties: 0
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: district
+          params:
+            type: object
+            required:
+            - districts
+            properties:
+              districts:
+                type: array
+                minItems: 1
+                maxItems: 10
+                items:
+                  type: string
+                description: geo district names
+            additionalProperties: false
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      - type: object
+        required:
+        - segment
+        - params
+        - exclude
+        properties:
+          segment:
+            allOf:
+            - $ref: '#/components/schemas/CampaignSegment'
+            const: tag
+          params:
+            type: object
+            required:
+            - tag
+            properties:
+              tag:
+                type: string
+                minLength: 1
+                maxLength: 40
+            additionalProperties: false
+          exclude:
+            $ref: '#/components/schemas/CampaignAudienceExclude'
+        additionalProperties: false
+      discriminator:
+        propertyName: segment
+    CampaignStats:
+      type: object
+      required:
+      - recipients
+      - sent
+      - failed
+      - skipped
+      - unsubscribed
+      - parts_sent
+      - orders
+      - revenue_amount
+      - currency
+      properties:
+        recipients:
+          type: integer
+          minimum: 0
+        sent:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        unsubscribed:
+          type: integer
+          minimum: 0
+        parts_sent:
+          type: integer
+          minimum: 0
+          description: SMS parts sent (0 for email)
+        orders:
+          type: integer
+          minimum: 0
+          description: attributed orders (P85-21), cancelled excluded
+        revenue_amount:
+          type: integer
+          description: minor units; total_amount of attributed non-cancelled orders
+        currency:
+          type: string
+    CampaignListItem:
+      type: object
+      required:
+      - id
+      - name
+      - channel
+      - language
+      - status
+      - audience_label
+      - coupon
+      - product
+      - scheduled_at
+      - started_at
+      - completed_at
+      - cancelled_at
+      - failure_reason
+      - stats
+      - created_by
+      - created_at
+      - updated_at
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 80
+        channel:
+          $ref: '#/components/schemas/CampaignChannel'
+        language:
+          $ref: '#/components/schemas/CampaignLanguage'
+        status:
+          $ref: '#/components/schemas/CampaignStatus'
+        audience_label:
+          type: string
+          description: server-rendered segment label in the campaign language
+        coupon:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - code
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              code:
+                type: string
+          - type: 'null'
+        product:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - slug
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              slug:
+                type: string
+          - type: 'null'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        started_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failure_reason:
+          oneOf:
+          - $ref: '#/components/schemas/CampaignFailureReason'
+          - type: 'null'
+        stats:
+          $ref: '#/components/schemas/CampaignStats'
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    Campaign:
+      allOf:
+      - $ref: '#/components/schemas/CampaignListItem'
+      - type: object
+        required:
+        - audience
+        - body
+        - subject
+        properties:
+          audience:
+            $ref: '#/components/schemas/CampaignAudience'
+          body:
+            type: string
+            description: merchant text with merge fields; never includes the auto prefix or footer
+          subject:
+            type:
+            - string
+            - 'null'
+            maxLength: 150
+            description: email only
+    CreateCampaignInput:
+      type: object
+      required:
+      - name
+      - channel
+      - language
+      - audience
+      - body
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        channel:
+          $ref: '#/components/schemas/CampaignChannel'
+        language:
+          $ref: '#/components/schemas/CampaignLanguage'
+        audience:
+          $ref: '#/components/schemas/CampaignAudience'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: 'SMS: ≤ 5 parts including the "{shop}: " prefix and the opt-out footer (P85-18). Email: plain text ≤ 5,000
+            chars. Merge fields {name}, {coupon}, {shop_link}, {product}; others → 422 campaign_unknown_merge_field.'
+        subject:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 150
+          description: required for email (no CR/LF); must be null/absent for SMS
+        coupon_id:
+          type:
+          - string
+          - 'null'
+          description: store coupon ULID; required when {coupon} is used; must be active
+        product_id:
+          type:
+          - string
+          - 'null'
+          description: store product ULID; required when {product} is used
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: remembered schedule time; stored on a draft without effect until /schedule; on a scheduled campaign re-validated
+      additionalProperties: false
+    ScheduleCampaignInput:
+      type: object
+      required:
+      - scheduled_at
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+          description: ≥ now + 5 min, ≤ now + 90 days, not 21:00–09:00 store time
+    CampaignTestResult:
+      type: object
+      required:
+      - to_masked
+      properties:
+        to_masked:
+          type: string
+    AudiencePreviewInput:
+      type: object
+      required:
+      - channel
+      - audience
+      properties:
+        channel:
+          $ref: '#/components/schemas/CampaignChannel'
+        audience:
+          $ref: '#/components/schemas/CampaignAudience'
+    AudiencePreview:
+      type: object
+      required:
+      - matched
+      - excluded
+      - recipients
+      - risk_breakdown
+      properties:
+        matched:
+          type: integer
+          minimum: 0
+          description: segment size before exclusions
+        excluded:
+          type: object
+          required:
+          - risky
+          - recent_orders
+          - opted_out
+          - no_address
+          - not_eligible
+          properties:
+            risky:
+              type: integer
+              minimum: 0
+            recent_orders:
+              type: integer
+              minimum: 0
+            opted_out:
+              type: integer
+              minimum: 0
+            no_address:
+              type: integer
+              minimum: 0
+            not_eligible:
+              type: integer
+              minimum: 0
+        recipients:
+          type: integer
+          minimum: 0
+        risk_breakdown:
+          type: object
+          required:
+          - good
+          - careful
+          - risky
+          properties:
+            good:
+              type: number
+              minimum: 0
+              maximum: 100
+              description: percent, one decimal
+            careful:
+              type: number
+              minimum: 0
+              maximum: 100
+              description: percent, one decimal
+            risky:
+              type: number
+              minimum: 0
+              maximum: 100
+              description: percent, one decimal
+    SmsEncoding:
+      type: string
+      enum:
+      - gsm7
+      - ucs2
+    CampaignEstimateInput:
+      type: object
+      required:
+      - channel
+      - language
+      - body
+      - audience
+      properties:
+        channel:
+          $ref: '#/components/schemas/CampaignChannel'
+        language:
+          $ref: '#/components/schemas/CampaignLanguage'
+        body:
+          type: string
+          maxLength: 5000
+        subject:
+          type:
+          - string
+          - 'null'
+          maxLength: 150
+        audience:
+          $ref: '#/components/schemas/CampaignAudience'
+        coupon_id:
+          type:
+          - string
+          - 'null'
+        product_id:
+          type:
+          - string
+          - 'null'
+    CampaignEstimate:
+      type: object
+      required:
+      - recipients
+      - parts_per_recipient
+      - total_parts
+      - encoding
+      - characters
+      - allowance
+      properties:
+        recipients:
+          type: integer
+          minimum: 0
+        parts_per_recipient:
+          type: integer
+          minimum: 0
+          description: SMS parts of the rendered sample; 1 for email
+        total_parts:
+          type: integer
+          minimum: 0
+          description: SMS parts (or emails) for the whole audience
+        encoding:
+          oneOf:
+          - $ref: '#/components/schemas/SmsEncoding'
+          - type: 'null'
+          description: null for email
+        characters:
+          type: integer
+          minimum: 0
+          description: 'SMS: units of the rendered sample (GSM septets, extension chars count 2; or UTF-16 code units). Email:
+            body length'
+        allowance:
+          type: object
+          required:
+          - limit
+          - used
+          - remaining
+          - after
+          properties:
+            limit:
+              type:
+              - integer
+              - 'null'
+            used:
+              type: integer
+              minimum: 0
+            remaining:
+              type:
+              - integer
+              - 'null'
+            after:
+              type:
+              - integer
+              - 'null'
+          description: campaign_sms_per_month (parts) or campaign_emails_per_month this month; null limit = unlimited
+    CampaignRecipientStatus:
+      type: string
+      enum:
+      - queued
+      - sending
+      - sent
+      - failed
+      - skipped
+      - unknown
+    SkipReason:
+      type: string
+      enum:
+      - opted_out
+      - customer_deleted
+      - address_changed
+      - not_eligible
+      - cancelled
+      - plan
+      - store_unavailable
+    CampaignRecipient:
+      type: object
+      required:
+      - id
+      - customer
+      - masked_address
+      - status
+      - skip_reason
+      - error_code
+      - parts
+      - sent_at
+      - unsubscribed_at
+      - attributed_order
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        customer:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        masked_address:
+          type: string
+          example: +880 17•• •••123
+        status:
+          $ref: '#/components/schemas/CampaignRecipientStatus'
+        skip_reason:
+          oneOf:
+          - $ref: '#/components/schemas/SkipReason'
+          - type: 'null'
+        error_code:
+          type:
+          - string
+          - 'null'
+          enum:
+          - provider_error
+          - invalid_address
+          - null
+        parts:
+          type: integer
+          minimum: 0
+        sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        unsubscribed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        attributed_order:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - number
+            - total_amount
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+              total_amount:
+                type: integer
+          - type: 'null'
+    MarketingOverview:
+      type: object
+      required:
+      - range
+      - kpis
+      - series
+      - active_coupons
+      - recent_campaigns
+      - counts
+      - currency
+      properties:
+        range:
+          type: string
+          enum:
+          - 7d
+          - 30d
+          - 90d
+        kpis:
+          type: object
+          required:
+          - revenue_amount
+          - revenue_change_pct
+          - campaign_orders
+          - campaign_orders_share_pct
+          - messages_sent
+          - unsubscribes
+          properties:
+            revenue_amount:
+              type: integer
+            revenue_change_pct:
+              type:
+              - number
+              - 'null'
+              description: vs the previous range of the same length; null when that had no revenue
+            campaign_orders:
+              type: integer
+              minimum: 0
+            campaign_orders_share_pct:
+              type: number
+              description: percent of all orders in range, one decimal
+            messages_sent:
+              type: integer
+              minimum: 0
+              description: campaign SMS recipients + emails sent in range
+            unsubscribes:
+              type: integer
+              minimum: 0
+        series:
+          type: array
+          description: 8 ISO weeks, oldest first (store tz)
+          items:
+            type: object
+            required:
+            - week_start
+            - coupons_amount
+            - campaigns_amount
+            properties:
+              week_start:
+                type: string
+                format: date
+              coupons_amount:
+                type: integer
+              campaigns_amount:
+                type: integer
+        active_coupons:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            required:
+            - id
+            - code
+            - type
+            - percent_bps
+            - amount
+            - ends_at
+            - used_count
+            - usage_limit
+            - revenue_amount
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              code:
+                type: string
+              type:
+                $ref: '#/components/schemas/CouponType'
+              percent_bps:
+                type:
+                - integer
+                - 'null'
+              amount:
+                type:
+                - integer
+                - 'null'
+              ends_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              used_count:
+                type: integer
+                minimum: 0
+              usage_limit:
+                type:
+                - integer
+                - 'null'
+              revenue_amount:
+                type: integer
+        recent_campaigns:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/CampaignListItem'
+        counts:
+          type: object
+          required:
+          - coupons
+          - campaigns
+          properties:
+            coupons:
+              type: integer
+              minimum: 0
+            campaigns:
+              type: integer
+              minimum: 0
+        currency:
+          type: string
+    SuppressionSource:
+      type: string
+      enum:
+      - link
+      - merchant
+      - import
+    CustomerMarketingStatus:
+      type: string
+      enum:
+      - subscribed
+      - unsubscribed
+      - not_eligible
+      - no_address
+    CustomerMarketing:
+      type: object
+      required:
+      - sms
+      - email
+      - unsubscribed_sms_at
+      - unsubscribed_email_at
+      - unsubscribed_source
+      properties:
+        sms:
+          $ref: '#/components/schemas/CustomerMarketingStatus'
+        email:
+          $ref: '#/components/schemas/CustomerMarketingStatus'
+        unsubscribed_sms_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        unsubscribed_email_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        unsubscribed_source:
+          type: object
+          required:
+          - sms
+          - email
+          properties:
+            sms:
+              oneOf:
+              - $ref: '#/components/schemas/SuppressionSource'
+              - type: 'null'
+            email:
+              oneOf:
+              - $ref: '#/components/schemas/SuppressionSource'
+              - type: 'null'
+          description: per channel; link = by the customer (merchant can't remove), merchant = by you
+      description: 'Computed (§4.1): suppressions + eligibility P85-3'
+    MarketingOptOutInput:
+      type: object
+      required:
+      - channel
+      properties:
+        channel:
+          $ref: '#/components/schemas/MarketingChannel'
+    UnsubscribeStatus:
+      type: object
+      required:
+      - channel
+      - masked_address
+      - status
+      - is_test
+      - store_name
+      properties:
+        channel:
+          $ref: '#/components/schemas/MarketingChannel'
+        masked_address:
+          type: string
+        status:
+          type: string
+          enum:
+          - subscribed
+          - unsubscribed
+        is_test:
+          type: boolean
+          description: a test-send code; POST changes nothing
+        store_name:
+          type: string
+    UnsubscribeInput:
+      type: object
+      required:
+      - action
+      properties:
+        action:
+          type: string
+          enum:
+          - unsubscribe
+          - resubscribe
+        one_click:
+          type: boolean
+      additionalProperties: false
+    UpdateCampaignInput:
+      type: object
+      required:
+      - revision
+      additionalProperties: false
+      description: 'PATCH (draft / scheduled only): any CreateCampaignInput field, plus revision (stale → 409 revision_conflict).'
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        channel:
+          $ref: '#/components/schemas/CampaignChannel'
+        language:
+          $ref: '#/components/schemas/CampaignLanguage'
+        audience:
+          $ref: '#/components/schemas/CampaignAudience'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: 'SMS: ≤ 5 parts including the "{shop}: " prefix and the opt-out footer (P85-18). Email: plain text ≤ 5,000
+            chars. Merge fields {name}, {coupon}, {shop_link}, {product}; others → 422 campaign_unknown_merge_field.'
+        subject:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 150
+          description: required for email (no CR/LF); must be null/absent for SMS
+        coupon_id:
+          type:
+          - string
+          - 'null'
+          description: store coupon ULID; required when {coupon} is used; must be active
+        product_id:
+          type:
+          - string
+          - 'null'
+          description: store product ULID; required when {product} is used
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: remembered schedule time; stored on a draft without effect until /schedule; on a scheduled campaign re-validated
+        revision:
           type: integer

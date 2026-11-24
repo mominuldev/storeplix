@@ -207,7 +207,7 @@ sha256 at rest, 7 scopes, non-delegation, new permission `developers.manage`) fo
 ≈ 20.6 h, auto-disable after 72 h, SSRF-safe sender with fake driver), Developer page `144:40726`; Growth-gated
 (`api_webhooks`). Deferred from 8.4: test-mode keys (Q127), customer/shipment write scopes (Q128), Postman collection
 (Q134), super-admin views (Q136), OAuth apps, per-key IP allowlists.
-**8.5** contract: `docs/development/PHASE-8-5-CONTRACT.md` (accepted 2026-11-24; branch
+**8.5** contract: `docs/development/PHASE-8-5-CONTRACT.md` (accepted 2026-11-24; QA re-gate PASS; branch
 `feat/phase-8-5-campaigns`; openapi 1.13.0; ADR 0019; Q138–Q151 defaults accepted): store-scoped SMS + email campaigns
 (predefined segments, merge fields, test send, schedule/send now/cancel, quiet hours), per-channel address suppression
 with an opt-out link on every message (storefront `/u/{code}`, RFC 8058 one-click), opt-out re-checked at send time,

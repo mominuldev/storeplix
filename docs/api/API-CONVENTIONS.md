@@ -50,11 +50,11 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 | 401 | `unauthenticated`, `invalid_storefront_key`, `invalid_api_key` (Phase 8.4) | missing/invalid token or key |
 | 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
 | 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `api_key_scope_missing` (+ `details.required_scope`, Phase 8.4), `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
-| 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found` | missing **or belongs to another tenant** |
-| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3) | state conflict |
+| 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found`, `unsubscribe_link_invalid` (Phase 8.5) | missing **or belongs to another tenant** |
+| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3), `suppression_customer_owned` (Phase 8.5) | state conflict |
 | 413 | `payload_too_large` | body/upload over the endpoint limit |
 | 419 | `csrf_token_mismatch` | cookie-session write without a valid `X-XSRF-TOKEN` (Phase 4.7) |
-| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4) | validation / business rule |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4), `campaign_quiet_hours`, `campaign_unknown_merge_field`, `campaign_too_long`, `campaign_coupon_inactive`, `campaign_no_recipients` (Phase 8.5) | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
 | 503 | `maintenance` | |
@@ -160,6 +160,20 @@ Reused: `feature_not_in_plan` (402, `details.upgrade_plan: ["growth"]`: external
 `api_webhooks`), `tenant_suspended` (403 on `/external/*`), `idempotency_key_required` (external order status and stock
 adjustment), `rate_limited`. Merchant routes answer an API key with 401 `unauthenticated` (they never accept one).
 
+**Phase 8.5 codes** (PHASE-8-5-CONTRACT §6.3, marketing campaigns and opt-out):
+| HTTP | code | When |
+|---|---|---|
+| 422 | `campaign_quiet_hours` | schedule into, or "send now" during, 21:00–09:00 store time (`details.allowed_from`, ISO date-time of the next 09:00) |
+| 422 | `campaign_unknown_merge_field` | body/subject contains a `{…}` other than `{name}`, `{coupon}`, `{shop_link}`, `{product}` (`details.fields`) |
+| 422 | `campaign_too_long` | SMS over 5 parts including prefix and footer (`details.parts`, `details.max_parts`) |
+| 422 | `campaign_coupon_inactive` | `{coupon}` used with a coupon that is not active (or none selected) |
+| 422 | `campaign_no_recipients` | schedule / send while the audience preview is 0 |
+| 409 | `suppression_customer_owned` | merchant `DELETE …/customers/{customer}/marketing-opt-out/{channel}` on a shopper-owned (`link`) suppression |
+| 404 | `unsubscribe_link_invalid` | `GET|POST /storefront/unsubscribe/{code}` with an unknown, malformed or other-store code (one identical body) |
+Reused: `invalid_state_transition`, `revision_conflict`, `store_not_live` (409), `limit_reached` (422: 50 non-terminal
+campaigns per store), `plan_limit_reached` (402, `details.campaign_sms_per_month` / `details.campaign_emails_per_month`
+`{limit, used, needed}`, `details.upgrade_plan` on Free), `idempotency_key_*` (schedule / send), `rate_limited`.
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
@@ -229,6 +243,10 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `domains-ask` (`GET /internal/domains/allowed`) | request IP | 1 200/min |
 | `external-api` (Phase 8.4, all `/external/*`) | API key id (tenant-prefixed) | 120/min per key; `RateLimit-*` headers, 429 `rate_limited` + `Retry-After` |
 | Webhook secret reveal (`POST /stores/{store}/webhook-secret/reveal`, Phase 8.4) | user | 10/min |
+| `storefront-unsubscribe` (Phase 8.5, `GET|POST /storefront/unsubscribe/{code}`) | shopper IP (`X-Storefront-Client-Ip`, trusted with a valid storefront key; IPv6 /64) | 20/min (on top of `storefront`) |
+| `campaign-preview` (Phase 8.5, `POST /stores/{store}/campaigns/audience-preview`) | tenant + user | 30/min |
+| `campaign-test` (Phase 8.5, `POST /stores/{store}/campaigns/{campaign}/test`) | tenant + user | 5/hour |
+| Campaign send rate (Phase 8.5, in the `campaigns` queue, not HTTP) | store; platform | SMS 10/s per store (`campaigns.sms_rate_per_second`) and 50/s platform-wide (`campaigns.platform_sms_rate_per_second`); email 20/s per store — over the limit the job is released, never dropped |
 | Inline `throttle:N,1` (5b) | Laravel default signature: **the user id** (public routes: domain + IP) | gateway connect, gateway test-payment, courier connect / test / webhook-secret, `shipments/bulk`: 20/min; `documents/preview`, courier `pickup-stores`: 30/min; courier `areas`: 120/min; signed `documents/{document}/download`, `dev/*`: 60/min |
 Auth routes (login, register, password reset, OTP send/verify) use per-route limiters; their exact values are
 maintained in `apps/api/README.md` (the table above is indicative). Responses include `X-RateLimit-Limit`,
@@ -321,7 +339,9 @@ provider or not a charge → **404** HTML page. Redirect targets come only from 
 ### 10.3 Testing-only dev endpoints
 `POST /dev/payments/{payment}/expire-now`, `GET /dev/fake-gateway/{payment}` + `POST …/{pay|fail|cancel}` (signed),
 `POST /dev/shipments/{shipment}/advance`, (Phase 6) `POST /dev/domains/{domain}/dns`, `…/provider`, `…/age`, and (Phase 8.4)
-`GET /dev/webhook-sink` (fake outbound sender sink, `WEBHOOKS_OUT_FAKE=true`, `perm:developers.manage`):
+`GET /dev/webhook-sink` (fake outbound sender sink, `WEBHOOKS_OUT_FAKE=true`, `perm:developers.manage`), and (Phase 8.5)
+`GET /dev/stores/{store}/message-sink` (rendered campaign/test messages, last 200 per store, `CAMPAIGNS_DEV_SINK=true`,
+`perm:marketing.manage`; the API refuses to boot in production with the sink on):
 registered **only outside production** (`APP_ENV != production`) and answer **404** unless `PAYMENTS_FAKE=true`
 (payments), `COURIERS_FAKE=true` (shipments) or `DOMAINS_FAKE=true` (domains; PHASE-6-CONTRACT §4.4). They exist for e2e and local
 work, are never linked from the apps, and are **not** part of `openapi.yaml`.

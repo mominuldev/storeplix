@@ -836,6 +836,58 @@ Actor CHECKs on `order_events`, `inventory_movements` (and any other actor-typed
 `'api_key'` (`actor_id` = key id, shown as "API: <key name>"). `audit_logs.actor_type = 'api_key'` already exists.
 No row change for system roles: `developers.manage` is code-defined in `SystemRole` (owner, admin).
 
+## 5.5 Phase 8.5 marketing tables (PHASE-8-5-CONTRACT §7, ADR 0019, migrations `2026_12_02_*`)
+All four tables are store-scoped `[S]` (`BelongsToStore`, composite FK `(tenant_id, store_id) → stores`), have RLS
+forced in their create migration and are listed in `RlsTables::TENANT` and `database/sql/rls-emergency-off.sql`.
+Plan limits `campaign_sms_per_month` (parts) / `campaign_emails_per_month`; on downgrade nothing is deleted (P85-13/14).
+
+### campaigns [S] (`000100`)
+id PK · tenant_id · store_id · name varchar(80) · channel varchar(8) `CHECK IN ('sms','email')` · language char(2)
+`CHECK IN ('bn','en')` · status varchar(12) `CHECK IN ('draft','scheduled','sending','sent','cancelled','failed')` ·
+audience jsonb (`AudienceDefinition`, §3.2 of the contract) · body text · subject varchar(150) null (email only) ·
+coupon_id FK (tenant_id, store_id, coupon_id) → coupons SET NULL null · product_id FK (t, s) → products SET NULL null ·
+scheduled_at, started_at, completed_at, cancelled_at timestamptz null · failure_reason varchar(24) null (`limit`,
+`plan`, `store_unavailable`, `no_recipients`) · recipients_count, sent_count, failed_count, skipped_count,
+unsubscribed_count int default 0 · parts_sent int default 0 · created_by FK users SET NULL null · revision int ·
+timestamps. U(tenant_id, store_id, id). IX(tenant_id, store_id, status, scheduled_at) (`campaigns:dispatch-due`),
+IX(tenant_id, store_id, created_at DESC). Hard delete for `draft` only. ≤ 50 non-terminal rows per store, ≤ 3 `sending`
+(app rules, P85-27). State changes by conditional UPDATE (`WHERE status = …`), never read-then-write.
+
+### campaign_recipients [S] (`000100`)
+id PK · tenant_id · store_id · campaign_id FK (t, s) → campaigns CASCADE · customer_id FK (t, s) → customers SET NULL
+null · channel varchar(8) · address varchar(254) (normalized: `8801XXXXXXXXX` or lower-cased email) · status
+varchar(10) `CHECK IN ('queued','sending','sent','failed','skipped','unknown')` · skip_reason varchar(24) null
+(`opted_out`, `customer_deleted`, `address_changed`, `not_eligible`, `cancelled`, `plan`, `store_unavailable`) ·
+error_code varchar(24) null (`provider_error`, `invalid_address`) · parts smallint default 0 · unsubscribe_code_hash
+char(64) **U** (sha256 hex of the 10-char base62 code; the plain code is never stored) · provider_message_id
+varchar(128) null · sent_at, unsubscribed_at timestamptz null · created_at, updated_at. U(campaign_id, address),
+U(campaign_id, customer_id). IX(campaign_id, status). IX(tenant_id, store_id, customer_id, sent_at DESC) (attribution).
+The rendered text is not stored (only `parts`). Pruned after 13 months (`campaigns:prune-recipients`, daily); campaign
+rows and counters are kept. Test sends (P85-26) write no recipient row; §7 adds no table for test codes, so the API
+recognizes a test code by its own means (PHASE-8-5 §9.1).
+
+### campaign_conversions [S] (`000100`)
+id PK · tenant_id · store_id · campaign_id FK (t, s) → campaigns CASCADE · recipient_id FK → campaign_recipients SET
+NULL null · order_id FK (t, s) → orders CASCADE **U** (one campaign per order, latest send within 7 days wins, P85-21) ·
+placed_at timestamptz · created_at. IX(tenant_id, store_id, campaign_id), IX(tenant_id, store_id, placed_at). Revenue is
+read at query time from `orders.total_amount` of non-cancelled orders (never copied).
+
+### marketing_suppressions [S] (`000200`)
+id PK · tenant_id · store_id · channel varchar(8) `CHECK IN ('sms','email')` · address varchar(254) (normalized as
+above) · source varchar(12) `CHECK IN ('link','merchant','import')` (`import` reserved, not written in 8.5) ·
+campaign_id FK → campaigns SET NULL null (the campaign whose link was used) · created_by FK users SET NULL null
+(merchant source) · created_at. **U(store_id, channel, address)** — the source of truth for opt-out (P85-4); it is keyed by
+address, not by customer, so it survives customer delete/re-create, CSV import and merges. IX(tenant_id, store_id,
+created_at). Kept forever. A `link` row is removed only by the customer ("Subscribe again"); a `merchant` row only by
+the merchant (P85-5).
+
+### Changes to existing tables (`000300`)
+`plans.limits` gains `campaign_sms_per_month` (Free 0 / Starter 1 000 / Growth 5 000) and `campaign_emails_per_month`
+(0 / 5 000 / 20 000) for existing plans; `PlanSeeder` updated. `sms_messages.purpose` gains the value `campaign`
+(template `campaign:{campaign id}`, no body; no CHECK exists, documentation only) — order-SMS usage (`sms_per_month`,
+P5-26) keeps counting only order purposes. `customers.accepts_marketing` is unchanged as a column; it is set `false` by
+an unsubscribe and is no longer enough on its own to message someone (eligibility P85-3).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -843,7 +895,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 |---|---|---|
 | Staff & roles (89:26676) | `roles`, `role_permissions`, `tenant_users.role_id`, `staff_invitations.role_id` — **specified in 8.3 (§5 tenant_users, PHASE-8-3 §5)** | 8.3 |
 | Developer API keys & webhooks (144:40725) | `api_keys`, `webhook_endpoints`, `webhook_secrets`, `webhook_deliveries` — **specified in 8.4 (§5.4, PHASE-8-4 §5, ADR 0018)** | 8.4 |
-| Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns(tenant_id, channel sms/email, audience jsonb, status, scheduled_at)`; `campaign_recipients` | 5 / 8 |
+| Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns`, `campaign_recipients`, `campaign_conversions`, `marketing_suppressions` — **specified in 8.5 (§5.5, PHASE-8-5 §7, ADR 0019)** | 5 / 8.5 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
 | Automations (140:30335) | `automations(tenant_id, trigger, conditions jsonb, actions jsonb, is_active)`, `automation_runs(automation_id, subject_id, status, log)` | 8+ |

@@ -151,7 +151,7 @@ States everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352
 | Orders | Request advance payment `144:46081`, Bulk book courier `39:18808`, Unfinished orders `39:9461`, Returns & exchanges `39:9900`, Return detail `146:32329` | 5b / Phase 8 |
 | Shipments & printing | Shipments `39:10347`, Shipment detail `146:33100`, Invoices & labels `39:10790`, templates `44:16156` (A4 `42:11175`, 80 mm `42:12238`, A5 `42:13193`, packing slip `44:12097`, Pathao `44:13094`, RedX `44:14203`, Steadfast `137:30097`), Fake order guard `39:11233` | 5b / Phase 8 |
 | Integrations | List `14:980`, Connect bKash `32:3770`, Steadfast disconnect `32:4182`, courier detail tabs `22:1181`, `29:1814`, `29:2562`, `31:2231`, `31:2905`, `31:3581`, Pathao `152:34534` | 5b / Phase 8 |
-| Marketing | Overview `66:19179`, SMS & WhatsApp campaigns `70:19774`, Abandoned cart recovery `71:20614` | Phase 8 |
+| Marketing | Overview `66:19179`, SMS & WhatsApp campaigns `70:19774` → **Phase 8.5 (see below)**; Abandoned cart recovery `71:20614` | 8.6 |
 | Settings | Policies & legal pages extras `87:25694` | Later |
 
 ## Phase 5b — online money, couriers, documents, order changes (PHASE-5B-CONTRACT §10, §11, §14)
@@ -237,3 +237,18 @@ Status: **In progress** (8.4 build; defaults Q126–Q137 accepted 2026-11-24).
 | Create API key modal (composed) | — (uses `144:40726` tags and form tokens) | Build: name, scope checkboxes grouped read/write (implied read auto-checked, non-grantable disabled with tooltip), Include costs (only with `costs.view`); success step shows the plain key once with Copy + "I've stored it" |
 | Add / edit endpoint modal (composed) | — | Build: URL, events checklist with Select all, description |
 | Integrations list banner | `32:5329` | Build: "Developer · API & webhooks" card linking to the page, hidden without `developers.manage` |
+
+## Phase 8.5 — marketing campaigns SMS + email (page 2:4, section `61:12479`; PHASE-8-5-CONTRACT §8)
+Desktop frames only, **no** mobile frames (Q151: cards stack below `lg`, phone preview moves under the form, tables
+scroll inside their card, 375 px usable); states from `148:34032`. WhatsApp has no provider: every WhatsApp element is
+hidden and **Email** takes its slot (same components). Status: **In progress** (8.5 build; defaults Q138–Q151 accepted
+2026-11-24).
+
+| Screen | Frame | 8.5 |
+|---|---|---|
+| Marketing overview `/marketing` | `66:19179` (Main `66:19181`) | Build: header + range dropdown (7/30/90 days), "+ Create coupon", "+ New campaign"; tabs Overview · Coupons (n) · Campaigns (n); KPI tiles `39:9401` Revenue from marketing (± %), Orders from campaigns (n % of all orders), Messages sent (composed: "SMS + email, this month: n of allowance"), Unsubscribes (composed); stacked weekly revenue chart, series Coupons + Campaigns (legend "SMS & WhatsApp" → "Campaigns"); Active coupons card; Start something new: Discount coupon, SMS campaign (no price text), **Email campaign** (composed, WhatsApp slot); Recent campaigns table (CHANNEL tag SMS info / Email brand) + "See all n →". **Hidden:** Automations tab (8.6), Carts recovered and Return on spend tiles, Cart recovery series, "Best week yet" banner, Abandoned cart card, WhatsApp broadcast |
+| Campaigns list `/marketing/campaigns` | composed from Recent campaigns `66:19809` + Tab `39:9419` | Build: status tabs All / Scheduled / Sending / Sent / Drafts, search, row menu (Edit, Duplicate, Cancel/Unschedule, Delete draft), empty state `148:34032` |
+| New / edit campaign `/marketing/campaigns/new`, `/:id/edit` | `70:19774` (Main `70:19776`) | Build: Save draft, Send test to me, Schedule / Send campaign (confirm with recipients + allowance); Channel ChoiceCards SMS + **Email** ("n left"); Audience segment select with params, "Skip Risky customers (n)", "Skip anyone who ordered in the last 7 days (n)", disabled checked "Opted-out customers are never messaged (n)" (was "replied STOP", Q141), "N customers will get this message" + risk split; Message: বাংলা / English chips, Template picker (4 templates, Q150), merge tags, SMS counter/segment bar with greyed prefix + footer, Email subject; When to send (store tz, quiet-hours error); Preview on phone (SMS bubble with "n parts"; email card); **Allowance** card replaces Cost estimate. **Hidden:** WhatsApp card, ৳ rate/total, Top up, "Expected orders", send-time hint (Q148), money-saving text |
+| Campaign detail `/marketing/campaigns/:id` | composed (page header + KPI tiles `39:9401` + table) | Build: status pill + channel tag + state actions; tiles Recipients, Sent, Orders, Revenue + caption failed/skipped/unsubscribed; message card; recipients table (needs `customers.view`; masked addresses); polls every 5 s while `sending` |
+| Customer detail "Marketing" row | composed in Customers `61:12478` | Build: SMS / Email each Subscribed · Unsubscribed <date> (by customer / by you) · Not eligible · No address; "Stop marketing messages" / "Allow again" (merchant-owned only, `customers.edit`) |
+| Storefront unsubscribe `/u/{code}` | composed (theme layout, Gallery tokens) | Build: store logo/name, "You get {SMS|emails} from {store} at {masked}", Unsubscribe → confirmation + Subscribe again; invalid and test states; `noindex`, no-store; reachable in Coming-soon mode |
