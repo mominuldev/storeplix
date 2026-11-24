@@ -12,6 +12,9 @@ import type {
   ShipmentListFilters,
   StockMovementFilters,
   LocationListFilters,
+  StockCountLineFilters,
+  StockCountListFilters,
+  StockTransferListFilters,
   PurchaseOrderListFilters,
   SupplierListFilters,
 } from '@storeplix/types';
@@ -194,5 +197,36 @@ export function purchaseOrderListQuery(f: PurchaseOrderListFilters = {}): Query 
 export function locationListQuery(f: LocationListFilters = {}): Query {
   return {
     'filter[archived]': f.archived === undefined ? undefined : f.archived ? '1' : '0',
+  };
+}
+
+/** PHASE-8-8C §7: `filter[location_id]` matches either side of the transfer; `q` = transfer number. */
+export function stockTransferListQuery(f: StockTransferListFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[location_id]': f.location_id || undefined,
+    q: text(f.q),
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** PHASE-8-8C §8: counts list, latest first. */
+export function stockCountListQuery(f: StockCountListFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[location_id]': f.location_id || undefined,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** PHASE-8-8C §8: count lines (100 per page); `state` omitted = All. */
+export function stockCountLineListQuery(f: StockCountLineFilters = {}): Query {
+  return {
+    'filter[state]': f.state || undefined,
+    q: text(f.q),
+    page: f.page,
+    per_page: f.per_page,
   };
 }
