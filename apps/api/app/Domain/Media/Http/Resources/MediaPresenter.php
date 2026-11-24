@@ -6,13 +6,19 @@ use App\Domain\Media\MediaPurpose;
 use App\Domain\Media\Models\Media;
 use App\Domain\Media\TenantStorage;
 
-/** Media and MediaRef payloads (@storeplix/types). All URLs absolute. */
+/**
+ * Media and MediaRef payloads (@storeplix/types). All URLs absolute.
+ *
+ * PHASE-8-7 §5.4: an `expense_receipt` never yields a URL here (these build public CDN URLs whatever the disk); receipts
+ * are only opened through the expenses domain's signed 5-minute link.
+ */
 final class MediaPresenter
 {
     /** @return array<string, mixed> */
     public static function media(Media $media): array
     {
         $storage = app(TenantStorage::class);
+        $presentable = self::presentable($media);
 
         return [
             'id' => $media->id,
@@ -23,8 +29,8 @@ final class MediaPresenter
             'width' => $media->width,
             'height' => $media->height,
             'alt' => $media->alt,
-            'url' => $storage->url($media->disk, $media->path),
-            'variants' => $media->status === Media::READY
+            'url' => $presentable ? $storage->url($media->disk, $media->path) : null,
+            'variants' => $presentable && $media->status === Media::READY
                 ? array_map(fn (array $v) => [
                     'key' => $v['key'],
                     'width' => $v['width'],
@@ -44,9 +50,8 @@ final class MediaPresenter
             return null;
         }
 
-        $variant = $media->status === Media::READY
-            ? $media->variant(MediaPurpose::from($media->purpose)->displayVariant())
-            : null;
+        $key = MediaPurpose::tryFrom($media->purpose)?->displayVariant();
+        $variant = $media->status === Media::READY && $key !== null ? $media->variant($key) : null;
 
         return [
             'id' => $media->id,
@@ -65,7 +70,7 @@ final class MediaPresenter
      */
     public static function url(?Media $media, array $keys, bool $originalFallback = true): ?string
     {
-        if ($media === null || $media->status === Media::FAILED) {
+        if ($media === null || $media->status === Media::FAILED || ! self::presentable($media)) {
             return null;
         }
 
@@ -80,5 +85,11 @@ final class MediaPresenter
         }
 
         return $originalFallback ? $storage->url($media->disk, $media->path) : null;
+    }
+
+    /** Receipts (private disk, §5.4) never get a URL from the presenter. */
+    private static function presentable(Media $media): bool
+    {
+        return $media->purpose !== MediaPurpose::ExpenseReceipt->value;
     }
 }

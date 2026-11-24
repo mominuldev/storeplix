@@ -111,6 +111,7 @@ unchanged from earlier phases, the Staff page "Online now", "Actions today", "St
 | 11 | `customers.delete` | customers | Delete customers and others' notes | 10 | | manage_catalog |
 | 12 | `costs.view` | money "Money & data" | See product cost & profit · Cost price, margin, profit report | — | ✓ | view_costs |
 | 13 | `reports.view` | money | Reports, payouts & COD settlements · Sales and delivery reports | — | | operate (Q87) |
+| 13a | `expenses.manage` | money | **Phase 8.7** (PHASE-8-7 §2.1): Record & see expenses · Expenses, receipts and export; O ✓ A ✓ S ✗, grantable | — | ✓ | — |
 | 14 | `data.export` | money | Export customer phone numbers · CSV export of products and customers (product `cost_price` only with `costs.view`, §3.2) | — | ✓ | bulk_data |
 | 15 | `data.import` | money | Import products & customers (CSV) · also needs the keys of what the file writes (§3.2) | — | | bulk_data |
 | 16 | `marketing.manage` | store "Store & settings" | Create & edit coupons → **"Coupons & campaigns"** and sensitive from Phase 8.5 (PHASE-8-5 P85-23, §2.1) → **"Coupons, campaigns & automations"** from Phase 8.6 (PHASE-8-6 P86-18, §2.1) | — | ✓ (8.5) | manage_marketing |
@@ -175,6 +176,7 @@ fields need `costs.view`), `GET /media[/{media}]`, `GET /coupons[/{coupon}]`, `G
 | Coupons | `POST|PATCH|DELETE /coupons[/{coupon}]` | `marketing.manage` |
 | Reports | `GET /reports/sales`, `GET /reports/delivery` | `reports.view` |
 | | `GET /reports/profit` | `reports.view` (+ `costs.view` in code, + `profit_reports` feature) |
+| Expenses (Phase 8.7) | every `/expenses*` route incl. receipts and export (PHASE-8-7 §8.1) | `expenses.manage` |
 | Data | every `/imports*` route | `data.import` (+ in code, SEC-M2: upload/validate/run of `type=products` also need `products.edit` and `inventory.adjust`, run also `costs.view` when a row sets cost; `type=customers` needs `customers.edit`; else 403 `forbidden`) |
 | | `POST /exports`, `GET /exports/{export}`, `GET /api/v1/exports/{export}/download` | `data.export` |
 | Settings | `POST /api/v1/stores`, `PATCH /settings`, `PUT /shipping`, `POST|PATCH|DELETE /pickup-locations[/{location}]`, `POST /themes/{code}/apply|discard|publish`, `PUT /themes/{code}/draft`, `POST|PATCH|DELETE /pages[/{page}]`, `PUT /navigation/{handle}`, `POST /publish` | `settings.manage` |

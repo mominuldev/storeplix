@@ -3,6 +3,7 @@
 namespace App\Domain\Stores\Services;
 
 use App\Domain\Orders\Notifications\StoreCommerce;
+use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Phone;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
@@ -36,6 +37,8 @@ class StoreSettingsUpdater
         'seo.share_image_media_id' => ['settings', 'og_image_media_id'],
         'seo.hide_from_search' => ['settings', 'noindex'],
     ];
+
+    public const CURRENCY_LOCKED = "Your shop's currency can't be changed after the first order or expense.";
 
     public function __construct(
         private readonly AuditLogger $audit,
@@ -132,6 +135,15 @@ class StoreSettingsUpdater
         }
 
         DB::transaction(function () use ($store, $settings, $colors, &$changed) {
+            // PHASE-8-7 §6.4 (P87-18): the currency locks once the store has an order (any status) or an expense. The
+            // store row lock (FOR UPDATE) serialises this against a first expense, which takes it FOR SHARE.
+            if (in_array('region.currency', $changed, true)) {
+                DB::table('stores')->where('tenant_id', $store->tenant_id)->where('id', $store->id)->lockForUpdate()->value('id');
+                if (self::currencyLocked($store)) {
+                    $store->currency = $store->getOriginal('currency');
+                    throw new ApiException(409, 'currency_locked', self::CURRENCY_LOCKED);
+                }
+            }
             foreach ($this->themes->setBrandColors($store, $colors) as $key) {
                 $changed[] = $key === 'primaryColor' ? 'branding.primary_color' : 'branding.secondary_color';
             }
@@ -149,5 +161,13 @@ class StoreSettingsUpdater
         $this->audit->log('store.settings_updated', $settings, ['changes' => $changed]);
 
         return $changed;
+    }
+
+    /** P87-18: true when the store has at least one order (any status) or one expense (`StoreSettings.region.currency_locked`). */
+    public static function currencyLocked(Store $store): bool
+    {
+        $has = fn (string $table) => DB::table($table)->where('tenant_id', $store->tenant_id)->where('store_id', $store->id)->exists();
+
+        return $has('orders') || $has('expenses');
     }
 }

@@ -220,6 +220,12 @@ idempotent runs with a per-step run log, checkout phone capture + abandoned-chec
 link, exit on order, attribution), messages under the 8.5 consent/suppression/quiet-hours rules and shared allowance,
 `sms_automation` enforced; Automations `140:30336`, editor `141:30622`, Abandoned cart recovery `71:20614`. Out: WhatsApp,
 risky-order holds and courier success rate (8.8), auto-book courier (Q62), COD payout close (Q49), reviews.
+**8.7** contract: `docs/development/PHASE-8-7-CONTRACT.md` (accepted 2026-11-24; branch `feat/phase-8-7-expenses`;
+openapi 1.15.0; ADR 0021; Q167–Q182 defaults accepted, Q183 currency lock): expenses ledger (six fixed categories,
+private re-encoded receipts with 5-minute signed links, monthly repeat, CSV export), new permission `expenses.manage`,
+Profit & loss gains Ad spend + Other expenses by expense date (`profit_before_expenses_amount` kept), store currency
+locked after the first order or expense; Expenses `144:41614`. Out: custom categories, budgets, ad-account import,
+OCR, amortization, supplier bills (8.8).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
@@ -228,7 +234,7 @@ risky-order holds and courier success rate (8.8), auto-book courier (Q62), COD p
 | 8.4 | Developer API keys + outbound webhooks (144:40725): scoped `sp_live_` keys, `/external` API, signed webhooks with retries, Growth-gated | API/WEB | HMAC signatures; retries; PHASE-8-4 §13 |
 | 8.5 | Marketing campaigns SMS/email (61:12479): segments, schedule, opt-out link + suppression checked at send time, allowances, attribution | API/WEB/SF | Opt-out respected; PHASE-8-5 §14 |
 | 8.6 | Automations (140:30335) + abandoned cart recovery (71:20614): 5 recipes, run log, checkout recovery | API/WEB/SF | Trigger → action runs logged; PHASE-8-6 §16 |
-| 8.7 | Expenses (144:41613) + profit report | API/WEB | — |
+| 8.7 | Expenses (144:41613) + profit report: six categories, private receipts, monthly repeat, Ad spend + Other expenses in Profit & loss, `expenses.manage`, store currency lock | API/WEB | Expenses recorded with receipts reduce net profit in Profit & loss; every changed number is traceable; the store currency locks once the store has an order or an expense; PHASE-8-7 §16 |
 | 8.8 | Inbox (141:48129), POS (26:2147, page 22:1736), multi-location/suppliers/POs/transfers, fake-order guard | API/WEB | Scoped after PO confirms (OPEN-QUESTIONS Q1) |
 | 8.9 | Help center (71:21271), Payments/tracking/messaging/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |
 

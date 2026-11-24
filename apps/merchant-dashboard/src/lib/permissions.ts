@@ -97,6 +97,10 @@ export const can = {
   viewCustomers: (m: PermissionHolder) => hasPermission(m, 'customers.view'),
   editCustomers: (m: PermissionHolder) => hasPermission(m, 'customers.edit'),
   viewReports: (m: PermissionHolder) => hasPermission(m, 'reports.view'),
+  /** PHASE-8-7 §2.1 `expenses.manage`: Expenses page, receipts and export. */
+  manageExpenses: (m: PermissionHolder) => hasPermission(m, 'expenses.manage'),
+  /** P87-16: the Reports nav item and `/reports` show with `reports.view` or `expenses.manage`. */
+  seeReports: (m: PermissionHolder) => any(m, 'reports.view', 'expenses.manage'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

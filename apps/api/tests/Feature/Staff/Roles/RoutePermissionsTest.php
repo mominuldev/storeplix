@@ -294,6 +294,18 @@ class RoutePermissionsTest extends TestCase
             'stores.reports.profit',
             'stores.reports.sales',
         ],
+        // PHASE-8-7 §2.1 / §8.1: every expense route (incl. receipts and export) is expenses.manage.
+        'expenses.manage' => [
+            'stores.expenses.destroy',
+            'stores.expenses.export',
+            'stores.expenses.index',
+            'stores.expenses.receipt',
+            'stores.expenses.receipts.store',
+            'stores.expenses.show',
+            'stores.expenses.store',
+            'stores.expenses.summary',
+            'stores.expenses.update',
+        ],
     ];
 
     /** @return array<string, string> route name → perm spec */

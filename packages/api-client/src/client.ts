@@ -177,6 +177,13 @@ import type {
   CreateApiKeyInput,
   CreateWebhookEndpointInput,
   CursorMeta,
+  Expense,
+  ExpenseFilters,
+  ExpenseInput,
+  ExpenseReceipt,
+  ExpenseReceiptLink,
+  ExpenseSummary,
+  UpdateExpenseInput,
   UpdateApiKeyInput,
   UpdateWebhookEndpointInput,
   WebhookDelivery,
@@ -1375,6 +1382,43 @@ export function createApiClient(options: ApiClientOptions) {
           { next_cursor: null, prev_cursor: null, per_page: 50 },
         ),
       run: (storeId: string, runId: string) => request<AutomationRun>(`${store(storeId)}/automation-runs/${enc(runId)}`),
+    },
+
+    /**
+     * PHASE-8-7 §8.1 expenses (store-scoped, `expenses.manage`; staff 403). No plan gate. Writes 60/min per user (429).
+     */
+    expenses: {
+      /** Cursor pages of 50, `spent_on desc`; `month` YYYY-MM (default current month, store tz). */
+      list: (storeId: string, filters: ExpenseFilters = {}) =>
+        listOf<Expense, CursorMeta>(
+          `${store(storeId)}/expenses`,
+          {
+            'filter[month]': filters.month || undefined,
+            'filter[category]': filters.category?.length ? filters.category.join(',') : undefined,
+            cursor: filters.cursor || undefined,
+          },
+          { next_cursor: null, prev_cursor: null, per_page: 50 },
+        ),
+      /** §6.3; `profit_after_expenses_amount` null without reports.view + costs.view + `profit_reports`. */
+      summary: (storeId: string, month?: string) => request<ExpenseSummary>(`${store(storeId)}/expenses/summary`, { query: { month: month || undefined } }),
+      get: (storeId: string, id: string) => request<Expense>(`${store(storeId)}/expenses/${enc(id)}`),
+      /** 201; 422 on future date / bad receipt / currency ≠ store currency. */
+      create: (storeId: string, input: ExpenseInput) => request<Expense>(`${store(storeId)}/expenses`, { method: 'POST', body: input }),
+      /** Partial; `repeat_monthly: false` stops the series; `receipt_id: null` removes the receipt. */
+      update: (storeId: string, id: string, input: UpdateExpenseInput) =>
+        request<Expense>(`${store(storeId)}/expenses/${enc(id)}`, { method: 'PATCH', body: input }),
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/expenses/${enc(id)}`, { method: 'DELETE' }),
+      /** §5.1 multipart; JPG/PNG/WebP/PDF ≤ 5 MB (sniffed); 20/min per user. Attach with `receipt_id`. */
+      uploadReceipt: (storeId: string, input: { file: Blob; filename?: string }, opts?: UploadOptions) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'receipt'));
+        return uploadForm<ExpenseReceipt>(`${store(storeId)}/expenses/receipts`, form, opts);
+      },
+      /** §5.3 signed 5-minute link; 404 `receipt_not_found`, 409 `receipt_processing`, 403 `impersonation_receipt_hidden`. */
+      receiptLink: (storeId: string, id: string) => request<ExpenseReceiptLink>(`${store(storeId)}/expenses/${enc(id)}/receipt`),
+      /** P87-14 `text/csv` for one month; 422 `export_too_large` (> 5,000 rows). */
+      exportCsv: (storeId: string, month: string) =>
+        requestBlob(`${store(storeId)}/expenses/export`, { query: { month }, fallbackName: `expenses-${month}.csv` }),
     },
 
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */

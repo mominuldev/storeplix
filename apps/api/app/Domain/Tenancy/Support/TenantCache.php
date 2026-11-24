@@ -36,6 +36,12 @@ class TenantCache
         return $this->store()->put($this->key($key), $value, $ttl);
     }
 
+    /** PHASE-8-7 P87-12: a value without expiry (e.g. the `expenses_rev` token keying the profit report cache). */
+    public function forever(string $key, mixed $value): bool
+    {
+        return $this->store()->forever($this->key($key), $value);
+    }
+
     public function remember(string $key, DateTimeInterface|DateInterval|int|null $ttl, Closure $callback): mixed
     {
         return $this->store()->remember($this->key($key), $ttl, $callback);

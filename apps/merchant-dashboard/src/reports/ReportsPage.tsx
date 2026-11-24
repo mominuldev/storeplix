@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react';
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useStoreScope } from '../catalog/scope';
+import { can } from '../lib/permissions';
 import { PageHeader } from '../layout/PageHeader';
 import { relativeTime } from '../online-store/hooks';
 import { DeliveryTab } from './DeliveryTab';
@@ -24,7 +25,6 @@ const titles: Record<ReportType, { title: string; subtitle: string; note: string
 
 export function ReportsPage({ type }: { type: ReportType }) {
   const scope = useStoreScope();
-  const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const today = localToday(scope.store?.timezone);
@@ -33,11 +33,6 @@ export function ReportsPage({ type }: { type: ReportType }) {
 
   if (type === 'profit' && !scope.canViewCosts) return <Navigate to={{ pathname: '/reports/sales', search: location.search }} replace />;
 
-  const tabs = [
-    { value: 'sales' as const, label: 'Sales' },
-    ...(scope.canViewCosts ? [{ value: 'profit' as const, label: 'Profit & loss' }] : []),
-    { value: 'delivery' as const, label: 'Delivery & returns' },
-  ];
   const setRange = (r: { from: string; to: string } | null) => setParams(r ? { from: r.from, to: r.to } : {}, { replace: false });
   const t = titles[type];
 
@@ -47,12 +42,40 @@ export function ReportsPage({ type }: { type: ReportType }) {
         title={t.title}
         subtitle={[`${t.subtitle} · ${rangeLabel(range.from, range.to)}`, scope.store?.name, meta ? `updated ${relativeTime(meta.generated_at)}` : null].filter(Boolean).join(' · ')}
       />
-      <Tabs aria-label="Reports" items={tabs} value={type} onChange={(v) => navigate({ pathname: `/reports/${v}`, search: location.search })} />
+      <ReportTabs value={type} />
       <RangeToolbar range={range} today={today} note={t.note} onChange={setRange} />
       {type === 'sales' && <SalesTab range={range} onMeta={setMeta} />}
       {type === 'profit' && <ProfitTab range={range} onMeta={setMeta} />}
       {type === 'delivery' && <DeliveryTab range={range} onMeta={setMeta} />}
     </div>
+  );
+}
+
+export type ReportTab = ReportType | 'expenses';
+
+/**
+ * Reports tab bar (61:12621). PHASE-8-7 P87-16: Sales/Profit/Delivery need `reports.view` (Profit also `costs.view`),
+ * Expenses (last) needs `expenses.manage`; an expenses-only member sees only the Expenses tab. The range query string
+ * is kept between the range-based tabs.
+ */
+export function ReportTabs({ value }: { value: ReportTab }) {
+  const scope = useStoreScope();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const m = scope.membership;
+  const tabs = [
+    ...(can.viewReports(m) ? [{ value: 'sales' as const, label: 'Sales' }] : []),
+    ...(can.viewReports(m) && scope.canViewCosts ? [{ value: 'profit' as const, label: 'Profit & loss' }] : []),
+    ...(can.viewReports(m) ? [{ value: 'delivery' as const, label: 'Delivery & returns' }] : []),
+    ...(can.manageExpenses(m) ? [{ value: 'expenses' as const, label: 'Expenses' }] : []),
+  ];
+  return (
+    <Tabs<ReportTab>
+      aria-label="Reports"
+      items={tabs}
+      value={value}
+      onChange={(v) => navigate(v === 'expenses' ? '/reports/expenses' : { pathname: `/reports/${v}`, search: value === 'expenses' ? '' : location.search })}
+    />
   );
 }
 

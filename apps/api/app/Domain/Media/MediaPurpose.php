@@ -4,6 +4,10 @@ namespace App\Domain\Media;
 
 /**
  * Upload rules per purpose (Phase 2 contract §1.5). MIME is always sniffed from bytes.
+ *
+ * PHASE-8-7 §5.4: `ExpenseReceipt` is NOT a library purpose. It lives on the private disk and only the expenses domain
+ * uploads, attaches and deletes it; the generic `/media` routes use libraryCases() and never accept, list, show, delete
+ * or present one. Every match below has an explicit `ExpenseReceipt` arm (no reliance on `default`).
  */
 enum MediaPurpose: string
 {
@@ -11,6 +15,7 @@ enum MediaPurpose: string
     case Favicon = 'favicon';
     case ProductImage = 'product_image';
     case PageImage = 'page_image';
+    case ExpenseReceipt = 'expense_receipt'; // PHASE-8-7 P87-7
 
     public const MAX_PIXELS = 40_000_000;
 
@@ -19,6 +24,7 @@ enum MediaPurpose: string
     {
         return match ($this) {
             self::Favicon => ['image/png'],
+            self::ExpenseReceipt => ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
             default => ['image/png', 'image/jpeg', 'image/webp'],
         };
     }
@@ -28,6 +34,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => 2 * 1024 * 1024,
             self::Favicon => 1024 * 1024,
+            self::ExpenseReceipt => 5 * 1024 * 1024,
             default => 5 * 1024 * 1024,
         };
     }
@@ -38,6 +45,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => [64, 4096],
             self::Favicon => [64, 1024],
+            self::ExpenseReceipt => [100, 10000],
             default => [200, 6000],
         };
     }
@@ -57,18 +65,38 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => [['w160', 160, 'webp'], ['w320', 320, 'webp'], ['w640', 640, 'webp']],
             self::Favicon => [['favicon_32', 32, 'png'], ['apple_180', 180, 'png'], ['icon_192', 192, 'png'], ['icon_512', 512, 'png']],
+            self::ExpenseReceipt => [], // the original is re-encoded (EXIF/GPS stripped); no variants
             default => [['w320', 320, 'webp'], ['w640', 640, 'webp'], ['w1024', 1024, 'webp'], ['w1600', 1600, 'webp']],
         };
     }
 
-    /** Variant used for compact MediaRef / display. */
-    public function displayVariant(): string
+    /** Variant used for compact MediaRef / display. A receipt is never presented (no variant, no URL). */
+    public function displayVariant(): ?string
     {
         return match ($this) {
             self::Logo => 'w320',
             self::Favicon => 'icon_192',
+            self::ExpenseReceipt => null,
             default => 'w640',
         };
+    }
+
+    /** True for the purposes of the generic media library (`/media`). */
+    public function isLibrary(): bool
+    {
+        return $this !== self::ExpenseReceipt;
+    }
+
+    /** @return list<self> every purpose the generic `/media` routes accept, list and show (all but ExpenseReceipt) */
+    public static function libraryCases(): array
+    {
+        return array_values(array_filter(self::cases(), fn (self $p) => $p->isLibrary()));
+    }
+
+    /** @return list<string> */
+    public static function libraryValues(): array
+    {
+        return array_map(fn (self $p) => $p->value, self::libraryCases());
     }
 
     public static function extensionFor(string $mime): string
@@ -77,6 +105,7 @@ enum MediaPurpose: string
             'image/png' => 'png',
             'image/jpeg' => 'jpg',
             'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
             default => 'bin',
         };
     }

@@ -50,6 +50,7 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
   const logo = useBrandUpload('logo');
   const favicon = useBrandUpload('favicon');
   const store = useTenantStore().data;
+  const currencyLocked = settings.region.currency_locked === true;
 
   const {
     register,
@@ -69,6 +70,10 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
       await queryClient.invalidateQueries({ queryKey: storeKey(tenantId) });
     },
     onError: (e) => {
+      if (isApiError(e) && e.code === 'currency_locked') {
+        setError('region.currency', { message: e.message || 'Your shop’s currency can’t be changed after the first order or expense.' });
+        return setFormError('Some fields need attention.');
+      }
       if (isApiError(e) && e.isValidation && e.details) {
         let mapped = false;
         for (const [path, messages] of Object.entries(e.details)) {
@@ -270,7 +275,14 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
             ))}
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <Select label="Currency" error={errors.region?.currency?.message} {...register('region.currency')}>
+            {/* PHASE-8-7 §6.4 (P87-18): the currency locks once the store has an order or an expense. */}
+            <Select
+              label="Currency"
+              error={errors.region?.currency?.message}
+              disabled={currencyLocked}
+              hint={currencyLocked ? 'Locked after your first order or expense.' : undefined}
+              {...register('region.currency')}
+            >
               {CURRENCIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.label}

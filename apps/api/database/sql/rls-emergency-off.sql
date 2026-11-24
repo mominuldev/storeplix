@@ -772,6 +772,26 @@ BEGIN
   END IF;
 END
 $$;
+-- table: expense_recurrences
+DO $$
+BEGIN
+  IF to_regclass('public.expense_recurrences') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "expense_recurrences";
+    ALTER TABLE "expense_recurrences" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "expense_recurrences" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: expenses
+DO $$
+BEGIN
+  IF to_regclass('public.expenses') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "expenses";
+    ALTER TABLE "expenses" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "expenses" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

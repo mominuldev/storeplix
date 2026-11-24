@@ -6,6 +6,7 @@ namespace App\Domain\Reports\Http;
 
 use App\Domain\Billing\Feature;
 use App\Domain\Billing\FeatureGate;
+use App\Domain\Expenses\ExpenseRevision;
 use App\Domain\Reports\DeliveryReport;
 use App\Domain\Reports\Http\Requests\ReportRangeRequest;
 use App\Domain\Reports\ProfitReport;
@@ -33,6 +34,7 @@ final class ReportController
     public function __construct(
         private readonly TenantContext $context,
         private readonly TenantCache $cache,
+        private readonly ExpenseRevision $expenses,
     ) {}
 
     public function sales(Store $store, ReportRangeRequest $request, SalesReport $report): JsonResponse
@@ -60,13 +62,22 @@ final class ReportController
         return $this->respond('delivery', $store, $request, fn (ReportRange $r) => $report->build($store, $r));
     }
 
+    /**
+     * PHASE-8-7 P87-12: the profit key carries the store's `expenses_rev` token ('0' when none), so an expense write is
+     * in the next Profit & loss response; sales and delivery keys are unchanged.
+     */
+    public static function cacheKey(string $type, string $hash, ?string $expensesRev = null): string
+    {
+        return "reports:{$type}:{$hash}".($expensesRev !== null ? ":{$expensesRev}" : '');
+    }
+
     /** @param Closure(ReportRange): array<string, mixed> $build */
     private function respond(string $type, Store $store, ReportRangeRequest $request, Closure $build): JsonResponse
     {
         $validated = $request->validated();
         $range = ReportRange::resolve($validated['from'] ?? null, $validated['to'] ?? null, $store->timezone ?: 'Asia/Dhaka');
 
-        $payload = $this->cache->remember("reports:{$type}:".$range->cacheHash($store->id), self::CACHE_SECONDS, fn () => [
+        $payload = $this->cache->remember(self::cacheKey($type, $range->cacheHash($store->id), $type === 'profit' ? $this->expenses->token($store->id) : null), self::CACHE_SECONDS, fn () => [
             'data' => $build($range),
             'meta' => $range->meta($store->currency ?: 'BDT') + ['generated_at' => now()->toIso8601ZuluString()],
         ]);

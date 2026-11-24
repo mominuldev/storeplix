@@ -162,7 +162,11 @@ export interface StoreSettings {
   contact: StoreContact;
   social: SocialLinks;
   address: BusinessAddress;
-  region: { country: string; currency: string; timezone: string };
+  /**
+   * `currency_locked` (PHASE-8-7 P87-18): true once the store has an order or an expense; a PATCH with a different
+   * `region.currency` then → 409 `currency_locked`.
+   */
+  region: { country: string; currency: string; timezone: string; currency_locked: boolean };
   seo: StoreSeo;
   /** Phase 5 */
   commerce: StoreCommerceSettings;
@@ -386,7 +390,7 @@ export interface MeMeta {
 export type PermissionKey =
   | 'orders.view' | 'orders.process' | 'orders.refund' | 'shipments.manage' | 'shipments.cancel'
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
-  | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
+  | 'costs.view' | 'reports.view' | 'expenses.manage' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
   | 'billing.manage';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
@@ -394,11 +398,12 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
 /**
  * §2.1 order (UI order); `billing.manage` last (owner only, never grantable). Phase 8.4 (PHASE-8-4 §2.1):
  * `developers.manage` (group `store`, sensitive) after `domains.manage`; owner + admin, never staff.
+ * Phase 8.7 (PHASE-8-7 §2.1): `expenses.manage` (group `money`, sensitive) after `reports.view`; owner + admin, never staff.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'orders.view', 'orders.process', 'orders.refund', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
-  'costs.view', 'reports.view', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
+  'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
   'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
 ];
 
@@ -1347,22 +1352,31 @@ export interface SalesReport {
     districts: { district_code: string; district_name: string; orders_count: number; sales_amount: number; share: number }[];
   };
 }
+/**
+ * PHASE-7 §6.4 as amended by PHASE-8-7 §7.1: expenses count on their `spent_on` local date. `ad_spend_amount` = Σ
+ * category `ads` (never null since 8.7); `other_expenses_amount` = Σ the other five categories; `total_cost_amount`
+ * and `net_profit_amount` include both; `profit_before_expenses_amount` = the Phase 7 net profit.
+ */
 export interface ProfitSummary {
   revenue_amount: number; delivered_orders_count: number;
   product_cost_amount: number; delivery_cost_amount: number; cod_fee_amount: number;
-  gateway_fee_amount: number | null; ad_spend_amount: number | null;
-  total_cost_amount: number; net_profit_amount: number; margin: number | null;
+  gateway_fee_amount: number | null; ad_spend_amount: number; other_expenses_amount: number;
+  total_cost_amount: number; profit_before_expenses_amount: number; net_profit_amount: number; margin: number | null;
   profit_per_order_amount: number | null;
 }
 export interface ProfitReport {
   summary: ProfitSummary; previous: ProfitSummary;
   per_order: {
     order_value_amount: number; product_cost_amount: number; delivery_cost_amount: number;
-    cod_fee_amount: number; gateway_fee_amount: number | null; profit_amount: number;
+    cod_fee_amount: number; gateway_fee_amount: number | null;
+    /** PHASE-8-7 §7.1: floor(expense / delivered orders); `per_order` stays null with no delivered orders. */
+    ad_spend_amount: number; other_expenses_amount: number;
+    profit_amount: number;
   } | null;
   weekly: { week: string; week_start: string; revenue_amount: number; net_profit_amount: number; margin: number | null }[];
   daily: ({ date: string; orders_count: number } & Omit<ProfitSummary, 'delivered_orders_count' | 'profit_per_order_amount'>)[];
-  data_quality: { items_without_cost: number; shipments_without_fee: number };
+  /** `expenses_count` (PHASE-8-7): expense rows dated in the range. */
+  data_quality: { items_without_cost: number; shipments_without_fee: number; expenses_count: number };
 }
 export interface DeliverySummary {
   parcels_count: number; delivered_count: number; returned_count: number; returning_count: number;
@@ -2310,4 +2324,113 @@ export type AutomationAuditAction =
 export const AUTOMATION_AUDIT_ACTIONS: readonly AutomationAuditAction[] = [
   'automation.created', 'automation.updated', 'automation.enabled', 'automation.disabled', 'automation.deleted',
   'automation.test_sent',
+];
+
+// ---------- Expenses (Phase 8.7, PHASE-8-7-CONTRACT §3–§8) ----------
+/** §3: six fixed, code-defined categories (UI order). `ads` → P&L "Ad spend"; the rest → "Other expenses". */
+export type ExpenseCategory = 'ads' | 'packaging' | 'salaries' | 'rent_bills' | 'courier' | 'other';
+export const EXPENSE_CATEGORIES: readonly ExpenseCategory[] = ['ads', 'packaging', 'salaries', 'rent_bills', 'courier', 'other'];
+/** §3 labels (UI copy; the API returns keys only). */
+export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, { en: string; bn: string }> = {
+  ads: { en: 'Ads', bn: 'বিজ্ঞাপন' },
+  packaging: { en: 'Packaging', bn: 'প্যাকেজিং' },
+  salaries: { en: 'Salaries', bn: 'বেতন' },
+  rent_bills: { en: 'Rent & bills', bn: 'ভাড়া ও বিল' },
+  courier: { en: 'Courier', bn: 'কুরিয়ার' },
+  other: { en: 'Other', bn: 'অন্যান্য' },
+};
+/** §3 hint shown with the Courier category (QA asserts it). */
+export const EXPENSE_COURIER_HINT =
+  'Only charges not already on courier invoices — delivery and COD fees of delivered parcels are counted automatically.';
+/** Q175: a label only, no balances. */
+export type PaidFrom = 'cash' | 'bank' | 'card' | 'bkash' | 'nagad' | 'other';
+export const PAID_FROM_OPTIONS: readonly PaidFrom[] = ['cash', 'bank', 'card', 'bkash', 'nagad', 'other'];
+export const PAID_FROM_LABELS: Record<PaidFrom, string> = {
+  cash: 'Cash', bank: 'Bank', card: 'Card', bkash: 'bKash', nagad: 'Nagad', other: 'Other',
+};
+/** §8.3 bounds: amount in minor units 1 … 1,000,000,000 (৳ 1 crore); note ≤ 200; `spent_on` 2020-01-01 … today (store tz). */
+export const EXPENSE_AMOUNT_MAX = 1_000_000_000;
+export const EXPENSE_NOTE_MAX = 200;
+export const EXPENSE_MIN_DATE = '2020-01-01';
+/** §5.1 receipts: sniffed server-side; WEB downscales photos whose long side > 2,560 px before upload (§10.1). */
+export const EXPENSE_RECEIPT_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
+export type ExpenseReceiptMime = (typeof EXPENSE_RECEIPT_MIMES)[number];
+export const EXPENSE_RECEIPT_MAX_BYTES = 5 * 1024 * 1024;
+export const EXPENSE_RECEIPT_DOWNSCALE_PX = 2560;
+/**
+ * Receipts live in `media` with purpose `expense_receipt` (private disk). Not a library `MediaPurpose`: the generic
+ * `/media` routes never accept, list or show it (§5.4).
+ */
+export type ExpenseReceiptPurpose = 'expense_receipt';
+
+/** POST /stores/{store}/expenses/receipts → 201. Images are re-encoded (status `processing` → `ready`); PDFs `ready`. */
+export interface ExpenseReceipt {
+  id: string; mime: ExpenseReceiptMime; size_bytes: number; status: MediaStatus; created_at: string;
+}
+/** GET …/expenses/{expense}/receipt → signed 5-minute link; 409 `receipt_processing`, 403 `impersonation_receipt_hidden`. */
+export interface ExpenseReceiptLink { url: string; mime: ExpenseReceiptMime; size_bytes: number; expires_at: string }
+
+export interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  paid_from: PaidFrom;
+  /** minor units, > 0 */
+  amount: number;
+  currency: string;
+  /** `YYYY-MM-DD`, store-local calendar date */
+  spent_on: string;
+  note: string | null;
+  receipt: { id: string; mime: ExpenseReceiptMime; size_bytes: number; status: MediaStatus } | null;
+  /** true while the expense's recurrence is active */
+  repeat_monthly: boolean;
+  recurrence_id: string | null;
+  /** null = generated by "Repeat every month" (or the member was removed) */
+  created_by: { id: string; name: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+/** POST body (first four required); PATCH = Partial. `currency` optional and must equal the store currency. */
+export interface ExpenseInput {
+  amount: number;
+  category: ExpenseCategory;
+  paid_from: PaidFrom;
+  spent_on: string;
+  note?: string | null;
+  receipt_id?: string | null;
+  repeat_monthly?: boolean;
+  currency?: string;
+}
+export type UpdateExpenseInput = Partial<ExpenseInput>;
+/** GET /expenses: `filter[month]` YYYY-MM (default current), `filter[category]` csv, cursor pages of 50. */
+export interface ExpenseFilters { month?: string; category?: ExpenseCategory[]; cursor?: string }
+
+export interface ExpenseCategoryTotal { category: ExpenseCategory; amount: number; count: number; share: number }
+/** GET /expenses/summary?month= (§6.3). */
+export interface ExpenseSummary {
+  month: string;
+  from: string;
+  to: string;
+  currency: string;
+  total_amount: number;
+  count: number;
+  ads_amount: number;
+  ads_share: number | null;
+  by_category: ExpenseCategoryTotal[];
+  /** P87-15: same day span of the previous month for the current month, full months otherwise. */
+  compare: { label_month: string; total_amount: number; change_pct: number | null };
+  delivered_orders_count: number;
+  cost_per_order_amount: number | null;
+  /** null without `reports.view` + `costs.view` or without plan `profit_reports` (P87-5). */
+  profit_after_expenses_amount: number | null;
+  /** newest first, ≤ 36 */
+  months: string[];
+}
+
+/** Audit actions written by Phase 8.7 (§4); `expense.repeated` has actor type `system`. */
+export type ExpenseAuditAction =
+  | 'expense.created' | 'expense.updated' | 'expense.deleted' | 'expense.exported'
+  | 'expense.recurrence_started' | 'expense.recurrence_stopped' | 'expense.repeated';
+export const EXPENSE_AUDIT_ACTIONS: readonly ExpenseAuditAction[] = [
+  'expense.created', 'expense.updated', 'expense.deleted', 'expense.exported', 'expense.recurrence_started',
+  'expense.recurrence_stopped', 'expense.repeated',
 ];

@@ -7,7 +7,8 @@ namespace App\Domain\Tenancy\Authorization;
 /**
  * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * 23 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`). Case order = UI order = catalogue order of
+ * 24 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
+ * `expenses.manage`). Case order = UI order = catalogue order of
  * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
  * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
  */
@@ -26,6 +27,7 @@ enum Permission: string
     case CustomersDelete = 'customers.delete';
     case CostsView = 'costs.view';
     case ReportsView = 'reports.view';
+    case ExpensesManage = 'expenses.manage'; // PHASE-8-7 §2.1
     case DataExport = 'data.export';
     case DataImport = 'data.import';
     case MarketingManage = 'marketing.manage';
@@ -56,7 +58,7 @@ enum Permission: string
             self::ShipmentsManage, self::ShipmentsCancel => 'shipping',
             self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust => 'products',
             self::CustomersView, self::CustomersEdit, self::CustomersDelete => 'customers',
-            self::CostsView, self::ReportsView, self::DataExport, self::DataImport => 'money',
+            self::CostsView, self::ReportsView, self::ExpensesManage, self::DataExport, self::DataImport => 'money',
             self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage, self::DevelopersManage => 'store',
             self::StaffManage, self::AuditView, self::BillingView, self::BillingManage => 'team',
         };
@@ -80,7 +82,7 @@ enum Permission: string
     public function sensitive(): bool
     {
         return in_array($this, [
-            self::OrdersRefund, self::CostsView, self::DataExport, self::MarketingManage, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
+            self::OrdersRefund, self::CostsView, self::ExpensesManage, self::DataExport, self::MarketingManage, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
         ], true);
     }
 
@@ -106,6 +108,7 @@ enum Permission: string
             self::CustomersDelete => "Delete customers and others' notes",
             self::CostsView => 'See product cost & profit',
             self::ReportsView => 'Reports, payouts & COD settlements',
+            self::ExpensesManage => 'Record & see expenses',
             self::DataExport => 'Export customer phone numbers',
             self::DataImport => 'Import products & customers (CSV)',
             self::MarketingManage => 'Coupons, campaigns & automations', // PHASE-8-6 §2.1 (sensitive; amends 8.5)
@@ -134,6 +137,7 @@ enum Permission: string
             self::CustomersEdit => 'Details and notes',
             self::CostsView => 'Cost price, margin, profit report',
             self::ReportsView => 'Sales and delivery reports',
+            self::ExpensesManage => 'Expenses, receipts and export',
             self::DataExport => 'CSV export of products and customers',
             self::SettingsManage => 'Delivery charges, checkout, themes, pages, publish',
             self::IntegrationsManage => 'API keys and credentials',

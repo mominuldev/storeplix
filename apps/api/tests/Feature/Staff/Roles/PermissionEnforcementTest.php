@@ -126,6 +126,7 @@ class PermissionEnforcementTest extends TestCase
             'customers.delete' => ['customers.delete', ['DELETE', '/customers/{customer}'], ['GET', '/reports/sales']],
             'costs.view' => ['costs.view', ['GET', '/products/{product}'], ['GET', '/reports/profit']],
             'reports.view' => ['reports.view', ['GET', '/reports/delivery'], ['GET', '/reports/profit']],
+            'expenses.manage' => ['expenses.manage', ['GET', '/expenses/summary'], ['GET', '/reports/delivery']], // PHASE-8-7 §2.1
             'data.export' => ['data.export', ['POST', '/exports', ['type' => 'customers']], ['GET', '/imports/template?type=products']],
             'data.import' => ['data.import', ['GET', '/imports/template?type=products'], ['POST', '/exports', ['type' => 'customers']]],
             'marketing.manage' => ['marketing.manage', ['POST', '/coupons', ['code' => 'NEW10', 'type' => 'fixed', 'amount' => 100]], ['PATCH', '/settings', ['seo' => ['hide_from_search' => true]]]],

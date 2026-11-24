@@ -26,8 +26,11 @@ use Symfony\Component\HttpFoundation\Response;
  *    - `GET /billing/payments/{payment}`: the controller skips the provider status query in an impersonation session
  *      and answers from the database (BillingInvoiceController::payment).
  *    - `dev/*` (testing-only routes, all POST today): refused here whatever the method → 403 `impersonation_read_only`.
+ *    - `GET /stores/{store}/expenses/{expense}/receipt` (PHASE-8-7 P87-8): the controller answers 403
+ *      `impersonation_receipt_hidden` (impersonators see amounts, never receipt documents; ExpenseReceiptController::link).
  *    Reviewed and left readable: `couriers/{provider}/areas` and `couriers/{provider}/pickup-stores` (provider lookups
- *    with the merchant's credentials, no write), invoice PDF / document / export downloads (reads).
+ *    with the merchant's credentials, no write), invoice PDF / document / export downloads (reads), the expenses CSV
+ *    export `GET /stores/{store}/expenses/export` (a read, audited with the impersonation actor).
  */
 class ReadOnlyImpersonation
 {

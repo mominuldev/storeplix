@@ -61,7 +61,8 @@ class MediaController
     /** GET /media?filter[purpose]=page_image,logo&page&per_page — newest first, failed excluded. Any role. */
     public function index(Request $request): JsonResponse
     {
-        $purposes = implode('|', array_map(fn (MediaPurpose $p) => $p->value, MediaPurpose::cases()));
+        // PHASE-8-7 §5.4: library purposes only; receipts are never listed (filtered or not).
+        $purposes = implode('|', MediaPurpose::libraryValues());
         $input = $request->validate([
             'filter' => ['sometimes', 'array:purpose'],
             'filter.purpose' => ['sometimes', 'string', "regex:/^({$purposes})(,({$purposes}))*$/"],
@@ -71,6 +72,7 @@ class MediaController
 
         $paginator = Media::query()
             ->where('status', '!=', Media::FAILED)
+            ->whereIn('purpose', MediaPurpose::libraryValues())
             ->when(isset($input['filter']['purpose']), fn ($q) => $q->whereIn('purpose', explode(',', $input['filter']['purpose'])))
             ->orderByDesc('created_at')->orderByDesc('id')
             ->paginate((int) ($input['per_page'] ?? 24));
@@ -88,6 +90,7 @@ class MediaController
 
     public function show(Media $media): JsonResponse
     {
+        self::assertLibrary($media);
         Gate::authorize('view', $media);
 
         return new JsonResponse(['data' => MediaPresenter::media($media)]);
@@ -95,6 +98,7 @@ class MediaController
 
     public function destroy(Media $media): Response
     {
+        self::assertLibrary($media);
         Gate::authorize('delete', $media);
 
         if ($this->inUse($media)) {
@@ -112,6 +116,14 @@ class MediaController
         $this->audit->log('media.deleted', $media, ['purpose' => $media->purpose]);
 
         return response()->noContent();
+    }
+
+    /** PHASE-8-7 §5.4: a receipt is 404 here, checked before the policy (no existence leak); only the expenses domain deletes it. */
+    private static function assertLibrary(Media $media): void
+    {
+        if (! (MediaPurpose::tryFrom($media->purpose)?->isLibrary() ?? false)) {
+            throw new ApiException(404, 'not_found', 'Resource not found.');
+        }
     }
 
     /**

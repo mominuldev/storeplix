@@ -38,6 +38,8 @@ export const catalogue: PermissionGroup[] = [
     permissions: [
       def('costs.view', 'See product cost & profit', [], true, 'Cost price, margin, profit report'),
       def('reports.view', 'Reports, payouts & COD settlements'),
+      // PHASE-8-7 §2.1
+      def('expenses.manage', 'Record & see expenses', [], true, 'Expenses, receipts and export'),
       def('data.export', 'Export customer phone numbers', [], true),
       def('data.import', 'Import products & customers (CSV)'),
     ],

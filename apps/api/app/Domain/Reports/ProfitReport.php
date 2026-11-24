@@ -13,7 +13,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Profit & loss (PHASE-7-CONTRACT §6.4): delivered orders (status `delivered`) by `delivered_at`.
  * revenue = Σ net; product cost = Σ unit_cost × (quantity − returned quantity); delivery cost / COD fee from the
- * order's delivered shipment(s). Gateway fees and ad spend are not tracked (null).
+ * order's delivered shipment(s). Gateway fees are not tracked (null).
+ *
+ * PHASE-8-7 §7 (amends §6.4): expenses count on their `spent_on` local date (cash basis, P87-3). Ad spend = Σ category
+ * `ads`, other expenses = Σ the other five; both are in total cost and net profit; `profit_before_expenses_amount` is
+ * the Phase 7 net profit. No currency filter (orders aren't filtered either, P87-11). One grouped aggregate per window.
  */
 final class ProfitReport
 {
@@ -24,7 +28,8 @@ final class ProfitReport
     public function build(Store $store, ReportRange $range): array
     {
         $orders = $this->orders($store, $range->startUtc(), $range->endUtc());
-        $summary = self::summary($orders['rows']);
+        $expenses = $this->expenses($store, $range->from->format('Y-m-d'), $range->to->format('Y-m-d'));
+        $summary = self::summary($orders['rows'], self::totals($expenses));
 
         $daily = [];
         foreach (array_reverse($range->dates()) as $date) {
@@ -38,17 +43,24 @@ final class ProfitReport
         }
         $dailyOut = [];
         foreach ($daily as $date => $rows) {
-            $s = self::summary($rows);
+            $s = self::summary($rows, $expenses[$date] ?? self::ZERO);
             unset($s['delivered_orders_count'], $s['profit_per_order_amount']);
             $dailyOut[] = ['date' => $date, 'orders_count' => count($rows)] + $s;
         }
 
         [$wStart, $wEnd] = $range->weeksWindowUtc(12);
         $weekRows = $this->orders($store, $wStart, $wEnd)['rows'];
+        $weeks = $range->isoWeeks(12);
+        $weekExpenses = [];
+        $lastWeekEnd = CarbonImmutable::createFromFormat('!Y-m-d', $weeks[11]['week_start'], 'UTC')->addDays(6)->format('Y-m-d');
+        foreach ($this->expenses($store, $weeks[0]['week_start'], $lastWeekEnd) as $date => $e) {
+            $week = CarbonImmutable::createFromFormat('!Y-m-d', $date, 'UTC')->format('o-\WW');
+            $weekExpenses[$week] = self::totals([($weekExpenses[$week] ?? self::ZERO), $e]);
+        }
         $weekly = [];
-        foreach ($range->isoWeeks(12) as $week) {
+        foreach ($weeks as $week) {
             $rows = array_values(array_filter($weekRows, fn (array $r) => $range->localWeek($r['delivered_at']) === $week['week']));
-            $s = self::summary($rows);
+            $s = self::summary($rows, $weekExpenses[$week['week']] ?? self::ZERO);
             $weekly[] = $week + ['revenue_amount' => $s['revenue_amount'], 'net_profit_amount' => $s['net_profit_amount'], 'margin' => $s['margin']];
         }
 
@@ -57,29 +69,48 @@ final class ProfitReport
 
         return [
             'summary' => $summary,
-            'previous' => self::summary($this->orders($store, $previous->startUtc(), $previous->endUtc())['rows']),
+            'previous' => $this->summaryFor($store, $previous),
             'per_order' => $n === 0 ? null : [
                 'order_value_amount' => ReportMath::perUnit($summary['revenue_amount'], $n),
                 'product_cost_amount' => ReportMath::perUnit($summary['product_cost_amount'], $n),
                 'delivery_cost_amount' => ReportMath::perUnit($summary['delivery_cost_amount'], $n),
                 'cod_fee_amount' => ReportMath::perUnit($summary['cod_fee_amount'], $n),
                 'gateway_fee_amount' => null,
+                'ad_spend_amount' => ReportMath::perUnit($summary['ad_spend_amount'], $n),
+                'other_expenses_amount' => ReportMath::perUnit($summary['other_expenses_amount'], $n),
                 'profit_amount' => ReportMath::perUnit($summary['net_profit_amount'], $n),
             ],
             'weekly' => $weekly,
             'daily' => $dailyOut,
-            'data_quality' => $orders['quality'],
+            'data_quality' => $orders['quality'] + ['expenses_count' => self::totals($expenses)['count']],
         ];
     }
 
-    /** @param list<array<string, mixed>> $rows @return array<string, mixed> ProfitSummary */
-    private static function summary(array $rows): array
+    /** ProfitSummary of a range (also the Expenses page "Profit after expenses" tile, PHASE-8-7 §6.3). @return array<string, mixed> */
+    public function summaryFor(Store $store, ReportRange $range): array
+    {
+        return self::summary(
+            $this->orders($store, $range->startUtc(), $range->endUtc())['rows'],
+            self::totals($this->expenses($store, $range->from->format('Y-m-d'), $range->to->format('Y-m-d'))),
+        );
+    }
+
+    /** @var array{ads: int, other: int, count: int} */
+    private const ZERO = ['ads' => 0, 'other' => 0, 'count' => 0];
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array{ads: int, other: int, count: int}  $expenses
+     * @return array<string, mixed> ProfitSummary
+     */
+    private static function summary(array $rows, array $expenses): array
     {
         $revenue = array_sum(array_column($rows, 'revenue'));
         $product = array_sum(array_column($rows, 'product_cost'));
         $delivery = array_sum(array_column($rows, 'delivery_cost'));
         $cod = array_sum(array_column($rows, 'cod_fee'));
-        $cost = $product + $delivery + $cod; // gateway fees and ad spend are null (not tracked)
+        $before = $revenue - ($product + $delivery + $cod); // the Phase 7 net profit
+        $cost = $product + $delivery + $cod + $expenses['ads'] + $expenses['other']; // gateway fees stay null (not tracked)
         $profit = $revenue - $cost;
         $count = count($rows);
 
@@ -90,12 +121,50 @@ final class ProfitReport
             'delivery_cost_amount' => $delivery,
             'cod_fee_amount' => $cod,
             'gateway_fee_amount' => null,
-            'ad_spend_amount' => null,
+            'ad_spend_amount' => $expenses['ads'],
+            'other_expenses_amount' => $expenses['other'],
             'total_cost_amount' => $cost,
+            'profit_before_expenses_amount' => $before,
             'net_profit_amount' => $profit,
             'margin' => ReportMath::ratio($profit, $revenue),
             'profit_per_order_amount' => ReportMath::perUnit($profit, $count),
         ];
+    }
+
+    /** @param iterable<array{ads: int, other: int, count: int}> $parts @return array{ads: int, other: int, count: int} */
+    private static function totals(iterable $parts): array
+    {
+        $t = self::ZERO;
+        foreach ($parts as $p) {
+            $t['ads'] += $p['ads'];
+            $t['other'] += $p['other'];
+            $t['count'] += $p['count'];
+        }
+
+        return $t;
+    }
+
+    /**
+     * Expenses of the store per local date in [from, to] (local `Y-m-d`, inclusive): one grouped aggregate.
+     *
+     * @return array<string, array{ads: int, other: int, count: int}>
+     */
+    private function expenses(Store $store, string $from, string $to): array
+    {
+        $out = [];
+        $rows = DB::table('expenses')->where('tenant_id', $store->tenant_id)->where('store_id', $store->id)
+            ->whereBetween('spent_on', [$from, $to])
+            ->groupBy('spent_on', 'category')
+            ->selectRaw('spent_on, category, SUM(amount) AS amount, COUNT(*) AS n')
+            ->get();
+        foreach ($rows as $r) {
+            $date = substr((string) $r->spent_on, 0, 10);
+            $out[$date] ??= self::ZERO;
+            $out[$date][$r->category === 'ads' ? 'ads' : 'other'] += (int) $r->amount;
+            $out[$date]['count'] += (int) $r->n;
+        }
+
+        return $out;
     }
 
     /**

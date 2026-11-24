@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Reports;
 
 use App\Domain\Billing\Models\Plan;
+use App\Domain\Reports\Http\ReportController;
 use App\Domain\Reports\ReportRange;
 use App\Domain\Tenancy\Support\TenantCache;
 use Carbon\CarbonImmutable;
@@ -16,7 +17,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\CatalogFixtures;
 use Tests\TestCase;
 
-/** PHASE-7-CONTRACT §6.4 budget: p95 < 800 ms for a 366-day range over 50 000 orders (Postgres only). */
+/** PHASE-7-CONTRACT §6.4 budget: p95 < 800 ms for a 366-day range over 50 000 orders + 5 000 expenses (PHASE-8-7 §7.2; Postgres only). */
 #[Group('reports')]
 #[Group('perf')]
 class ReportsPerfTest extends TestCase
@@ -62,6 +63,18 @@ class ReportsPerfTest extends TestCase
                 DB::table('order_items')->insert($items);
             }
         });
+        // PHASE-8-7 §7.2: + 5,000 expenses over the same year (one grouped aggregate per window).
+        $this->inTenant($t, function () use ($t, $store, $start) {
+            $categories = ['ads', 'packaging', 'salaries', 'rent_bills', 'courier', 'other'];
+            foreach (array_chunk(range(0, 4999), 1000) as $chunk) {
+                DB::table('expenses')->insert(array_map(fn (int $n) => [
+                    'id' => strtolower((string) Str::ulid()), 'tenant_id' => $t->id, 'store_id' => $store->id,
+                    'category' => $categories[$n % 6], 'paid_from' => 'cash', 'amount' => 1000 + $n, 'currency' => 'BDT',
+                    'spent_on' => $start->addDays($n % 365)->format('Y-m-d'), 'created_at' => now(), 'updated_at' => now(),
+                ], $chunk));
+            }
+        });
+        DB::statement('ANALYZE expenses');
         DB::statement('ANALYZE orders');
         DB::statement('ANALYZE order_items');
 
@@ -70,7 +83,7 @@ class ReportsPerfTest extends TestCase
         $byType = [];
         foreach (['sales', 'profit', 'delivery'] as $type) {
             for ($run = 0; $run < 4; $run++) {
-                $this->inTenant($t, fn () => app(TenantCache::class)->forget("reports:{$type}:".ReportRange::resolve($query['from'], $query['to'], 'Asia/Dhaka')->cacheHash($store->id)));
+                $this->inTenant($t, fn () => app(TenantCache::class)->forget(ReportController::cacheKey($type, ReportRange::resolve($query['from'], $query['to'], 'Asia/Dhaka')->cacheHash($store->id), $type === 'profit' ? '0' : null)));
                 $began = microtime(true);
                 $this->report($h, $store, $type, $query)->assertOk();
                 $times[] = $ms = (microtime(true) - $began) * 1000;

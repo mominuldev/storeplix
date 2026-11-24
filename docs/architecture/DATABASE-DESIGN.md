@@ -941,6 +941,38 @@ only, no CHECK). `audit_logs.actor_type` gains `automation` (`actor_id` = automa
 `automation.created|updated|enabled|disabled|deleted|test_sent`; per-action effects (tags, messages, notifications)
 are recorded only in the run log.
 
+## 5.7 Phase 8.7 expense tables (PHASE-8-7-CONTRACT §4, ADR 0021, migrations `2026_12_04_*`)
+Replaces the §6 "Expenses" sketch: **no `expense_categories` table** (six code-defined categories, Q167) and
+`spent_on date` instead of `spent_at` (expenses are day-granular, store-local). Both tables are store-scoped `[S]`, have
+RLS forced in their create migration and are listed in `RlsTables::TENANT` (71 after Phase 8.7) and
+`database/sql/rls-emergency-off.sql`. No plan gate. Permission `expenses.manage`.
+
+### expense_recurrences [S] (`000100`, created first)
+id PK · tenant_id · store_id · day_of_month smallint `CHECK BETWEEN 1 AND 31` · next_on date · status varchar(8)
+`CHECK IN ('active','stopped')` · stopped_at timestamptz null · created_by FK users SET NULL null · timestamps.
+U(tenant_id, store_id, id). Partial IX(next_on) `WHERE status = 'active'` (`expenses:repeat`). IX(tenant_id, store_id,
+status). A day the month doesn't have becomes the month's last day.
+
+### expenses [S] (`000100`)
+id PK · tenant_id · store_id · category varchar(16) `CHECK IN ('ads','packaging','salaries','rent_bills','courier',
+'other')` · paid_from varchar(8) `CHECK IN ('cash','bank','card','bkash','nagad','other')` · amount bigint `CHECK (amount
+> 0 AND amount <= 1000000000)` · currency char(3) (store currency at write time) · spent_on date (store-local;
+2020-01-01 … today) · note varchar(200) null · receipt_media_id char(26) null **U**, FK (tenant_id, receipt_media_id) →
+media(tenant_id, id) RESTRICT · recurrence_id char(26) null, FK (tenant_id, store_id, recurrence_id) →
+expense_recurrences (tenant_id, store_id, id) `ON DELETE SET NULL (recurrence_id)` (raw statement on Postgres) ·
+created_by FK users SET NULL null (null = generated occurrence) · updated_by FK users SET NULL null · timestamps.
+IX(tenant_id, store_id, spent_on DESC, id DESC) (list). IX(tenant_id, store_id, spent_on, category) INCLUDE (amount)
+(reports). Partial **U(recurrence_id, spent_on)** `WHERE recurrence_id IS NOT NULL` (generator idempotency). Hard
+delete with an audit snapshot (Q181); kept while the store exists.
+
+### Changes to existing tables
+`media.purpose` gains `expense_receipt` (documentation only, no CHECK): `disk` = the private disk, path
+`tenants/{tenant}/media/{id}/original.{jpg|png|webp|pdf}`, images re-encoded by `ProcessMedia` with no variants, PDFs
+`ready` at upload, `width`/`height` 0 for PDFs. Never returned by the generic `/media` routes. Unattached receipts are
+deleted after 24 h (`expenses:prune-receipts`: row first guarded by NOT EXISTS, object after commit). `audit_logs`
+action catalogue gains `expense.created|updated|deleted|exported|recurrence_started|recurrence_stopped|repeated`
+(`repeated` with actor type `system`). Store currency lock (P87-18) needs no column: `EXISTS` on orders/expenses.
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -952,7 +984,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
-| Expenses (144:41613) | `expense_categories(tenant_id, name)`, `expenses(tenant_id, category_id, amount, currency, spent_at, note, receipt_media_id)` | 8 |
+| Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing / transfers (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `suppliers`, `purchase_orders`, `purchase_order_items(received_qty)`, `stock_transfers`, `stock_transfer_items` | 8+ |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `customers.risk_flags`, `order_risk_checks(order_id, provider, score, result jsonb)` | 8 |

@@ -83,6 +83,8 @@ const LivePage = lazy(() => import('./onboarding/LivePage'));
 // Phase 8.3 role editor (code-split).
 const RolePage = lazy(() => import('./staff/RolePage'));
 const ReportsPage = lazy(() => import('./reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+// Phase 8.7 expenses (code-split).
+const ExpensesPage = lazy(() => import('./expenses/ExpensesPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -101,9 +103,11 @@ function MarketingIndex() {
   return can.manageMarketing(activeTenant) ? lazyEl(<MarketingOverviewPage />) : <Navigate to="/marketing/coupons" replace />;
 }
 
-/** `/reports` → Sales, keeping the range in the query string. */
+/** `/reports` → the first allowed tab (PHASE-8-7 P87-16: Sales, else Expenses), keeping the range in the query string. */
 function ReportsIndex() {
   const { search } = useLocation();
+  const { activeTenant } = useAuth();
+  if (!can.viewReports(activeTenant) && can.manageExpenses(activeTenant)) return <Navigate to="/reports/expenses" replace />;
   return <Navigate to={{ pathname: '/reports/sales', search }} replace />;
 }
 
@@ -237,6 +241,7 @@ export function AppRoutes() {
               <Route path="/reports/sales" element={gated(can.viewReports, <ReportsPage type="sales" />)} />
               <Route path="/reports/profit" element={gated(can.viewReports, <ReportsPage type="profit" />)} />
               <Route path="/reports/delivery" element={gated(can.viewReports, <ReportsPage type="delivery" />)} />
+              <Route path="/reports/expenses" element={gated(can.manageExpenses, <ExpensesPage />)} />
               <Route path="/staff" element={<StaffPage />} />
               <Route path="/staff/roles/new" element={lazyEl(<RolePage />)} />
               <Route path="/staff/roles/:roleId" element={lazyEl(<RolePage />)} />

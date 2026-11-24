@@ -1,8 +1,19 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.14.0
+  version: 1.15.0
   description: |
+    1.15.0 (2026-11-24, Phase 8.7, PHASE-8-7-CONTRACT.md, ADR 0021). New tag expenses (expenses.manage, a new
+    grantable permission; no plan gate): GET|POST /stores/{store}/expenses, GET /stores/{store}/expenses/summary,
+    GET .../expenses/export (text/csv), POST .../expenses/receipts (multipart; JPG/PNG/WebP/PDF ≤ 5 MB, private),
+    GET|PATCH|DELETE .../expenses/{expense}, GET .../expenses/{expense}/receipt (signed 5-minute link) and the public
+    signed GET /expense-receipts/{media}/download. **Changed shape (profit report)**: ProfitSummary.ad_spend_amount is
+    now always an integer (Σ category ads; was null), plus other_expenses_amount and profit_before_expenses_amount;
+    total_cost_amount, net_profit_amount, margin and profit_per_order_amount are after expenses (by spent_on);
+    per_order gains ad_spend_amount and other_expenses_amount; data_quality gains expenses_count. StoreSettings.region
+    gains currency_locked; PATCH settings with a different region.currency once the store has an order or an expense →
+    409 currency_locked (now implemented). PermissionKey gains expenses.manage. New error codes receipt_not_found (404),
+    receipt_processing (409), impersonation_receipt_hidden (403), export_too_large (422).
     1.14.0 (2026-11-24, Phase 8.6, PHASE-8-6-CONTRACT.md, ADR 0020): additive only. Automations and checkout recovery.
     New tag automations (marketing.manage; create/enable/PATCH of an `on` automation/test need the sms_automation plan
     feature → 402 feature_not_in_plan): GET|POST /stores/{store}/automations, GET|PATCH|DELETE .../automations/{automation},
@@ -149,6 +160,8 @@ tags:
   description: 'Phase 8.5: marketing overview, SMS/email campaigns and opt-out (PHASE-8-5 §4, §6)'
 - name: automations
   description: 'Phase 8.6: recipe automations, run log and checkout recovery (PHASE-8-6 §9)'
+- name: expenses
+  description: 'Phase 8.7: expenses ledger, receipts, monthly repeat and CSV export (PHASE-8-7 §8)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -767,7 +780,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`currency_locked` (Phase 5+, store has orders)'
+          description: '`currency_locked`: the store has an order or an expense (PHASE-8-7 P87-18)'
           content:
             application/json:
               schema:
@@ -14580,8 +14593,441 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/expenses:
+    get:
+      tags:
+      - expenses
+      summary: List expenses of a month
+      operationId: listExpenses
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. Newest first (`spent_on desc, id desc`), cursor pages of 50.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[month]
+        required: false
+        schema:
+          $ref: '#/components/schemas/YearMonth'
+        description: Store-local month; default the current month.
+      - in: query
+        name: filter[category]
+        required: false
+        schema:
+          type: string
+        description: Comma list of ExpenseCategory
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Expenses
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Expense'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - expenses
+      summary: Record an expense
+      operationId: createExpense
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. `currency` is taken from the store (a different value → 422). `spent_on` 2020-01-01 … today
+        (store tz). `repeat_monthly` starts a recurrence (P87-9). Limiter expenses-write 60/min per user. Audited
+        expense.created. Impersonation → 403 impersonation_read_only.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Expense'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/expenses/summary:
+    get:
+      tags:
+      - expenses
+      summary: Month summary (Expenses page tiles and By category)
+      operationId: getExpenseSummary
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. `profit_after_expenses_amount` is null unless the actor has reports.view and costs.view and the
+        plan has profit_reports (P87-5); it equals the profit report's net profit for the same range.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: month
+        required: false
+        schema:
+          $ref: '#/components/schemas/YearMonth'
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ExpenseSummary'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/expenses/export:
+    get:
+      tags:
+      - expenses
+      summary: Export one month as CSV
+      operationId: exportExpenses
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. `text/csv` attachment (envelope exception; errors stay JSON). Formula-safe cells. More than 5,000
+        rows → 422 export_too_large. Audited expense.exported. Readable in impersonation sessions (audited).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: month
+        required: true
+        schema:
+          $ref: '#/components/schemas/YearMonth'
+      responses:
+        '200':
+          description: CSV (date, category, note, paid_from, amount, currency, receipt, repeats)
+          content:
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: validation_failed or export_too_large (`details.limit`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/expenses/receipts:
+    post:
+      tags:
+      - expenses
+      summary: Upload a receipt
+      operationId: uploadExpenseReceipt
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. JPG, PNG, WebP or PDF ≤ 5 MB, type sniffed from bytes (PDF also needs `%%EOF` in the last
+        1 KB). Images ≤ 40 MP, re-encoded (EXIF/GPS removed; status processing → ready); PDFs ready at once. Stored on
+        the private disk; never served by /media. Unattached receipts are deleted after 24 h. Limiter expense-receipts
+        20/min per user.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ExpenseReceipt'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/expenses/{expense}:
+    parameters:
+    - $ref: '#/components/parameters/ExpensePath'
+    get:
+      tags:
+      - expenses
+      summary: Get an expense
+      operationId: getExpense
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Expense
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Expense'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - expenses
+      summary: Update an expense
+      operationId: updateExpense
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. Partial. `repeat_monthly` false stops the series, true starts one; `receipt_id` null removes the
+        receipt (deleted after commit). A `spent_on` colliding with another occurrence of the same series → 422.
+        Audited expense.updated with changes.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateExpenseInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Expense'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - expenses
+      summary: Delete an expense
+      operationId: deleteExpense
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. Hard delete; audit snapshot; the receipt is deleted after commit; deleting the only row of an
+        active series stops it.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/expenses/{expense}/receipt:
+    parameters:
+    - $ref: '#/components/parameters/ExpensePath'
+    get:
+      tags:
+      - expenses
+      summary: Signed link to the expense's receipt
+      operationId: getExpenseReceiptLink
+      description: Needs expenses.manage (PHASE-8-7 §2.1; staff → 403); no plan gate. Returns a 5-minute signed URL (P87-8). 404 receipt_not_found when none; 409 receipt_processing
+        while an image is being re-encoded; 403 impersonation_receipt_hidden in an impersonation session.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Link
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ExpenseReceiptLink'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: forbidden or impersonation_receipt_hidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: not_found or receipt_not_found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: receipt_processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /expense-receipts/{media}/download:
+    parameters:
+    - in: path
+      name: media
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - in: query
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - expenses
+      summary: Download a receipt (signed, 5 minutes)
+      operationId: downloadExpenseReceipt
+      description: Public signed URL; tenant from the signature. PDF as attachment, images inline;
+        `X-Content-Type-Options nosniff`, `Content-Security-Policy sandbox; default-src 'none'`, `private, no-store`,
+        `Referrer-Policy no-referrer`. Limiter 60/min per IP.
+      security: []
+      responses:
+        '200':
+          description: Receipt file
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Bad or expired signature
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
+    ExpensePath:
+      in: path
+      name: expense
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
     AdminTenantPath:
       in: path
       name: tenant
@@ -16144,7 +16590,8 @@ components:
     PermissionKey:
       type: string
       description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable. Phase 8.4
-        adds developers.manage (owner and admin; grantable to custom roles).
+        adds developers.manage (owner and admin; grantable to custom roles). Phase 8.7 adds expenses.manage (owner and
+        admin; grantable; sensitive).
       enum:
       - orders.view
       - orders.process
@@ -16159,6 +16606,7 @@ components:
       - customers.delete
       - costs.view
       - reports.view
+      - expenses.manage
       - data.export
       - data.import
       - marketing.manage
@@ -16699,6 +17147,7 @@ components:
           - country
           - currency
           - timezone
+          - currency_locked
           properties:
             country:
               type: string
@@ -16706,6 +17155,10 @@ components:
               type: string
             timezone:
               type: string
+            currency_locked:
+              type: boolean
+              description: True once the store has an order or an expense; a different region.currency then → 409
+                currency_locked (PHASE-8-7 P87-18)
         updated_at:
           type: string
           format: date-time
@@ -24899,10 +25352,13 @@ components:
       - cod_fee_amount
       - gateway_fee_amount
       - ad_spend_amount
+      - other_expenses_amount
       - total_cost_amount
+      - profit_before_expenses_amount
       - net_profit_amount
       - margin
       - profit_per_order_amount
+      description: PHASE-7 §6.4 as amended by PHASE-8-7 §7.1 (expenses by spent_on; net profit after expenses).
       properties:
         revenue_amount:
           type: integer
@@ -24919,11 +25375,16 @@ components:
           - integer
           - 'null'
         ad_spend_amount:
-          type:
-          - integer
-          - 'null'
+          type: integer
+          description: Σ expenses of category ads (never null since 1.15.0)
+        other_expenses_amount:
+          type: integer
+          description: Σ expenses of the other five categories
         total_cost_amount:
           type: integer
+        profit_before_expenses_amount:
+          type: integer
+          description: revenue − (product + delivery + COD fee), the Phase 7 net profit
         net_profit_amount:
           type: integer
         margin:
@@ -24957,6 +25418,8 @@ components:
             - delivery_cost_amount
             - cod_fee_amount
             - gateway_fee_amount
+            - ad_spend_amount
+            - other_expenses_amount
             - profit_amount
             properties:
               order_value_amount:
@@ -24971,6 +25434,10 @@ components:
                 type:
                 - integer
                 - 'null'
+              ad_spend_amount:
+                type: integer
+              other_expenses_amount:
+                type: integer
               profit_amount:
                 type: integer
           - type: 'null'
@@ -25012,7 +25479,9 @@ components:
             - cod_fee_amount
             - gateway_fee_amount
             - ad_spend_amount
+            - other_expenses_amount
             - total_cost_amount
+            - profit_before_expenses_amount
             - net_profit_amount
             - margin
             properties:
@@ -25034,10 +25503,12 @@ components:
                 - integer
                 - 'null'
               ad_spend_amount:
-                type:
-                - integer
-                - 'null'
+                type: integer
+              other_expenses_amount:
+                type: integer
               total_cost_amount:
+                type: integer
+              profit_before_expenses_amount:
                 type: integer
               net_profit_amount:
                 type: integer
@@ -25050,11 +25521,15 @@ components:
           required:
           - items_without_cost
           - shipments_without_fee
+          - expenses_count
           properties:
             items_without_cost:
               type: integer
             shipments_without_fee:
               type: integer
+            expenses_count:
+              type: integer
+              description: Expense rows dated in the range (PHASE-8-7)
     DeliverySummary:
       type: object
       required:
@@ -27573,6 +28048,306 @@ components:
           type: integer
           minimum: 0
           maximum: 100
+    YearMonth:
+      type: string
+      pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      example: 2026-11
+    ExpenseCategory:
+      type: string
+      description: PHASE-8-7 §3. ads → Profit & loss "Ad spend"; the others → "Other expenses".
+      enum:
+      - ads
+      - packaging
+      - salaries
+      - rent_bills
+      - courier
+      - other
+    PaidFrom:
+      type: string
+      enum:
+      - cash
+      - bank
+      - card
+      - bkash
+      - nagad
+      - other
+    ExpenseReceiptMime:
+      type: string
+      enum:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - application/pdf
+    Expense:
+      type: object
+      required:
+      - id
+      - category
+      - paid_from
+      - amount
+      - currency
+      - spent_on
+      - note
+      - receipt
+      - repeat_monthly
+      - recurrence_id
+      - created_by
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        paid_from:
+          $ref: '#/components/schemas/PaidFrom'
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 1000000000
+          description: Minor units
+        currency:
+          type: string
+        spent_on:
+          type: string
+          format: date
+          description: Store-local calendar date
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        receipt:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - mime
+            - size_bytes
+            - status
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              mime:
+                $ref: '#/components/schemas/ExpenseReceiptMime'
+              size_bytes:
+                type: integer
+              status:
+                $ref: '#/components/schemas/MediaStatus'
+          - type: 'null'
+        repeat_monthly:
+          type: boolean
+          description: True while the expense's recurrence is active
+        recurrence_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        created_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+          description: Null for occurrences generated by "Repeat every month"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ExpenseInput:
+      type: object
+      required:
+      - amount
+      - category
+      - paid_from
+      - spent_on
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 1000000000
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        paid_from:
+          $ref: '#/components/schemas/PaidFrom'
+        spent_on:
+          type: string
+          format: date
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        receipt_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        repeat_monthly:
+          type: boolean
+        currency:
+          type: string
+          description: Optional; must equal the store currency
+    UpdateExpenseInput:
+      type: object
+      description: Partial ExpenseInput
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 1000000000
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        paid_from:
+          $ref: '#/components/schemas/PaidFrom'
+        spent_on:
+          type: string
+          format: date
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        receipt_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        repeat_monthly:
+          type: boolean
+        currency:
+          type: string
+    ExpenseReceipt:
+      type: object
+      required:
+      - id
+      - mime
+      - size_bytes
+      - status
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        mime:
+          $ref: '#/components/schemas/ExpenseReceiptMime'
+        size_bytes:
+          type: integer
+        status:
+          $ref: '#/components/schemas/MediaStatus'
+        created_at:
+          type: string
+          format: date-time
+    ExpenseReceiptLink:
+      type: object
+      required:
+      - url
+      - mime
+      - size_bytes
+      - expires_at
+      properties:
+        url:
+          type: string
+          format: uri
+        mime:
+          $ref: '#/components/schemas/ExpenseReceiptMime'
+        size_bytes:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+    ExpenseSummary:
+      type: object
+      required:
+      - month
+      - from
+      - to
+      - currency
+      - total_amount
+      - count
+      - ads_amount
+      - ads_share
+      - by_category
+      - compare
+      - delivered_orders_count
+      - cost_per_order_amount
+      - profit_after_expenses_amount
+      - months
+      properties:
+        month:
+          $ref: '#/components/schemas/YearMonth'
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        currency:
+          type: string
+        total_amount:
+          type: integer
+        count:
+          type: integer
+        ads_amount:
+          type: integer
+        ads_share:
+          type:
+          - number
+          - 'null'
+        by_category:
+          type: array
+          items:
+            type: object
+            required:
+            - category
+            - amount
+            - count
+            - share
+            properties:
+              category:
+                $ref: '#/components/schemas/ExpenseCategory'
+              amount:
+                type: integer
+              count:
+                type: integer
+              share:
+                type: number
+        compare:
+          type: object
+          required:
+          - label_month
+          - total_amount
+          - change_pct
+          description: P87-15 same day span of the previous month for the current month; full months otherwise
+          properties:
+            label_month:
+              $ref: '#/components/schemas/YearMonth'
+            total_amount:
+              type: integer
+            change_pct:
+              type:
+              - integer
+              - 'null'
+        delivered_orders_count:
+          type: integer
+        cost_per_order_amount:
+          type:
+          - integer
+          - 'null'
+        profit_after_expenses_amount:
+          type:
+          - integer
+          - 'null'
+          description: Null without reports.view + costs.view or without plan profit_reports
+        months:
+          type: array
+          maxItems: 36
+          items:
+            $ref: '#/components/schemas/YearMonth'
     CursorMeta:
       type: object
       required:

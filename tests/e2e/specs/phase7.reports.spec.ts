@@ -276,11 +276,17 @@ test('Profit (Growth owner): delivered orders by delivery date, costs, data-qual
     delivery_cost_amount: delivery,
     cod_fee_amount: cod,
     gateway_fee_amount: null,
-    ad_spend_amount: null,
+    // PHASE-8-7 §7.3: with no expenses ad spend is 0 (was null), other expenses 0, and the Phase 7 figure is kept as
+    // `profit_before_expenses_amount` (equal to net profit).
+    ad_spend_amount: 0,
+    other_expenses_amount: 0,
     total_cost_amount: total,
     net_profit_amount: revenue - total,
+    profit_before_expenses_amount: revenue - total,
     profit_per_order_amount: Math.floor((revenue - total) / 2),
   });
+  expect(r.json.data.data_quality.expenses_count).toBe(0);
+  expect(r.json.data.per_order).toMatchObject({ ad_spend_amount: 0, other_expenses_amount: 0 });
   expect(r.json.data.summary.margin).toBeCloseTo((revenue - total) / revenue, 4);
   expect(r.json.data.data_quality.items_without_cost).toBe(1);
   expect(r.json.data.data_quality.shipments_without_fee).toBeGreaterThanOrEqual(0);
