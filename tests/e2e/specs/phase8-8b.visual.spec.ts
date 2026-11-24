@@ -110,7 +110,8 @@ for (const width of WIDTHS) {
     await shot(page, width, 'suppliers', overflow);
 
     await page.goto(mUrl('/inventory'));
-    await expect(page.getByRole('columnheader', { name: /Incoming/i }).or(page.getByText(/^Incoming$/i)).first()).toBeVisible({ timeout: 20_000 });
+    // below md the table is cards and the desktop column header is hidden: match the visible "Incoming" label (8.8c-A QA-3 item 4)
+    await expect(page.getByRole('columnheader', { name: /Incoming/i }).or(page.getByText(/^Incoming$/i)).locator('visible=true').first()).toBeVisible({ timeout: 20_000 });
     await noOmissions(page, 'Inventory');
     await shot(page, width, 'inventory', overflow);
 

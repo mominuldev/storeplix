@@ -81,7 +81,8 @@ for (const width of WIDTHS) {
     await page.goto(mUrl('/inventory'));
     await expect(page.getByText('QA Muslin Wrap').first()).toBeVisible({ timeout: 20_000 });
     await expect(locationSelector(page)).toBeVisible();
-    await expect(page.getByText(/Transfer stock/i), 'part B').toHaveCount(0);
+    // Phase 8.8c-B: with two locations on Growth, Inventory offers "Transfer stock" (§10.1 `11:788`).
+    await expect(page.getByRole('button', { name: /Transfer stock/i }).or(page.getByRole('link', { name: /Transfer stock/i })).first(), 'part B').toBeVisible();
     await shot(page, width, 'inventory-all-locations', overflow);
 
     expect(overflow, overflow.join('\n')).toEqual([]);

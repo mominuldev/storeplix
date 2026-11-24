@@ -329,6 +329,22 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'locations'"; exit 1; }
           exit $status
 
+      # Phase 8.8c part B (PHASE-8-8C-CONTRACT §12 S187–S194, §13, §16 AC 4–6): the `stocktransfer` group (every §9 part-B
+      # route: happy, validation, authz, isolation incl. cross-tenant/cross-store 404 for transfers, lines, counts and
+      # count lines (S187); transfer state machine, short units written off, cancel in transit returns the sent units once
+      # (S188); idempotent send/receive/finish (S189); count delta-at-count vectors, keep vs zero uncounted (S190); values
+      # hidden without costs.view (S191); `multi_warehouse` on transfer create/send, receive/cancel after a downgrade
+      # (S192); scan input rules (S193); audit (S194)) must exist and pass on sqlite. Concurrency (`race`) runs on
+      # Postgres only.
+      - name: phase 8.8c-B group (stocktransfer)
+        run: |
+          mkdir -p build
+          php artisan test --group=stocktransfer --exclude-group perf --exclude-group race --log-junit build/stocktransfer.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/stocktransfer.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "stocktransfer tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'stocktransfer'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -526,6 +542,21 @@ jobs:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
           CACHE_STORE: array
+      # Phase 8.8c-B (§3.2): stock_transfers / stock_transfer_items / stock_counts / stock_count_items (CHECKs on status and
+      # received <= quantity, one open count per location, composite FKs, the store_counters `stock_transfers` kind) exist
+      # on Postgres; stocktransfer must pass there too and must not be empty.
+      - name: phase 8.8c-B stocktransfer (postgres)
+        run: |
+          mkdir -p build
+          php artisan test --group=stocktransfer --exclude-group perf --exclude-group race --log-junit build/stocktransfer-pg.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/stocktransfer-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "stocktransfer tests executed (postgres): ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'stocktransfer' on Postgres"; exit 1; }
+          exit $status
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
   # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
@@ -650,7 +681,11 @@ jobs:
             test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
             test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers \
             test_parallel_checkouts_sell_only_the_online_locations_stock \
-            test_parallel_location_writes_keep_the_cap_and_one_default; do
+            test_parallel_location_writes_keep_the_cap_and_one_default \
+            test_parallel_sends_and_checkouts_never_take_the_source_below_committed \
+            test_parallel_sends_of_one_transfer_move_stock_once \
+            test_parallel_receive_and_cancel_settle_an_in_transit_transfer_once \
+            test_parallel_count_starts_open_one_count_per_location; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -682,6 +717,29 @@ jobs:
             listed=$(grep -cw -- "${t}" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" || true)
             echo "${t}: listed ${listed}x"
             [ "${listed:-0}" -ge 2 ] || { echo "::error::locations race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
+          done
+          exit $fail
+      # Phase 8.8c-B (S188, S190, §13): the `stocktransfer` ∩ `race` tests (two sends + a checkout never take the source
+      # below committed; one open count per location) run in the list above. This guard
+      # DISCOVERS that intersection from the test files (a #[Group('race')] method or class in a file tagged
+      # #[Group('stocktransfer')]) and fails when it is empty or when a discovered test is missing from the race lists of
+      # api-perf and api-rls, so a new transfer/count race test can't silently not run.
+      - name: phase 8.8c-B race list complete (discovered)
+        run: |
+          names=$(grep -rlE "Group\('stocktransfer'\)" tests --include='*.php' | xargs -r awk '
+            FNR == 1 { pend = 0; classrace = 0 }
+            /^[[:space:]]*#\[Group\(.race.\)\]/ { pend = 1; next }
+            /^[[:space:]]*(#\[|\/\*\*|\*)/ { next }
+            /^[[:space:]]*((final|abstract|readonly)[[:space:]]+)*class[[:space:]]/ { classrace = pend; pend = 0; next }
+            /function[[:space:]]+test_/ { if (pend || classrace) { match($0, /test_[A-Za-z0-9_]+/); print substr($0, RSTART, RLENGTH) } pend = 0; next }
+            /^[[:space:]]*$/ { next }
+            { pend = 0 }' | sort -u)
+          [ -n "$names" ] || { echo "::error::no race tests in group 'stocktransfer' (S188 needs a Postgres send-vs-checkout race, S190 a one-open-count race)"; exit 1; }
+          fail=0
+          for t in $names; do
+            listed=$(grep -cw -- "${t}" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" || true)
+            echo "${t}: listed ${listed}x"
+            [ "${listed:-0}" -ge 2 ] || { echo "::error::stocktransfer race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
           done
           exit $fail
       # Phase 5a perf budget (§12): checkout p95 < 300 ms, 10-line cart, 50 sequential runs. Runs the
@@ -879,7 +937,11 @@ jobs:
             test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
             test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers \
             test_parallel_checkouts_sell_only_the_online_locations_stock \
-            test_parallel_location_writes_keep_the_cap_and_one_default; do
+            test_parallel_location_writes_keep_the_cap_and_one_default \
+            test_parallel_sends_and_checkouts_never_take_the_source_below_committed \
+            test_parallel_sends_of_one_transfer_move_stock_once \
+            test_parallel_receive_and_cancel_settle_an_in_transit_transfer_once \
+            test_parallel_count_starts_open_one_count_per_location; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
@@ -943,6 +1005,11 @@ jobs:
       # (the RLS probe for `locations` is also in the `rls` step above).
       - name: phase 8.8c-A locations (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" locations lenient --group=locations --exclude-group perf --exclude-group race'
+      # Phase 8.8c-B (PHASE-8-8C-CONTRACT §3.2, S187): the four transfer/count tables are RLS-forced; send, receive,
+      # cancel, scan and finish write stock inside the actor's tenant with the app role (their RLS probes are also in the
+      # `rls` step above). Must not be empty.
+      - name: phase 8.8c-B stocktransfer (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" stocktransfer lenient --group=stocktransfer --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

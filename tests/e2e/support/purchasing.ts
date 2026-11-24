@@ -36,13 +36,13 @@ export const mUrl = (path = '') => `${urls.merchant}${path}`;
 /**
  * Figma items that must never render in 8.8b (§Out of scope, P88B-7, Q211, 10.1–10.4). Phase 8.8c-A amends this: the
  * Inventory **Warehouses** tab now shows on every store (PHASE-8-8C §10, one location + upgrade note), so it left the
- * list; "Receive at" stays hidden on these one-location shops (built only when > 1 location, §10.3); Transfer stock and
- * Stock count arrive with part B.
+ * list; "Receive at" stays hidden on these one-location shops (built only when > 1 location, §10.3). Phase 8.8c-B: the
+ * **Stock count** tab shows on every store (counts need no plan, §10), so it left the list; "Transfer stock" stays
+ * hidden on these one-location shops (location UI is built only when > 1 location / `multi_warehouse`, §10).
  */
 export const OMITTED = [
   /Receive at/i,
   /Transfer stock/i,
-  /Stock count/i,
   /need owner approval/i,
   /Approved by/i,
   /vs last month/i,

@@ -25,7 +25,7 @@ import { createPo, createSupplier, inventoryRow, lineFor, purchasingShop, receiv
  *  - exactly one location "Main warehouse", default (= online), carrying the shop's whole stock;
  *  - adjust / PO / receive without any `location_id` land on it (8.8b smoke: PO → send → receive → stock up);
  *  - storefront availability unchanged; a 2nd location → 402 `feature_not_in_plan` (Starter has no `multi_warehouse`);
- *  - UI: Inventory shows no location selector, no "Receive at", no Transfer stock / Stock count (part B); the Adjust
+ *  - UI: Inventory shows no location selector, no "Receive at", no Transfer stock (Starter, one location; part B keeps it hidden); the Adjust
  *    dialog has no Location field; the Warehouses tab lists the one location with "Online orders ship from here" and the
  *    upgrade note.
  */
