@@ -185,8 +185,11 @@ class ReceivingTest extends TestCase
         $this->assertSame(['received', 4], [$body['status'], $body['units_received']]);
         $this->assertSame(1500, $this->costOf($tenant, $a)); // (4 × 1 000 + 4 × 2 000) ÷ 8
         $this->assertSame(8000, $this->getPo($h, $store, $po['id'])->json('data.received_value_amount'));
-        $this->assertSame('payment_recorded', collect($body['events'])->firstWhere('type', 'payment_recorded')['type']);
-        $this->assertNull(collect($body['events'])->firstWhere('type', 'payment_recorded')['amount']);
+        // Review L4: payment entries and supplier payment details are hidden from adjust-only receivers.
+        $this->assertNull(collect($body['events'])->firstWhere('type', 'payment_recorded'));
+        $this->assertSame([null, null, null, null, null, null], [$body['supplier']['payment_terms_days'], $body['supplier']['advance_percent'],
+            $body['supplier']['pays_by_method'], $body['supplier']['pays_by_account'], $body['due_on'], $body['is_overdue']]);
+        $this->assertNotNull(collect($this->getPo($h, $store, $po['id'])->json('data.events'))->firstWhere('type', 'payment_recorded'));
     }
 
     #[Group('security')]

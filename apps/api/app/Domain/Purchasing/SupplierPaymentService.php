@@ -81,12 +81,14 @@ final class SupplierPaymentService
         });
     }
 
-    /** Re-sums `paid_amount` of a locked PO from its payments (P88B-8) and bumps its revision. */
+    /**
+     * Re-sums `paid_amount` of a locked PO from its payments (P88B-8). The PO `revision` is NOT bumped: `paid_amount` is
+     * not an editable field, so a payment must not make the merchant's open edit form stale (review M1).
+     */
     public function refreshPaid(PurchaseOrder $po, User $user): void
     {
         $po->paid_amount = (int) SupplierPayment::query()->where('purchase_order_id', $po->id)->sum('amount');
         if ($po->isDirty('paid_amount')) {
-            $po->revision++;
             $po->updated_by = $user->id;
             $po->save();
         }

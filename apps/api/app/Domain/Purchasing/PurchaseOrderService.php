@@ -9,6 +9,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrderItem;
 use App\Domain\Purchasing\Models\Supplier;
+use App\Domain\Purchasing\Models\SupplierPayment;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Models\StoreCounter;
 use App\Domain\Stores\Models\Store;
@@ -77,6 +78,10 @@ final class PurchaseOrderService
             if (array_key_exists('supplier_id', $input) && strtolower((string) $input['supplier_id']) !== $row->supplier_id) {
                 if ($row->status !== PurchaseOrder::DRAFT) {
                     throw ValidationException::withMessages(['supplier_id' => ['The supplier can be changed only on a draft.']]);
+                }
+                // Review M2: payments are recorded against the supplier; moving the PO would split owed between two suppliers.
+                if (SupplierPayment::query()->where('purchase_order_id', $row->id)->exists()) {
+                    throw ValidationException::withMessages(['supplier_id' => ['This draft already has a payment to the supplier. Remove the payment first to change the supplier.']]);
                 }
                 $row->supplier_id = $this->activeSupplier($store, (string) $input['supplier_id'])->id;
                 $changed[] = 'supplier_id';

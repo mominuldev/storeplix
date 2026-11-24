@@ -146,6 +146,29 @@ class PurchaseOrdersApiTest extends TestCase
         $this->assertSame(2, count(array_keys($actions, 'purchasing.purchase_order_updated', true)));
     }
 
+    /** Review M1 + M2: a payment doesn't make the edit form stale, and a draft with a payment keeps its supplier. */
+    public function test_a_payment_keeps_the_revision_and_locks_the_supplier_of_a_draft(): void
+    {
+        [, , $store, $h] = $this->buyer();
+        $a = $this->variant($h, $store, cost: 1000);
+        $supplierA = $this->addSupplier($h, $store);
+        $supplierB = $this->addSupplier($h, $store);
+        $po = $this->draft($h, $store, $supplierA['id'], [[$a, 2000, 5]]);
+
+        $this->api($h, 'POST', $this->pUrl($store, "/suppliers/{$supplierA['id']}/payments"),
+            ['amount' => 5000, 'method' => 'bkash', 'paid_on' => self::TODAY, 'purchase_order_id' => $po['id']])->assertCreated();
+        $after = $this->getPo($h, $store, $po['id'])->assertOk()->json('data');
+        $this->assertSame([$po['revision'], 5000], [$after['revision'], $after['paid_amount']]);
+
+        // The form saved before the payment can still save (same revision) …
+        $this->api($h, 'PATCH', $this->pUrl($store, "/purchase-orders/{$po['id']}"), ['revision' => $po['revision'], 'notes' => 'Same red shade'])->assertOk();
+        // … but the supplier can't move while a payment is linked.
+        $rev = $this->getPo($h, $store, $po['id'])->json('data.revision');
+        $this->api($h, 'PATCH', $this->pUrl($store, "/purchase-orders/{$po['id']}"), ['revision' => $rev, 'supplier_id' => $supplierB['id']])
+            ->assertUnprocessable()->assertJsonValidationErrorFor('supplier_id', 'error.details');
+        $this->assertSame($supplierA['id'], $this->getPo($h, $store, $po['id'])->json('data.supplier.id'));
+    }
+
     public function test_state_machine(): void
     {
         [, $tenant, $store, $h] = $this->buyer();

@@ -131,8 +131,8 @@ final class PurchasingPresenter
             'sent_via' => $po->sent_via,
             'closed_at' => UserRef::iso($po->closed_at),
             'cancelled_at' => UserRef::iso($po->cancelled_at),
-            'due_on' => $po->dueOn(),
-            'is_overdue' => $po->isOverdue($today),
+            'due_on' => $money ? $po->dueOn() : null, // review L4: payment timing is money data
+            'is_overdue' => $money ? $po->isOverdue($today) : null,
             'currency' => $po->currency,
             'subtotal_amount' => $m($po->subtotal_amount),
             'shipping_amount' => $m($po->shipping_amount),
@@ -200,10 +200,11 @@ final class PurchasingPresenter
             'supplier' => self::supplierRef($supplier) + [
                 'contact_name' => $supplier->contact_name,
                 'lead_time_days' => $supplier->lead_time_days,
-                'payment_terms_days' => $supplier->payment_terms_days,
-                'advance_percent' => $supplier->advance_percent,
-                'pays_by_method' => $supplier->pays_by_method,
-                'pays_by_account' => $supplier->pays_by_account,
+                // Review L4: payment details only for purchasing.manage (P88B-11).
+                'payment_terms_days' => $money ? $supplier->payment_terms_days : null,
+                'advance_percent' => $money ? $supplier->advance_percent : null,
+                'pays_by_method' => $money ? $supplier->pays_by_method : null,
+                'pays_by_account' => $money ? $supplier->pays_by_account : null,
                 'past_orders_count' => $supplierStats['past_orders_count'],
                 'archived_at' => UserRef::iso($supplier->archived_at),
                 'owed_amount' => $m($supplierStats['owed_amount']),
@@ -299,6 +300,11 @@ final class PurchasingPresenter
             ->whereIn('action', array_keys($types))
             ->orderBy('created_at')->orderBy('id')->get();
         $users = User::query()->whereIn('id', $rows->where('actor_type', 'user')->pluck('actor_id')->filter()->unique()->values())->get()->keyBy('id');
+
+        // Review L4: adjust-only viewers don't see payment entries at all.
+        if (! $money) {
+            $rows = $rows->reject(fn (AuditLog $row) => str_starts_with($types[$row->action], 'payment_'));
+        }
 
         return $rows->map(function (AuditLog $row) use ($types, $users, $money) {
             $meta = $row->meta ?? [];

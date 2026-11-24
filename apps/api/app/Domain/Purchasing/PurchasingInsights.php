@@ -28,14 +28,16 @@ final class PurchasingInsights
         $today = PurchaseHistory::today($store);
         $week = CarbonImmutable::parse($today)->addDays(7)->format('Y-m-d');
         $monthStart = PurchaseHistory::monthStart($store);
-        $ids = Supplier::query()->where('store_id', $store->id)->whereNull('archived_at')->pluck('id')->all();
+        // Review L3: every supplier (archived ones too), so "You owe" equals the PO page's "Owed to suppliers".
+        $ids = Supplier::query()->where('store_id', $store->id)->pluck('id')->all();
+        $activeIds = Supplier::query()->where('store_id', $store->id)->whereNull('archived_at')->pluck('id')->all();
         $stats = SupplierStats::forIds($store, $ids);
         $open = self::pos($store)->whereIn('status', PurchaseOrder::OPEN);
 
         return [
             'currency' => $store->currency ?: 'BDT',
-            'suppliers_count' => count($ids),
-            'active_this_month' => count(array_filter($stats, fn ($s) => $s['active_this_month'])),
+            'suppliers_count' => count($activeIds),
+            'active_this_month' => count(array_filter(array_intersect_key($stats, array_flip($activeIds)), fn ($s) => $s['active_this_month'])),
             'owed_amount' => array_sum(array_map(fn ($s) => max(0, $s['owed_amount']), $stats)),
             'owed_suppliers_count' => count(array_filter($stats, fn ($s) => $s['owed_amount'] > 0)),
             'overdue_count' => count(array_filter($stats, fn ($s) => $s['overdue_amount'] > 0)),
