@@ -9,7 +9,7 @@ const loc = (res: Response) => {
 };
 
 function run(url: string, init: { host?: string; method?: string; cookie?: string } = {}) {
-  const headers: Record<string, string> = { host: init.host ?? 'demo.localhost:3000' };
+  const headers: Record<string, string> = { host: init.host ?? 'demo.localhost:3010' };
   if (init.cookie) headers.cookie = init.cookie;
   return proxy(new NextRequest(`http://placeholder${url}`, { headers, method: init.method ?? 'GET' }));
 }
@@ -39,7 +39,7 @@ describe('proxy: ?preview= -> sp_preview cookie', () => {
   it('marks the cookie Secure in production on real domains, not on local dev hosts', () => {
     vi.stubEnv('NODE_ENV', 'production');
     expect(run('/?preview=tok', { host: 'shop.example.com' }).headers.get('set-cookie')).toMatch(/Secure/i);
-    expect(run('/?preview=tok', { host: 'demo.localhost:3000' }).headers.get('set-cookie')).not.toMatch(/Secure/i);
+    expect(run('/?preview=tok', { host: 'demo.localhost:3010' }).headers.get('set-cookie')).not.toMatch(/Secure/i);
   });
 
   it('does not store junk tokens and clears an existing preview cookie', () => {

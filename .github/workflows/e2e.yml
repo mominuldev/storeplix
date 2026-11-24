@@ -29,7 +29,7 @@ jobs:
             echo 'PAYMENTS_FAKE=true'
             echo 'COURIERS_FAKE=true'
             echo "INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32)"
-            echo 'PUBLIC_API_URL=http://localhost:8000'
+            echo 'PUBLIC_API_URL=http://localhost:8010'
             echo 'DOCUMENTS_DRIVER=html'
             # Phase 6 (PHASE-6-CONTRACT §11, §12.1): fake DNS + fake Cloudflare for SaaS, `*.localhost` custom hosts,
             # /api/v1/dev/domains/*. CI never calls Cloudflare or a public DoH resolver.

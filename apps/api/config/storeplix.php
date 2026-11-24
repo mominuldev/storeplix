@@ -16,7 +16,7 @@ return [
     /*
     | Merchant dashboard base URL (links in reset-password / invitation emails).
     */
-    'merchant_app_url' => env('MERCHANT_APP_URL', 'http://localhost:5173'),
+    'merchant_app_url' => env('MERCHANT_APP_URL', 'http://localhost:5183'),
 
     /*
     | Media storage (Phase 2 §1.5). MEDIA_URL overrides the disk's public base URL (e.g. CDN).

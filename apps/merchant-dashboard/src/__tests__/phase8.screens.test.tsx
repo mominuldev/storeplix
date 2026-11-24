@@ -77,7 +77,7 @@ describe('/impersonate (contract §7.2)', () => {
     mockApi({ 'POST /auth/impersonation': jsonResponse(404, { error: { code: 'not_found', message: 'Not found.' } }) });
     renderApp(<AppRoutes />, { route: `/impersonate#ticket=${TICKET}` });
     expect(await screen.findByText('This link has expired. Start again from Store Plix admin.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open Store Plix admin' })).toHaveAttribute('href', 'http://localhost:5174');
+    expect(screen.getByRole('link', { name: 'Open Store Plix admin' })).toHaveAttribute('href', 'http://localhost:5184');
   });
 
   it('never calls the API without a well-formed ticket', async () => {
@@ -105,7 +105,7 @@ describe('impersonation frame', () => {
     renderApp(<AppRoutes />, { route: '/' });
     await screen.findByRole('region', { name: 'Support session' });
     expect(await screen.findByRole('heading', { name: 'Impersonation ended' }, { timeout: 4000 })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to Store Plix admin' })).toHaveAttribute('href', 'http://localhost:5174');
+    expect(screen.getByRole('link', { name: 'Back to Store Plix admin' })).toHaveAttribute('href', 'http://localhost:5184');
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
     expect(session.peekNotice()).toBeNull();
   });

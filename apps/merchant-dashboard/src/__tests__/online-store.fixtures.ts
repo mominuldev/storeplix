@@ -79,4 +79,4 @@ export const pagesList = {
   meta: { counts: { all: 2, draft: 1, published: 1, hidden: 0 }, limit: 50 },
 };
 
-export const previewToken = { token: 'tok123', url: 'http://demo.localhost:3000/?preview=tok123', expires_at: new Date(Date.now() + 3600_000).toISOString() };
+export const previewToken = { token: 'tok123', url: 'http://demo.localhost:3010/?preview=tok123', expires_at: new Date(Date.now() + 3600_000).toISOString() };

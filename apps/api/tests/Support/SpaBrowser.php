@@ -13,7 +13,7 @@ use Tests\Fixtures\StrictCsrf;
  */
 trait SpaBrowser
 {
-    protected string $spaOrigin = 'http://localhost:5173';
+    protected string $spaOrigin = 'http://localhost:5183';
 
     /** @var array<string, string> raw (encrypted) cookies */
     protected array $jar = [];
@@ -22,7 +22,7 @@ trait SpaBrowser
     {
         config([
             'session.driver' => 'database',
-            'sanctum.stateful' => ['localhost:5173', 'localhost:5174'],
+            'sanctum.stateful' => ['localhost:5183', 'localhost:5184'],
             'sanctum.middleware.validate_csrf_token' => StrictCsrf::class,
         ]);
     }

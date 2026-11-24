@@ -19,7 +19,7 @@ composer dev                                         # = php artisan dev (below)
 
 | Process | Command | Why |
 |---|---|---|
-| server | `serve --port=8000 --no-reload` | `PHP_CLI_SERVER_WORKERS=4` workers, so one slow request doesn't stall every page |
+| server | `serve --port=8010 --no-reload` | `PHP_CLI_SERVER_WORKERS=4` workers, so one slow request doesn't stall every page |
 | queue | `queue:listen --queue=default,media` | mails, media variants, storefront revalidation |
 | queue-bulk | `queue:listen --queue=bulk --timeout=310` | CSV imports and exports, never queued behind short jobs |
 | queue-notifications | `queue:listen --queue=notifications` | order SMS and email (Phase 5a) |
@@ -100,7 +100,7 @@ Each module may register its own service provider (`bootstrap/providers.php`). F
 | GET | `/api/v1/stores` | session + `X-Tenant-Id` | paginated `{data:Store[],meta}` (`per_page` ≤ 100) |
 | POST | `/api/v1/stores` | session + `X-Tenant-Id` (owner/admin) | `{name, slug, business_categories?, name_bn?, timezone?, country?=BD, currency?=BDT}` → 201 `Store`; creates `{slug}.{PLATFORM_DOMAIN}` (active, primary) + default theme; tenant already has a store → 409 `store_limit_reached` |
 | GET | `/api/v1/stores/{id}` | session + `X-Tenant-Id` | 404 for other tenants' stores |
-| POST | `/api/v1/stores/{id}/preview-token` | session + `X-Tenant-Id` (any member) | 201 `PreviewToken {token,url,expires_at}`; 60 min, bound to the store; `url` = `https://{primary_domain}/?preview=…` (`http://…:3000` when `APP_ENV=local`) |
+| POST | `/api/v1/stores/{id}/preview-token` | session + `X-Tenant-Id` (any member) | 201 `PreviewToken {token,url,expires_at}`; 60 min, bound to the store; `url` = `https://{primary_domain}/?preview=…` (`http://…:3010` when `APP_ENV=local`) |
 | GET | `/api/v1/storefront/config` | `X-Storefront-Key` + `X-Storefront-Host` | `StorefrontConfig` incl. `store.status` (`active`/`draft`) and `preview`; optional `X-Storefront-Preview`; 401 `invalid_storefront_key`, 400 `storefront_host_required`, 404 `store_not_found` |
 
 Errors always: `{ "error": { "code", "message", "details"? } }` (`validation_failed`, `unauthenticated`,
@@ -168,6 +168,6 @@ Timestamps are ISO-8601 UTC (`2026-01-01T12:00:00Z`).
 ## Environment
 
 `PLATFORM_DOMAIN` (storeplix.test), `STOREFRONT_API_KEY`, `CORS_ALLOWED_ORIGINS`
-(default `http://localhost:5173,http://localhost:5174`), `APP_VERSION`, `DOMAIN_CACHE_TTL`,
+(default `http://localhost:5183,http://localhost:5184`), `APP_VERSION`, `DOMAIN_CACHE_TTL`,
 `DOMAIN_NEGATIVE_CACHE_TTL`, `SANCTUM_EXPIRATION` (10080), `MERCHANT_APP_URL`, `MEDIA_DISK`, `MEDIA_URL`,
 `STOREFRONT_REVALIDATE_URL`, `REVALIDATE_SECRET`, `SMS_DRIVER`, `REVESMS_*`, `HASH_DRIVER`, mail (Mailpit on :1025), plus standard `DB_*`, `REDIS_*`, `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`.

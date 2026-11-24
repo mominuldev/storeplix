@@ -5,13 +5,13 @@ import { defineConfig, devices } from '@playwright/test';
  * individual dev servers) and the dev seed has run (store slug `demo`).
  *
  * Override targets with env: API_URL, MERCHANT_URL, ADMIN_URL, STOREFRONT_URL.
- * Chromium resolves *.localhost to loopback, so http://demo.localhost:3000 needs no hosts entry.
+ * Chromium resolves *.localhost to loopback, so http://demo.localhost:3010 needs no hosts entry.
  */
 export const urls = {
-  api: process.env.API_URL ?? 'http://localhost:8000',
-  merchant: process.env.MERCHANT_URL ?? 'http://localhost:5173',
-  admin: process.env.ADMIN_URL ?? 'http://localhost:5174',
-  storefront: process.env.STOREFRONT_URL ?? 'http://demo.localhost:3000',
+  api: process.env.API_URL ?? 'http://localhost:8010',
+  merchant: process.env.MERCHANT_URL ?? 'http://localhost:5183',
+  admin: process.env.ADMIN_URL ?? 'http://localhost:5184',
+  storefront: process.env.STOREFRONT_URL ?? 'http://demo.localhost:3010',
 };
 
 export default defineConfig({

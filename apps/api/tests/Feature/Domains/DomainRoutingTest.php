@@ -60,7 +60,7 @@ class DomainRoutingTest extends TestCase
 
         // platform primary: platform hosts never redirect; an active non-primary custom host does
         $this->sfConfig($platform)->assertOk()->assertJsonPath('data.store.redirect_host', null)->assertJsonPath('data.store.primary_host', $platform);
-        $this->sfConfig('alias.localhost:3000')->assertOk()->assertJsonPath('data.store.redirect_host', null);
+        $this->sfConfig('alias.localhost:3010')->assertOk()->assertJsonPath('data.store.redirect_host', null);
         $this->sfConfig('shop.acme.com')->assertOk()->assertJsonPath('data.store.redirect_host', $platform);
 
         // custom primary: every other host redirects to it; the primary itself doesn't
@@ -98,7 +98,7 @@ class DomainRoutingTest extends TestCase
         [, $tenant, $store, $h] = $this->domainShop();
         $row = $this->activeDomain($h, $tenant, $store, 'shop-e2e.localhost');
         $this->assertTrue($row->display_hostname === 'shop-e2e.localhost');
-        $this->sfConfig('shop-e2e.localhost:3000')->assertOk()->assertJsonPath('data.store.id', $store->id);
+        $this->sfConfig('shop-e2e.localhost:3010')->assertOk()->assertJsonPath('data.store.id', $store->id);
 
         config(['domains.fake' => false]);
         $this->addDomain($h, $store, 'other.localhost')->assertStatus(422)->assertJsonPath('error.code', 'domain_invalid');

@@ -5,11 +5,11 @@ export function isLocalDevHost(host: string): boolean {
 
 /**
  * Canonical origin for a normalized host. Local dev hosts use http and the dev port
- * (STOREFRONT_LOCAL_PORT, default 3000) because host normalization strips ports.
+ * (STOREFRONT_LOCAL_PORT, default 3010) because host normalization strips ports.
  */
 export function originForHost(host: string): string {
   if (!isLocalDevHost(host)) return `https://${host}`;
-  const port = process.env.STOREFRONT_LOCAL_PORT ?? '3000';
+  const port = process.env.STOREFRONT_LOCAL_PORT ?? '3010';
   return /^\d{1,5}$/.test(port) && port !== '80' ? `http://${host}:${port}` : `http://${host}`;
 }
 

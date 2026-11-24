@@ -217,7 +217,7 @@ import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryL
 export interface ApiClientOptions {
   /**
    * API origin. `''` (the SPAs, Phase 4.7) = same-origin relative URLs through the Vite/Nginx proxy;
-   * `http://localhost:8000` for server-to-server use. `/api/v1` is appended automatically.
+   * `http://localhost:8010` for server-to-server use. `/api/v1` is appended automatically.
    */
   baseUrl: string;
   /** fetch credentials mode. Default `same-origin` (session cookie, contract §7.3). */

@@ -26,7 +26,7 @@ class PasswordResetTest extends TestCase
             $token = $mail->token;
 
             return $mail->hasTo($user->email)
-                && str_starts_with($mail->url(), 'http://localhost:5173/reset-password?token=')
+                && str_starts_with($mail->url(), 'http://localhost:5183/reset-password?token=')
                 && str_contains($mail->url(), 'email='.rawurlencode($user->email));
         });
 

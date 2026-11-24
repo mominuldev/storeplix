@@ -797,8 +797,8 @@ jobs:
       - run: pnpm -r --if-present run test
       - run: pnpm -r --if-present run build
         env:
-          STOREFRONT_API_URL: http://127.0.0.1:8000
-          VITE_API_URL: http://127.0.0.1:8000
+          STOREFRONT_API_URL: http://127.0.0.1:8010
+          VITE_API_URL: http://127.0.0.1:8010
       - name: Secret leak check (client bundles)
         run: |
           set -e

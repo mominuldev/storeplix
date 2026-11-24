@@ -526,7 +526,7 @@ class ImpersonationTest extends TestCase
         $this->freshSession();
         try {
             return $this->flushHeaders()->withSession([SessionSurface::KEY => SessionSurface::ADMIN])
-                ->withHeaders(['X-Testing-User' => $staff->id, 'Referer' => 'http://localhost:5174/', 'Accept' => 'application/json'])
+                ->withHeaders(['X-Testing-User' => $staff->id, 'Referer' => 'http://localhost:5184/', 'Accept' => 'application/json'])
                 ->json($method, $uri, $data);
         } finally {
             config(['sanctum.middleware.validate_csrf_token' => StrictCsrf::class]);

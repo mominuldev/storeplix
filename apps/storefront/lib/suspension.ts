@@ -40,7 +40,7 @@ export async function isHostSuspended(host: string, opts: SuspensionCheckOptions
 
   const pending = inflight.get(host);
   if (pending) return pending;
-  const apiUrl = (opts.apiUrl ?? process.env.STOREFRONT_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '');
+  const apiUrl = (opts.apiUrl ?? process.env.STOREFRONT_API_URL ?? 'http://localhost:8010').replace(/\/+$/, '');
   const doFetch = opts.fetch ?? fetch;
 
   const lookup = (async () => {

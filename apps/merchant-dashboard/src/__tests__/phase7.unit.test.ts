@@ -60,7 +60,7 @@ describe('limit warning (65:17445)', () => {
 describe('billing helpers', () => {
   it('only lets https (or local dev) provider pages receive the browser', () => {
     expect(isSafeRedirect('https://sandbox.bka.sh/x')).toBe(true);
-    expect(isSafeRedirect('http://localhost:8000/api/v1/dev/fake-billing-gateway/P1')).toBe(true);
+    expect(isSafeRedirect('http://localhost:8010/api/v1/dev/fake-billing-gateway/P1')).toBe(true);
     expect(isSafeRedirect('http://evil.test/x')).toBe(false);
     expect(isSafeRedirect('javascript:alert(1)')).toBe(false);
     expect(isSafeRedirect(null)).toBe(false);
