@@ -18,7 +18,7 @@ final class RlsTables
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A, 87 after Phase 8.8c) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -53,6 +53,8 @@ final class RlsTables
         'suppliers', 'purchase_orders', 'purchase_order_items', 'purchase_receipts', 'purchase_receipt_items', 'supplier_payments',
         // Phase 8.8c-A locations (PHASE-8-8C §3.1; 2026_12_07_000100)
         'locations',
+        // Phase 8.8c-B transfers + counts (PHASE-8-8C §3.2; 2026_12_08_000100 / 000200)
+        'stock_transfers', 'stock_transfer_items', 'stock_counts', 'stock_count_items',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */

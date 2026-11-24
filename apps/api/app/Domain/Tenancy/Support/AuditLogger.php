@@ -15,6 +15,8 @@ use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Inventory\Models\Location;
+use App\Domain\Inventory\Models\StockCount;
+use App\Domain\Inventory\Models\StockTransfer;
 use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
@@ -69,6 +71,8 @@ class AuditLogger
         PurchaseOrder::class => 'purchase_order',
         SupplierPayment::class => 'supplier_payment',
         Location::class => 'location', // PHASE-8-8C P88C-18
+        StockTransfer::class => 'stock_transfer',
+        StockCount::class => 'stock_count',
     ];
 
     public function __construct(

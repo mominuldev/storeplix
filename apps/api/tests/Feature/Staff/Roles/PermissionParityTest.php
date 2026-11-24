@@ -188,6 +188,24 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/locations/{location}/archive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/locations/{location}/unarchive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/locations/{location}/make-default' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.8c part B (PHASE-8-8C §2.1, §9): reads every member, writes inventory.adjust (staff has it).
+        'GET api/v1/stores/{store}/stock-transfers' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/stock-transfers/summary' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-transfers' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/stock-transfers/{transfer}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PATCH api/v1/stores/{store}/stock-transfers/{transfer}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/stores/{store}/stock-transfers/{transfer}' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
+        'POST api/v1/stores/{store}/stock-transfers/{transfer}/send' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-transfers/{transfer}/receive' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-transfers/{transfer}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/stock-counts' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-counts' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/stock-counts/{count}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/stock-counts/{count}/lines' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PUT api/v1/stores/{store}/stock-counts/{count}/lines/{line}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-counts/{count}/scan' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-counts/{count}/finish' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/stock-counts/{count}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
     ];
 
     /** @var array<string, mixed> */
@@ -419,6 +437,17 @@ class PermissionParityTest extends TestCase
         $location = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Dhanmondi shop', 'type' => 'shop'])->assertCreated()->json('data.id');
         $archivedLocation = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Old godown', 'type' => 'warehouse'])->assertCreated()->json('data.id');
         $this->req($h, 'POST', "{$base}/locations/{$archivedLocation}/archive")->assertOk();
+        // Phase 8.8c part B: stock at a hub, a draft and an in-transit transfer hub → default, a count in progress at the
+        // hub (the "Dhanmondi shop" location above stays free of them so its archive case keeps its status).
+        $hub = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Transfer hub', 'type' => 'warehouse'])->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "{$base}/inventory/adjustments", ['reason' => 'received', 'items' => [['variant_id' => $variant, 'mode' => 'delta', 'quantity' => 10, 'location_id' => $hub]]])->assertOk();
+        $this->inTenant($tenant, fn () => ProductVariant::query()->whereKey($variant)->whereNull('sku')->update(['sku' => 'PARITY-SKU']));
+        $sku = $this->inTenant($tenant, fn () => ProductVariant::query()->whereKey($variant)->value('sku'));
+        $transferBody = ['from_location_id' => $hub, 'to_location_id' => $this->req($h, 'GET', "{$base}/locations")->json('data.0.id'), 'lines' => [['variant_id' => $variant, 'quantity' => 1]]];
+        $draftTransfer = $this->req($h, 'POST', "{$base}/stock-transfers", $transferBody)->assertCreated()->json('data.id');
+        $transit = $this->req($h, 'POST', "{$base}/stock-transfers", $transferBody + ['send' => true], true)->assertCreated()->json('data');
+        $count = $this->req($h, 'POST', "{$base}/stock-counts", ['location_id' => $hub])->assertCreated()->json('data.id');
+        $countLine = $this->req($h, 'GET', "{$base}/stock-counts/{$count}/lines")->assertOk()->json('data.0.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -435,6 +464,8 @@ class PermissionParityTest extends TestCase
             'supplier' => $supplier, 'spare_supplier' => $spareSupplier, 'draft_po' => $draftPo, 'ordered_po' => $orderedPo,
             'ordered_item' => $orderedItem, 'supplier_payment' => $supplierPayment,
             'location' => $location, 'archived_location' => $archivedLocation,
+            'transfer_body' => $transferBody, 'draft_transfer' => $draftTransfer, 'transit' => $transit['id'], 'transit_item' => $transit['lines'][0]['id'],
+            'count' => $count, 'count_line' => $countLine, 'sku' => $sku,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -596,6 +627,23 @@ class PermissionParityTest extends TestCase
             'POST api/v1/stores/{store}/locations/{location}/archive' => $r('POST', "{$b}/locations/{$s['location']}/archive"),
             'POST api/v1/stores/{store}/locations/{location}/unarchive' => $r('POST', "{$b}/locations/{$s['archived_location']}/unarchive"),
             'POST api/v1/stores/{store}/locations/{location}/make-default' => $r('POST', "{$b}/locations/{$s['location']}/make-default"),
+            'GET api/v1/stores/{store}/stock-transfers' => $r('GET', "{$b}/stock-transfers"),
+            'GET api/v1/stores/{store}/stock-transfers/summary' => $r('GET', "{$b}/stock-transfers/summary"),
+            'POST api/v1/stores/{store}/stock-transfers' => $r('POST', "{$b}/stock-transfers", $s['transfer_body']),
+            'GET api/v1/stores/{store}/stock-transfers/{transfer}' => $r('GET', "{$b}/stock-transfers/{$s['transit']}"),
+            'PATCH api/v1/stores/{store}/stock-transfers/{transfer}' => $r('PATCH', "{$b}/stock-transfers/{$s['draft_transfer']}", ['revision' => 1, 'note' => 'Parity']),
+            'DELETE api/v1/stores/{store}/stock-transfers/{transfer}' => $r('DELETE', "{$b}/stock-transfers/{$s['draft_transfer']}"),
+            'POST api/v1/stores/{store}/stock-transfers/{transfer}/send' => $r('POST', "{$b}/stock-transfers/{$s['draft_transfer']}/send", [], true),
+            'POST api/v1/stores/{store}/stock-transfers/{transfer}/receive' => $r('POST', "{$b}/stock-transfers/{$s['transit']}/receive", ['lines' => [['item_id' => $s['transit_item'], 'received' => 1]]], true),
+            'POST api/v1/stores/{store}/stock-transfers/{transfer}/cancel' => $r('POST', "{$b}/stock-transfers/{$s['transit']}/cancel"),
+            'GET api/v1/stores/{store}/stock-counts' => $r('GET', "{$b}/stock-counts"),
+            'POST api/v1/stores/{store}/stock-counts' => $r('POST', "{$b}/stock-counts", ['location_id' => $s['location']]),
+            'GET api/v1/stores/{store}/stock-counts/{count}' => $r('GET', "{$b}/stock-counts/{$s['count']}"),
+            'GET api/v1/stores/{store}/stock-counts/{count}/lines' => $r('GET', "{$b}/stock-counts/{$s['count']}/lines"),
+            'PUT api/v1/stores/{store}/stock-counts/{count}/lines/{line}' => $r('PUT', "{$b}/stock-counts/{$s['count']}/lines/{$s['count_line']}", ['counted' => 3]),
+            'POST api/v1/stores/{store}/stock-counts/{count}/scan' => $r('POST', "{$b}/stock-counts/{$s['count']}/scan", ['code' => $s['sku']]),
+            'POST api/v1/stores/{store}/stock-counts/{count}/finish' => $r('POST', "{$b}/stock-counts/{$s['count']}/finish", ['zero_uncounted' => false], true),
+            'POST api/v1/stores/{store}/stock-counts/{count}/cancel' => $r('POST', "{$b}/stock-counts/{$s['count']}/cancel"),
             'GET api/v1/stores/{store}/purchase-orders' => $r('GET', "{$b}/purchase-orders"),
             'GET api/v1/stores/{store}/purchase-orders/summary' => $r('GET', "{$b}/purchase-orders/summary"),
             'POST api/v1/stores/{store}/purchase-orders' => $r('POST', "{$b}/purchase-orders", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'quantity' => 2]]]),

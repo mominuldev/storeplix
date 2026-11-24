@@ -912,6 +912,46 @@ BEGIN
   END IF;
 END
 $$;
+-- table: stock_transfers
+DO $$
+BEGIN
+  IF to_regclass('public.stock_transfers') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "stock_transfers";
+    ALTER TABLE "stock_transfers" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "stock_transfers" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: stock_transfer_items
+DO $$
+BEGIN
+  IF to_regclass('public.stock_transfer_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "stock_transfer_items";
+    ALTER TABLE "stock_transfer_items" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "stock_transfer_items" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: stock_counts
+DO $$
+BEGIN
+  IF to_regclass('public.stock_counts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "stock_counts";
+    ALTER TABLE "stock_counts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "stock_counts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: stock_count_items
+DO $$
+BEGIN
+  IF to_regclass('public.stock_count_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "stock_count_items";
+    ALTER TABLE "stock_count_items" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "stock_count_items" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

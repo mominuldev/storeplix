@@ -73,6 +73,13 @@ class RoutePermissionsTest extends TestCase
             'stores.settings.show',
             'stores.shipping.show',
             'stores.show',
+            // PHASE-8-8C part B (§9): transfer and count reads for every member.
+            'stores.stock-counts.index',
+            'stores.stock-counts.lines.index',
+            'stores.stock-counts.show',
+            'stores.stock-transfers.index',
+            'stores.stock-transfers.show',
+            'stores.stock-transfers.summary',
             'stores.themes.index',
             'stores.themes.show',
             'themes.index',
@@ -245,6 +252,18 @@ class RoutePermissionsTest extends TestCase
         'inventory.adjust' => [
             'stores.inventory.adjust',
             'stores.inventory.update',
+            // PHASE-8-8C part B (P88C-14): transfer and count writes.
+            'stores.stock-counts.cancel',
+            'stores.stock-counts.finish',
+            'stores.stock-counts.lines.update',
+            'stores.stock-counts.scan',
+            'stores.stock-counts.store',
+            'stores.stock-transfers.cancel',
+            'stores.stock-transfers.destroy',
+            'stores.stock-transfers.receive',
+            'stores.stock-transfers.send',
+            'stores.stock-transfers.store',
+            'stores.stock-transfers.update',
         ],
         'orders.view' => [
             'stores.orders.notes.store',

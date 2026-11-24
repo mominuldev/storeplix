@@ -266,12 +266,34 @@ import type {
   SupplierSummary,
   UpdatePurchaseOrderInput,
   UpdateSupplierInput,
+  CreateStockTransferInput,
+  FinishStockCountInput,
+  ReceiveStockTransferInput,
+  ScanStockCountInput,
+  SetStockCountLineInput,
+  StartStockCountInput,
+  StockCount,
+  StockCountDetail,
+  StockCountLine,
+  StockCountLineFilters,
+  StockCountLineListMeta,
+  StockCountLineResult,
+  StockCountListFilters,
+  StockCountListMeta,
+  StockCountTransitionInput,
+  StockTransfer,
+  StockTransferDetail,
+  StockTransferListFilters,
+  StockTransferListMeta,
+  StockTransferSummary,
+  StockTransferTransitionInput,
+  UpdateStockTransferInput,
 } from '@storeplix/types';
 import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1569,7 +1591,7 @@ export function createApiClient(options: ApiClientOptions) {
     /**
      * PHASE-8-8B §5, §8.1 purchase orders. `list`, `get` and `receive` also work with `inventory.adjust` only (every money
      * and cost field null, sent costs ignored); everything else needs `purchasing.manage`. Writes need plan `purchasing`.
-     * Wrong state → 409 `invalid_state_transition`; stale `revision` → 409 `revision_mismatch`.
+     * Wrong state → 409 `invalid_state_transition`; stale `revision` → 409 `revision_conflict`.
      */
     purchaseOrders: {
       /** Newest first; `meta.counts` per status. */
@@ -1621,6 +1643,87 @@ export function createApiClient(options: ApiClientOptions) {
        * bare link/`<a href>` will not work from the SPA — use `pdf`).
        */
       pdfUrl: (storeId: string, id: string) => buildUrl(`${store(storeId)}/purchase-orders/${enc(id)}/pdf`),
+    },
+
+    /**
+     * PHASE-8-8C §7 stock transfers. Reads: any member; writes: `inventory.adjust`. Create / update / send need plan
+     * `multi_warehouse` (402 `feature_not_in_plan`); receive and cancel of an existing transfer don't. Wrong state → 409
+     * `invalid_state_transition`; stale `revision` → 409 `revision_conflict`; send over the source's available → 422
+     * `insufficient_stock` (`details`: `InsufficientStockDetails`).
+     */
+    stockTransfers: {
+      /** Newest first; `meta.counts` per status. */
+      list: (storeId: string, filters: StockTransferListFilters = {}) =>
+        listOf<StockTransfer, StockTransferListMeta>(`${store(storeId)}/stock-transfers`, stockTransferListQuery(filters), {
+          ...emptyPage(),
+          counts: { all: 0, draft: 0, in_transit: 0, received: 0, cancelled: 0 },
+        }),
+      summary: (storeId: string) => request<StockTransferSummary>(`${store(storeId)}/stock-transfers/summary`),
+      get: (storeId: string, id: string) => request<StockTransferDetail>(`${store(storeId)}/stock-transfers/${enc(id)}`),
+      /**
+       * 201 draft with its `TR-{n}` number. With `send: true` it is sent in the same call: pass `idempotencyKey`
+       * (created once per panel submit, reused on retry).
+       */
+      create: (storeId: string, input: CreateStockTransferInput, idempotencyKey?: string) =>
+        request<StockTransferDetail>(`${store(storeId)}/stock-transfers`, {
+          method: 'POST', body: input, headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+        }),
+      /** `draft` only; `revision` required. */
+      update: (storeId: string, id: string, input: UpdateStockTransferInput) =>
+        request<StockTransferDetail>(`${store(storeId)}/stock-transfers/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** `draft` only → 204. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/stock-transfers/${enc(id)}`, { method: 'DELETE' }),
+      /** `draft → in_transit`: stock leaves the source (`transfer_out`). Idempotency-Key required. */
+      send: (storeId: string, id: string, idempotencyKey: string, input: StockTransferTransitionInput = {}) =>
+        request<StockTransferDetail>(`${store(storeId)}/stock-transfers/${enc(id)}/send`, {
+          method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** `in_transit → received`: received units arrive (`transfer_in`), the rest is short. Idempotency-Key required. */
+      receive: (storeId: string, id: string, input: ReceiveStockTransferInput, idempotencyKey: string) =>
+        request<StockTransferDetail>(`${store(storeId)}/stock-transfers/${enc(id)}/receive`, {
+          method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** From `draft` (no stock change) or `in_transit` (sent units return to the source). */
+      cancel: (storeId: string, id: string, input: StockTransferTransitionInput = {}) =>
+        request<StockTransferDetail>(`${store(storeId)}/stock-transfers/${enc(id)}/cancel`, { method: 'POST', body: input }),
+    },
+
+    /**
+     * PHASE-8-8C §8 stock counts (every plan). Reads: any member; writes: `inventory.adjust`. Values (`*_amount`) are null
+     * without `costs.view`. Start → 409 `count_in_progress` / 422 `count_too_large`; scan → 404 `count_line_not_found`.
+     */
+    stockCounts: {
+      /** Latest first; `meta.counts` per status. */
+      list: (storeId: string, filters: StockCountListFilters = {}) =>
+        listOf<StockCount, StockCountListMeta>(`${store(storeId)}/stock-counts`, stockCountListQuery(filters), {
+          ...emptyPage(),
+          counts: { all: 0, in_progress: 0, completed: 0, cancelled: 0 },
+        }),
+      /** Header + summary (lines via `lines`). */
+      get: (storeId: string, id: string) => request<StockCountDetail>(`${store(storeId)}/stock-counts/${enc(id)}`),
+      /** 100 per page; `meta.counts` per line state. */
+      lines: (storeId: string, id: string, filters: StockCountLineFilters = {}) =>
+        listOf<StockCountLine, StockCountLineListMeta>(`${store(storeId)}/stock-counts/${enc(id)}/lines`, stockCountLineListQuery(filters), {
+          ...emptyPage(),
+          per_page: 100,
+          counts: { all: 0, not_counted: 0, differences: 0, matched: 0 },
+        }),
+      /** 201; lines created for every tracked variant in scope. */
+      start: (storeId: string, input: StartStockCountInput) =>
+        request<StockCountDetail>(`${store(storeId)}/stock-counts`, { method: 'POST', body: input }),
+      /** SKU or barcode (≤ 64 chars) → +1 on that line. */
+      scan: (storeId: string, id: string, input: ScanStockCountInput) =>
+        request<StockCountLineResult>(`${store(storeId)}/stock-counts/${enc(id)}/scan`, { method: 'POST', body: input }),
+      /** Set a line's counted quantity (`null` = un-count). */
+      setLine: (storeId: string, id: string, lineId: string, input: SetStockCountLineInput) =>
+        request<StockCountLineResult>(`${store(storeId)}/stock-counts/${enc(id)}/lines/${enc(lineId)}`, { method: 'PUT', body: input }),
+      /** Finish & adjust stock (counted − expected per counted line). Idempotency-Key required. */
+      finish: (storeId: string, id: string, input: FinishStockCountInput, idempotencyKey: string) =>
+        request<StockCountDetail>(`${store(storeId)}/stock-counts/${enc(id)}/finish`, {
+          method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      cancel: (storeId: string, id: string, input: StockCountTransitionInput = {}) =>
+        request<StockCountDetail>(`${store(storeId)}/stock-counts/${enc(id)}/cancel`, { method: 'POST', body: input }),
     },
 
     /** PHASE-8-8B §7 and §8.1 purchasing helpers. */

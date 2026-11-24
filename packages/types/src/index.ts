@@ -594,7 +594,10 @@ export type UpdateLocationInput = Partial<LocationInput>;
  * Unarchive); `false` = active only; `true` = archived only. Not paginated (≤ 10 active).
  */
 export interface LocationListFilters { archived?: boolean }
-/** P88C-17 reasons in `error.details.reasons` of 409 `location_in_use` (archive). Transfer/count reasons arrive in part B. */
+/**
+ * P88C-17 reasons in `error.details.reasons` of 409 `location_in_use` (archive). Part B: `open_transfers` = a draft or
+ * in-transit transfer from or to it; `open_counts` = an in-progress count there.
+ */
 export type LocationInUseReason =
   | 'is_default' | 'has_stock' | 'has_committed' | 'open_purchase_orders' | 'open_transfers' | 'open_counts';
 export const LOCATION_IN_USE_REASONS: readonly LocationInUseReason[] = [
@@ -3078,7 +3081,7 @@ export interface CreatePurchaseOrderInput {
  * damaged units can't be removed or drop below received + damaged (422). `supplier_id` only while `draft`.
  */
 export interface UpdatePurchaseOrderInput extends Partial<CreatePurchaseOrderInput> { revision: number }
-/** Transitions accept an optional `revision` (checked when sent → 409 `revision_mismatch`). */
+/** Transitions accept an optional `revision` (checked when sent → 409 `revision_conflict`). */
 export interface PurchaseOrderTransitionInput { revision?: number }
 export interface SendPurchaseOrderInput extends PurchaseOrderTransitionInput { sent_via: PurchaseOrderSentVia }
 export interface ReceiveLineInput { item_id: string; received: number; damaged: number }
@@ -3141,7 +3144,7 @@ export interface ReorderSuggestionGroup {
   items: ReorderSuggestionItem[];
 }
 
-/** §8.4 error codes added by 8.8b (`invalid_state_transition`, `revision_mismatch`, `feature_not_in_plan` already exist). */
+/** §8.4 error codes added by 8.8b (`invalid_state_transition`, `revision_conflict`, `feature_not_in_plan` already exist). */
 export type PurchasingErrorCode = 'over_receive' | 'variant_not_tracked' | 'supplier_in_use';
 
 /** P88B-18 audit actions. */
@@ -3159,4 +3162,249 @@ export const PURCHASING_AUDIT_ACTIONS: readonly PurchasingAuditAction[] = [
   'purchasing.purchase_order_closed', 'purchasing.purchase_order_cancelled', 'purchasing.purchase_order_deleted',
   'purchasing.receipt_recorded', 'purchasing.quick_received', 'purchasing.payment_recorded', 'purchasing.payment_deleted',
   'purchasing.suppliers_imported',
+];
+
+// ---------- Stock transfers + stock counts (Phase 8.8c part B, PHASE-8-8C-CONTRACT §3.2, §7–§9; openapi 1.19.0) ----------
+/**
+ * Compact variant reference on transfer and count lines (same fields as `PurchaseOrderLine`'s product/variant block).
+ * `barcode` lets the count screen show what a scan matched.
+ */
+export interface StockVariantRef {
+  /** variant id */
+  id: string;
+  product: { id: string; name: string; image: MediaRef | null };
+  /** "Default" for single-variant products */
+  title: string;
+  option_values: string[];
+  sku: string | null;
+  barcode: string | null;
+}
+
+// ----- Transfers (§7, P88C-9 / P88C-10) -----
+export type StockTransferStatus = 'draft' | 'in_transit' | 'received' | 'cancelled';
+export const STOCK_TRANSFER_STATUSES: readonly StockTransferStatus[] = ['draft', 'in_transit', 'received', 'cancelled'];
+/** "Open" = blocks archiving either location (P88C-17 reason `open_transfers`). */
+export const OPEN_STOCK_TRANSFER_STATUSES: readonly StockTransferStatus[] = ['draft', 'in_transit'];
+/** Pill text; a received transfer with `units_short > 0` shows "Received · n short" (danger). */
+export const STOCK_TRANSFER_STATUS_LABELS: Record<StockTransferStatus, string> = {
+  draft: 'Draft', in_transit: 'In transit', received: 'Received', cancelled: 'Cancelled',
+};
+/** §3.2 bounds (WEB Zod mirrors these). */
+export const STOCK_TRANSFER_NOTE_MAX = 500;
+export const STOCK_TRANSFER_LINES_MAX = 200;
+export const STOCK_TRANSFER_QUANTITY_MAX = 100_000;
+
+/** List item (`GET …/stock-transfers`); newest first. */
+export interface StockTransfer {
+  id: string;
+  /** "TR-021" (per-store sequence, 3-digit padded) */
+  number: string;
+  status: StockTransferStatus;
+  from_location: LocationRef;
+  to_location: LocationRef;
+  note: string | null;
+  items_count: number;
+  /** Σ line quantity (what leaves the source on send) */
+  units_sent: number;
+  /** Σ received; null until the transfer is received */
+  units_received: number | null;
+  /** Σ (quantity − received) written off at receive; 0 otherwise */
+  units_short: number;
+  created_by: UserRef | null;
+  sent_at: string | null;
+  received_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+}
+export interface StockTransferLine {
+  id: string;
+  variant: StockVariantRef;
+  quantity: number;
+  /** null until received */
+  quantity_received: number | null;
+  /** current numbers of the variant at the **source** location (panel: "{From} stock a → b") */
+  source_on_hand: number;
+  /** on_hand − committed at the source */
+  source_available: number;
+  /** source row threshold (null = store default / none); the panel turns "a → b" red when b is at or below it */
+  source_low_stock_threshold: number | null;
+  position: number;
+}
+export type StockTransferEventType = 'created' | 'sent' | 'received' | 'cancelled';
+export interface StockTransferEvent { type: StockTransferEventType; actor: UserRef | null; created_at: string }
+/** `GET …/stock-transfers/{transfer}`; also the body of create (201), PATCH, send, receive and cancel. */
+export interface StockTransferDetail extends StockTransfer {
+  lines: StockTransferLine[];
+  /** oldest first */
+  events: StockTransferEvent[];
+}
+export type StockTransferStatusCounts = Record<StockTransferStatus | 'all', number>;
+export interface StockTransferListMeta extends PaginationMeta { counts: StockTransferStatusCounts }
+/** `filter[status]` csv, `filter[location_id]` (from **or** to), `q` (number); 25 per page. */
+export interface StockTransferListFilters {
+  status?: StockTransferStatus[]; location_id?: string; q?: string; page?: number; per_page?: number;
+}
+/** `GET …/stock-transfers/summary` (KPI tiles). "This month" = store timezone calendar month. */
+export interface StockTransferSummary {
+  drafts_count: number;
+  in_transit_count: number;
+  in_transit_units: number;
+  last_sent_at: string | null;
+  received_this_month_count: number;
+  received_this_month_units: number;
+  /** non-archived locations */
+  locations: { count: number; names: string[] };
+}
+export interface StockTransferLineInput { variant_id: string; quantity: number }
+/**
+ * POST …/stock-transfers → 201 draft (plan `multi_warehouse`). `send: true` = create and send in one call (send rules
+ * P88C-10 apply; pass an `Idempotency-Key`). Tracked variants only; one line per variant; 1–200 lines.
+ */
+export interface CreateStockTransferInput {
+  from_location_id: string;
+  to_location_id: string;
+  note?: string | null;
+  lines: StockTransferLineInput[];
+  send?: boolean;
+}
+/** PATCH (`draft` only; plan `multi_warehouse`). `lines` replaces the whole set. Stale `revision` → 409 `revision_conflict`. */
+export interface UpdateStockTransferInput extends Partial<Omit<CreateStockTransferInput, 'send'>> { revision: number }
+/** send / cancel body: optional `revision` (checked when sent). */
+export interface StockTransferTransitionInput { revision?: number }
+export interface ReceiveStockTransferLineInput { item_id: string; received: number }
+/**
+ * POST …/{transfer}/receive (`in_transit` only; Idempotency-Key). One entry per line, 0 ≤ received ≤ quantity; the rest
+ * is recorded as short (written off). "Receive all" = client shortcut (`received = quantity` for every line).
+ */
+export interface ReceiveStockTransferInput extends StockTransferTransitionInput { lines: ReceiveStockTransferLineInput[] }
+
+/** `error.details` of 422 `insufficient_stock` on send (P88C-10): every line over the source's available. */
+export interface InsufficientStockDetails { lines: { variant_id: string; requested: number; available: number }[] }
+/** §9 error codes used by transfers (all pre-existing codes). */
+export type StockTransferErrorCode =
+  | 'insufficient_stock' | 'invalid_state_transition' | 'revision_conflict' | 'feature_not_in_plan' | 'location_archived';
+/** P88C-18 audit actions (transfers). */
+export type StockTransferAuditAction =
+  | 'stock_transfer.created' | 'stock_transfer.updated' | 'stock_transfer.sent' | 'stock_transfer.received'
+  | 'stock_transfer.cancelled' | 'stock_transfer.deleted';
+export const STOCK_TRANSFER_AUDIT_ACTIONS: readonly StockTransferAuditAction[] = [
+  'stock_transfer.created', 'stock_transfer.updated', 'stock_transfer.sent', 'stock_transfer.received',
+  'stock_transfer.cancelled', 'stock_transfer.deleted',
+];
+
+// ----- Stock counts (§8, P88C-11 / P88C-12) -----
+export type StockCountStatus = 'in_progress' | 'completed' | 'cancelled';
+export const STOCK_COUNT_STATUSES: readonly StockCountStatus[] = ['in_progress', 'completed', 'cancelled'];
+export const STOCK_COUNT_STATUS_LABELS: Record<StockCountStatus, string> = {
+  in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled',
+};
+/** Line filter chips: Not counted / Differences / Matched (All = omitted). */
+export type StockCountLineState = 'not_counted' | 'differences' | 'matched';
+export const STOCK_COUNT_LINE_STATES: readonly StockCountLineState[] = ['not_counted', 'differences', 'matched'];
+/** §3.2 / §8 bounds (WEB Zod mirrors these). */
+export const STOCK_COUNT_NAME_MAX = 80;
+export const STOCK_COUNT_LINES_MAX = 5_000;
+export const STOCK_COUNT_COUNTED_MAX = 1_000_000;
+export const STOCK_COUNT_CODE_MAX = 64;
+export const STOCK_COUNT_LINES_PER_PAGE = 100;
+
+/** List item (`GET …/stock-counts`, latest first) and the header of the detail. */
+export interface StockCount {
+  id: string;
+  /** default "Count {d M} · {location}" */
+  name: string;
+  location: LocationRef;
+  category: { id: string; name: string } | null;
+  status: StockCountStatus;
+  lines_count: number;
+  /** progress = counted_count / lines_count */
+  counted_count: number;
+  currency: string;
+  /** Σ value of differences (negative = stock loss); null without `costs.view` */
+  net_value_amount: number | null;
+  /** the "Set uncounted items to 0" choice; null until finished */
+  zero_uncounted: boolean | null;
+  started_by: UserRef | null;
+  started_at: string;
+  finished_by: UserRef | null;
+  finished_at: string | null;
+  cancelled_at: string | null;
+  revision: number;
+}
+/**
+ * "If you finish now" (P88C-12). Units are from counted lines (difference = counted − expected); every `*_amount` is
+ * `difference × variant cost_amount` and null without `costs.view`. `net_value_amount` = extra − short value.
+ */
+export interface StockCountSummary {
+  short_units: number;
+  short_value_amount: number | null;
+  extra_units: number;
+  extra_value_amount: number | null;
+  not_counted: number;
+  matched: number;
+  differences: number;
+  net_value_amount: number | null;
+}
+/** `GET …/stock-counts/{count}`; also the body of start (201), finish and cancel. Lines come from `…/lines`. */
+export interface StockCountDetail extends StockCount { summary: StockCountSummary }
+export interface StockCountLine {
+  id: string;
+  variant: StockVariantRef;
+  /** null = not counted yet */
+  counted: number | null;
+  /** location on_hand stored when the line was (last) counted; null while not counted */
+  expected: number | null;
+  /** counted − expected; null while not counted */
+  difference: number | null;
+  /** current on hand at the count's location (EXPECTED column for lines not counted yet) */
+  on_hand: number;
+  /** difference × cost; null while not counted or without `costs.view` */
+  value_amount: number | null;
+  counted_at: string | null;
+  counted_by: UserRef | null;
+  /** delta applied at finish (null before finish, or when nothing was applied) */
+  applied_delta: number | null;
+}
+export type StockCountLineStateCounts = Record<StockCountLineState | 'all', number>;
+export interface StockCountLineListMeta extends PaginationMeta { counts: StockCountLineStateCounts }
+/** `GET …/stock-counts/{count}/lines`: `filter[state]`, `q` (product name, SKU or barcode); 100 per page. */
+export interface StockCountLineFilters { state?: StockCountLineState; q?: string; page?: number; per_page?: number }
+export type StockCountStatusCounts = Record<StockCountStatus | 'all', number>;
+export interface StockCountListMeta extends PaginationMeta { counts: StockCountStatusCounts }
+/** `filter[status]` csv, `filter[location_id]`; latest first; 25 per page. */
+export interface StockCountListFilters {
+  status?: StockCountStatus[]; location_id?: string; page?: number; per_page?: number;
+}
+/** POST …/stock-counts → 201. No plan gate. 409 `count_in_progress`; 422 `count_too_large` (> 5,000 lines). */
+export interface StartStockCountInput { location_id: string; name?: string | null; category_id?: string | null }
+/** POST …/{count}/scan: SKU then barcode, case-insensitive, within the count; +1. Unknown → 404 `count_line_not_found`. */
+export interface ScanStockCountInput { code: string }
+/**
+ * PUT …/{count}/lines/{line}: `counted` 0–1,000,000, `null` = un-count. `revision` = the count's revision (optional;
+ * stale → 409 `revision_conflict`). Every scan/set bumps the count's revision.
+ */
+export interface SetStockCountLineInput { counted: number | null; revision?: number }
+/** Body of scan and set-line: the changed line, the fresh summary and the count header (progress, revision). */
+export interface StockCountLineResult { line: StockCountLine; summary: StockCountSummary; count: StockCount }
+/** POST …/{count}/finish (Idempotency-Key) → `completed`; uncounted lines keep stock unless `zero_uncounted`. */
+export interface FinishStockCountInput { zero_uncounted: boolean; revision?: number }
+/** POST …/{count}/cancel → `cancelled`; no stock change. */
+export interface StockCountTransitionInput { revision?: number }
+
+/** `error.details` of 409 `count_in_progress`: the location's open count. */
+export interface CountInProgressDetails { count_id: string }
+/** `error.details` of 422 `count_too_large`. */
+export interface CountTooLargeDetails { lines: number; max: number }
+/** `error.details` of 404 `count_line_not_found`: the code as sent. */
+export interface CountLineNotFoundDetails { code: string }
+/** §9 error codes added by 8.8c part B (+ existing `invalid_state_transition`, `revision_conflict`). */
+export type StockCountErrorCode =
+  | 'count_in_progress' | 'count_too_large' | 'count_line_not_found' | 'invalid_state_transition' | 'revision_conflict'
+  | 'location_archived';
+/** P88C-18 audit actions (counts). */
+export type StockCountAuditAction = 'stock_count.started' | 'stock_count.finished' | 'stock_count.cancelled';
+export const STOCK_COUNT_AUDIT_ACTIONS: readonly StockCountAuditAction[] = [
+  'stock_count.started', 'stock_count.finished', 'stock_count.cancelled',
 ];

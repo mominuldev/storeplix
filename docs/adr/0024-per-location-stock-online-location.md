@@ -1,7 +1,7 @@
 # ADR 0024 — Per-location stock with one online location
 
 Status: Accepted (Phase 8.8c; scope set by the PO (product owner), defaults Q215–Q230 accepted, 2026-11-24) · Date:
-2026-11-24 · Binding detail: PHASE-8-8C-CONTRACT §1 (P88C-1 – P88C-18), §3–§6, §12 (S179–S186 part A)
+2026-11-24 · Binding detail: PHASE-8-8C-CONTRACT §1 (P88C-1 – P88C-18), §3–§6, §12 (S179–S186 part A, S187–S194 part B)
 Builds on: ADR 0001 (shared-database tenancy), 0011 (orders and stock commitment), 0012 (Postgres RLS), 0017 (granular
 permissions), 0023 (purchasing, weighted-average landed cost).
 
@@ -79,3 +79,45 @@ suggestions, the external API, the `stock.low` webhook and the 8.8b weighted-ave
   kept in sync on every write.
 - **Online location separate from the default** (two flags): rejected for now — one flag is simpler to explain ("Online
   orders ship from here"); the two can be split later without a data change.
+
+## Part B addendum — transfers and counts (Phase 8.8c part B, 2026-11-25)
+Binding detail: PHASE-8-8C-CONTRACT P88C-9 – P88C-12, §3.2–§3.3, §7–§8, §12 S187–S194. No change to decisions 1–6; part
+B adds two store-scoped document pairs (`stock_transfers` + `stock_transfer_items`, `stock_counts` +
+`stock_count_items`) and writes the ledger reasons part A reserved. Every stock change still goes through
+`InventoryService`.
+
+7. **Transfers take stock out on send and put it in on receive (P88C-9/10, Q218).** `draft` → **Send** → `in_transit`
+   → **Receive** → `received`. Send locks the transfer row, then the source rows in `(variant_id, location_id)` order,
+   checks each line against the source's **available** (`on_hand − committed`, so stock already promised to orders is
+   never moved; 422 `insufficient_stock`) and writes `transfer_out` at the source. While in transit the units are in
+   neither location (no "in transit" stock row; the transfer's `units_sent` is the record). Receive takes a received
+   quantity per line (0 ≤ received ≤ sent) and writes `transfer_in` at the destination; the rest is **short**:
+   recorded on the transfer and its line, written off, never returned, with no ledger row of its own (the units
+   already left on send). One receive per transfer. Cancel from `draft` changes nothing; cancel from `in_transit`
+   returns exactly the sent units to the **source** (`transfer_in`, note "Cancelled"). No approval step; permission
+   `inventory.adjust` is the control. Send and receive require an `Idempotency-Key`.
+8. **Counts apply the difference measured at count time (P88C-11/12, Q221).** A count covers one location (optionally
+   one category); lines are created for every tracked variant in scope with `counted = null`. When a line is counted
+   (scan +1 or a typed quantity) the server stores `expected` = that location's `on_hand` at that moment. **Finish &
+   adjust** applies `delta = counted − expected` per counted line — not "set on hand to counted" — in one
+   `InventoryService` call (reason `count`), so a sale or receipt that happens after a line was counted is kept and
+   checkout never has to be locked during a count (Q222). Uncounted lines keep their stock, or with "Set uncounted items
+   to 0" get `−on_hand` read under the finish lock. One `in_progress` count per location (partial unique index). Money
+   values (delta × variant cost) are shown only with `costs.view`; counts need no plan.
+
+### Consequences (part B)
+- Positive: stock moved between places is explainable from the ledger on both sides; counts can run during trading;
+  retries are safe (idempotent send / receive / finish).
+- Negative: in-transit units are not counted in any location's on hand (dashboard "Units on hand" dips while a
+  transfer travels; the Transfers summary shows `in_transit_units`); a wrong count can only be fixed with a manual
+  adjustment or a new count (no "undo finish"); a line counted early and then physically disturbed before finish keeps
+  its early measurement until it is counted again.
+
+### Alternatives considered (part B)
+- **Move stock on receive only** (source keeps it until arrival): rejected — the source could sell units already on a
+  truck. **"In transit" stock row/location**: rejected — a pseudo-location would leak into every reader class.
+- **Return short units to the source**: rejected — short means lost or damaged on the way; the merchant can send a
+  reverse transfer if units turn up.
+- **Count sets on hand to counted at finish**: rejected — it silently undoes sales and receipts made between counting a
+  line and finishing; locking online sales during a count (Figma) would touch checkout (Q222).
+

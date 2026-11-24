@@ -26,7 +26,7 @@ class LocationBackfillMigrationTest extends TestCase
 {
     use LocationFixtures, RefreshDatabase;
 
-    private const STEPS = 6;
+    private const STEPS = 8; // the six 2026_12_07 migrations + the two part-B 2026_12_08 ones after them
 
     protected function setUp(): void
     {
