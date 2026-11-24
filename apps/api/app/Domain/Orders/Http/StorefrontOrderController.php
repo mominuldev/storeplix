@@ -4,6 +4,7 @@ namespace App\Domain\Orders\Http;
 
 use App\Domain\Cart\CartService;
 use App\Domain\Cart\Http\StorefrontCartController;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Geo\AddressValidator;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\OrderPlacementService;
@@ -25,6 +26,7 @@ class StorefrontOrderController
     public function __construct(
         private readonly OrderPlacementService $placement,
         private readonly AddressValidator $addresses,
+        private readonly FraudGuard $guard,
     ) {}
 
     public function checkout(Request $request): JsonResponse
@@ -45,12 +47,18 @@ class StorefrontOrderController
             'customer_note' => ['sometimes', 'nullable', 'string', 'max:500'],
             'accepts_marketing' => ['sometimes', 'boolean'],
             'expected_total_amount' => ['required', 'integer:strict', 'min:0'],
+            // PHASE-8-8 P88-13: the shopper's checkout code (new numbers on COD of a guarded store).
+            'otp_code' => ['sometimes', 'nullable', 'string', 'regex:/^\d{6}$/'],
         ]);
+        $contact = OrderController::contact($input['contact']);
+        // PHASE-8-8 §7: blocklist / daily limit / OTP for COD, before any stock is reserved (422s; online passes).
+        $flags = $this->guard->beforeCheckout($ctx->store, $contact['phone'], (string) $input['payment_method'], $input['otp_code'] ?? null);
 
         $result = $this->placement->checkout($ctx->store, $token, [
-            'contact' => OrderController::contact($input['contact']),
+            'contact' => $contact,
             'address' => $this->addresses->snapshot($input['shipping_address']),
             'payment_method' => $input['payment_method'],
+            'guard_flags' => $flags,
             'advance_gateway' => $input['advance_gateway'] ?? null,
             'customer_note' => AddressValidator::clean($input['customer_note'] ?? null),
             'accepts_marketing' => (bool) ($input['accepts_marketing'] ?? false),

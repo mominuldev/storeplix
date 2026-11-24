@@ -357,6 +357,10 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.7 (PHASE-8-7-CONTRACT §8.1): expenses ledger, receipts, summary and CSV export (own group).
     require __DIR__.'/expenses.php';
 
+    // Phase 8.8a (PHASE-8-8-CONTRACT §8.1): fake-order guard settings, blocklist, number check, decision log, hold
+    // release and the storefront checkout code (own groups).
+    require __DIR__.'/fraud-guard.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');

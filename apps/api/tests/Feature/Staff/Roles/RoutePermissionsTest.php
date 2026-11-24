@@ -254,6 +254,7 @@ class RoutePermissionsTest extends TestCase
             'stores.orders.cancel',
             'stores.orders.confirm',
             'stores.orders.deliver',
+            'stores.orders.guard.release',
             'stores.orders.items.quote',
             'stores.orders.items.update',
             'stores.orders.payment-links.destroy',
@@ -305,6 +306,18 @@ class RoutePermissionsTest extends TestCase
             'stores.expenses.store',
             'stores.expenses.summary',
             'stores.expenses.update',
+        ],
+        // PHASE-8-8 §2.1 / §8.1: the guard settings, blocklist, number check and decision log are fraud.manage.
+        'fraud.manage' => [
+            'stores.fraud-guard.blocked-numbers.destroy',
+            'stores.fraud-guard.blocked-numbers.index',
+            'stores.fraud-guard.blocked-numbers.store',
+            'stores.fraud-guard.check',
+            'stores.fraud-guard.events',
+            'stores.fraud-guard.overview',
+            'stores.fraud-guard.settings.reset',
+            'stores.fraud-guard.settings.show',
+            'stores.fraud-guard.settings.update',
         ],
     ];
 

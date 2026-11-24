@@ -14,6 +14,7 @@ use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Developer\Webhooks\WebhookEventType;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Marketing\Attribution;
@@ -477,6 +478,9 @@ class OrderPlacementService
         if ($override !== null) {
             $this->audit->log('order.shipping_overridden', $order, ['computed' => $computedShipping, 'override' => $override], $user);
         }
+
+        // PHASE-8-8 §5.1 (P88-6): `checking` hold for guarded storefront COD orders; the risk check runs after commit.
+        app(FraudGuard::class)->onPlaced($order, (array) ($input['guard_flags'] ?? []));
 
         return $order;
     }

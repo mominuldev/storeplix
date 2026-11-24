@@ -77,3 +77,8 @@ Schedule::command('automations:prune-runs')->dailyAt('04:40')->timezone('Asia/Dh
 // Discovery on the platform connection, work per tenant.
 Schedule::command('expenses:repeat')->hourly()->withoutOverlapping();
 Schedule::command('expenses:prune-receipts')->dailyAt('03:30')->timezone('UTC')->withoutOverlapping();
+
+// Phase 8.8a (PHASE-8-8 §9): stale `checking` holds re-checked every 5 minutes; OTPs (24 h) and decision-log rows
+// (13 months) pruned daily. Discovery on the platform connection, work per tenant.
+Schedule::command('fraud:resolve-stale')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('fraud:prune')->dailyAt('03:50')->timezone('UTC')->withoutOverlapping();

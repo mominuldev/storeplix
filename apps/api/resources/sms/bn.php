@@ -10,4 +10,6 @@ return [
     'order_cancelled' => '{shop}: অর্ডার {number} বাতিল করা হয়েছে।',
     'payment_link' => '{shop}: অর্ডার {number} নিশ্চিত করতে {amount} টাকা পরিশোধ করুন: {url}',
     'order_updated' => '{shop}: আপনার অর্ডার {number} আপডেট হয়েছে। নতুন মোট {total} টাকা, ডেলিভারির সময় দিতে হবে {due} টাকা।',
+    // PHASE-8-8 P88-13: shopper checkout code (vars: shop, code).
+    'checkout_otp' => '{shop}: আপনার চেকআউট কোড {code}। কোডটি ৫ মিনিট বৈধ। কাউকে জানাবেন না।',
 ];

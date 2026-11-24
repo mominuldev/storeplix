@@ -6,6 +6,8 @@ use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Couriers\ShipmentPresenter;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\ApiKeys\ApiKeyActors;
+use App\Domain\FraudGuard\FraudGuardPresenter;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\MediaMaps;
@@ -57,6 +59,8 @@ final class OrderPresenter
             'shipment' => self::shipmentRef($order),
             'invoice_printed_at' => UserRef::iso($order->invoice_printed_at),
             'label_printed_at' => UserRef::iso($order->label_printed_at),
+            // PHASE-8-8 §6.5
+            'guard' => FraudGuardPresenter::orderGuard($order, $order->relationLoaded('riskCheck') ? $order->riskCheck : $order->riskCheck()->first()),
         ];
     }
 
@@ -88,6 +92,7 @@ final class OrderPresenter
             'delivered_orders_count' => (int) ($customer?->delivered_orders_count ?? 0),
             'returned_orders_count' => (int) ($customer?->returned_orders_count ?? 0),
             'total_spent_amount' => (int) ($customer?->total_spent_amount ?? 0),
+            'risk' => RiskTier::payload($customer, $order?->store_id ?? $customer?->store_id), // PHASE-8-8 §6.5
         ];
     }
 

@@ -792,6 +792,56 @@ BEGIN
   END IF;
 END
 $$;
+-- table: fraud_guard_settings
+DO $$
+BEGIN
+  IF to_regclass('public.fraud_guard_settings') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "fraud_guard_settings";
+    ALTER TABLE "fraud_guard_settings" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "fraud_guard_settings" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: blocked_phones
+DO $$
+BEGIN
+  IF to_regclass('public.blocked_phones') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "blocked_phones";
+    ALTER TABLE "blocked_phones" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "blocked_phones" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: order_risk_checks
+DO $$
+BEGIN
+  IF to_regclass('public.order_risk_checks') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "order_risk_checks";
+    ALTER TABLE "order_risk_checks" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "order_risk_checks" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: fraud_guard_events
+DO $$
+BEGIN
+  IF to_regclass('public.fraud_guard_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "fraud_guard_events";
+    ALTER TABLE "fraud_guard_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "fraud_guard_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: checkout_otps
+DO $$
+BEGIN
+  IF to_regclass('public.checkout_otps') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "checkout_otps";
+    ALTER TABLE "checkout_otps" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "checkout_otps" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

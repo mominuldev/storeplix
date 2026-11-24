@@ -7,8 +7,8 @@ namespace App\Domain\Tenancy\Authorization;
 /**
  * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * 24 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
- * `expenses.manage`). Case order = UI order = catalogue order of
+ * 25 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
+ * `expenses.manage`, PHASE-8-8 §2.1 `fraud.manage`). Case order = UI order = catalogue order of
  * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
  * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
  */
@@ -17,6 +17,7 @@ enum Permission: string
     case OrdersView = 'orders.view';
     case OrdersProcess = 'orders.process';
     case OrdersRefund = 'orders.refund';
+    case FraudManage = 'fraud.manage'; // PHASE-8-8 §2.1
     case ShipmentsManage = 'shipments.manage';
     case ShipmentsCancel = 'shipments.cancel';
     case ProductsEdit = 'products.edit';
@@ -54,7 +55,7 @@ enum Permission: string
     public function group(): string
     {
         return match ($this) {
-            self::OrdersView, self::OrdersProcess, self::OrdersRefund => 'orders',
+            self::OrdersView, self::OrdersProcess, self::OrdersRefund, self::FraudManage => 'orders',
             self::ShipmentsManage, self::ShipmentsCancel => 'shipping',
             self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust => 'products',
             self::CustomersView, self::CustomersEdit, self::CustomersDelete => 'customers',
@@ -70,6 +71,7 @@ enum Permission: string
         return match ($this) {
             self::OrdersProcess => [self::OrdersView],
             self::OrdersRefund => [self::OrdersProcess],
+            self::FraudManage => [self::OrdersView],
             self::ShipmentsCancel => [self::ShipmentsManage],
             self::ProductsDelete => [self::ProductsEdit],
             self::CustomersEdit => [self::CustomersView],
@@ -82,7 +84,7 @@ enum Permission: string
     public function sensitive(): bool
     {
         return in_array($this, [
-            self::OrdersRefund, self::CostsView, self::ExpensesManage, self::DataExport, self::MarketingManage, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
+            self::OrdersRefund, self::FraudManage, self::CostsView, self::ExpensesManage, self::DataExport, self::MarketingManage, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
         ], true);
     }
 
@@ -98,6 +100,7 @@ enum Permission: string
             self::OrdersView => 'View & create orders',
             self::OrdersProcess => 'Confirm & cancel orders',
             self::OrdersRefund => 'Refunds & paid cancellations',
+            self::FraudManage => 'Fake order guard',
             self::ShipmentsManage => 'Book courier & print labels',
             self::ShipmentsCancel => 'Change courier after booking',
             self::ProductsEdit => 'Edit products & prices',
@@ -129,6 +132,7 @@ enum Permission: string
             self::OrdersView => 'Orders, unfinished orders, returns',
             self::OrdersProcess => 'Status changes, edit items, returns, payment links',
             self::OrdersRefund => 'Refund money, cancel paid orders, change COD amount',
+            self::FraudManage => 'Guard rules, blocked numbers and number checks',
             self::ShipmentsManage => 'Steadfast, Pathao, RedX',
             self::ShipmentsCancel => 'Cancel a booked parcel',
             self::ProductsEdit => 'Products, categories, images',

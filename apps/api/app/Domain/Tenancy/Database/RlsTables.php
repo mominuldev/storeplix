@@ -18,7 +18,7 @@ final class RlsTables
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -47,6 +47,8 @@ final class RlsTables
         'automations', 'automation_runs', 'automation_run_steps', 'automation_conversions',
         // Phase 8.7 expenses (PHASE-8-7 §4; both in 2026_12_04_000100)
         'expense_recurrences', 'expenses',
+        // Phase 8.8a fake-order guard (PHASE-8-8 §4; all five in 2026_12_05_000100)
+        'fraud_guard_settings', 'blocked_phones', 'order_risk_checks', 'fraud_guard_events', 'checkout_otps',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */

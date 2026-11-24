@@ -6,6 +6,7 @@ namespace App\Domain\Couriers;
 
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
@@ -140,6 +141,7 @@ class ShipmentStatusApplier
         if ($o->customer_id !== null) {
             Customer::withTrashed()->whereKey($o->customer_id)->update(['returned_orders_count' => DB::raw('returned_orders_count + 1')]);
         }
+        app(FraudGuard::class)->afterReturned($o); // PHASE-8-8 P88-10 repeat returners (after commit)
         // No automatic restock (P5B-36): the dashboard shows "Parcel back — restock" (POST /orders/{order}/restock).
         $this->move($o, Order::RETURNED, ['shipment_id' => $s->id, 'provider' => $s->provider, 'restock_pending' => true]);
     }

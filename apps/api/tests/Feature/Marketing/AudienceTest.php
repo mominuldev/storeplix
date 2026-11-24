@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Marketing;
 
 use App\Domain\Customers\CustomerRisk;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Stores\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -106,7 +107,8 @@ class AudienceTest extends TestCase
     {
         [, , $store, $h] = $this->campaignShop();
         $this->customer($h, $store); // good
-        $this->customer($h, $store, [], ['orders_count' => 4, 'delivered_orders_count' => 3, 'returned_orders_count' => 1]); // careful
+        // PHASE-8-8 P88-4 (§6.6): 6 delivered / 3 returned = 67 % → careful (3/1 = 75 % is now good).
+        $this->customer($h, $store, [], ['orders_count' => 9, 'delivered_orders_count' => 6, 'returned_orders_count' => 3]); // careful
         $this->customer($h, $store, [], ['orders_count' => 4, 'delivered_orders_count' => 2, 'returned_orders_count' => 2]); // risky
         $this->customer($h, $store, [], ['orders_count' => 1, 'last_order_at' => now()->subDays(3)]); // recent
         $this->customer($h, $store, ['accepts_marketing' => false]); // not eligible
@@ -157,14 +159,18 @@ class AudienceTest extends TestCase
             ->assertJsonPath('data.marketing.sms', $expected)->assertJsonPath('data.marketing.email', 'no_address');
     }
 
+    /** PHASE-8-8 P88-3/P88-4 (§6.6): the 8.5 classes now come from RiskTier (CustomerRisk is a deprecated alias). */
     public function test_risk_classes(): void
     {
-        $this->assertSame('good', CustomerRisk::classify(0, 0));
-        $this->assertSame('good', CustomerRisk::classify(4, 1)); // 20 %
-        $this->assertSame('careful', CustomerRisk::classify(3, 1)); // 25 %
-        $this->assertSame('careful', CustomerRisk::classify(0, 1)); // one return only: never risky
-        $this->assertSame('careful', CustomerRisk::classify(3, 2)); // 40 %
-        $this->assertSame('risky', CustomerRisk::classify(2, 2)); // 50 %, 2 returns
+        $this->assertSame('new', CustomerRisk::classify(0, 0)); // was good
+        $this->assertSame('good', CustomerRisk::classify(4, 1)); // 80 %
+        $this->assertSame('good', CustomerRisk::classify(3, 1)); // 75 %: was careful
+        $this->assertSame('careful', CustomerRisk::classify(0, 1)); // one parcel, returned: no ratio verdict
+        $this->assertSame('careful', CustomerRisk::classify(0, 2)); // 2 returned / 0 delivered: was risky (total < 3)
+        $this->assertSame('careful', CustomerRisk::classify(3, 2)); // 60 %: not below the hold line (60), below 75
+        $this->assertSame('risky', CustomerRisk::classify(2, 2)); // 50 %: stays risky
+        $this->assertSame('careful', CustomerRisk::classify(6, 3)); // 67 %: stays careful
         $this->assertSame('risky', CustomerRisk::classify(0, 5));
+        $this->assertSame(RiskTier::classify(2, 2), CustomerRisk::classify(2, 2));
     }
 }

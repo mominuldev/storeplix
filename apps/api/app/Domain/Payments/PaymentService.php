@@ -6,6 +6,7 @@ namespace App\Domain\Payments;
 
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Payment;
@@ -342,6 +343,7 @@ class PaymentService
                 $link->paid_at = now();
                 $link->save();
                 $confirm = $order->status === Order::PENDING;
+                app(FraudGuard::class)->linkPaid($order, $link, $confirm); // PHASE-8-8 §5.3: a paid link releases the hold
                 if ($confirm) {
                     $order->status = Order::CONFIRMED;
                     $order->confirmed_at ??= now();

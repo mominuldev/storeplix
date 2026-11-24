@@ -5,55 +5,39 @@ declare(strict_types=1);
 namespace App\Domain\Customers;
 
 use App\Domain\Customers\Models\Customer;
+use App\Domain\FraudGuard\RiskTier;
 
 /**
- * Customer-facing return risk (PHASE-8-5 P85-25, Q147) — the single place; the 8.8 fake-order guard may replace it.
- *   risky   = returned ≥ 2 and returned ÷ (delivered + returned) ≥ 0.5
- *   careful = returned ≥ 1 and the ratio ≥ 0.25
- *   good    = everything else
- * The SQL fragments mirror classify() on `customers` columns (integer arithmetic, no division).
+ * @deprecated PHASE-8-8 P88-3: replaced by {@see RiskTier} (one risk everywhere, P88-4 rule). Thin alias kept for one
+ *             release; removed in 8.8b. `classify()` uses the default thresholds; `of()` the customer's store thresholds.
  */
 final class CustomerRisk
 {
-    public const GOOD = 'good';
+    public const GOOD = RiskTier::GOOD;
 
-    public const CAREFUL = 'careful';
+    public const CAREFUL = RiskTier::CAREFUL;
 
-    public const RISKY = 'risky';
+    public const RISKY = RiskTier::RISKY;
 
     public static function classify(int $delivered, int $returned): string
     {
-        $total = $delivered + $returned;
-        if ($returned >= 2 && $returned * 2 >= $total) {
-            return self::RISKY;
-        }
-        if ($returned >= 1 && $returned * 4 >= $total) {
-            return self::CAREFUL;
-        }
-
-        return self::GOOD;
+        return RiskTier::classify($delivered, $returned);
     }
 
     public static function of(Customer $customer): string
     {
-        return self::classify((int) $customer->delivered_orders_count, (int) $customer->returned_orders_count);
+        return RiskTier::forCustomer($customer);
     }
 
-    /** SQL condition: the customer is `risky` (column prefix optional, e.g. "customers."). */
+    /** SQL condition: the customer is `risky` (default thresholds). */
     public static function riskySql(string $prefix = ''): string
     {
-        $r = $prefix.'returned_orders_count';
-        $d = $prefix.'delivered_orders_count';
-
-        return "({$r} >= 2 AND {$r} * 2 >= ({$d} + {$r}))";
+        return RiskTier::sql(RiskTier::RISKY, null, $prefix);
     }
 
-    /** SQL condition: the customer is `careful` (and not risky). */
+    /** SQL condition: the customer is `careful` (default thresholds). */
     public static function carefulSql(string $prefix = ''): string
     {
-        $r = $prefix.'returned_orders_count';
-        $d = $prefix.'delivered_orders_count';
-
-        return "({$r} >= 1 AND {$r} * 4 >= ({$d} + {$r}) AND NOT ".self::riskySql($prefix).')';
+        return RiskTier::sql(RiskTier::CAREFUL, null, $prefix);
     }
 }

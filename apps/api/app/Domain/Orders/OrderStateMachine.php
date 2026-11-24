@@ -45,6 +45,9 @@ final class OrderStateMachine
     public static function allowedFor(Order $order, ?PermissionSet $permissions): array
     {
         $next = $order->status === Order::PENDING_PAYMENT ? [Order::CANCELLED] : (self::TRANSITIONS[$order->status] ?? []);
+        if ($order->guard_hold !== null) {
+            $next = array_values(array_diff($next, [Order::CONFIRMED])); // PHASE-8-8 P88-2: release first
+        }
 
         return array_values(array_filter(
             $next,

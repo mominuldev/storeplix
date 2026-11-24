@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Payments;
 
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Payment;
@@ -162,6 +163,7 @@ class PaymentLinkService
             $l->save();
             $this->closeAttempts($o, $l, 'link_cancelled');
             OrderTimeline::record($o, 'payment_link', $user, null, ['action' => 'cancelled', 'link_id' => $l->id]);
+            app(FraudGuard::class)->linkEnded($o); // PHASE-8-8 §5.3: an advance hold goes back to call_first
         });
     }
 
@@ -195,7 +197,12 @@ class PaymentLinkService
             $this->closeAttempts($o, $l, 'expired');
             OrderTimeline::record($o, 'payment_link', null, null, ['action' => 'expired', 'link_id' => $l->id, 'cancel_if_unpaid' => $l->cancel_if_unpaid]);
 
-            return $l->cancel_if_unpaid && in_array($o->status, self::LINK_ORDER_STATUSES, true);
+            $cancel = $l->cancel_if_unpaid && in_array($o->status, self::LINK_ORDER_STATUSES, true) && $o->paid_amount <= 0;
+            if (! $cancel) {
+                app(FraudGuard::class)->linkEnded($o); // PHASE-8-8 §5.3: unpaid advance → held for a call
+            }
+
+            return $cancel;
         });
     }
 

@@ -7,6 +7,7 @@ use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Geo\AddressValidator;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
@@ -180,6 +181,7 @@ class OrderService
             if ($o->customer_id !== null) {
                 Customer::withTrashed()->whereKey($o->customer_id)->update(['returned_orders_count' => DB::raw('returned_orders_count + 1')]);
             }
+            app(FraudGuard::class)->afterReturned($o); // PHASE-8-8 P88-10 repeat returners (after commit)
         }, $note);
     }
 
@@ -318,6 +320,9 @@ class OrderService
         }
         $o->cancel_reason = $reason;
         $o->cancelled_at = $now;
+        // PHASE-8-8 §5.3: a cancelled order is no longer held.
+        $o->guard_hold = null;
+        $o->guard_hold_at = null;
     }
 
     /**
@@ -477,10 +482,10 @@ class OrderService
                 $action === 'confirm' ? $this->confirm($order, $user) : $this->ready($order, $user);
                 $updated++;
             } catch (ApiException $e) {
-                if ($e->errorCode !== 'invalid_state_transition') {
+                if (! in_array($e->errorCode, ['invalid_state_transition', 'order_held'], true)) {
                     throw $e;
                 }
-                $skipped[] = ['id' => $id, 'reason' => 'invalid_state_transition'];
+                $skipped[] = ['id' => $id, 'reason' => $e->errorCode]; // PHASE-8-8 §5.5: held → `order_held`
             }
         }
 
@@ -497,6 +502,9 @@ class OrderService
             /** @var Order $o */
             $o = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             $from = $o->status;
+            if (in_array($to, [Order::CONFIRMED, Order::READY_TO_SHIP], true)) {
+                FraudGuard::assertNotHeld($o); // PHASE-8-8 §5.5 (S156): released (or advance paid) first → 409 order_held
+            }
             OrderStateMachine::assert($from, $to);
             if ($effects !== null) {
                 $effects($o);
