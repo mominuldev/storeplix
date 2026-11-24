@@ -1,8 +1,28 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.20.0
+  version: 1.21.0
   description: |
+    1.21.0 (2026-11-25, Phase 8.8d POS, PHASE-8-8D-CONTRACT.md, ADR 0025 — **DRAFT for PO (product owner) review**;
+    defaults Q233–Q256 pending; binding only once the contract is accepted). New tag pos. Store-scoped
+    /stores/{store}/pos/...: registers (GET list with open/last session; POST/PATCH/archive/unarchive need
+    settings.manage; ≤ 10 active), POST /pos/registers/{register}/open (counted float, one open session per register,
+    Idempotency-Key), GET /pos/sessions/{session} (live cash in drawer and totals), POST /pos/sessions/{session}/close
+    (counted cash, variance vs ৳ 50 tolerance, left in drawer, banked; Z-report figures), GET /pos/catalog, GET
+    /pos/lookup (exact SKU/barcode), GET /pos/customers/lookup (exact phone), POST /pos/quote, POST /pos/sales (a till
+    sale = an order created_via pos, channel walk_in, payment_method pos, delivered + paid at once; stock leaves the
+    register location with ledger reason pos_sale; manual payment rows cash / bkash_personal / card bound to the
+    session; Idempotency-Key required), GET /pos/sales and /pos/sales/{sale} (PosReceipt), POST
+    /pos/sales/{sale}/sms-receipt, POST /pos/sales/{sale}/returns (also orders.refund), GET|POST /pos/held-sales, GET|
+    DELETE /pos/held-sales/{held}. Every POS route needs pos.sell (new PermissionKey) unless noted; writes need plan
+    feature pos (402 feature_not_in_plan) except close; limiter pos-write 120/min per user, pos-lookup 30/min, pos-sms
+    10/min. Enum additions: PermissionKey + pos.sell, PaymentMethod + pos, OrderSummary.created_via + pos,
+    RefundMethod + card, StockMovementReason + pos_sale; Payment gains pos_session_id; OrderSummary gains pos; GET
+    /stores/{store}/orders gains filter[created_via]. New schemas PosRegister, PosRegisterInput, PosSessionRef,
+    PosSession, PosSessionStatus, PosSessionTotals, PosDenominationCounts, OpenPosSessionInput, ClosePosSessionInput,
+    PosCatalogVariant, PosCatalogItem, PosLineInput, PosQuoteInput, PosQuoteLine, PosQuote, PosPaymentMethod,
+    PosPaymentInput, PosSaleInput, PosSaleSummary, PosSale, PosSaleListMeta, PosReceipt, PosHeldSale, PosHeldSaleInput,
+    PosReturnInput, PosReturnResult.
     1.20.0 (2026-11-25, PHASE-8-1 amendment A1, PHASE-8-1-AMENDMENT-ADMIN-2FA.md, Q231). Switchable staff two-step
     sign-in. POST /admin/auth/login now answers AdminLoginResult (oneOf on `step`): AdminLoginStep (`totp` | `enroll`,
     login_token) while the platform setting `staff_two_factor_required` is on, or AdminLoginSignedIn (`step: signed_in` +
@@ -272,6 +292,8 @@ tags:
   description: 'Phase 8.8a: fake-order guard settings, blocklist, number check and decision log (PHASE-8-8 §8)'
 - name: purchasing
   description: 'Phase 8.8b: suppliers, purchase orders, receiving, supplier payments and reorder suggestions (PHASE-8-8B §8)'
+- name: pos
+  description: 'Phase 8.8d (DRAFT): POS registers, cash sessions, till sales, held sales and returns at the till (PHASE-8-8D §10)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -4670,6 +4692,1233 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/registers:
+    get:
+      tags:
+      - pos
+      summary: List registers with their open and last session
+      operationId: listPosRegisters
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Active registers sorted by location (shops first), position, name; archived with filter[archived]=true. Each carries open_session and last_session (P88D-4).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[archived]
+        required: false
+        description: 'true = archived only'
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PosRegister'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - pos
+      summary: Create a register
+      operationId: createPosRegister
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage and plan feature pos. ≤ 10 active per store. Audited pos_register.created. Limiter pos-write.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosRegisterInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosRegister'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`register_name_taken`, `location_archived` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/registers/{register}:
+    parameters:
+    - $ref: '#/components/parameters/PosRegisterPath'
+    patch:
+      tags:
+      - pos
+      summary: Rename a register or move it to another location
+      operationId: updatePosRegister
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage. location_id only while the register has no open session (409 register_in_use). Audited pos_register.updated.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosRegisterInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosRegister'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_in_use`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`register_name_taken`, `location_archived` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/registers/{register}/archive:
+    parameters:
+    - $ref: '#/components/parameters/PosRegisterPath'
+    post:
+      tags:
+      - pos
+      summary: Archive a register
+      operationId: archivePosRegister
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage. Refused with an open session. Audited pos_register.archived.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosRegister'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_in_use`, `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/registers/{register}/unarchive:
+    parameters:
+    - $ref: '#/components/parameters/PosRegisterPath'
+    post:
+      tags:
+      - pos
+      summary: Unarchive a register
+      operationId: unarchivePosRegister
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage and plan feature pos; counts toward the 10 active.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosRegister'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_limit_reached`, `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`register_name_taken`, `location_archived` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/registers/{register}/open:
+    parameters:
+    - $ref: '#/components/parameters/PosRegisterPath'
+    post:
+      tags:
+      - pos
+      summary: Open a register (start a cash session)
+      operationId: openPosSession
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. counts (denomination → count) or opening_cash_amount; counts win. One open session per register (partial unique index). Same Idempotency-Key + body replays. Audited pos_session.opened.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenPosSessionInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSession'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_already_open` (details.session_id), `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`register_archived` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sessions/{session}:
+    parameters:
+    - $ref: '#/components/parameters/PosSessionPath'
+    get:
+      tags:
+      - pos
+      summary: Get a session with live totals
+      operationId: getPosSession
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. totals.cash_in_drawer_amount = opening + cash charges − cash refunds of this session, computed on read (P88D-15).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSession'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sessions/{session}/close:
+    parameters:
+    - $ref: '#/components/parameters/PosSessionPath'
+    post:
+      tags:
+      - pos
+      summary: Close a register (count the drawer)
+      operationId: closePosSession
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell; allowed after a downgrade. Session row FOR UPDATE; expected computed on the server; variance = counted − expected; |variance| > tolerance (৳ 50) needs a note (422 close_note_required); banked = counted − left_in_drawer_amount; held sales of the register are deleted. Same Idempotency-Key replays. Audited pos_session.closed.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClosePosSessionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSession'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (already closed), `revision_conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`close_note_required` (details.variance_amount, details.tolerance_amount) or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/catalog:
+    get:
+      tags:
+      - pos
+      summary: Products for the till with stock at the register location
+      operationId: listPosCatalog
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Active products only, 40 per page by name; available = on_hand − committed at the register location (null = untracked).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: register_id
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: q
+        required: false
+        description: 'Name, SKU or barcode contains'
+        schema:
+          type: string
+      - in: query
+        name: filter[category_id]
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PosCatalogItem'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/lookup:
+    get:
+      tags:
+      - pos
+      summary: Find one variant by exact SKU or barcode
+      operationId: lookupPosCode
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Case-insensitive exact SKU, then barcode; % and _ literal; code ≤ 64. Used by the scan box.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: register_id
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: code
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosCatalogItem'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          description: '`pos_code_not_found` (details.code) or `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/customers/lookup:
+    get:
+      tags:
+      - pos
+      summary: Find a customer by exact phone
+      operationId: lookupPosCustomer
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell (not customers.view). Exact normalised phone only; no partial search. Limiter pos-lookup 30/min per user.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: phone
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderCustomerSummary'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          description: '`not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/quote:
+    post:
+      tags:
+      - pos
+      summary: Price a cart (read-only)
+      operationId: quotePosSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. Server prices, coupon, VAT line, availability at the register location; no locks, nothing written.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosQuoteInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosQuote'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_closed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`coupon_*` (existing coupon errors) or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sales:
+    get:
+      tags:
+      - pos
+      summary: Sales history
+      operationId: listPosSales
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Till sales newest first with meta.summary KPIs (sales = totals − till refunds in range).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[date]
+        required: false
+        schema:
+          type: string
+          enum:
+          - today
+          - yesterday
+          - 7d
+          - custom
+      - in: query
+        name: from
+        required: false
+        description: 'YYYY-MM-DD (custom)'
+        schema:
+          type: string
+      - in: query
+        name: to
+        required: false
+        description: 'YYYY-MM-DD (custom)'
+        schema:
+          type: string
+      - in: query
+        name: filter[register_id]
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[method]
+        required: false
+        schema:
+          type: string
+          enum:
+          - cash
+          - bkash_personal
+          - card
+          - split
+      - in: query
+        name: q
+        required: false
+        description: 'Order number or phone (exact)'
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PosSaleSummary'
+                  meta:
+                    $ref: '#/components/schemas/PosSaleListMeta'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - pos
+      summary: Complete a till sale
+      operationId: createPosSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. One transaction (P88D-2, P88D-6, P88D-9): session open (FOR SHARE), server pricing (expected_total_amount mismatch → 409 checkout_changed with the fresh quote), Σ payments = total, cash part ≤ tendered; order created_via pos, channel walk_in, delivered + paid; InventoryService::sell at the register location (ledger pos_sale); manual payment rows with pos_session_id; held_sale_id deleted. Same Idempotency-Key + body replays the first 201. Webhooks order.created and order.paid after commit; SMS receipt queued when sms_receipt and a phone.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosSaleInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSale'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_closed`, `checkout_changed`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`out_of_stock` (details per line), `pos_payment_mismatch`, `cash_tendered_short`, `coupon_*` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sales/{sale}:
+    parameters:
+    - $ref: '#/components/parameters/PosSalePath'
+    get:
+      tags:
+      - pos
+      summary: Get a till sale with its receipt
+      operationId: getPosSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSale'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sales/{sale}/sms-receipt:
+    parameters:
+    - $ref: '#/components/parameters/PosSalePath'
+    post:
+      tags:
+      - pos
+      summary: Send or resend the SMS receipt
+      operationId: sendPosSmsReceipt
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. Only to the sale’s phone; counted in sms_per_month. Limiter pos-sms 10/min per user.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosSale'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos) or `plan_limit_reached` (sms_per_month)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`no_phone`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/sales/{sale}/returns:
+    parameters:
+    - $ref: '#/components/parameters/PosSalePath'
+    post:
+      tags:
+      - pos
+      summary: Return items at the till and refund
+      operationId: createPosReturn
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell and orders.refund, plan feature pos. One transaction: ReturnService create (type return) + receive with full restock at the line location + OrderService refund with pos_session_id. Cash refund needs the session open and ≤ cash in drawer. Same Idempotency-Key replays.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosReturnInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosReturnResult'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`register_closed`, `return_not_allowed`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`drawer_short`, `refund_exceeds_paid` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/held-sales:
+    get:
+      tags:
+      - pos
+      summary: Held sales of a register
+      operationId: listPosHeldSales
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. Newest first.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: register_id
+        required: true
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PosHeldSale'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - pos
+      summary: Hold (park) a sale
+      operationId: createPosHeldSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell and plan feature pos. No stock is reserved (P88D-16). ≤ 20 per register.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosHeldSaleInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosHeldSale'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (pos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`held_sales_limit`, `register_closed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/pos/held-sales/{held}:
+    parameters:
+    - $ref: '#/components/parameters/PosHeldSalePath'
+    get:
+      tags:
+      - pos
+      summary: Get a held sale (resume)
+      operationId: getPosHeldSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. The client re-prices with POST /pos/quote.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PosHeldSale'
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - pos
+      summary: Delete a held sale
+      operationId: deletePosHeldSale
+      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. Audited pos_held_sale.deleted.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: '`tenant_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /stores/{store}/imports/template:
     get:
       tags:
@@ -6712,6 +7961,12 @@ paths:
       - in: query
         name: filter[channel]
         required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[created_via]
+        required: false
+        description: Phase 8.8d (DRAFT). Comma list of storefront, dashboard, pos.
         schema:
           type: string
       - in: query
@@ -18687,6 +19942,34 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: Phase 8.8c part B — stock_counts.id of this store, else 404 `not_found`.
+    PosRegisterPath:
+      in: path
+      name: register
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8d (DRAFT) — pos_registers.id of this store, else 404 `not_found`.
+    PosSessionPath:
+      in: path
+      name: session
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8d (DRAFT) — pos_sessions.id of this store, else 404 `not_found`.
+    PosSalePath:
+      in: path
+      name: sale
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8d (DRAFT) — pos_sales.id of this store, else 404 `not_found`.
+    PosHeldSalePath:
+      in: path
+      name: held
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8d (DRAFT) — pos_held_sales.id of this store, else 404 `not_found`.
     StockCountLinePath:
       in: path
       name: line
@@ -19956,7 +21239,9 @@ components:
         adds developers.manage (owner and admin; grantable to custom roles). Phase 8.7 adds expenses.manage (owner and
         admin; grantable; sensitive). Phase 8.8a adds fraud.manage (group orders, after orders.refund; owner and admin;
         grantable; sensitive; requires orders.view). Phase 8.8b adds purchasing.manage (group products, after
-        inventory.adjust; owner and admin; grantable; sensitive; requires costs.view).
+        inventory.adjust; owner and admin; grantable; sensitive; requires costs.view). Phase 8.8d (DRAFT) adds pos.sell
+        (group orders, after orders.refund in catalogue order; owner, admin and staff; grantable; not sensitive; requires
+        nothing).
       enum:
       - orders.view
       - orders.process
@@ -19985,6 +21270,7 @@ components:
       - audit.view
       - billing.view
       - billing.manage
+      - pos.sell
     PermissionDefinition:
       type: object
       required:
@@ -23531,6 +24817,1008 @@ components:
         revision:
           type: integer
           description: Optional; when sent and stale → 409 revision_conflict
+    PosRegister:
+      type: object
+      description: Phase 8.8d (DRAFT, PHASE-8-8D §4). A till at an 8.8c location.
+      required:
+      - id
+      - name
+      - location
+      - position
+      - archived_at
+      - open_session
+      - last_session
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 40
+        location:
+          type: object
+          required:
+          - id
+          - name
+          - type
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            type:
+              $ref: '#/components/schemas/LocationType'
+        position:
+          type: integer
+        archived_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        open_session:
+          oneOf:
+          - $ref: '#/components/schemas/PosSessionRef'
+          - type: 'null'
+        last_session:
+          description: The latest closed session (Figma "Last session" card), else null
+          oneOf:
+          - type: object
+            required:
+            - id
+            - closed_at
+            - sales_amount
+            - receipts_count
+            - counted_cash_amount
+            - variance_amount
+            - banked_amount
+            - left_in_drawer_amount
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              closed_at:
+                type: string
+                format: date-time
+              sales_amount:
+                type: integer
+              receipts_count:
+                type: integer
+              counted_cash_amount:
+                type: integer
+              variance_amount:
+                type: integer
+              banked_amount:
+                type: integer
+              left_in_drawer_amount:
+                type: integer
+          - type: 'null'
+    PosRegisterInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+        position:
+          type: integer
+          minimum: 0
+          maximum: 1000
+      description: POST requires name and location_id; PATCH any subset.
+    PosSessionStatus:
+      type: string
+      enum:
+      - open
+      - closed
+    PosSessionRef:
+      type: object
+      required:
+      - id
+      - opened_at
+      - opened_by
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        opened_at:
+          type: string
+          format: date-time
+        opened_by:
+          $ref: '#/components/schemas/UserRef'
+    PosDenominationCounts:
+      type: object
+      description: 'Keys are denominations in minor units (BDT: 100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200,
+        100); values are counts 0–10000. Unknown keys → 422.'
+      additionalProperties:
+        type: integer
+        minimum: 0
+        maximum: 10000
+    PosSessionTotals:
+      type: object
+      required:
+      - cash_in_drawer_amount
+      - cash_sales_amount
+      - cash_refunds_amount
+      - sales_amount
+      - receipts_count
+      - by_method
+      - returns_count
+      - returns_amount
+      - discounts_amount
+      - held_sales_count
+      properties:
+        cash_in_drawer_amount:
+          type: integer
+          description: Expected = opening + cash charges − cash refunds of this session
+        cash_sales_amount:
+          type: integer
+        cash_refunds_amount:
+          type: integer
+        sales_amount:
+          type: integer
+        receipts_count:
+          type: integer
+        by_method:
+          type: array
+          items:
+            type: object
+            required:
+            - method
+            - amount
+            - count
+            properties:
+              method:
+                $ref: '#/components/schemas/PosPaymentMethod'
+              amount:
+                type: integer
+              count:
+                type: integer
+        returns_count:
+          type: integer
+        returns_amount:
+          type: integer
+        discounts_amount:
+          type: integer
+        held_sales_count:
+          type: integer
+    PosSession:
+      type: object
+      description: Phase 8.8d (DRAFT, PHASE-8-8D §4, P88D-5, P88D-15). Money in minor units of currency.
+      required:
+      - id
+      - register
+      - status
+      - currency
+      - opened_at
+      - opened_by
+      - opening_cash_amount
+      - opening_counts
+      - closed_at
+      - closed_by
+      - counted_cash_amount
+      - closing_counts
+      - expected_cash_amount
+      - variance_amount
+      - left_in_drawer_amount
+      - banked_amount
+      - close_note
+      - tolerance_amount
+      - last_closing_left_amount
+      - totals
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        register:
+          type: object
+          required:
+          - id
+          - name
+          - location
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            location:
+              type: object
+              required:
+              - id
+              - name
+              properties:
+                id:
+                  $ref: '#/components/schemas/Ulid'
+                name:
+                  type: string
+        status:
+          $ref: '#/components/schemas/PosSessionStatus'
+        currency:
+          type: string
+        opened_at:
+          type: string
+          format: date-time
+        opened_by:
+          $ref: '#/components/schemas/UserRef'
+        opening_cash_amount:
+          type: integer
+          minimum: 0
+        opening_counts:
+          oneOf:
+          - $ref: '#/components/schemas/PosDenominationCounts'
+          - type: 'null'
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        closed_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        counted_cash_amount:
+          type:
+          - integer
+          - 'null'
+        closing_counts:
+          oneOf:
+          - $ref: '#/components/schemas/PosDenominationCounts'
+          - type: 'null'
+        expected_cash_amount:
+          type:
+          - integer
+          - 'null'
+        variance_amount:
+          type:
+          - integer
+          - 'null'
+          description: counted − expected (negative = short)
+        left_in_drawer_amount:
+          type:
+          - integer
+          - 'null'
+        banked_amount:
+          type:
+          - integer
+          - 'null'
+        close_note:
+          type:
+          - string
+          - 'null'
+        tolerance_amount:
+          type: integer
+          description: Variance allowed without a note (default 5000 = ৳ 50)
+        last_closing_left_amount:
+          type:
+          - integer
+          - 'null'
+          description: Left in drawer at the register's previous close (open hint)
+        totals:
+          $ref: '#/components/schemas/PosSessionTotals'
+        revision:
+          type: integer
+    OpenPosSessionInput:
+      type: object
+      properties:
+        counts:
+          $ref: '#/components/schemas/PosDenominationCounts'
+        opening_cash_amount:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 300
+      description: Exactly one of counts or opening_cash_amount (counts win when both are sent).
+    ClosePosSessionInput:
+      type: object
+      required:
+      - left_in_drawer_amount
+      - revision
+      properties:
+        counts:
+          $ref: '#/components/schemas/PosDenominationCounts'
+        counted_cash_amount:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        left_in_drawer_amount:
+          type: integer
+          minimum: 0
+          description: ≤ counted
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 300
+        revision:
+          type: integer
+    PosCatalogVariant:
+      type: object
+      required:
+      - id
+      - title
+      - options
+      - sku
+      - barcode
+      - price_amount
+      - compare_at_amount
+      - available
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        title:
+          type: string
+          description: Option values joined, e.g. "Red · M"
+        options:
+          type: array
+          items:
+            type: object
+            required:
+            - name
+            - value
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        barcode:
+          type:
+          - string
+          - 'null'
+        price_amount:
+          type: integer
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        available:
+          type:
+          - integer
+          - 'null'
+          description: on_hand − committed at the register location; null = stock not tracked
+    PosCatalogItem:
+      type: object
+      required:
+      - product_id
+      - name
+      - image_url
+      - currency
+      - variants
+      properties:
+        product_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        image_url:
+          type:
+          - string
+          - 'null'
+        currency:
+          type: string
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/PosCatalogVariant'
+    PosLineInput:
+      type: object
+      required:
+      - variant_id
+      - quantity
+      properties:
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+    PosQuoteInput:
+      type: object
+      required:
+      - session_id
+      - lines
+      properties:
+        session_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PosLineInput'
+        coupon_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+        customer_phone:
+          type:
+          - string
+          - 'null'
+          description: For per-customer coupon limits
+    PosQuoteLine:
+      type: object
+      required:
+      - variant_id
+      - name
+      - variant_title
+      - quantity
+      - unit_price_amount
+      - compare_at_amount
+      - line_total_amount
+      - available
+      - problem
+      properties:
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        variant_title:
+          type: string
+        quantity:
+          type: integer
+        unit_price_amount:
+          type: integer
+        compare_at_amount:
+          type:
+          - integer
+          - 'null'
+        line_total_amount:
+          type: integer
+        available:
+          type:
+          - integer
+          - 'null'
+        problem:
+          type:
+          - string
+          - 'null'
+          enum:
+          - out_of_stock
+          - not_enough_stock
+          - unavailable
+          - null
+    PosQuote:
+      type: object
+      required:
+      - currency
+      - lines
+      - items_count
+      - subtotal_amount
+      - discount_amount
+      - coupon_code
+      - vat
+      - total_amount
+      properties:
+        currency:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PosQuoteLine'
+        items_count:
+          type: integer
+        subtotal_amount:
+          type: integer
+        discount_amount:
+          type: integer
+        coupon_code:
+          type:
+          - string
+          - 'null'
+        vat:
+          description: Printed included VAT (Q52); null when tax display is off
+          oneOf:
+          - type: object
+            required:
+            - rate_bps
+            - amount
+            properties:
+              rate_bps:
+                type: integer
+              amount:
+                type: integer
+          - type: 'null'
+        total_amount:
+          type: integer
+    PosPaymentMethod:
+      type: string
+      enum:
+      - cash
+      - bkash_personal
+      - card
+      description: Labels Cash, bKash, Card. Split = several payments.
+    PosPaymentInput:
+      type: object
+      required:
+      - method
+      - amount
+      properties:
+        method:
+          $ref: '#/components/schemas/PosPaymentMethod'
+        amount:
+          type: integer
+          minimum: 1
+          description: Amount applied to the sale (never includes change)
+        reference:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+          description: bKash TrxID or card approval code (optional; ignored for cash)
+    PosSaleInput:
+      type: object
+      required:
+      - session_id
+      - lines
+      - expected_total_amount
+      - payments
+      - sms_receipt
+      properties:
+        session_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PosLineInput'
+        customer_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        customer:
+          description: New or existing customer by phone (normalised 8801…); omit both for a walk-in
+          oneOf:
+          - type: object
+            required:
+            - phone
+            properties:
+              phone:
+                type: string
+              name:
+                type:
+                - string
+                - 'null'
+                maxLength: 120
+          - type: 'null'
+        coupon_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+        expected_total_amount:
+          type: integer
+          minimum: 0
+        payments:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/PosPaymentInput'
+          description: Σ amount = total; at most one cash entry
+        tendered_cash_amount:
+          type:
+          - integer
+          - 'null'
+          description: Cash handed over; required with a cash payment; ≥ the cash amount
+        sms_receipt:
+          type: boolean
+        held_sale_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    PosReceipt:
+      type: object
+      description: Data for the 80 mm print layout (P88D-11), built with the store's receipt_80mm template config.
+      required:
+      - language
+      - shop
+      - number
+      - placed_at
+      - cashier_name
+      - register_name
+      - customer
+      - lines
+      - subtotal_amount
+      - discount_amount
+      - coupon_code
+      - vat
+      - total_amount
+      - payments
+      - tendered_cash_amount
+      - change_amount
+      - footer_text
+      - currency
+      properties:
+        language:
+          type: string
+          enum:
+          - en
+          - bn
+        shop:
+          type: object
+          required:
+          - name
+          - address
+          - phone
+          - bin
+          - logo_url
+          properties:
+            name:
+              type: string
+            address:
+              type:
+              - string
+              - 'null'
+              description: The register location's address, else the store's
+            phone:
+              type:
+              - string
+              - 'null'
+            bin:
+              type:
+              - string
+              - 'null'
+              description: Only when the template has show_bin
+            logo_url:
+              type:
+              - string
+              - 'null'
+        number:
+          type: string
+          description: The order number
+        placed_at:
+          type: string
+          format: date-time
+        cashier_name:
+          type: string
+        register_name:
+          type: string
+        customer:
+          oneOf:
+          - type: object
+            required:
+            - name
+            - phone
+            properties:
+              name:
+                type: string
+              phone:
+                type: string
+          - type: 'null'
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - name
+            - variant_title
+            - sku
+            - quantity
+            - line_total_amount
+            properties:
+              name:
+                type: string
+              variant_title:
+                type:
+                - string
+                - 'null'
+              sku:
+                type:
+                - string
+                - 'null'
+              quantity:
+                type: integer
+              line_total_amount:
+                type: integer
+        subtotal_amount:
+          type: integer
+        discount_amount:
+          type: integer
+        coupon_code:
+          type:
+          - string
+          - 'null'
+        vat:
+          oneOf:
+          - type: object
+            required:
+            - rate_bps
+            - amount
+            properties:
+              rate_bps:
+                type: integer
+              amount:
+                type: integer
+          - type: 'null'
+        total_amount:
+          type: integer
+        payments:
+          type: array
+          items:
+            type: object
+            required:
+            - method
+            - amount
+            properties:
+              method:
+                $ref: '#/components/schemas/PosPaymentMethod'
+              amount:
+                type: integer
+        tendered_cash_amount:
+          type:
+          - integer
+          - 'null'
+        change_amount:
+          type: integer
+        footer_text:
+          type:
+          - string
+          - 'null'
+        currency:
+          type: string
+    PosSaleSummary:
+      type: object
+      required:
+      - id
+      - order_id
+      - number
+      - placed_at
+      - register_name
+      - cashier_name
+      - customer_name
+      - items_count
+      - paid_by
+      - total_amount
+      - refunded_amount
+      - currency
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        order_id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+        register_name:
+          type: string
+        cashier_name:
+          type: string
+        customer_name:
+          type:
+          - string
+          - 'null'
+          description: null = walk-in
+        items_count:
+          type: integer
+        paid_by:
+          type: string
+          enum:
+          - cash
+          - bkash_personal
+          - card
+          - split
+        total_amount:
+          type: integer
+        refunded_amount:
+          type: integer
+        currency:
+          type: string
+    PosSale:
+      allOf:
+      - $ref: '#/components/schemas/PosSaleSummary'
+      - type: object
+        required:
+        - order
+        - session_id
+        - tendered_cash_amount
+        - change_amount
+        - sms_receipt_status
+        - receipt
+        properties:
+          order:
+            $ref: '#/components/schemas/Order'
+          session_id:
+            $ref: '#/components/schemas/Ulid'
+          tendered_cash_amount:
+            type:
+            - integer
+            - 'null'
+          change_amount:
+            type: integer
+          sms_receipt_status:
+            type: string
+            enum:
+            - not_requested
+            - no_phone
+            - queued
+            - sent
+            - failed
+          receipt:
+            $ref: '#/components/schemas/PosReceipt'
+    PosSaleListMeta:
+      allOf:
+      - $ref: '#/components/schemas/CursorMeta'
+      - type: object
+        required:
+        - summary
+        properties:
+          summary:
+            type: object
+            required:
+            - sales_amount
+            - receipts_count
+            - average_sale_amount
+            - returns_count
+            - returns_amount
+            properties:
+              sales_amount:
+                type: integer
+              receipts_count:
+                type: integer
+              average_sale_amount:
+                type: integer
+              returns_count:
+                type: integer
+              returns_amount:
+                type: integer
+    PosHeldSale:
+      type: object
+      required:
+      - id
+      - register_id
+      - customer_name
+      - customer_phone
+      - coupon_code
+      - note
+      - lines
+      - items_count
+      - total_amount
+      - currency
+      - held_by
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        register_id:
+          $ref: '#/components/schemas/Ulid'
+        customer_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        customer_name:
+          type:
+          - string
+          - 'null'
+        customer_phone:
+          type:
+          - string
+          - 'null'
+        coupon_code:
+          type:
+          - string
+          - 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PosLineInput'
+        items_count:
+          type: integer
+        total_amount:
+          type: integer
+          description: At hold time; re-priced on resume
+        currency:
+          type: string
+        held_by:
+          $ref: '#/components/schemas/UserRef'
+        created_at:
+          type: string
+          format: date-time
+    PosHeldSaleInput:
+      type: object
+      required:
+      - session_id
+      - lines
+      properties:
+        session_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PosLineInput'
+        customer_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        customer:
+          oneOf:
+          - type: object
+            required:
+            - phone
+            properties:
+              phone:
+                type: string
+              name:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        coupon_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+    PosReturnInput:
+      type: object
+      required:
+      - session_id
+      - lines
+      - refund_method
+      properties:
+        session_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required:
+            - order_item_id
+            - quantity
+            properties:
+              order_item_id:
+                $ref: '#/components/schemas/Ulid'
+              quantity:
+                type: integer
+                minimum: 1
+        refund_method:
+          $ref: '#/components/schemas/PosPaymentMethod'
+        reason:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    PosReturnResult:
+      type: object
+      required:
+      - sale
+      - return_request
+      - refund
+      properties:
+        sale:
+          $ref: '#/components/schemas/PosSale'
+        return_request:
+          $ref: '#/components/schemas/ReturnRequest'
+        refund:
+          $ref: '#/components/schemas/Payment'
     StockCountTransitionInput:
       type: object
       required: []
@@ -23582,7 +25870,9 @@ components:
       - transfer_out
       - transfer_in
       - count
-      description: transfer_out, transfer_in, count since Phase 8.8c (written by part B transfers and counts)
+      - pos_sale
+      description: transfer_out, transfer_in, count since Phase 8.8c (written by part B transfers and counts); pos_sale since
+        Phase 8.8d (DRAFT) — a till sale at the register location, reference order
     StockAdjustmentInput:
       type: object
       required:
@@ -25528,7 +27818,8 @@ components:
       - cod
       - bkash
       - sslcommerz
-      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12).'
+      - pos
+      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12). Phase 8.8d (DRAFT): ''pos'' on till sales only (the payments list says how it was paid); never accepted by checkout.'
     StorefrontCommerce:
       type: object
       required:
@@ -25782,6 +28073,9 @@ components:
       - bank
       - other
       - gateway
+      - card
+      description: Also the method of manual charge rows. card since Phase 8.8d (DRAFT) — a till payment on an external card
+        terminal.
     CheckoutInput:
       type: object
       required:
@@ -26210,6 +28504,25 @@ components:
           enum:
           - storefront
           - dashboard
+          - pos
+          description: pos since Phase 8.8d (DRAFT) — a till sale (delivered + paid at once; walk-in sales have an empty
+            customer.phone, district and address)
+        pos:
+          description: Phase 8.8d (DRAFT). Present for created_via = pos, else null.
+          oneOf:
+          - type: object
+            required:
+            - sale_id
+            - register_id
+            - register_name
+            properties:
+              sale_id:
+                $ref: '#/components/schemas/Ulid'
+              register_id:
+                $ref: '#/components/schemas/Ulid'
+              register_name:
+                type: string
+          - type: 'null'
         customer:
           $ref: '#/components/schemas/OrderCustomerSummary'
         district:
@@ -26447,6 +28760,11 @@ components:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'
         return_request_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        pos_session_id:
+          description: Phase 8.8d (DRAFT). The till session the money went into or out of; null for every other payment.
           oneOf:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'

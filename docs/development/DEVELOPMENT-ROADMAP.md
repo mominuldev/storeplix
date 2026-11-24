@@ -252,13 +252,24 @@ backfill to "Main warehouse", order lines remember their location (release/ship/
 classified online / total / location with a parity test, inventory location selector `11:842` + Warehouses tab,
 product editor "+ n at other locations", "Receive at" on POs (cost stays one weighted average over all locations),
 `stock.low` per location, `multi_warehouse` enforced for a 2nd location; **part B**
-`feat/phase-8-8c-transfers-counts` (openapi 1.19.0; **in progress**) — transfers `TR-{n}` (draft → in transit →
+`feat/phase-8-8c-transfers-counts` (openapi 1.19.0; **merged, PR #18**) — transfers `TR-{n}` (draft → in transit →
 received / cancelled, stock out on send and in on receive, short units written off, send ≤ source available,
 `Idempotency-Key` on send/receive) `153:34425` and stock counts (one open per location, scan/set, delta at count,
 finish & adjust, cancel) `153:35246`; four RLS tables (87), limiter `stock-write`, SECURITY T41 (S187–S194), ADR 0024
 part B addendum. Out: POS,
 Inbox (8.8d), transfer approval, multi-location online selling / split fulfilment, shop pickup, per-person warehouse
 access (Q119), lock sales while counting, stock-loss expense, camera scanning (Q230).
+**8.8d** contract: `docs/development/PHASE-8-8D-CONTRACT.md` (**draft for PO (product owner) review**, 2026-11-25;
+branch `feat/phase-8-8d-pos`; openapi 1.21.0 draft; ADR 0025 Proposed; Q232 answered — POS first, Inbox later;
+defaults Q233–Q256 pending), two PRs once accepted: **part A** sell — registers (≤ 10, at an 8.8c location), open /
+close register with counted float, cash check, variance tolerance and Z-report, catalog + barcode lookup, customer by
+phone, coupon, cash / bKash / card / split as manual payments bound to the session, every till sale an order
+(`created_via pos`, `walk_in`, delivered + paid at once) with stock out at the register location (`pos_sale` ledger
+reason), browser-printed 80 mm receipt + SMS receipt, new permission `pos.sell`, `pos` enforced; **part B** held sales
+(no stock reservation), sales history with KPIs, returns at the till refunded from the drawer. Figma page `22:1736`
+(`25:581`, `22:1737`, `22:1905`, `22:2073`, `22:2241`, `22:2409`, `27:754`, `25:829`). Out: Inbox and AI integrations
+(Q1), offline mode, hardware integration (drawer kick, silent printing), void with manager PIN, one-step exchange,
+manual discounts, paid in / out, per-person register / location access (Q119, Q248), held-sale stock reservation (Q242, Q256).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
@@ -270,8 +281,9 @@ access (Q119), lock sales while counting, stock-loss expense, camera scanning (Q
 | 8.7 | Expenses (144:41613) + profit report: six categories, private receipts, monthly repeat, Ad spend + Other expenses in Profit & loss, `expenses.manage`, store currency lock | API/WEB | Expenses recorded with receipts reduce net profit in Profit & loss; every changed number is traceable; the store currency locks once the store has an order or an expense; PHASE-8-7 §16 |
 | 8.8a | Fake-order guard (39:11233, section 41:12365): own-shop record and tiers, order checks with hold / advance, blocklist + repeat returners, daily COD limit, duplicates, checkout OTP, `fraud.manage`, `fake_order_guard` enforced | API/WEB/SF | Every new COD order of a guarded store gets one explained risk check; risky orders are held or asked for an advance before anyone can book a courier; blocked and over-limit numbers can't place COD orders; new numbers verify by OTP; nothing about a shopper comes from another shop; PHASE-8-8 §16 |
 | 8.8b | Suppliers + purchase orders (35:5619, 35:6210, 36:6607, 153:35999): suppliers, POs, receiving with damaged, weighted-average landed cost, supplier payments/owed, PO PDF + WhatsApp, quick purchase, reorder suggestions, `purchasing.manage`, plan `purchasing` | API/WEB | Merchant records suppliers, sends POs, receives in one or more deliveries; variant cost = weighted-average landed cost; owed = received value − payments; no purchase in Profit & loss; PHASE-8-8B §16 |
-| 8.8c | Locations + per-location stock (part A: 11:589 selector 11:842, Warehouses 11:808, Receive at 35:6644/36:6615/36:7118), stock transfers (part B: 153:34425) and stock count (part B: 153:35246); `multi_warehouse` enforced. Part A ✅ merged (PR #17); part B in progress (`feat/phase-8-8c-transfers-counts`) | API/WEB | A merchant keeps stock in more than one place, sees how much is where, moves stock between places with a transfer that takes it out on send and puts it in on receive, and corrects stock with a count; online orders keep selling from one chosen location; a single-location shop sees no change; PHASE-8-8C §16 |
-| 8.8d | POS (26:2147, page 22:1736), Inbox (141:48129) | API/WEB | Scoped after PO (product owner) confirms (OPEN-QUESTIONS Q1; warehouse access per role Q119) |
+| 8.8c | Locations + per-location stock (part A: 11:589 selector 11:842, Warehouses 11:808, Receive at 35:6644/36:6615/36:7118), stock transfers (part B: 153:34425) and stock count (part B: 153:35246); `multi_warehouse` enforced. Part A ✅ merged (PR #17); part B ✅ merged (PR #18) | API/WEB | A merchant keeps stock in more than one place, sees how much is where, moves stock between places with a transfer that takes it out on send and puts it in on receive, and corrects stock with a count; online orders keep selling from one chosen location; a single-location shop sees no change; PHASE-8-8C §16 |
+| 8.8d | POS (page 22:1736: open register 25:581, sale 22:1737, variant picker 22:1905, payment 22:2073, sale complete 22:2241, held sales 22:2409, sales history 27:754, close register 25:829; overview 26:2147): registers + cash sessions, till sales as orders, stock out at the register location, receipts, held sales, history, returns at the till, `pos.sell`, `pos` enforced. **Contract draft for PO (product owner) review** (Q233–Q256 pending). Inbox (141:48129) later (Q232) | API/WEB | A shop opens a register with a counted float, sells with cash/bKash/card/split, prints or texts a receipt, parks and resumes sales, takes returns at the till and closes with an explained cash difference; every till sale is an order in Orders, reports and Profit & loss; stock leaves the register's location through the ledger; PHASE-8-8D §16 |
+| 8.8e | Inbox (141:48129) | API/WEB | Scoped after PO (product owner) confirms (OPEN-QUESTIONS Q1, Q232) |
 | 8.9 | Help center (71:21271), Payments/tracking/messaging/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |
 
 ## Phase 9 — Production readiness
