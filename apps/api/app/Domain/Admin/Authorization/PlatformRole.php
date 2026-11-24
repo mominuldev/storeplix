@@ -12,7 +12,7 @@ enum PlatformRole: string
     case Support = 'support';
     case ReadOnly = 'read_only';
 
-    /** @return list<PlatformPermission> PHASE-8-1 §2.1 matrix, amended by PHASE-8-2 §2.1 (`view_analytics`: SA, BI, RO) (single source; `AdminPermissionTest` covers every cell). */
+    /** @return list<PlatformPermission> PHASE-8-1 §2.1 matrix, amended by PHASE-8-2 §2.1 (`view_analytics`: SA, BI, RO) and amendment A1-4 (`manage_settings`: SA only) (single source; `AdminPermissionTest` covers every cell). */
     public function permissions(): array
     {
         return match ($this) {

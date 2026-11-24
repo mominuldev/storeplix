@@ -182,7 +182,7 @@ class AdminPermissionTest extends TestCase
     public function test_permission_matrix_matches_the_contract(): void
     {
         $expected = [
-            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics'],
+            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics', 'manage_settings'], // + amendment A1-4
             'billing' => ['view_merchants', 'manage_billing', 'view_analytics'], // + PHASE-8-2 §2.1
             'support' => ['view_merchants', 'impersonate', 'manage_domains'],
             'read_only' => ['view_merchants', 'view_analytics'],

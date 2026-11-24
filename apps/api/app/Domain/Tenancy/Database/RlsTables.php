@@ -68,5 +68,7 @@ final class RlsTables
         'platform_recovery_codes', 'platform_invitations', 'platform_impersonations',
         // Phase 8.2 (PHASE-8-2 §5.1; app role revoked)
         'platform_daily_metrics',
+        // PHASE-8-1 amendment A1-2 (app role SELECT only; writes on the admin connection)
+        'platform_settings',
     ];
 }
