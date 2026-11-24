@@ -49,6 +49,10 @@ jobs:
             echo 'CAMPAIGNS_DEV_SINK=true'
             # Phase 8.6 (PHASE-8-6-CONTRACT §13 QA): automation messages reuse the same three flags (no new provider); the
             # sink entries carry `automation_id`, which phase8-6.* reads. Nothing new to set here.
+            # Phase 8.7 (PHASE-8-7-CONTRACT §13 QA): no new provider or flag. Receipts go to the private disk
+            # (storeplix.private_disk, default `local`); image receipts are re-encoded by ProcessMedia on `media` and
+            # recurring expenses are generated on `default`, both worked by compose's `queue` service. phase8-7.* runs
+            # `expenses:repeat` through `docker compose exec api php artisan tinker` (E2E_ARTISAN=docker).
           } >> .env
           cp apps/api/.env.example apps/api/.env
           # The api/queue containers read apps/api/.env; set the flag there too in case compose doesn't forward it.

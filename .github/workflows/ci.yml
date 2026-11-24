@@ -270,6 +270,20 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'automations'"; exit 1; }
           exit $status
 
+      # Phase 8.7 (PHASE-8-7-CONTRACT §13, §16 AC 8): the `expenses` group (every §8.1 route: happy, validation, authz,
+      # isolation; summary maths + compare rule + profit gate matrix; recurrence generator (start, copy-latest, stop,
+      # clamping, catch-up, idempotency); receipts (upload/sniff matrix, attach/replace/remove, signed link, download
+      # headers, media-library separation, prune); CSV export + formula injection; Profit & loss with expenses and the
+      # expenses_rev cache token; store currency lock (S153); S141–S153) must exist and pass on sqlite.
+      - name: phase 8.7 group (expenses)
+        run: |
+          mkdir -p build
+          php artisan test --group=expenses --exclude-group perf --exclude-group race --log-junit build/expenses.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/expenses.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "expenses tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'expenses'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -418,6 +432,15 @@ jobs:
       # exist on Postgres; automations must pass there too.
       - name: phase 8.6 automations (postgres)
         run: php artisan test --group=automations --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.7 (§4): expenses / expense_recurrences (CHECKs, composite FKs incl. the raw ON DELETE SET NULL
+      # (recurrence_id), INCLUDE index, partial unique (recurrence_id, spent_on) for ON CONFLICT DO NOTHING) exist on
+      # Postgres; expenses must pass there too.
+      - name: phase 8.7 expenses (postgres)
+        run: php artisan test --group=expenses --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -790,6 +813,11 @@ jobs:
       # the host's tenant; EvaluateAutomation / resume-due / detect-abandoned run in the automation's tenant.
       - name: phase 8.6 automations (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" automations lenient --group=automations --exclude-group perf --exclude-group race'
+      # Phase 8.7 (PHASE-8-7-CONTRACT §4, §9, S141, S149): expenses + expense_recurrences are RLS-forced; expenses:repeat
+      # and expenses:prune-receipts discover cross-tenant and generate/delete inside each tenant; the signed receipt
+      # download resolves the tenant from the signature (their RLS probes are also in the `rls` step above).
+      - name: phase 8.7 expenses (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" expenses lenient --group=expenses --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
