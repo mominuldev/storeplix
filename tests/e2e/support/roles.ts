@@ -31,7 +31,7 @@ export const LABEL: Record<PermissionKey, string> = {
   'reports.view': 'Reports, payouts & COD settlements',
   'data.export': 'Export customer phone numbers',
   'data.import': 'Import products & customers (CSV)',
-  'marketing.manage': 'Create & edit coupons',
+  'marketing.manage': 'Coupons & campaigns', // PHASE-8-5 §2.1 (was "Create & edit coupons")
   'settings.manage': 'Change shop settings',
   'integrations.manage': 'Connect payments & couriers',
   'domains.manage': 'Manage domains',

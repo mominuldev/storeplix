@@ -24,6 +24,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | **Phase 8.2 group** | Pest group `analytics` (§3 definitions fixture to the paisa, GMV/restatement fixture, aggregate/backfill idempotency, `/admin/analytics/*` shapes; RLS cases also in `rls`, S83–S90 also in `security`, the aggregate and revenue p95 budgets in `perf`) | `apps/api/tests/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on, `pgsql_admin`); budgets in `api-perf` |
 | **Phase 8.3 group** | Pest group `roles` (`PermissionParityTest`: every merchant tenant route × owner/admin/staff against `tests/Fixtures/permission-parity.json`, recorded on pre-8.3 code; `RoutePermissionsTest` route ↔ §3 map; catalogue, per-key enforcement dataset, roles API, N1–N9, staff/invite `role_id`, `/auth/me` permissions, backfill migration (sqlite only); RLS member-read policy in `rls`, S91–S99 also in `security`) | `apps/api/tests/Feature/Staff/Roles/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | **Phase 8.4 group** | Pest group `developer-api` (API keys CRUD/validation/authz/isolation, `developers.manage`, scope non-delegation (S105), sha256-only storage + log scan (S100), identical 401s (S101); every `/api/v1/external` route: happy path, scope deny `api_key_scope_missing`, cross-tenant 404, one `scope:` per route (S103), merchant routes refuse keys / external refuse cookies (S104), 120/min per key (S111); webhooks: one emission test per §4.1 event, payload `2026-12-01`, signature vector (fixed secret/body/t → known hex) + rotation overlap (S108), retry schedule P84-9 with a frozen clock, auto-disable 72 h, prune 30 d, resend / resend-failed, SSRF refusals on save and send (S107), plan gating (S106), fake/allow-http refused in production (S112); RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Developer/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
+| **Phase 8.5 group** | Pest group `campaigns` (CRUD/validation/authz/isolation for every §6.1 route, storefront unsubscribe routes, state machine, one test per audience segment + exclusions, P85-3 eligibility matrix, risk classes, SMS parts against `docs/api/sms-parts-vectors.json`, renderer (prefix, bn/en footer, merge fields, unknown field 422), pipeline with the fake gateway + `array` mailer, quiet-hours pause/resume (frozen clock, store tz), cancel while sending, reap-stuck, attribution (7-day window, latest wins, cancelled excluded), overview numbers, allowances (S122), S113–S126, prune; RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Marketing/**`, `apps/api/tests/Unit/Marketing/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -45,6 +46,7 @@ cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import
 #   docker compose up -d gotenberg   # or: docker run -p 127.0.0.1:53000:3000 -e GOTENBERG_API_BASIC_AUTH_USERNAME=u -e GOTENBERG_API_BASIC_AUTH_PASSWORD=p <image from docker-compose.yml> gotenberg --api-enable-basic-auth
 #   GOTENBERG_URL=http://127.0.0.1:53000 GOTENBERG_USERNAME=u GOTENBERG_PASSWORD=p php artisan test --group=documents
 cd apps/api && php artisan test --group=developer-api   # Phase 8.4: API keys, external API, outbound webhooks
+cd apps/api && php artisan test --group=campaigns       # Phase 8.5: SMS/email campaigns, opt-out, allowances, quiet hours
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -139,6 +141,12 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase8-4.retries` | §4.4, P84-9, AC 2: endpoint on `…/fail-503`; row menu "Send test event" (202) and a storefront order → both `retrying` (attempt 1, 503, `http_error`, next attempt +1 min ± 15 s); row "Failing since" + "% · failing"; API resend → 202 new delivery id, same event id (also in the sink body), same stored payload, original unchanged; delivery forced to `failed` by a test-only tinker write → UI "Resend failed (1)" → `{count: 1}` and a new delivery for the same event |
 | `phase8-4.access` | P84-6, P84-13, S105, S106, S109: staff → 403 on all 12 developer routes incl. the dev sink and secret reveal/rotate, no `developers.manage` in `/auth/me`; UI no-access state on `/integrations/developer`, no Developer banner on `/integrations` (the owner's banner links there). Free shop: reads 200, key/endpoint create 402 `feature_not_in_plan` (`upgrade_plan` growth); UI plan note "API keys and webhooks are part of the Growth plan." + See plans → `/settings/plan`, create buttons disabled. Growth → Free: external API 402, key and endpoint kept, writes 402, a new order creates no delivery |
 | `phase8-4.visual` | AC 5 / Q137: Developer page (2 keys, a healthy and a failing endpoint, deliveries) and the create-key modal at 1280, 390 and 375 px: four cards visible, no horizontal page overflow, no console errors; screenshots in `test-results/phase8-4-visual/{width}/` for the Figma review against `144:40726` |
+| `phase8-5.campaigns` | AC 1 "Opt-out respected" (§14.1, S113–S116, S118): Starter shop (store tz → ~13:00 local) with A, B consenting, C a storefront order only, D no consent/no order, E merchant "Stop marketing", F email only. Customer `marketing` block per P85-3; audience preview All → 3. Composer UI: SMS · English · Send now → confirm → `sent` 3/3; dev sink has one SMS per A/B/C, each `"{shop}: "`-prefixed, last line `STOP: {host}/u/{code}`, distinct codes. A opens `/u/{code}` on `{slug}.localhost`: `no-store` + `noindex`, GET changes nothing, Unsubscribe → "You’re unsubscribed" + Subscribe again; customer `unsubscribed` (`link`), campaign `stats.unsubscribed` 1. A deleted + re-created with the same phone → still unsubscribed; merchant DELETE → 409 `suppression_customer_owned`; PATCH `accepts_marketing` → still out; E’s merchant suppression removable. Campaign 2 → B, C, E messaged, nothing to A; A’s recipient row (if kept) `skipped/opted_out`, shown on the detail page; addresses masked |
+| `phase8-5.email` | P85-6/19/26, §4.2, §8.6, S115–S117, S123: email campaign to 2 customers → sink copies with subject, `https://{host}/u/{code}` link, escaped `<script>`/HTML; RFC 8058 POST `/u/{code}/one-click` → 200, email unsubscribed, SMS untouched, idempotent; page "Subscribe again" → subscribed. Unknown / malformed / other-store code → identical 404 `unsubscribe_link_invalid`, page "This link isn’t valid". "Send test to me" → one email to the owner, `is_test` code: POST 200 no change, page "This was a test message"; campaign stays draft. 21st unsubscribe request/min from one shopper IP → 429 |
+| `phase8-5.schedule` | P85-15/16/17, S124 (no campaign dev clock: the store timezone is moved instead): day shop schedule 15:00 local → `scheduled` (list filter), unschedule → draft, reschedule, Cancel on the detail page → `cancelled`, cancel/edit again 409 `invalid_state_transition`; 22:30, 21:00 and tomorrow 08:30 local → 422 `campaign_quiet_hours` (`details.allowed_from`); < now+5 min, > now+90 d → 422; no `Idempotency-Key` → `idempotency_key_required`. Night shop (~02:00 local): Send now → 422 `campaign_quiet_hours`, composer shows the inline error; scheduling at 10:00 works |
+| `phase8-5.access` | §2, P85-13, S120, S122: Free shop → drafts allowed, send/schedule/test 402 `plan_limit_reached` (`upgrade_plan` starter, `details.campaign_sms_per_month` / `campaign_emails_per_month` limit 0); UI plan note "Campaigns are part of the Starter plan." + See plans → `/settings/plan`, primary action and "Send test to me" disabled. Starter estimate → allowance 1 000 SMS parts / 5 000 emails, UCS-2 for Bangla. Staff → 403 on all 16 campaign routes + dev sink, no `marketing.manage` in `/auth/me`, `/marketing` falls back to Coupons, no-access state on list/composer/detail; the customer opt-out toggle (`customers.edit`) is allowed for Staff |
+| `phase8-5.regressions` | Gate findings, one independent test each (fail until fixed): P85-QA-1 composer confirm dialog recipients = "N customers will get this message"; P85-QA-2 storefront Unsubscribe / Subscribe again re-render the page in place (no 404) |
+| `phase8-5.visual` | AC 3 / Q151: overview, campaigns list, composer (SMS bn + email), detail and the storefront unsubscribe page at 1280, 390 and 375 px: no horizontal page overflow, no console errors, hidden 8.5 items (WhatsApp, Automations, Carts recovered, Return on spend, Top up, Best week yet) absent; screenshots in `test-results/phase8-5-visual/{width}/` for the Figma review against `66:19179` / `70:19774` |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -276,6 +284,30 @@ How they run:
     php artisan serve --port=8000                       # + the 5b/7 env as above
   php artisan queue:work --queue=webhooks-out           # second terminal (apps/api)
   cd tests/e2e && pnpm exec playwright test phase8-4.
+  ```
+- **Marketing campaigns (Phase 8.5)** need the API with **`SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true`**
+  (plus the earlier fake flags) and a worker on the **`campaigns`** queue (`php artisan queue:work --queue=campaigns --timeout=250`, jobs run up to 240 s;
+  compose runs `queue-campaigns`; the e2e workflow starts one only if compose lacks it). Nothing is sent: the dev
+  sink `GET /api/v1/dev/stores/{store}/message-sink` (non-production, `marketing.manage`, cache list of the last 200 per
+  store) keeps the rendered SMS/email and its unsubscribe URL; specs match their messages by `campaign_id` or a unique
+  marker in the body. The sink lives in the cache, so `setPlan`/`browserHost` (which flush it) run before any send.
+  Quiet hours (21:00–09:00 store time) are made deterministic by giving each throwaway shop a fixed-offset timezone
+  where it is ~13:00 (or ~02:00) locally (`campaignShop(label, plan, localHour)` in `support/campaigns.ts`). Unsubscribe
+  pages are opened on `{slug}.localhost:3000/u/{code}` (`browserHost`). The dev DB needs the `2026_12_02_*` migrations.
+  Locally every browser request reaches the API as one shopper IP (127.0.0.1), so the `storefront-unsubscribe` limiter
+  (20/min) can trip when several `/u` specs run back to back (the page then shows `?e=1`): run `phase8-5.` files one at a
+  time if that happens. On sqlite a `SendCampaignBatch` can die on "database is locked" (tries = 1 by design);
+  `waitCampaign()` then runs `campaigns:dispatch-due` with `resume_after_minutes = 0` (`kickDispatchDue()`) instead of
+  waiting the 2-minute idle window.
+  If another project holds :8000/:5173/:3000, run `php artisan serve --port=8010` (it forwards the fake/sink flags,
+  which `.env` doesn't set), the dashboard on **:5174** (already in
+  `SANCTUM_STATEFUL_DOMAINS`): process env overrides of keys that `.env` also sets do not reach Laravel under `php -S`
+  (the cli-server SAPI keeps them out of `$_SERVER`/`$_ENV`, so `.env` wins and logins answer 400 `stateful_required`).
+  ```bash
+  APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true \
+    SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true php artisan serve --port=8000
+  SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true php artisan queue:work --queue=campaigns --timeout=250   # second terminal
+  cd tests/e2e && pnpm exec playwright test phase8-5.
   ```
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the
