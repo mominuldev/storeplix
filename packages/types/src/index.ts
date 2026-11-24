@@ -382,15 +382,19 @@ export type PermissionKey =
   | 'orders.view' | 'orders.process' | 'orders.refund' | 'shipments.manage' | 'shipments.cancel'
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
   | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
-  | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage';
+  | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
+  | 'billing.manage';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
 
-/** §2.1 order (UI order); `billing.manage` last (owner only, never grantable). */
+/**
+ * §2.1 order (UI order); `billing.manage` last (owner only, never grantable). Phase 8.4 (PHASE-8-4 §2.1):
+ * `developers.manage` (group `store`, sensitive) after `domains.manage`; owner + admin, never staff.
+ */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'orders.view', 'orders.process', 'orders.refund', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
   'costs.view', 'reports.view', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
-  'integrations.manage', 'domains.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
+  'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
 ];
 
 /** §2.2 — mirrors App\Domain\Tenancy\Authorization\SystemRole. */
@@ -545,7 +549,9 @@ export interface StockMovement {
   id: string; variant_id: string; product: { id: string; name: string };
   variant_title: string; sku: string | null; delta: number; on_hand_after: number;
   reason: StockMovementReason; note: string | null;
-  reference: { type: 'import' | 'order'; id: string } | null; actor: UserRef | null; created_at: string;
+  reference: { type: 'import' | 'order'; id: string } | null;
+  /** Phase 8.4: a movement made with an API key renders `{ type: 'api_key', id, name: "API: <key name>" }`. */
+  actor: UserRef | { type: 'api_key'; id: string; name: string } | null; created_at: string;
 }
 export interface StockAdjustmentResult { items: InventoryItem[]; movements: StockMovement[] }
 export interface StockMovementFilters {
@@ -871,7 +877,8 @@ export interface OrderEvent {
   id: string; type: 'placed' | 'status_changed' | 'note' | 'edited' | 'payment' | 'refund' | 'shipment' | 'notification' | 'coupon_released'
     | 'payment_link' | 'items_edited' | 'return' | 'document';
   from_status: OrderStatus | null; to_status: OrderStatus | null;
-  actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null };
+  /** Phase 8.4: `api_key` = written through the external API (`id` = key id, `name` = "API: <key name>", `user` null). */
+  actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null } | { type: 'api_key'; user: null; id: string; name: string };
   body: string | null; meta: Record<string, unknown>; created_at: string;
 }
 export interface Payment {
@@ -1373,7 +1380,8 @@ export interface DeliveryReport {
 }
 
 // ---------- Phase 8.1: super admin (PHASE-8-1-CONTRACT; openapi 1.9.0) ----------
-export type AuditActorType = 'user' | 'system' | 'platform_user';
+/** Phase 8.4: `api_key` = a call made through the external API (`actor.id` = key id, PHASE-8-4 §3). */
+export type AuditActorType = 'user' | 'system' | 'platform_user' | 'api_key';
 export type PlatformRole = 'super_admin' | 'billing' | 'support' | 'read_only';
 export type PlatformPermission =
   | 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team'
@@ -1596,3 +1604,106 @@ export interface AdminTenantMetrics {
   /** 12 Dhaka months ending with as_of's month, oldest first */
   monthly: { month: string; gmv_amount: number | null; orders_count: number | null }[];
 }
+
+// ---------- Phase 8.4: developer API keys + outbound webhooks (PHASE-8-4-CONTRACT §2, §6; openapi 1.12.0) ----------
+/** §2.2 scopes, UI order. `*:write` implies the matching `*:read`. */
+export type ApiScope =
+  | 'orders:read' | 'orders:write' | 'products:read' | 'products:write' | 'inventory:read' | 'inventory:write'
+  | 'customers:read';
+export const API_SCOPES: readonly ApiScope[] = [
+  'orders:read', 'orders:write', 'products:read', 'products:write', 'inventory:read', 'inventory:write', 'customers:read',
+];
+export type ApiScopeGroup = 'orders' | 'products' | 'inventory' | 'customers';
+/** GET /api-scopes item. `backing_permission` null = base access (any member); `grantable` is for the signed-in actor (P84-5). */
+export interface ApiScopeInfo {
+  key: ApiScope; label: string; group: ApiScopeGroup; backing_permission: PermissionKey | null;
+  implies: ApiScope[]; grantable: boolean;
+}
+/** P84-14: active (non-revoked) keys per tenant; endpoints per store. External API: 120 requests / minute per key. */
+export const DEVELOPER_LIMITS = { api_keys: 10, webhook_endpoints: 5, external_requests_per_minute: 120 } as const;
+
+export type ApiKeyStatus = 'active' | 'revoked';
+export interface ApiKey {
+  id: string; name: string;
+  /** first 12 chars, e.g. `sp_live_ab12` */
+  prefix: string; last_four: string;
+  /** e.g. `sp_live_••••7f2a` */
+  masked: string;
+  scopes: ApiScope[]; include_costs: boolean; status: ApiKeyStatus; created_at: string;
+  created_by: { id: string; name: string } | null; last_used_at: string | null; revoked_at: string | null;
+}
+/** POST /api-keys (201) only: `plain_key` (`sp_live_` + 40 base62) is never returned again. */
+export interface ApiKeyCreated extends ApiKey { plain_key: string }
+export interface CreateApiKeyInput { name: string; scopes: ApiScope[]; include_costs?: boolean }
+/** Rename only. */
+export interface UpdateApiKeyInput { name: string }
+/** GET /external/me (API-key auth). */
+export interface ApiKeyIdentity {
+  id: string; name: string; scopes: ApiScope[]; tenant_id: string;
+  store: { id: string; name: string; currency: string };
+}
+
+/** §4.1 subscribable events, UI order (Figma "Events you can send"). `ping` exists only on test deliveries. */
+export type WebhookEventType =
+  | 'order.created' | 'order.confirmed' | 'order.cancelled' | 'order.paid' | 'shipment.updated' | 'shipment.delivered'
+  | 'return.received' | 'product.updated' | 'stock.low' | 'customer.created';
+export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
+  'order.created', 'order.confirmed', 'order.cancelled', 'order.paid', 'shipment.updated', 'shipment.delivered',
+  'return.received', 'product.updated', 'stock.low', 'customer.created',
+];
+export type WebhookDeliveryEventType = WebhookEventType | 'ping';
+export interface WebhookEventTypeInfo { key: WebhookEventType; label: string; description: string }
+export const WEBHOOK_API_VERSION = '2026-12-01';
+
+export type WebhookDisabledReason = 'manual' | 'failing';
+export interface WebhookEndpoint {
+  id: string; url: string; description: string | null; events: WebhookEventType[]; is_active: boolean;
+  disabled_reason: WebhookDisabledReason | null; failing_since: string | null; last_delivery_at: string | null;
+  /** HTTP status of the last attempt (null = none yet or no response) */
+  last_status: number | null;
+  /** 0–100, one decimal; null when there were no deliveries in the last 7 days */
+  success_rate_7d: number | null;
+  created_at: string; updated_at: string;
+}
+export interface CreateWebhookEndpointInput { url: string; events: WebhookEventType[]; description?: string | null }
+export interface UpdateWebhookEndpointInput {
+  url?: string; events?: WebhookEventType[]; description?: string | null; is_active?: boolean;
+}
+
+export interface WebhookSecret {
+  last_four: string;
+  /** e.g. `whsec_••••3kQ9` */
+  masked: string;
+  rotated_at: string | null;
+  /** the previous secret still signs (second `v1=`) until this time; null when no overlap */
+  previous_expires_at: string | null;
+}
+/** reveal / rotate: `secret` = `whsec_` + 32 base62. After rotate it is the new secret (shown once). */
+export interface WebhookSecretRevealed extends WebhookSecret { secret: string }
+
+export type WebhookDeliveryStatus = 'pending' | 'retrying' | 'succeeded' | 'failed';
+export type WebhookDeliveryErrorCode =
+  | 'timeout' | 'connection_failed' | 'url_not_allowed' | 'http_error' | 'plan' | 'endpoint_disabled';
+export interface WebhookDelivery {
+  id: string; endpoint_id: string; event_id: string; event_type: WebhookDeliveryEventType;
+  /** e.g. order number `GS-1048` */
+  subject_label: string | null;
+  status: WebhookDeliveryStatus; attempts: number; next_attempt_at: string | null; last_attempt_at: string | null;
+  response_status: number | null; error_code: WebhookDeliveryErrorCode | null; duration_ms: number | null;
+  created_at: string;
+}
+/** §4.2 body (same event `id` across resends). `data.object` = the external-API resource of the subject. */
+export interface WebhookPayload {
+  id: string; type: WebhookDeliveryEventType; /** `2026-12-01` (WEBHOOK_API_VERSION) */ api_version: string; created_at: string;
+  store_id: string; data: { object: Record<string, unknown> };
+}
+export interface WebhookDeliveryDetail extends WebhookDelivery {
+  payload: WebhookPayload;
+  /** sent headers; `X-Storeplix-Signature` value redacted */
+  request_headers: Record<string, string>;
+  response_body_excerpt: string | null;
+}
+export interface WebhookDeliveryFilters {
+  endpoint_id?: string; status?: WebhookDeliveryStatus; event_type?: WebhookDeliveryEventType; cursor?: string;
+}
+export interface WebhookResendFailedResult { count: number }

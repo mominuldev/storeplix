@@ -171,6 +171,22 @@ import type {
   AddDomainInput,
   DomainListMeta,
   StoreDomain,
+  ApiKey,
+  ApiKeyCreated,
+  ApiScopeInfo,
+  CreateApiKeyInput,
+  CreateWebhookEndpointInput,
+  CursorMeta,
+  UpdateApiKeyInput,
+  UpdateWebhookEndpointInput,
+  WebhookDelivery,
+  WebhookDeliveryDetail,
+  WebhookDeliveryFilters,
+  WebhookEndpoint,
+  WebhookEventTypeInfo,
+  WebhookResendFailedResult,
+  WebhookSecret,
+  WebhookSecretRevealed,
 } from '@storeplix/types';
 import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
@@ -1125,6 +1141,74 @@ export function createApiClient(options: ApiClientOptions) {
           headers: { 'Idempotency-Key': idempotencyKey },
         }),
       payment: (id: string, opts?: Pick<RequestOptions, 'signal'>) => request<BillingPayment>(`/billing/payments/${enc(id)}`, { signal: opts?.signal }),
+    },
+
+    /**
+     * PHASE-8-4 §6.1 API keys (tenant-level, `developers.manage`). Writes: 402 `feature_not_in_plan` (Growth),
+     * 422 `scope_not_grantable` (details.scopes) / `limit_reached` (10 active keys) / `validation_failed`.
+     */
+    apiKeys: {
+      /** Active first, then revoked of the last 90 days. */
+      list: () => request<ApiKey[]>('/api-keys'),
+      /** 201; `plain_key` is returned only here — show it once. */
+      create: (input: CreateApiKeyInput) => request<ApiKeyCreated>('/api-keys', { method: 'POST', body: input }),
+      rename: (keyId: string, input: UpdateApiKeyInput) =>
+        request<ApiKey>(`/api-keys/${enc(keyId)}`, { method: 'PATCH', body: { name: input.name } }),
+      /** Idempotent; the row is kept with `status: 'revoked'`. */
+      revoke: (keyId: string) => request<ApiKey>(`/api-keys/${enc(keyId)}`, { method: 'DELETE' }),
+      /** Scope catalogue with `grantable` for the signed-in actor. */
+      scopes: () => request<ApiScopeInfo[]>('/api-scopes'),
+    },
+
+    /**
+     * PHASE-8-4 §6.1 outbound webhooks (store-scoped, `developers.manage`). Writes: 402 `feature_not_in_plan`;
+     * endpoints → 422 `webhook_url_not_allowed` / `limit_reached` (5 per store); reveal is throttled 10/min (429).
+     */
+    webhooks: {
+      eventTypes: () => request<WebhookEventTypeInfo[]>('/webhook-event-types'),
+      endpoints: {
+        list: (storeId: string) => request<WebhookEndpoint[]>(`${store(storeId)}/webhook-endpoints`),
+        create: (storeId: string, input: CreateWebhookEndpointInput) =>
+          request<WebhookEndpoint>(`${store(storeId)}/webhook-endpoints`, { method: 'POST', body: input }),
+        /** Partial; `is_active: false` disables (`disabled_reason: 'manual'`), `true` re-enables. */
+        update: (storeId: string, endpointId: string, input: UpdateWebhookEndpointInput) =>
+          request<WebhookEndpoint>(`${store(storeId)}/webhook-endpoints/${enc(endpointId)}`, { method: 'PATCH', body: input }),
+        /** Hard delete; its deliveries go with it. */
+        remove: (storeId: string, endpointId: string) =>
+          request<void>(`${store(storeId)}/webhook-endpoints/${enc(endpointId)}`, { method: 'DELETE' }),
+        /** Sends a `ping` now → 202 with the new delivery. */
+        test: (storeId: string, endpointId: string) =>
+          request<WebhookDelivery>(`${store(storeId)}/webhook-endpoints/${enc(endpointId)}/test`, { method: 'POST' }),
+      },
+      secret: {
+        get: (storeId: string) => request<WebhookSecret>(`${store(storeId)}/webhook-secret`),
+        /** Audited; 429 beyond 10/min. */
+        reveal: (storeId: string) => request<WebhookSecretRevealed>(`${store(storeId)}/webhook-secret/reveal`, { method: 'POST' }),
+        /** Returns the NEW secret once; the previous one keeps signing for 24 h (`previous_expires_at`). */
+        rotate: (storeId: string) => request<WebhookSecretRevealed>(`${store(storeId)}/webhook-secret/rotate`, { method: 'POST' }),
+      },
+      deliveries: {
+        /** Newest first, cursor pages of 25, without payload. */
+        list: (storeId: string, filters: WebhookDeliveryFilters = {}) =>
+          listOf<WebhookDelivery, CursorMeta>(
+            `${store(storeId)}/webhook-deliveries`,
+            {
+              'filter[endpoint_id]': filters.endpoint_id || undefined,
+              'filter[status]': filters.status,
+              'filter[event_type]': filters.event_type,
+              cursor: filters.cursor || undefined,
+            },
+            { next_cursor: null, prev_cursor: null, per_page: 25 },
+          ),
+        get: (storeId: string, deliveryId: string) =>
+          request<WebhookDeliveryDetail>(`${store(storeId)}/webhook-deliveries/${enc(deliveryId)}`),
+        /** 202: a new delivery row with the stored payload (same event id). */
+        resend: (storeId: string, deliveryId: string) =>
+          request<WebhookDelivery>(`${store(storeId)}/webhook-deliveries/${enc(deliveryId)}/resend`, { method: 'POST' }),
+        /** Failed deliveries of the last 24 h, max 100 per call. */
+        resendFailed: (storeId: string) =>
+          request<WebhookResendFailedResult>(`${store(storeId)}/webhook-deliveries/resend-failed`, { method: 'POST' }),
+      },
     },
 
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */
