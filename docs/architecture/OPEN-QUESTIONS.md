@@ -234,6 +234,7 @@ Each item has a **default** the team builds against until the PO answers. Answer
 | Q228 | Downgrade with several locations | Locations and stock stay visible, adjustable and countable; new transfers and new locations blocked; archive when empty | 8.8c scope | **Answered: proposed default accepted (product owner, 2026-11-24).** (PHASE-8-8C) |
 | Q229 | Return restock location | The order line's stored location | 8.8c scope | **Answered: proposed default accepted (product owner, 2026-11-24).** (PHASE-8-8C) |
 | Q230 | Later features (record only) | Approval, multi-location online selling / split fulfilment, shop pickup, per-location reorder, per-person warehouse access, transfer costs and carriers, blind / multi-person counts, count schedules, stock-loss expense, camera scanning | 8.8c scope | **Answered: proposed default accepted (product owner, 2026-11-24).** (PHASE-8-8C) |
+| Q231 | Platform staff two-step sign-in: always required (8.1) or switchable? | Switchable by a super admin (Platform settings → Security); off by default only when `APP_ENV=local`, on elsewhere unless turned off | Admin security | **Answered (product owner, 2026-11-25).** (PHASE-8-1-AMENDMENT-ADMIN-2FA) |
 
 ## Phase 5b defaults as built (Q45–Q63)
 All accepted by the PO on 2026-11-22 and built on `phase-5b-online-money`. Where the code is the evidence:
