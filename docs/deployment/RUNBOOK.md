@@ -40,6 +40,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 - Phase 8.5: `CAMPAIGNS_DEV_SINK` must be `false`/unset in production, and `CAMPAIGN_MAILER` must be a real transport (not `log`/`array`) when `SMS_DRIVER=revesms` — the API refuses to boot otherwise (S125). Set `CAMPAIGN_MAIL_FROM` to an address on the platform sending domain (SPF/DKIM/DMARC aligned, Q146).
 - Phase 8.6: no new fake flag. The 8.5 boot guards cover automation messages too (`CAMPAIGNS_DEV_SINK` off and a real `CAMPAIGN_MAILER` in production, S140); `REDIS_QUEUE_RETRY_AFTER` must stay 360 for `queue-automations`. Team notifications (low stock) use the normal transactional mailer on `queue-notifications`.
 - Phase 8.7: no new process, queue or env var. Expense receipts use the existing private disk (`storeplix.private_disk`, same as exports/documents) — in production it must be a private bucket (never the public media/CDN bucket); image receipts are re-encoded by the existing media worker (`ProcessMedia`, queue `media`). Store currency is locked once a store has an order or expense (409 `currency_locked`); a merchant who genuinely needs a change is a support case (no ops command).
+- Phase 8.8a: no new process or queue. `CheckOrderRisk` runs on queue `default`; the checkout OTP SMS uses the existing SMS driver and counts against `sms_per_month` (on SMS failure checkout fails open into a held order, so an SMS outage shows up as `call_first` holds with reason `otp_unavailable`). `FRAUD_GUARD_DEFAULT_ENABLED` (default `true`) is the guard's on/off default for stores without a settings row — leave it unset in production (the test suite sets it to `false`). No courier or third-party call is made by the guard. Phones are masked in logs.
 
 ---
 
@@ -280,6 +281,8 @@ Redis cache.
 | `automations:prune-runs` | daily | Phase 8.6: delete `automation_runs` (+ steps) older than 90 days and `automation_conversions` older than 13 months |
 | `expenses:repeat` | hourly, no overlap | Phase 8.7: active `expense_recurrences` due today (store tz) → one copy of the series' latest occurrence per due date (`GenerateRecurringExpenses`, queue `default`, idempotent by `UNIQUE(recurrence_id, spent_on)`, catches up after an outage, max 12 per run) |
 | `expenses:prune-receipts` | daily 03:30 UTC | Phase 8.7: unattached `expense_receipt` media older than 24 h → row deleted (guarded by NOT EXISTS), private object deleted after commit |
+| `fraud:resolve-stale` | every 5 min, no overlap | Phase 8.8a: orders with `guard_hold = 'checking'` older than 10 min (check job lost) → `CheckOrderRisk` re-dispatched per tenant with own-shop data only (idempotent: one check per order). A growing count of `checking` orders means the `default` queue is not draining |
+| `fraud:prune` | daily | Phase 8.8a: delete `checkout_otps` older than 24 h and `fraud_guard_events` older than 13 months |
 | `analytics:aggregate` | hourly at :20 Asia/Dhaka, no overlap, one server, in-process | Phase 8.2 nightly analytics snapshot + 35-day restatement; later runs are the catch-up (§12) |
 
 Without the scheduler unpaid holds never expire, links never expire and a lost IPN is never reconciled. The `payments:*`,

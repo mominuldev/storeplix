@@ -1,8 +1,25 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.15.0
+  version: 1.16.0
   description: |
+    1.16.0 (2026-11-24, Phase 8.8a, PHASE-8-8-CONTRACT.md, ADR 0022). Fake-order guard from this shop's own orders,
+    shipments and returns only (no courier lookups, no cross-shop data). New tag fraud-guard (fraud.manage, a new
+    grantable sensitive permission; writes and the number check need the fake_order_guard plan feature → 402
+    feature_not_in_plan, now enforced): GET|PATCH /stores/{store}/fraud-guard/settings, POST .../settings/reset,
+    GET .../fraud-guard/overview, GET .../fraud-guard/events, GET|POST .../fraud-guard/blocked-numbers,
+    DELETE .../blocked-numbers/{entry}, POST .../fraud-guard/check (limiter fraud-check 30/min per user). New
+    POST /stores/{store}/orders/{order}/guard/release (orders.process; 409 order_not_held). Storefront: POST
+    /storefront/checkout/otp (limiter checkout-otp); CheckoutInput gains otp_code; checkout 422 otp_required,
+    otp_invalid (details.attempts_left), cod_unavailable, order_limit_reached. **Changed shapes**: Customer and
+    OrderCustomerSummary gain risk (CustomerRisk); OrderSummary/Order gain guard (OrderGuard | null); OrderEvent.type
+    gains guard; order list filter[risk], filter[guard_hold] and meta.counts.held; customer list filter[risk].
+    **Changed meaning**: the risk class used by campaigns (risk_breakdown, exclude.risky), checkout recovery skip_risky
+    and the automation condition customer.risk is now RiskTier (P88-4; new is counted as good in risk_breakdown).
+    **New 409 order_held** on confirm, bulk confirm (per-order skip), ready, courier booking (single and bulk) and the
+    external API transition to confirmed while guard.hold is set. New error codes order_held, order_not_held,
+    already_blocked (409), cod_unavailable, order_limit_reached, otp_required, otp_invalid (422). PermissionKey gains
+    fraud.manage.
     1.15.0 (2026-11-24, Phase 8.7, PHASE-8-7-CONTRACT.md, ADR 0021). New tag expenses (expenses.manage, a new
     grantable permission; no plan gate): GET|POST /stores/{store}/expenses, GET /stores/{store}/expenses/summary,
     GET .../expenses/export (text/csv), POST .../expenses/receipts (multipart; JPG/PNG/WebP/PDF ≤ 5 MB, private),
@@ -162,6 +179,8 @@ tags:
   description: 'Phase 8.6: recipe automations, run log and checkout recovery (PHASE-8-6 §9)'
 - name: expenses
   description: 'Phase 8.7: expenses ledger, receipts, monthly repeat and CSV export (PHASE-8-7 §8)'
+- name: fraud-guard
+  description: 'Phase 8.8a: fake-order guard settings, blocklist, number check and decision log (PHASE-8-8 §8)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -3705,6 +3724,12 @@ paths:
           type: string
           format: date-time
       - in: query
+        name: filter[risk]
+        required: false
+        schema:
+          type: string
+        description: PHASE-8-8 §10.3. Comma list of RiskTier (own-shop counters, P88-4)
+      - in: query
         name: sort
         schema:
           type: string
@@ -4729,7 +4754,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
-          description: '`cart_empty`, `out_of_stock` (`items.N.quantity`), `coupon_invalid`, `payment_method_unavailable`, `validation_failed`'
+          description: '`cart_empty`, `out_of_stock` (`items.N.quantity`), `coupon_invalid`, `payment_method_unavailable`, `validation_failed`;
+            PHASE-8-8 (COD only, checked before stock reservation): `cod_unavailable` (blocked number; neutral message,
+            online payment still works), `order_limit_reached` (daily COD limit per phone), `otp_required`, `otp_invalid`
+            (`details.attempts_left`)'
           content:
             application/json:
               schema:
@@ -5296,6 +5324,20 @@ paths:
         schema:
           $ref: '#/components/schemas/Ulid'
       - in: query
+        name: filter[risk]
+        required: false
+        schema:
+          type: string
+        description: PHASE-8-8. Comma list of RiskTier (guard.tier, else customer.risk.tier)
+      - in: query
+        name: filter[guard_hold]
+        required: false
+        schema:
+          type: string
+          enum:
+          - '1'
+        description: PHASE-8-8. `1` = held orders only (guard.hold set)
+      - in: query
         name: filter[has_shipment]
         required: false
         schema:
@@ -5503,6 +5545,7 @@ paths:
       summary: Bulk confirm / mark packed
       operationId: bulkOrders
       description: O A S. Each order its own transaction; invalid states skipped. Foreign ids → 422, nothing applied.
+        PHASE-8-8 held orders are skipped with reason order_held.
       security:
       - sessionCookie: []
       parameters:
@@ -5668,7 +5711,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`invalid_state_transition`'
+          description: '`invalid_state_transition`, or `order_held` (PHASE-8-8: guard.hold is set; release first)'
           content:
             application/json:
               schema:
@@ -5716,7 +5759,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`invalid_state_transition`'
+          description: '`invalid_state_transition`, or `order_held` (PHASE-8-8: guard.hold is set; release first)'
           content:
             application/json:
               schema:
@@ -7431,7 +7474,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`shipment_booked`, `invalid_state_transition` or idempotency conflicts'
+          description: '`shipment_booked`, `invalid_state_transition`, `order_held` (PHASE-8-8) or idempotency conflicts'
           content:
             application/json:
               schema:
@@ -7450,7 +7493,8 @@ paths:
       - couriers
       summary: Book up to 500 parcels
       operationId: bulkBookShipments
-      description: Shipments (PHASE-5B §4.7). O A S unless stated. Plan feature `bulk_courier_booking`.
+      description: Shipments (PHASE-5B §4.7). O A S unless stated. Plan feature `bulk_courier_booking`. PHASE-8-8 held
+        orders fail per order with order_held.
       security:
       - sessionCookie: []
       parameters:
@@ -12594,7 +12638,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`invalid_state_transition`'
+          description: '`invalid_state_transition`, or `order_held` (PHASE-8-8: → confirmed while guard.hold is set)'
           content:
             application/json:
               schema:
@@ -15020,8 +15064,518 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/fraud-guard/settings:
+    get:
+      tags:
+      - fraud-guard
+      summary: Get fake-order guard settings
+      operationId: getFraudGuardSettings
+      description: Needs fraud.manage (PHASE-8-8 P88-14; staff → 403). Readable without the fake_order_guard plan feature.
+        The row is created lazily with the §4 defaults on first read.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FraudGuardSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - fraud-guard
+      summary: Update fake-order guard settings
+      operationId: updateFraudGuardSettings
+      description: Needs fraud.manage and the fake_order_guard plan feature (402 feature_not_in_plan). Partial; integers
+        in the §4 ranges, advance_below ≥ hold_below, advance_expiry_minutes and duplicate_window_hours in their sets.
+        Changes apply to later checks only. Audited fraud.settings_updated. Impersonation → 403 impersonation_read_only.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFraudGuardSettingsInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FraudGuardSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (fake_order_guard)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/fraud-guard/settings/reset:
+    post:
+      tags:
+      - fraud-guard
+      summary: Reset guard settings to the recommended defaults
+      operationId: resetFraudGuardSettings
+      description: Needs fraud.manage and the fake_order_guard plan feature. Writes the §4 defaults ("Reset to
+        recommended"). Audited fraud.settings_updated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Settings after reset
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FraudGuardSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (fake_order_guard)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/fraud-guard/overview:
+    get:
+      tags:
+      - fraud-guard
+      summary: Guard KPIs for a month
+      operationId: getFraudGuardOverview
+      description: Needs fraud.manage. Rules on (of 6), orders checked, stopped (held, blocked, duplicates, limited),
+        advance collected (Σ paid guard advance links, Q191) and active blocklist size. No plan gate on reads.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: month
+        required: false
+        schema:
+          $ref: '#/components/schemas/YearMonth'
+        description: Store-local month; default the current month.
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FraudGuardOverview'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/fraud-guard/events:
+    get:
+      tags:
+      - fraud-guard
+      summary: Guard decision log
+      operationId: listFraudGuardEvents
+      description: Needs fraud.manage. Newest first, cursor pages of 50. Phones are masked. Rows older than 13 months are
+        pruned (fraud:prune).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[type]
+        required: false
+        schema:
+          type: string
+        description: Comma list of FraudGuardEventType
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FraudGuardEvent'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/fraud-guard/blocked-numbers:
+    get:
+      tags:
+      - fraud-guard
+      summary: List blocked numbers
+      operationId: listBlockedNumbers
+      description: Needs fraud.manage. Active entries (not unblocked), newest first, cursor pages of 50. `phone` is null
+        without customers.view; `phone_masked` always.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 13
+        description: Phone digits; suffix match on the normalised phone
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Blocked numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BlockedNumber'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - fraud-guard
+      summary: Block a number
+      operationId: createBlockedNumber
+      description: Needs fraud.manage and the fake_order_guard plan feature. Phone is a BD mobile (any of 017…, +88017…,
+        88017…; stored as 8801XXXXXXXXX); note ≤ 200, no control characters. Reason manual, source staff. Cancels
+        nothing; `open_orders_count` = open orders of that phone. The phone can no longer place COD orders on the
+        storefront (422 cod_unavailable); online payment still works. Audited fraud.number_blocked.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockNumberInput'
+      responses:
+        '201':
+          description: Blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BlockedNumberCreated'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (fake_order_guard)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`already_blocked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/fraud-guard/blocked-numbers/{entry}:
+    parameters:
+    - $ref: '#/components/parameters/BlockedNumberPath'
+    delete:
+      tags:
+      - fraud-guard
+      summary: Unblock a number
+      operationId: deleteBlockedNumber
+      description: Needs fraud.manage and the fake_order_guard plan feature. Sets unblocked_at (the row is kept); the
+        repeat-returners rule never re-adds that phone (P88-10). Audited fraud.number_unblocked.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Unblocked
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (fake_order_guard)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/fraud-guard/check:
+    post:
+      tags:
+      - fraud-guard
+      summary: Check a number
+      operationId: checkNumber
+      description: Needs fraud.manage and the fake_order_guard plan feature. Own-shop record of one phone (this store's
+        orders, shipments and returns only; no courier or cross-shop data). Limiter fraud-check 30/min per user (429).
+        403 in impersonation sessions. Audited fraud.number_checked (masked phone and tier only).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - phone
+              properties:
+                phone:
+                  type: string
+                  description: BD mobile
+      responses:
+        '200':
+          description: Record
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NumberCheck'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (fake_order_guard)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/orders/{order}/guard/release:
+    parameters:
+    - $ref: '#/components/parameters/OrderPath'
+    post:
+      tags:
+      - orders
+      summary: Release a guard hold
+      operationId: releaseOrderHold
+      description: O A S with orders.process (PHASE-8-8 §5.3). Clears guard.hold (call_first, advance or checking); the
+        order stays pending. Releasing an advance hold cancels the guard's active payment link (so its cancel-if-unpaid
+        can't cancel the order later). "Confirm without advance" = release then
+        confirm. Audited fraud.hold_released; order event guard; guard event released.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`order_not_held`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/checkout/otp:
+    post:
+      tags:
+      - storefront
+      summary: Send a checkout verification code
+      operationId: storefrontCheckoutOtp
+      description: 'PHASE-8-8 §7 (P88-13). When the store is guarded and the OTP rule is on, sends a 6-digit code by
+        SMS (template checkout_otp; counts against sms_per_month) and answers required true for any number, so the
+        response is the same for blocked, known and unknown numbers (no oracle); otherwise required false. Only
+        checkout decides whether a code is needed (COD orders from numbers with no delivered order at this store). Code: HMAC-hashed, 5-minute TTL, 5 attempts, resend after 60 s. SMS allowance exhausted or
+        SMS failure → required false (fail open; the order is then held call_first with reason otp_unavailable).
+        Limiter checkout-otp: 5/h per store+phone, 20/h per store+IP (429).'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontPreview'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutOtpInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CheckoutOtpResponse'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` (unknown host)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
+    BlockedNumberPath:
+      in: path
+      name: entry
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
     ExpensePath:
       in: path
       name: expense
@@ -16591,11 +17145,13 @@ components:
       type: string
       description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable. Phase 8.4
         adds developers.manage (owner and admin; grantable to custom roles). Phase 8.7 adds expenses.manage (owner and
-        admin; grantable; sensitive).
+        admin; grantable; sensitive). Phase 8.8a adds fraud.manage (group orders, after orders.refund; owner and admin;
+        grantable; sensitive; requires orders.view).
       enum:
       - orders.view
       - orders.process
       - orders.refund
+      - fraud.manage
       - shipments.manage
       - shipments.cancel
       - products.edit
@@ -19443,9 +19999,12 @@ components:
       - updated_at
       - created_by
       - marketing
+      - risk
       properties:
         marketing:
           $ref: '#/components/schemas/CustomerMarketing'
+        risk:
+          $ref: '#/components/schemas/CustomerRisk'
         delivered_orders_count:
           type: integer
         returned_orders_count:
@@ -21454,6 +22013,13 @@ components:
       - payment_method
       - expected_total_amount
       properties:
+        otp_code:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{6}$
+          description: PHASE-8-8 P88-13. Required when POST /storefront/checkout/otp answered required true for this phone
+            and the order is COD (missing → 422 otp_required; wrong → 422 otp_invalid)
         advance_gateway:
           oneOf:
           - $ref: '#/components/schemas/GatewayProvider'
@@ -21764,6 +22330,7 @@ components:
       - delivered_orders_count
       - returned_orders_count
       - total_spent_amount
+      - risk
       properties:
         id:
           oneOf:
@@ -21787,7 +22354,10 @@ components:
           type: integer
           minimum: 0
           description: Paisa (integer)
-      description: Counts are for this shop only (Q23).
+        risk:
+          $ref: '#/components/schemas/CustomerRisk'
+      description: Counts are for this shop only (Q23). risk is the own-shop tier (PHASE-8-8 §6.5) of the customer, or of
+        the phone when id is null.
     OrderSummary:
       type: object
       required:
@@ -21810,7 +22380,13 @@ components:
       - tags
       - placed_at
       - updated_at
+      - guard
       properties:
+        guard:
+          oneOf:
+          - $ref: '#/components/schemas/OrderGuard'
+          - type: 'null'
+          description: PHASE-8-8 §6.5 fake-order guard state; null when the order has no check and no hold
         shipment:
           oneOf:
           - type: object
@@ -22013,6 +22589,7 @@ components:
           - items_edited
           - return
           - document
+          - guard
         from_status:
           oneOf:
           - $ref: '#/components/schemas/OrderStatus'
@@ -22449,7 +23026,7 @@ components:
             type: object
             additionalProperties:
               type: integer
-            description: 'Keys: ''all'' and every OrderStatus'
+            description: 'Keys: ''all'', every OrderStatus and ''held'' (PHASE-8-8: orders with guard.hold set)'
     ManualOrderInput:
       type: object
       required:
@@ -28412,7 +28989,7 @@ components:
       properties:
         risky:
           type: boolean
-          description: Skip customers whose risk class is `risky` (P85-25)
+          description: Skip customers whose risk tier is `risky` (PHASE-8-8 P88-4; was P85-25)
         ordered_within_days:
           type:
           - integer
@@ -28866,6 +29443,7 @@ components:
           minimum: 0
         risk_breakdown:
           type: object
+          description: PHASE-8-8 P88-4 tiers; tier new (no parcels) is counted in good.
           required:
           - good
           - careful
@@ -29584,7 +30162,7 @@ components:
         skip_risky:
           type: boolean
           default: true
-          description: derived condition customer.risk is_not risky (§11.1 C2)
+          description: derived condition customer.risk is_not risky (§11.1 C2); tier per PHASE-8-8 P88-4
     ThankYouSettings:
       type: object
       additionalProperties: false
@@ -30385,3 +30963,577 @@ components:
           enum:
           - checkout
           - cart
+    RiskTier:
+      type: string
+      description: 'PHASE-8-8 P88-4 tier from the own-shop record (this store only): total 0 → new; total < min_parcels →
+        careful if returned ≥ 1 else good; rate < hold_below → risky; rate < advance_below → careful; else good.
+        Replaces the 8.5 risk class (P85-25) everywhere.'
+      enum:
+      - good
+      - careful
+      - risky
+      - new
+    CustomerRisk:
+      type: object
+      description: Own-shop risk of a customer (or of the order phone). rate = whole percent delivered ÷ total, null when
+        total is 0.
+      required:
+      - tier
+      - rate
+      - delivered
+      - total
+      properties:
+        tier:
+          $ref: '#/components/schemas/RiskTier'
+        rate:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        delivered:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+          description: delivered + returned parcels (cancelled-before-shipping excluded)
+    GuardHold:
+      type: string
+      description: PHASE-8-8 P88-2 hold flag on a pending order (no new order status). checking = placed, check pending.
+      enum:
+      - call_first
+      - advance
+      - checking
+    GuardReason:
+      type: string
+      description: PHASE-8-8 §5.4 reason codes (rendered by the dashboard).
+      enum:
+      - rate_below_hold
+      - rate_below_advance
+      - few_parcels
+      - new_number
+      - duplicate
+      - blocked_number
+      - no_gateway
+      - otp_unavailable
+    GuardRecordSource:
+      type: object
+      required:
+      - key
+      - delivered
+      - total
+      properties:
+        key:
+          type: string
+          enum:
+          - shop
+          description: Only this shop's own parcels (P88-1); no courier sources.
+        delivered:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+    OrderGuard:
+      type: object
+      description: 'PHASE-8-8 §6.5. While hold = checking the check has not run: tier, rate, decision, record and
+        checked_at are null and reasons is empty. A check without actions (manual or online-paid order, guard off, no
+        plan) has decision skipped and hold null.'
+      required:
+      - hold
+      - tier
+      - rate
+      - reasons
+      - decision
+      - record
+      - payment_link_id
+      - checked_at
+      properties:
+        hold:
+          oneOf:
+          - $ref: '#/components/schemas/GuardHold'
+          - type: 'null'
+        tier:
+          oneOf:
+          - $ref: '#/components/schemas/RiskTier'
+          - type: 'null'
+        rate:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuardReason'
+        decision:
+          oneOf:
+          - type: string
+            enum:
+            - none
+            - hold
+            - advance
+            - skipped
+          - type: 'null'
+        record:
+          oneOf:
+          - type: object
+            required:
+            - total
+            - delivered
+            - sources
+            properties:
+              total:
+                type: integer
+                minimum: 0
+              delivered:
+                type: integer
+                minimum: 0
+              sources:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GuardRecordSource'
+          - type: 'null'
+        payment_link_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+          description: The guard's advance link (decision advance)
+        checked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    FraudGuardSettings:
+      type: object
+      description: PHASE-8-8 §4 / §6.1 (defaults in brackets). advance_below ≥ hold_below.
+      required:
+      - enabled
+      - hold_enabled
+      - hold_below
+      - advance_enabled
+      - advance_below
+      - advance_expiry_minutes
+      - advance_cancel_if_unpaid
+      - otp_enabled
+      - block_returners
+      - block_after_returns
+      - duplicates_enabled
+      - duplicate_window_hours
+      - daily_limit_enabled
+      - daily_limit
+      - min_parcels
+      - updated_by
+      - updated_at
+      properties:
+        enabled:
+          type: boolean
+          description: '[true]'
+        hold_enabled:
+          type: boolean
+          description: '[true] Hold risky orders for a call'
+        hold_below:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: '[60] percent'
+        advance_enabled:
+          type: boolean
+          description: '[true] Ask for the delivery charge in advance'
+        advance_below:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: '[75] percent'
+        advance_expiry_minutes:
+          type: integer
+          enum:
+          - 120
+          - 360
+          - 1440
+          - 2880
+          description: '[1440]'
+        advance_cancel_if_unpaid:
+          type: boolean
+          description: '[true]'
+        otp_enabled:
+          type: boolean
+          description: '[true] Verify new numbers with OTP'
+        block_returners:
+          type: boolean
+          description: '[true] Block repeat returners'
+        block_after_returns:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: '[3]'
+        duplicates_enabled:
+          type: boolean
+          description: '[true] Catch duplicate orders'
+        duplicate_window_hours:
+          type: integer
+          enum:
+          - 6
+          - 12
+          - 24
+          - 48
+          - 72
+          description: '[24]'
+        daily_limit_enabled:
+          type: boolean
+          description: '[true] Limit orders per phone'
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: '[3] storefront COD orders per phone per store day'
+        min_parcels:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: '[3] no ratio verdict below this many parcels'
+        updated_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    UpdateFraudGuardSettingsInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Partial FraudGuardSettings (without updated_by / updated_at). Unknown keys → 422.
+      properties:
+        enabled:
+          type: boolean
+        hold_enabled:
+          type: boolean
+        hold_below:
+          type: integer
+          minimum: 1
+          maximum: 100
+        advance_enabled:
+          type: boolean
+        advance_below:
+          type: integer
+          minimum: 1
+          maximum: 100
+        advance_expiry_minutes:
+          type: integer
+          enum:
+          - 120
+          - 360
+          - 1440
+          - 2880
+        advance_cancel_if_unpaid:
+          type: boolean
+        otp_enabled:
+          type: boolean
+        block_returners:
+          type: boolean
+        block_after_returns:
+          type: integer
+          minimum: 1
+          maximum: 20
+        duplicates_enabled:
+          type: boolean
+        duplicate_window_hours:
+          type: integer
+          enum:
+          - 6
+          - 12
+          - 24
+          - 48
+          - 72
+        daily_limit_enabled:
+          type: boolean
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        min_parcels:
+          type: integer
+          minimum: 1
+          maximum: 20
+    BlockedNumber:
+      type: object
+      required:
+      - id
+      - phone_masked
+      - phone
+      - customer
+      - reason
+      - note
+      - source
+      - returned_count
+      - created_by
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        phone_masked:
+          type: string
+          example: 01712•••678
+        phone:
+          type:
+          - string
+          - 'null'
+          description: 8801XXXXXXXXX; null without customers.view
+        customer:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        reason:
+          type: string
+          enum:
+          - manual
+          - repeat_returns
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        source:
+          type: string
+          enum:
+          - staff
+          - auto
+        returned_count:
+          type: integer
+          minimum: 0
+          description: Own-shop returned parcels of this phone now ("n returns at your shop")
+        created_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - role_label
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              role_label:
+                type: string
+          - type: 'null'
+          description: null for source auto
+        created_at:
+          type: string
+          format: date-time
+    BlockedNumberCreated:
+      allOf:
+      - $ref: '#/components/schemas/BlockedNumber'
+      - type: object
+        required:
+        - open_orders_count
+        properties:
+          open_orders_count:
+            type: integer
+            minimum: 0
+            description: Open (not shipped, not cancelled) orders of that phone; nothing is cancelled
+    BlockNumberInput:
+      type: object
+      required:
+      - phone
+      properties:
+        phone:
+          type: string
+          description: BD mobile; normalised to 8801XXXXXXXXX
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+    NumberCheck:
+      type: object
+      description: PHASE-8-8 §6.3 own-shop record of one phone.
+      required:
+      - phone_masked
+      - tier
+      - rate
+      - delivered
+      - total
+      - sources
+      - blocked
+      - last_return_on
+      properties:
+        phone_masked:
+          type: string
+        tier:
+          $ref: '#/components/schemas/RiskTier'
+        rate:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        delivered:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuardRecordSource'
+        blocked:
+          type: boolean
+        last_return_on:
+          type:
+          - string
+          - 'null'
+          format: date
+    FraudGuardOverview:
+      type: object
+      description: PHASE-8-8 §6.4 for one store-local month.
+      required:
+      - month
+      - rules_on
+      - rules_total
+      - orders_checked
+      - stopped
+      - advance_collected_amount
+      - currency
+      - blocked_count
+      properties:
+        month:
+          $ref: '#/components/schemas/YearMonth'
+        rules_on:
+          type: integer
+          minimum: 0
+          maximum: 6
+        rules_total:
+          type: integer
+          const: 6
+        orders_checked:
+          type: integer
+          minimum: 0
+        stopped:
+          type: object
+          required:
+          - held
+          - blocked
+          - duplicates
+          - limited
+          properties:
+            held:
+              type: integer
+              minimum: 0
+            blocked:
+              type: integer
+              minimum: 0
+              description: COD refused at checkout for a blocked number
+            duplicates:
+              type: integer
+              minimum: 0
+            limited:
+              type: integer
+              minimum: 0
+              description: COD refused at checkout by the daily limit
+        advance_collected_amount:
+          type: integer
+          minimum: 0
+          description: Paisa (integer); Σ paid guard advance links in the month (Q191)
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+        blocked_count:
+          type: integer
+          minimum: 0
+          description: Active blocklist entries now
+    FraudGuardEventType:
+      type: string
+      enum:
+      - held
+      - advance_asked
+      - advance_paid
+      - released
+      - duplicate
+      - blocked_checkout
+      - limit_reached
+      - auto_blocked
+      - otp_failed
+    FraudGuardEvent:
+      type: object
+      required:
+      - id
+      - type
+      - order
+      - phone_masked
+      - detail
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          $ref: '#/components/schemas/FraudGuardEventType'
+        order:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - number
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+          - type: 'null'
+        phone_masked:
+          type: string
+        detail:
+          type: object
+          additionalProperties: true
+          description: Type-specific (e.g. tier, rate, reasons, returned_count); never a raw phone
+        created_at:
+          type: string
+          format: date-time
+    CheckoutOtpInput:
+      type: object
+      required:
+      - phone
+      properties:
+        phone:
+          type: string
+          description: BD mobile; normalised to 8801XXXXXXXXX
+    CheckoutOtpResponse:
+      type: object
+      required:
+      - required
+      - expires_at
+      - resend_after_seconds
+      properties:
+        required:
+          type: boolean
+          description: true → send `otp_code` with POST /storefront/checkout (COD only)
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        resend_after_seconds:
+          type: integer
+          minimum: 0

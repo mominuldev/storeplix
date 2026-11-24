@@ -96,7 +96,7 @@ from other Storeplix shops or from any courier.
 | P88-13 | **Checkout OTP**: when the rule is on and the order is COD and the phone is **new to this store** (no customer with ≥ 1 delivered order), checkout requires a 6-digit code: `POST /storefront/checkout/otp` sends it (SMS template `checkout_otp`, counts against `SmsPerMonth`), `POST /storefront/checkout` carries `otp_code`; missing → 422 `otp_required`, wrong → 422 `otp_invalid`. 5-minute TTL, hashed (HMAC), 5 attempts, resend 60 s, 5 sends per phone per hour per store, 20 per IP per hour. Allowance exhausted or SMS failure → **fail open**: no OTP, the order is placed and held `call_first (otp_unavailable)` | Figma rule "New numbers only", 6 digits (Q186); never lose a sale to an SMS outage |
 | P88-14 | **Permission** `fraud.manage` (new, group `orders`, sensitive, O ✓ A ✓ S ✗): guard settings, blocklist, "Check a number", decision log. Releasing a hold, asking an advance and confirming stay `orders.process`; seeing tiers/records on orders and customers stays `orders.view` / `customers.view` | Settings and the lookup oracle are sensitive; daily order work isn't |
 | P88-15 | **Plan**: enforce the seeded `fake_order_guard` (Starter, Growth). Without it: no checks with actions, no checkout rules, settings read-only with an upgrade note; **tiers and own-shop records still show** (they replaced the 8.5 rule, which had no plan gate) | Existing seed (PHASE-2 §2, PHASE-7 P7 "when a module lands, its contract adds the gate") |
-| P88-16 | **Privacy**: no phone leaves the platform; the storefront privacy page gains one fixed sentence (Q189); no phone in logs (masked) | PDP Act 2026; SECURITY T38 |
+| P88-16 | **Privacy**: no phone leaves the platform; checkout shows one fixed sentence under the cash-on-delivery note (Q189; the privacy page is merchant-written); no phone in logs (masked) | PDP Act 2026; SECURITY T38 |
 | P88-17 | **Audit**: settings changes, block/unblock, release, override confirm, check-a-number are audited (`fraud.*`); automatic decisions write `order_events` type `guard` (actor `system`) and `fraud_guard_events` (§4) | Every hold must be explainable |
 
 ### 1.1 Product-owner questions (OPEN-QUESTIONS Q184–Q199; proposed defaults, awaiting the PO)
@@ -108,7 +108,7 @@ from other Storeplix shops or from any courier.
 | Q186 | OTP length and scope (Figma: guard 6 digits "new numbers only"; Settings 4 digits "COD above ৳ 1,500") | 6 digits; COD orders from numbers with no delivered order at this shop; no amount rule |
 | Q187 | Tier thresholds and grace | Hold below 60 %, advance below 75 %, no verdict below 3 parcels (P88-4) |
 | Q188 | Daily limit hit: refuse only, or also block permanently (Figma "Auto · Daily limit")? | Refuse that order only (P88-11) |
-| Q189 | Storefront privacy sentence | "To prevent fake orders, we check your phone number's order and delivery history with this shop." |
+| Q189 | Storefront privacy sentence | "To prevent fake orders, we check your phone number's delivery record with this shop." |
 | Q190 | VPN / proxy rule (Figma, off by default) | Hidden; needs a provider |
 | Q191 | "Delivery charges saved" KPI is an estimate | Replaced by "Advance collected" (real, from paid guard links); "Orders checked" and "Fake orders stopped" kept |
 | Q192 | Settings → Payments "Advance payment rules" (order-total, first-order rules) and its "If customer is Risky…" rule | Not built in 8.8a; the guard's advance rule is the only automatic advance |
@@ -204,7 +204,7 @@ when absent. `CustomerRisk` becomes a thin deprecated alias to `RiskTier` for on
   flow already confirms the order.
 - Advance link **expired / cancelled by merchant** → `guard_hold = call_first` (if the order wasn't cancelled by
   cancel-if-unpaid).
-- `POST …/orders/{order}/guard/release` (`orders.process`) → clears the hold, audit `fraud.hold_released`, event
+- `POST …/orders/{order}/guard/release` (`orders.process`) → clears the hold (an `advance` hold also cancels the guard's active link), audit `fraud.hold_released`, event
   `released`. "Confirm without advance" in the UI = release then confirm.
 - Cancel of a held order works as today (any reason incl. `fake_order`).
 
@@ -251,7 +251,8 @@ delivered, total}]}, payment_link_id, checked_at} | null`. Order list filters `f
 
 ## 7. Storefront checkout (owner API + WEB storefront)
 - `POST /storefront/checkout/otp` `{phone}` → 200 `{required: bool, expires_at|null, resend_after_seconds}`; required
-  false when the rule doesn't apply (never reveals whether the number is blocked or known; same response time budget).
+  true for any number when the store's OTP rule applies (checkout alone decides if a code is needed), so it never
+  reveals whether the number is blocked or known; false when the rule doesn't apply.
 - `POST /storefront/checkout` gains `otp_code?`. Errors: 422 `otp_required`, `otp_invalid` (attempts left in details),
   `cod_unavailable`, `order_limit_reached`. Blocked/limit checks run before stock reservation; only for
   `payment_method = cod`.
@@ -396,8 +397,8 @@ existing order, courier, campaign and automation suites green with the tier chan
 decision log, order list column/filter/chip, order detail banners (advance, call_first, checking), Delivery record card
 (no Steadfast/RedX bars), customer Risk + block card, nav item by permission, plan note, query
 invalidation `[tenantId, storeId, 'orders']` after release; storefront: OTP step, COD-unavailable state, limit message.
-**QA (Playwright `tests/e2e/specs/phase8-8.*.spec.ts`; fake courier/SMS/gateway)**: a phone with 2 delivered / 3
-returned at the shop places a storefront COD order → held "Call first" with reasons → booking refused → release →
+**QA (Playwright `tests/e2e/specs/phase8-8.*.spec.ts`; fake courier/SMS/gateway)**: a phone with 1 delivered / 2
+returned at the shop (33 %, below the repeat-returner threshold) places a storefront COD order → held "Call first" with reasons → booking refused → release →
 booking works; a careful buyer → advance link sent → fake gateway pays → order confirmed; blocked number → COD disabled,
 online works; 4th COD order of a phone today → limit message; new number → OTP via the message sink → order placed;
 duplicate order → held as duplicate; staff can't open the guard page; Free shop shows the plan note; 390 px screenshots
