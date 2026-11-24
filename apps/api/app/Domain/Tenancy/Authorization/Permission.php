@@ -108,7 +108,7 @@ enum Permission: string
             self::ReportsView => 'Reports, payouts & COD settlements',
             self::DataExport => 'Export customer phone numbers',
             self::DataImport => 'Import products & customers (CSV)',
-            self::MarketingManage => 'Coupons & campaigns', // PHASE-8-5 §2.1 (sensitive)
+            self::MarketingManage => 'Coupons, campaigns & automations', // PHASE-8-6 §2.1 (sensitive; amends 8.5)
             self::SettingsManage => 'Change shop settings',
             self::IntegrationsManage => 'Connect payments & couriers',
             self::DomainsManage => 'Manage domains',

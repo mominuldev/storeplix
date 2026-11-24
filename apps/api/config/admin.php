@@ -4,7 +4,7 @@
 $list = static fn (string $value): array => array_values(array_filter(array_map('trim', explode(',', $value))));
 
 return [
-    'app_url' => rtrim((string) env('ADMIN_APP_URL', 'http://localhost:5174'), '/'),
+    'app_url' => rtrim((string) env('ADMIN_APP_URL', 'http://localhost:5184'), '/'),
     'email_domains' => $list((string) env('ADMIN_EMAIL_DOMAINS', in_array(env('APP_ENV'), ['local', 'testing'], true) ? '' : 'storeplix.com')),
     'ip_allowlist' => $list((string) env('ADMIN_IP_ALLOWLIST', '')),
     'session_idle_minutes' => (int) env('ADMIN_SESSION_IDLE_MINUTES', 30),

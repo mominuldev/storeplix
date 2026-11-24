@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Staff\Roles;
 
+use App\Domain\Automations\Models\AutomationRun;
 use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Catalog\Models\ProductVariant;
@@ -118,6 +119,19 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/customers/{customer}/marketing-opt-out' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'DELETE api/v1/stores/{store}/customers/{customer}/marketing-opt-out/{channel}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'GET api/v1/dev/stores/{store}/message-sink' => ['owner' => 404, 'admin' => 404, 'staff' => 403],
+        // Phase 8.6 (PHASE-8-6 §2.1, §9.1): marketing.manage → O and A allowed, S 403.
+        'GET api/v1/stores/{store}/automations' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/automations' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/automations/{automation}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/automations/{automation}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/automations/{automation}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/automations/{automation}/enable' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/automations/{automation}/disable' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/automations/{automation}/dry-run' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/automations/{automation}/test-message' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'GET api/v1/stores/{store}/automations/{automation}/stats' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/automation-runs' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/automation-runs/{run}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -269,6 +283,26 @@ class PermissionParityTest extends TestCase
         $campaign = $this->req($h, 'POST', "{$base}/campaigns", $campaignBody)->assertCreated()->json('data.id');
         $scheduledCampaign = $this->req($h, 'POST', "{$base}/campaigns", $campaignBody)->assertCreated()->json('data.id');
         $this->req($h, 'POST', "{$base}/campaigns/{$scheduledCampaign}/schedule", ['scheduled_at' => self::campaignNoon()->addDay()->toIso8601ZuluString()], true)->assertOk();
+        // Phase 8.6: a draft thank-you automation (email message, so the test message goes to the account email) and a run.
+        $automation = $this->req($h, 'POST', "{$base}/automations", ['recipe' => 'thank_you'])->assertCreated()->json('data');
+        $this->req($h, 'PATCH', "{$base}/automations/{$automation['id']}", ['settings' => ['delay_hours' => 0, 'conditions' => [],
+            'message' => ['channel' => 'email', 'language' => 'en', 'subject' => 'Thanks', 'body' => 'Thanks {name}']], 'revision' => 1])->assertOk();
+        $draftAutomation = $this->req($h, 'POST', "{$base}/automations", ['recipe' => 'return_flag'])->assertCreated()->json('data.id');
+        $run = $this->inTenant($tenant, function () use ($store, $automation) {
+            $row = new AutomationRun;
+            $row->store_id = $store->id;
+            $row->automation_id = $automation['id'];
+            $row->trigger = 'order.delivered';
+            $row->dedupe_key = 'order:parity';
+            $row->subject_type = 'order';
+            $row->subject_id = strtolower((string) Str::ulid());
+            $row->status = AutomationRun::COMPLETED;
+            $row->context = ['order_number' => 'SP-1'];
+            $row->started_at = now();
+            $row->save();
+
+            return $row->id;
+        });
         $this->req($h, 'POST', "{$base}/customers/{$customer}/notes", ['body' => 'VIP'])->assertSuccessful();
         $note = $this->inTenant($tenant, fn () => CustomerNote::query()->where('customer_id', $customer)->value('id'));
         $coupon = $this->req($h, 'POST', "{$base}/coupons", ['code' => 'PARITY', 'type' => 'fixed', 'amount' => 100])->assertCreated()->json('data.id');
@@ -317,7 +351,7 @@ class PermissionParityTest extends TestCase
             'return' => $return, 'link' => $link, 'document' => $document, 'domain' => $domain, 'page' => $page,
             'media' => $media, 'import' => $import, 'export' => $export, 'pickup' => $pickup, 'invoice' => $invoice,
             'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
-            'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign,
+            'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign, 'automation' => $automation['id'], 'draft_automation' => $draftAutomation, 'run' => $run,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -421,6 +455,20 @@ class PermissionParityTest extends TestCase
             'POST api/v1/stores/{store}/customers/{customer}/marketing-opt-out' => $r('POST', "{$b}/customers/{$s['customer']}/marketing-opt-out", ['channel' => 'sms']),
             'DELETE api/v1/stores/{store}/customers/{customer}/marketing-opt-out/{channel}' => $r('DELETE', "{$b}/customers/{$s['customer']}/marketing-opt-out/sms"),
             'GET api/v1/dev/stores/{store}/message-sink' => $r('GET', "/api/v1/dev/stores/{$s['store']->id}/message-sink"),
+
+            // --- Phase 8.6 automations ---
+            'GET api/v1/stores/{store}/automations' => $r('GET', "{$b}/automations"),
+            'POST api/v1/stores/{store}/automations' => $r('POST', "{$b}/automations", ['recipe' => 'low_stock']),
+            'GET api/v1/stores/{store}/automations/{automation}' => $r('GET', "{$b}/automations/{$s['automation']}"),
+            'PATCH api/v1/stores/{store}/automations/{automation}' => $r('PATCH', "{$b}/automations/{$s['automation']}", ['name' => 'Renamed', 'revision' => 2]),
+            'DELETE api/v1/stores/{store}/automations/{automation}' => $r('DELETE', "{$b}/automations/{$s['draft_automation']}"),
+            'POST api/v1/stores/{store}/automations/{automation}/enable' => $r('POST', "{$b}/automations/{$s['automation']}/enable"),
+            'POST api/v1/stores/{store}/automations/{automation}/disable' => $r('POST', "{$b}/automations/{$s['automation']}/disable"),
+            'POST api/v1/stores/{store}/automations/{automation}/dry-run' => $r('POST', "{$b}/automations/{$s['automation']}/dry-run"),
+            'POST api/v1/stores/{store}/automations/{automation}/test-message' => $r('POST', "{$b}/automations/{$s['automation']}/test-message", ['step' => 1]),
+            'GET api/v1/stores/{store}/automations/{automation}/stats' => $r('GET', "{$b}/automations/{$s['automation']}/stats"),
+            'GET api/v1/stores/{store}/automation-runs' => $r('GET', "{$b}/automation-runs"),
+            'GET api/v1/stores/{store}/automation-runs/{run}' => $r('GET', "{$b}/automation-runs/{$s['run']}"),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),

@@ -71,7 +71,8 @@ for (const width of WIDTHS) {
     await page.goto(mUrl(MARKETING));
     await expect(page.getByRole('heading', { name: /^Marketing$/, level: 1 })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Eid win-back').first()).toBeVisible({ timeout: 30_000 }); // query retries on local sqlite locks
-    for (const hidden of [/WhatsApp/, /Automations/, /Carts recovered/, /Return on spend/, /Top up/i, /Best week yet/]) {
+    // Automations and Carts recovered are shown since 8.6 (PHASE-8-6 §10.5).
+    for (const hidden of [/WhatsApp/, /Return on spend/, /Top up/i, /Best week yet/]) {
       await expect(page.getByText(hidden), `hidden in 8.5: ${hidden}`).toHaveCount(0);
     }
     await shot(page, width, 'overview', overflow);

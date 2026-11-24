@@ -13,9 +13,9 @@ export const E2E_ROOT = resolve(here, '..');
 export const API_DIR = process.env.API_DIR ?? resolve(E2E_ROOT, '../../apps/api');
 
 export const urls = {
-  api: process.env.API_URL ?? 'http://localhost:8000',
-  merchant: process.env.MERCHANT_URL ?? 'http://localhost:5173',
-  storefront: process.env.STOREFRONT_URL ?? 'http://demo.localhost:3000',
+  api: process.env.API_URL ?? 'http://localhost:8010',
+  merchant: process.env.MERCHANT_URL ?? 'http://localhost:5183',
+  storefront: process.env.STOREFRONT_URL ?? 'http://demo.localhost:3010',
 };
 
 export const DEMO = {

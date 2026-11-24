@@ -11,7 +11,7 @@
 `packages/types` and root `package.json`/`pnpm-workspace.yaml` are orchestrator-owned; propose changes in your final report instead of editing.
 
 ## Ports
-api `8000` · merchant-dashboard `5173` · super-admin `5174` · storefront `3000` · postgres `5432` · redis `6379`
+api `8010` · merchant-dashboard `5183` · super-admin `5184` · storefront `3010` · postgres `5432` · redis `6379`
 
 ## Package names
 `@storeplix/ui` `@storeplix/types` `@storeplix/api-client` `@storeplix/config` `@storeplix/merchant-dashboard` `@storeplix/super-admin` `@storeplix/storefront`
@@ -43,7 +43,7 @@ Base platform domain env: `PLATFORM_DOMAIN=storeplix.test` (prod `storeplix.com`
 ## D2 — Draft stores show "Coming soon"
 - `StorefrontConfig.store.status`: `'active' | 'draft'` (suspended stays 404).
 - Draft store, public visitor: storefront renders a branded Coming Soon page (store name/logo/theme colours), `noindex`, `Cache-Control: private, no-store` semantics (do not cache in shared tag cache keyed only by host), robots.txt `Disallow: /`, empty sitemap. Status code 200.
-- Merchant preview: `POST /api/v1/stores/{store}/preview-token` (Bearer + X-Tenant-Id) → 201 `{data:{token, url, expires_at}}`; token = signed, expires in 60 min, bound to store id; `url` = `https://{primary_domain}/?preview={token}` (http + :3000 in local env).
+- Merchant preview: `POST /api/v1/stores/{store}/preview-token` (Bearer + X-Tenant-Id) → 201 `{data:{token, url, expires_at}}`; token = signed, expires in 60 min, bound to store id; `url` = `https://{primary_domain}/?preview={token}` (http + :3010 in local env).
 - Storefront: `?preview=` → proxy sets httpOnly, Secure (prod), SameSite=Lax cookie `sp_preview` (max-age 3600) and redirects to the same URL without the param. Server forwards it as header `X-Storefront-Preview` to `/storefront/config`. API returns `preview: true` in the payload when valid for that store; storefront then renders the real store with a "Preview — not public yet" banner. Invalid/expired token → treated as public visitor (no error leak).
 - Preview responses must never be cached in the shared cache.
 

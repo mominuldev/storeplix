@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
  * Test sends (P85-26) get a code too. They have no recipient row; their sha256 lives in the `campaign.test_sent` audit
  * row (`meta.code_hash`, with the channel, the masked address and the store id), which is durable, so test codes
  * never expire either (§4.2, §9.1). The page then says "This was a test message" and nothing ever changes for it.
+ * PHASE-8-6 §8: automation test messages (`automation.test_sent`) resolve the same way.
  */
 final class UnsubscribeCodes
 {
@@ -38,7 +39,7 @@ final class UnsubscribeCodes
     public static function test(string $code, string $storeId): ?array
     {
         $row = AuditLog::query()->where('tenant_id', app(TenantContext::class)->requireId())
-            ->where('action', 'campaign.test_sent')->where('meta->code_hash', self::hash($code))->first(['meta']);
+            ->whereIn('action', ['campaign.test_sent', 'automation.test_sent'])->where('meta->code_hash', self::hash($code))->first(['meta']);
         $meta = (array) ($row?->meta ?? []);
         if ($row === null || ($meta['store_id'] ?? null) !== $storeId) {
             return null;

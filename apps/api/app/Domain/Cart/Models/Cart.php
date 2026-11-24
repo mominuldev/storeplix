@@ -21,6 +21,11 @@ use Illuminate\Support\Carbon;
  * @property Carbon $last_activity_at
  * @property string|null $converted_order_id
  * @property string|null $ip
+ * @property string|null $contact_phone PHASE-8-6 P86-12: normalized 8801XXXXXXXXX; never returned by any storefront endpoint
+ * @property string|null $contact_name
+ * @property string|null $contact_email
+ * @property Carbon|null $contact_captured_at
+ * @property Carbon|null $recovery_detected_at P86-13: set once by automations:detect-abandoned
  */
 class Cart extends Model
 {
@@ -40,13 +45,13 @@ class Cart extends Model
 
     protected $fillable = [];
 
-    protected $hidden = ['token_hash'];
+    protected $hidden = ['token_hash', 'contact_phone', 'contact_name', 'contact_email'];
 
     protected $attributes = ['status' => self::ACTIVE];
 
     protected function casts(): array
     {
-        return ['last_activity_at' => 'datetime'];
+        return ['last_activity_at' => 'datetime', 'contact_captured_at' => 'datetime', 'recovery_detected_at' => 'datetime'];
     }
 
     public function items(): HasMany

@@ -1,6 +1,6 @@
 /**
  * STOREFRONT_EDITOR_ORIGINS: comma list of exact origins allowed to frame preview responses and to
- * talk to the PreviewBridge (dev `http://localhost:5173`, prod `https://app.storeplix.com`).
+ * talk to the PreviewBridge (dev `http://localhost:5183`, prod `https://app.storeplix.com`).
  * No wildcards, no paths, no credentials. Empty/invalid → [] → embedding impossible (fail closed).
  * Pure: used by the proxy (edge), server components and tests.
  */

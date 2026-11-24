@@ -25,6 +25,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | **Phase 8.3 group** | Pest group `roles` (`PermissionParityTest`: every merchant tenant route × owner/admin/staff against `tests/Fixtures/permission-parity.json`, recorded on pre-8.3 code; `RoutePermissionsTest` route ↔ §3 map; catalogue, per-key enforcement dataset, roles API, N1–N9, staff/invite `role_id`, `/auth/me` permissions, backfill migration (sqlite only); RLS member-read policy in `rls`, S91–S99 also in `security`) | `apps/api/tests/Feature/Staff/Roles/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | **Phase 8.4 group** | Pest group `developer-api` (API keys CRUD/validation/authz/isolation, `developers.manage`, scope non-delegation (S105), sha256-only storage + log scan (S100), identical 401s (S101); every `/api/v1/external` route: happy path, scope deny `api_key_scope_missing`, cross-tenant 404, one `scope:` per route (S103), merchant routes refuse keys / external refuse cookies (S104), 120/min per key (S111); webhooks: one emission test per §4.1 event, payload `2026-12-01`, signature vector (fixed secret/body/t → known hex) + rotation overlap (S108), retry schedule P84-9 with a frozen clock, auto-disable 72 h, prune 30 d, resend / resend-failed, SSRF refusals on save and send (S107), plan gating (S106), fake/allow-http refused in production (S112); RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Developer/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | **Phase 8.5 group** | Pest group `campaigns` (CRUD/validation/authz/isolation for every §6.1 route, storefront unsubscribe routes, state machine, one test per audience segment + exclusions, P85-3 eligibility matrix, risk classes, SMS parts against `docs/api/sms-parts-vectors.json`, renderer (prefix, bn/en footer, merge fields, unknown field 422), pipeline with the fake gateway + `array` mailer, quiet-hours pause/resume (frozen clock, store tz), cancel while sending, reap-stuck, attribution (7-day window, latest wins, cancelled excluded), overview numbers, allowances (S122), S113–S126, prune; RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Marketing/**`, `apps/api/tests/Unit/Marketing/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
+| **Phase 8.6 group** | Pest group `automations` (every §9.1 route: happy/validation/authz/isolation; each of the 5 recipes end to end with the fake gateway + `array` mailer (trigger → run → steps → outcomes); conditions matrix; run dedupe (S129); waits + `automations:resume-due`; quiet-hours deferral and frequency cap (frozen clock, store tz, S134); allowance shared with campaigns (8.5 usage tests extended); exit on order for carts and unfinished online orders; attribution (window, last step wins, cancelled excluded, one per order, overview counts once); cart contact + detect-abandoned; `/carts/recover` clone (S133); automation unsubscribe codes; dry run (S137); test message; reap-stuck; prune; plan downgrade (S135); S127–S140; RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Automations/**`, `apps/api/tests/Unit/Automations/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -47,6 +48,7 @@ cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import
 #   GOTENBERG_URL=http://127.0.0.1:53000 GOTENBERG_USERNAME=u GOTENBERG_PASSWORD=p php artisan test --group=documents
 cd apps/api && php artisan test --group=developer-api   # Phase 8.4: API keys, external API, outbound webhooks
 cd apps/api && php artisan test --group=campaigns       # Phase 8.5: SMS/email campaigns, opt-out, allowances, quiet hours
+cd apps/api && php artisan test --group=automations     # Phase 8.6: automations, checkout recovery, run log
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -74,7 +76,7 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 - Install once: `cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium`.
 - Ad-hoc check example (screenshot + console errors):
   ```bash
-  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3000 /tmp/home.png
+  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3010 /tmp/home.png
   ```
   For flows (login, editor, preview), write a spec under `tests/e2e/specs/` and run it with `pnpm exec playwright test <spec>`.
 - Save screenshots and traces outside the repo (or under the git-ignored `tests/e2e/test-results/`).
@@ -116,7 +118,7 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase5b.payment-link` | order detail → Ask for an advance (Delivery charge, bKash, 2 h, cancel if unpaid) → shopper `/pay/{token}` (no-store, noindex) → fake Pay → order `confirmed`, due −৳ 60, link `paid`, used link → "isn't valid any more"; API: one active link (409), 25 % amount, link expiry cancels the order (`payment_link_expired`) and releases stock, expired = unknown token byte for byte |
 | `phase5b.refund` | bKash-paid order → Payments card Refund ৳ 200 → refund row `gateway` `succeeded`, charge/order `refunded_amount`, `partially_refunded`; over the charge balance 422; Idempotency-Key replay → same refund |
 | `phase5b.payments-security` | §12 live: S22 forged `status=success` on a failed payment and unsigned/tampered/`?next=` returns (403, no redirect); S23 17-paisa amount mismatch → `failed` `amount_mismatch`, 13-paisa → failed; S24 replayed return paid once, unknown IPN key 404; S26/S38 secrets in no response, DB column or log, staff read-only; S27 no host field; S30 staff refund 403, foreign `payment_id` 422, B on A's order/payment result/token 404; S28 identical 404s, DB has no raw token, 429 |
-| `phase6.domains` | fake DNS + fake Cloudflare (6.1–6.5, PHASE-6-CONTRACT §10 QA): **fresh shop** (never the demo store) on Starter; UI Connect `https://SHOP-x.localhost/` (client strip) → "Waiting for DNS", TXT `_storeplix-verify.{host}` = `sp-verify={52 chars}` + CNAME → `meta.cname_target`, no provider fields; S42 config 404 + `ask` 404 while pending → dev DNS correct → **Check now** → "Securing" (`ask` 200, config still 404) → dev provider active → Check now → "Connected" → **Make primary** (confirm copy) → `redirect_host` on both platform hosts, null on the primary → `{slug}.localhost` and `{slug}.storeplix.test` (raw Host header) **308** to `http://shop-x.localhost:3000{path}?{query}`, HEAD 308, robots/sitemap **301**, forged `?next=` keeps the target, canonical + robots `Sitemap:` on the custom host, browser lands there; `ask` 401 (no/wrong key), byte-identical 404s; taken (same + other tenant), invalid, reserved codes + inline dialog errors; S47 staff read-only (UI + 403s); S48 other tenant 404 on every route + dashboard detail; 390 px list + records; failures: wrong TXT → mismatch "We found", `age 73` → "Failed" → Check now → fresh 72 h, 3rd domain 402 `plan_limit_reached` + disabled CTA, 409 `domain_not_active` / `platform_domain_locked`; expiry (DNS missing + `age 169`) → "Disconnected", primary falls back, redirect stops; re-activate → primary → **Remove** in the UI → platform primary, platform host 200 |
+| `phase6.domains` | fake DNS + fake Cloudflare (6.1–6.5, PHASE-6-CONTRACT §10 QA): **fresh shop** (never the demo store) on Starter; UI Connect `https://SHOP-x.localhost/` (client strip) → "Waiting for DNS", TXT `_storeplix-verify.{host}` = `sp-verify={52 chars}` + CNAME → `meta.cname_target`, no provider fields; S42 config 404 + `ask` 404 while pending → dev DNS correct → **Check now** → "Securing" (`ask` 200, config still 404) → dev provider active → Check now → "Connected" → **Make primary** (confirm copy) → `redirect_host` on both platform hosts, null on the primary → `{slug}.localhost` and `{slug}.storeplix.test` (raw Host header) **308** to `http://shop-x.localhost:3010{path}?{query}`, HEAD 308, robots/sitemap **301**, forged `?next=` keeps the target, canonical + robots `Sitemap:` on the custom host, browser lands there; `ask` 401 (no/wrong key), byte-identical 404s; taken (same + other tenant), invalid, reserved codes + inline dialog errors; S47 staff read-only (UI + 403s); S48 other tenant 404 on every route + dashboard detail; 390 px list + records; failures: wrong TXT → mismatch "We found", `age 73` → "Failed" → Check now → fresh 72 h, 3rd domain 402 `plan_limit_reached` + disabled CTA, 409 `domain_not_active` / `platform_domain_locked`; expiry (DNS missing + `age 169`) → "Disconnected", primary falls back, redirect stops; re-activate → primary → **Remove** in the UI → platform primary, platform host 200 |
 | `phase7.billing` | fake platform gateway (PHASE-7-CONTRACT §11 QA; `BILLING_FAKE=true`, dev clock): **upgrade** — fresh shop → `dev clock trial_ended` (Free) → plans with yearly prices, quotes per kind, `plan_unavailable` / `plan_unchanged`, Idempotency-Key required → UI Upgrade to Starter monthly → quote dialog ৳ 499 → Pay (bKash) → fake **Pay** → "You're on Starter", invoice `SP-YYYY-NNNNNN` Paid (VAT 15 % inclusive), PDF attachment `no-store` (`%PDF` with Gotenberg, HTML with the e2e `html` driver); S61/S62 idempotent change-plan + pay, posted amount/status/period ignored, `invoice_not_open`; Starter → Growth prorated (ceil to taka, period unchanged, superseded open invoice) via fake SSLCommerz, 303 to `/settings/plan?payment=`. **failures** — UI Fail → "Payment didn't go through … haven't been charged" + Pay again; S54 Pay wrong amount → `amount_mismatch`; Cancel; S53/S59 forged/tampered/unknown returns → merchant app only (`payment_error=1`); "Pay, then time out" → pending → paid by the status query. **renewal** — Starter (paid) + active primary custom domain → `renewal_due` → banner "renews on" → Pay now (SSLCommerz) → period from the old end +1 month; `renewal_due` → `period_ended` → `past_due` (features kept, 409 `invoice_overdue`, banner 148:35383) → `grace_ended` → Free, invoice Void `unpaid`, domain `expired` `plan_limit`, platform primary, platform host 200, S66 re-check 402 `upgrade_plan [starter]`. **downgrade** — Growth (paid) → UI Switch to Starter (no charge) → "Switches to Starter on" → Keep Growth → API switch again → `period_ended` → Starter; cancel to Free scheduled |
 | `phase7.billing-security` | S57 admin reads billing, 403 on change-plan / pay / scheduled-change, `can_pay` false; staff 403 on every billing read, `/features` 200; reports Sales/Delivery all roles, Profit staff 403. S56 other tenant 404 on invoice / pdf / pay / payment and on the store's three reports, spoofed tenant 403. Dev clock: staff 403, bad state 422. UI: admin read-only ("Only the shop owner can change the plan"), staff empty state |
 | `phase7.limits` | P7-17: Free shop filled to 100 products (test-only row copies) → API 402 `plan_limit_reached` `upgrade_plan [starter]` → UI Save product → 402 dialog "Upgrade to Starter"; second courier 402, bulk booking `feature_not_in_plan`, profit `upgrade_plan [growth]`, domain on Free `[starter]`; Starter with 2 domains → third 402 `upgrade_plan [growth]` + "Upgrade to Growth" on the Domains page |
@@ -147,9 +149,14 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase8-5.access` | §2, P85-13, S120, S122: Free shop → drafts allowed, send/schedule/test 402 `plan_limit_reached` (`upgrade_plan` starter, `details.campaign_sms_per_month` / `campaign_emails_per_month` limit 0); UI plan note "Campaigns are part of the Starter plan." + See plans → `/settings/plan`, primary action and "Send test to me" disabled. Starter estimate → allowance 1 000 SMS parts / 5 000 emails, UCS-2 for Bangla. Staff → 403 on all 16 campaign routes + dev sink, no `marketing.manage` in `/auth/me`, `/marketing` falls back to Coupons, no-access state on list/composer/detail; the customer opt-out toggle (`customers.edit`) is allowed for Staff |
 | `phase8-5.regressions` | Gate findings, one independent test each (fail until fixed): P85-QA-1 composer confirm dialog recipients = "N customers will get this message"; P85-QA-2 storefront Unsubscribe / Subscribe again re-render the page in place (no 404) |
 | `phase8-5.visual` | AC 3 / Q151: overview, campaigns list, composer (SMS bn + email), detail and the storefront unsubscribe page at 1280, 390 and 375 px: no horizontal page overflow, no console errors, hidden 8.5 items (WhatsApp, Automations, Carts recovered, Return on spend, Top up, Best week yet) absent; screenshots in `test-results/phase8-5-visual/{width}/` for the Figma review against `66:19179` / `70:19774` |
+| `phase8-6.recovery` | AC 1 + AC 2 for `checkout_recovery` (P86-11–P86-16, S132, S133): Starter shop (~13:00 local) enables the recipe with `delay_minutes` 15. Checkout page shows the phone notice; an invalid phone is not captured, a valid one is stored on the cart on blur (tinker read; never echoed by `GET /cart`); `PUT /cart/contact` 422 / 404 `cart_not_found`. Cart aged 20 min + `automations:detect-abandoned` → one run (subject cart, `waiting`, step 1 `send_message` `done`, ≤ 3 parts, masked contact); sink SMS with prefix, `{cart_link}` `/r/{code}` and the opt-out footer; a second detect adds no run. `/r/{code}` in a fresh context → `/checkout` with the product, new httpOnly `sp_cart` ≠ original, original cart still `active`; unknown code → `/`, API 404 `recovery_link_invalid`. Checkout of the restored cart by the same phone → run `stopped/converted` with the conversion order, `/stats` step 1 sent 1 / recovered 1, recovery page "Recovered · SMS". Online order expired (`payment_timeout`) → a recovery run with subject order and one message |
+| `phase8-6.recipes` | AC 1 + AC 2 for the other four recipes: catalogue = 5 recipes, duplicate 409 `automation_exists`, hidden recipe keys 422. Thank-you: delivered order (manual ship creates the shipment) → run `completed`, `send_message` `done` (sms, masked) + sink SMS. Tag VIP (`min_delivered` 2, message off): 1st delivery `skipped/conditions_not_met` with detail, 2nd → `add_tag` `done`, customer tagged. Handle returns: received return → `add_tag` `done`, "Returned". Low stock: stock 8 → 4 (threshold 5) → `notify_team` `done` (`detail.recipients` ≥ 1), owner mail "Low stock" in laravel.log without shopper PII. Thank-you condition `order.total_amount gt` 10 000 000 → `skipped/conditions_not_met`, no message. Dry run → condition/step results, run count and sink unchanged. UI: Automations table rows, hidden recipes/tiles absent, Recent runs "Tagged VIP", run log rows + Skipped filter |
+| `phase8-6.rules` | AC 3 (S127, S134, P86-9, P86-10): opt-out through the automation message's `/u/{code}` (8.5 unsubscribe API resolves automation codes) → `resume-due` → run `stopped/opted_out`, no second message. Three delivered orders by one phone with Thank-you on → `done`, `done`, `skipped/frequency_cap`; sink has 2. Night shop (~02:00 local): thank-you run `waiting` with `resume_at` = 09:00 store time, nothing sent; a forced resume inside quiet hours waits again |
+| `phase8-6.access` | P86-17, P86-18, S131, S135: Free → create 402 `feature_not_in_plan` (`details.feature` `sms_automation`), reads 200, UI plan note "Automations are part of the Starter plan." + See plans, "Use recipe" disabled. Starter → Free downgrade: automation stays `on` with its settings, `paused_reason` `plan`, a new delivery creates no run, the waiting run ends `stopped/plan` at `resume-due`, enable 402, UI pill "Paused — not in your plan". Staff → 403 on all 12 §9.1 routes, no `marketing.manage` in `/auth/me`, no-access state on Automations, editor, recovery page and run log |
+| `phase8-6.visual` | AC 4 / Q166: Automations, Thank-you editor, Abandoned cart recovery, run log and the storefront checkout notice at 1280, 390 and 375 px: no horizontal page overflow, no console errors, quiet-hours note present, documented omissions (WhatsApp, Time saved, Risky orders held, Clicked, Cost, Add a step) absent; screenshots in `test-results/phase8-6-visual/{width}/` for the Figma review against `140:30336` / `141:30622` / `71:20614` |
 
 How they run:
-- **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
+- **Against the running stack** (API :8010 with a queue worker, storefront `http://demo.localhost:3010`, merchant :5183,
   seeded demo store). Override with `API_URL`, `MERCHANT_URL`, `STOREFRONT_URL`. The queue worker is required:
   mail and storefront revalidation are queued.
 - **Idempotent and self-cleaning.** Each spec snapshots what it changes and restores it in `finally`/`afterAll`
@@ -159,7 +166,7 @@ How they run:
   `GET /sanctum/csrf-cookie` → `POST /api/v1/auth/login` through the **merchant origin** (Vite proxy); the Playwright
   storage state is cached in `tests/e2e/.auth/demo.json` (+ `demo.meta.json` for tenant/store ids) and reused while
   `/auth/me` says the session has > 1 h left. Every helper call (`api()` / `apiCall()`) goes through
-  `http://localhost:5173/api/...` with that cookie jar and sends `X-XSRF-TOKEN` on writes. Playwright's request
+  `http://localhost:5183/api/...` with that cookie jar and sends `X-XSRF-TOKEN` on writes. Playwright's request
   client never sends `Sec-Fetch-Site`, so Laravel's same-origin CSRF shortcut never applies to helper calls; 419
   tests therefore work from the request client. Browser specs get the cookies via `signInDashboard()`.
   `throttle:auth` limits auth calls per IP; `phase2.auth-flows` uses 5 and `phase4.staff`, `phase4.storefront`,
@@ -181,16 +188,16 @@ How they run:
   signed return → first URL outside the API), `fakeGatewayReturnUrl` (the signed return without calling it, for
   forgery/replay), `expireHolds` (the testing-only time travel `POST /api/v1/dev/payments/{payment}/expire-now`, 404 unless
   `PAYMENTS_FAKE=true`; a link nobody tried to pay uses a test-only DB write + `payment-links:expire`), `mapStoreHost` (the API redirects returns and builds link URLs from the
-  store's primary host — local env `http://{primary}:3000` — and Playwright doesn't route redirect targets, so browser
+  store's primary host — local env `http://{primary}:3010` — and Playwright doesn't route redirect targets, so browser
   specs make `{slug}.localhost` primary with a test-only DB write; `sp_order` lives there). Browser flows need the Next storefront
   pointed at the same API (`STOREFRONT_API_URL`, `STOREFRONT_API_KEY`). Selectors written before the UI existed
   are isolated in one helper each (`paymentOption`, `clickFakeGateway`, `askForAdvance`, `refundFromPaymentsCard`).
   ```bash
   # API with the fake gateway (Docker Postgres + RLS as in §2d), then:
-  PAYMENTS_FAKE=true INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32) APP_URL=http://localhost:8000 \
-    PUBLIC_API_URL=http://localhost:8000 php artisan serve --port=8000
+  PAYMENTS_FAKE=true INTEGRATION_CREDENTIALS_KEY=base64:$(openssl rand -base64 32) APP_URL=http://localhost:8010 \
+    PUBLIC_API_URL=http://localhost:8010 php artisan serve --port=8010
   php artisan queue:work --queue=default,media,bulk,notifications,documents,webhooks
-  STOREFRONT_API_URL=http://localhost:8000 STOREFRONT_API_KEY=<apps/api .env value> pnpm --filter @storeplix/storefront dev
+  STOREFRONT_API_URL=http://localhost:8010 STOREFRONT_API_KEY=<apps/api .env value> pnpm --filter @storeplix/storefront dev
   cd tests/e2e && pnpm exec playwright test phase5b.online-checkout phase5b.payment-link phase5b.refund phase5b.payments-security
   ```
 - **Couriers (Phase 5b-3) run on the fake courier** (`COURIERS_FAKE=true`, §15; never a real courier). The API and the
@@ -215,7 +222,7 @@ How they run:
   one helper each). The certification spec `phase6.cloudflare.spec.ts` (real Cloudflare, manual only) is written during
   certification (RUNBOOK §9.6).
   ```bash
-  DOMAINS_FAKE=true DOMAINS_ASK_KEY=dev-domains-ask-key-change-me php artisan serve --port=8000   # + the 5b env above
+  DOMAINS_FAKE=true DOMAINS_ASK_KEY=dev-domains-ask-key-change-me php artisan serve --port=8010   # + the 5b env above
   php artisan queue:work --queue=default,media,bulk,notifications,documents,webhooks,domains
   cd tests/e2e && pnpm exec playwright test phase6.domains
   ```
@@ -233,11 +240,11 @@ How they run:
   helpers; UI selectors one per helper). Reports are cached 120 s per tenant + range: the reports spec writes all data
   (incl. the test-only `placed_at` moves) before the first report call.
   ```bash
-  BILLING_FAKE=true MERCHANT_APP_URL=http://localhost:5173 php artisan serve --port=8000   # + the 5b and Phase 6 env above
+  BILLING_FAKE=true MERCHANT_APP_URL=http://localhost:5183 php artisan serve --port=8010   # + the 5b and Phase 6 env above
   cd tests/e2e && pnpm exec playwright test phase7.
   ```
 - **Platform analytics (Phase 8.2)** need the Phase 7 setup (`BILLING_FAKE=true`, `MERCHANT_APP_URL`, `APP_URL` =
-  `PUBLIC_API_URL`) plus the super-admin SPA on :5174 (`ADMIN_URL`) and `APP_ENV=local` (or `testing`): only then is the
+  `PUBLIC_API_URL`) plus the super-admin SPA on :5184 (`ADMIN_URL`) and `APP_ENV=local` (or `testing`): only then is the
   testing-only `POST /api/v1/dev/analytics/aggregate {from?, to?}` registered (admin surface, super-admin session,
   10/min; default day = today Dhaka, allowed only here; answers `{data: {days, as_of}}`). It runs
   `analytics:aggregate` inline, so no queue worker or scheduler is needed for the numbers (the scheduler's hourly
@@ -255,12 +262,12 @@ How they run:
   `DB_BUSY_TIMEOUT=5000`; run the four files on their own rather than inside the full suite ("database is locked").
   ```bash
   APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true \
-    MERCHANT_APP_URL=http://localhost:5173 APP_URL=http://localhost:8000 PUBLIC_API_URL=http://localhost:8000 \
-    php artisan serve --port=8000                       # + INTEGRATION_CREDENTIALS_KEY etc. as for 5b
-  pnpm --filter @storeplix/super-admin dev              # :5174 (ADMIN_URL)
+    MERCHANT_APP_URL=http://localhost:5183 APP_URL=http://localhost:8010 PUBLIC_API_URL=http://localhost:8010 \
+    php artisan serve --port=8010                       # + INTEGRATION_CREDENTIALS_KEY etc. as for 5b
+  pnpm --filter @storeplix/super-admin dev              # :5184 (ADMIN_URL)
   cd tests/e2e && pnpm exec playwright test phase8-2.
   ```
-- **Custom roles (Phase 8.3)** need only the Phase 4/7 stack (API with the fake drivers, a queue worker, merchant :5173)
+- **Custom roles (Phase 8.3)** need only the Phase 4/7 stack (API with the fake drivers, a queue worker, merchant :5183)
   and `MAIL_MAILER=log` for the invitation links. Every spec uses throwaway tenants (`support/roles.ts` `shopOn(plan)`:
   `createTenant` + the test-only `setPlan`), so the demo shop is never touched. `createMember(owner, { role_id })` and
   `acceptInvitation(owner, email, mark)` (invite through the UI, accept through the mailed link) live in `support/api.ts`.
@@ -281,7 +288,7 @@ How they run:
   (`devShop(label, plan)` = `setupShop` + `setPlan`). The dev DB needs the `2026_12_01_*` migrations (`php artisan migrate`).
   ```bash
   APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true WEBHOOKS_OUT_FAKE=true \
-    php artisan serve --port=8000                       # + the 5b/7 env as above
+    php artisan serve --port=8010                       # + the 5b/7 env as above
   php artisan queue:work --queue=webhooks-out           # second terminal (apps/api)
   cd tests/e2e && pnpm exec playwright test phase8-4.
   ```
@@ -293,21 +300,35 @@ How they run:
   marker in the body. The sink lives in the cache, so `setPlan`/`browserHost` (which flush it) run before any send.
   Quiet hours (21:00–09:00 store time) are made deterministic by giving each throwaway shop a fixed-offset timezone
   where it is ~13:00 (or ~02:00) locally (`campaignShop(label, plan, localHour)` in `support/campaigns.ts`). Unsubscribe
-  pages are opened on `{slug}.localhost:3000/u/{code}` (`browserHost`). The dev DB needs the `2026_12_02_*` migrations.
+  pages are opened on `{slug}.localhost:3010/u/{code}` (`browserHost`). The dev DB needs the `2026_12_02_*` migrations.
   Locally every browser request reaches the API as one shopper IP (127.0.0.1), so the `storefront-unsubscribe` limiter
   (20/min) can trip when several `/u` specs run back to back (the page then shows `?e=1`): run `phase8-5.` files one at a
   time if that happens. On sqlite a `SendCampaignBatch` can die on "database is locked" (tries = 1 by design);
   `waitCampaign()` then runs `campaigns:dispatch-due` with `resume_after_minutes = 0` (`kickDispatchDue()`) instead of
   waiting the 2-minute idle window.
-  If another project holds :8000/:5173/:3000, run `php artisan serve --port=8010` (it forwards the fake/sink flags,
-  which `.env` doesn't set), the dashboard on **:5174** (already in
-  `SANCTUM_STATEFUL_DOMAINS`): process env overrides of keys that `.env` also sets do not reach Laravel under `php -S`
+  Run the API with `php artisan serve --port=8010` (it forwards the fake/sink flags, which `.env` doesn't set);
+  the dashboard origins (:5183, :5184) are already in `SANCTUM_STATEFUL_DOMAINS`. Process env overrides of keys that `.env` also sets do not reach Laravel under `php -S`
   (the cli-server SAPI keeps them out of `$_SERVER`/`$_ENV`, so `.env` wins and logins answer 400 `stateful_required`).
   ```bash
   APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true \
-    SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true php artisan serve --port=8000
+    SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true php artisan serve --port=8010
   SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true php artisan queue:work --queue=campaigns --timeout=250   # second terminal
   cd tests/e2e && pnpm exec playwright test phase8-5.
+  ```
+- **Automations (Phase 8.6)** use the same flags as campaigns (**`SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true`**,
+  plus the earlier fake flags; nothing new) and need a worker on **`automations`** as well as `campaigns` and
+  `notifications` (`--tries=1 --timeout=250`; compose runs `queue-automations`, the e2e workflow starts one only if compose
+  lacks it). Automation messages land in the same dev sink with `automation_id` (`autoSink()` in `support/automations.ts`).
+  The scheduler is not needed: specs run `automations:detect-abandoned` / `automations:resume-due` through tinker after a
+  test-only clock move (`ageContactCarts()` sets the captured carts' `last_activity_at` 20 min back; `elapseWait()` moves
+  one waiting run's `resume_at` into the past). Quiet hours use the 8.5 store-timezone trick (`automationShop(label, plan,
+  localHour)`). `order.delivered` fires on the manual ship → deliver transitions (the manual ship creates a shipment), so no
+  courier is needed; the low-stock team mail is read from `laravel.log` (MAIL_MAILER=log; not Mailpit). The dev DB needs the
+  `2026_12_03_*` migrations.
+  ```bash
+  SMS_DRIVER=log CAMPAIGN_MAILER=log CAMPAIGNS_DEV_SINK=true \
+    php artisan queue:work --queue=automations,campaigns --tries=1 --timeout=250   # apps/api; `composer dev` workers keep default/notifications
+  cd tests/e2e && pnpm exec playwright test phase8-6.
   ```
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the

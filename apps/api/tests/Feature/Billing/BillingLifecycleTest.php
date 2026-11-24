@@ -52,7 +52,7 @@ class BillingLifecycleTest extends TestCase
         $this->assertStringContainsString('/api/v1/dev/fake-billing-gateway/', $pay->json('data.redirect_url'));
 
         $this->fakeOutcome($tenant, $pay->json('data.id'))
-            ->assertStatus(303)->assertHeader('Location', 'http://localhost:5173/settings/plan?payment='.$pay->json('data.id'));
+            ->assertStatus(303)->assertHeader('Location', 'http://localhost:5183/settings/plan?payment='.$pay->json('data.id'));
 
         $sub = $this->subscriptionOf($tenant);
         $this->assertSame('starter', $sub->plan->code);

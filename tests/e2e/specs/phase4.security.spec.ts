@@ -134,7 +134,7 @@ test('isolation: same SKU and slug in another tenant are allowed and never revea
   expect(search.json.data.map((p: { id: string }) => p.id)).toEqual([twin.id]);
   // Eve's draft store: feed 404 (T22). Demo feed never has Eve's product.
   expect((await storefrontFeed(eve.host)).status).toBe(404);
-  const demoFeed = await storefrontFeed(new URL(process.env.STOREFRONT_URL ?? 'http://demo.localhost:3000').hostname, '?limit=24');
+  const demoFeed = await storefrontFeed(new URL(process.env.STOREFRONT_URL ?? 'http://demo.localhost:3010').hostname, '?limit=24');
   expect(JSON.stringify(demoFeed.json)).not.toContain(twin.id);
 });
 
@@ -172,7 +172,7 @@ test('mass assignment and price manipulation', async () => {
     expect(r.status, label).toBe(422);
   }
   // No storefront route accepts a price or writes anything.
-  const sf = await fetch(`${process.env.API_URL ?? 'http://localhost:8000'}/api/v1/storefront/products`, { method: 'POST', headers: { Accept: 'application/json' } });
+  const sf = await fetch(`${process.env.API_URL ?? 'http://localhost:8010'}/api/v1/storefront/products`, { method: 'POST', headers: { Accept: 'application/json' } });
   expect([401, 403, 404, 405]).toContain(sf.status);
 });
 

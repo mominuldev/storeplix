@@ -359,7 +359,7 @@ id PK · tenant_id · subscription_id FK(t) null · number varchar(24) **U** (gl
 due_at, paid_at · provider_payment_id null · lines jsonb · pdf_path null · timestamps. IX(tenant_id, created_at DESC).
 
 ### audit_logs (append-only; app role has INSERT/SELECT only)
-id PK · tenant_id null (null = platform action) · store_id null · actor_type `CHECK IN ('user','platform_admin','system','api_key')` ·
+id PK · tenant_id null (null = platform action) · store_id null · actor_type `CHECK IN ('user','platform_admin','system','api_key','automation')` (`automation` Phase 8.6) ·
 actor_id char(26) null · action varchar(64) (`product.updated`, `domain.verified`, `staff.role_changed`) ·
 subject_type varchar(64) · subject_id char(26) · changes jsonb (before/after, secrets redacted) · ip inet ·
 user_agent varchar(255) · request_id varchar(64) · created_at. IX(tenant_id, created_at DESC). IX(tenant_id, subject_type, subject_id).
@@ -464,7 +464,7 @@ never stored) · status varchar(16) default `'active'` `CHECK IN ('active','conv
 varchar(32) null · currency char(3) · last_activity_at timestamptz · converted_order_id char(26) null (soft ref) · ip
 varchar(45) null · timestamps. U(tenant_id, id). U(tenant_id, store_id, id). IX(tenant_id, store_id, status,
 last_activity_at). No `customer_id` (guest only, P5-2). `carts:prune` daily: active > 30 days → abandoned; abandoned and
-converted > 90 days deleted.
+converted > 90 days deleted. Phase 8.6 adds the checkout contact and `recovery_detected_at` columns (§5.6).
 
 ### cart_items [S]
 id PK · tenant_id · store_id · cart_id FK3(carts) CASCADE · variant_id FK3(product_variants) CASCADE · quantity smallint
@@ -888,6 +888,59 @@ the merchant (P85-5).
 P5-26) keeps counting only order purposes. `customers.accepts_marketing` is unchanged as a column; it is set `false` by
 an unsubscribe and is no longer enough on its own to message someone (eligibility P85-3).
 
+## 5.6 Phase 8.6 automation tables (PHASE-8-6-CONTRACT §4.4, ADR 0020, migrations `2026_12_03_*`)
+Replaces the §6 "Automations" sketch. All four new tables are store-scoped `[S]` (`BelongsToStore`, composite FK
+`(tenant_id, store_id) → stores`), have RLS forced in their create migration and are listed in `RlsTables::TENANT` and
+`database/sql/rls-emergency-off.sql`. Plan feature `sms_automation` (Starter, Growth); on downgrade nothing is deleted
+(P86-17). Message steps share the 8.5 allowances `campaign_sms_per_month` / `campaign_emails_per_month` (P86-8).
+
+### automations [S] (`000100`)
+id PK · tenant_id · store_id · recipe varchar(24) `CHECK IN ('checkout_recovery','thank_you','vip_tag','return_flag',
+'low_stock')` · name varchar(80) · status varchar(8) `CHECK IN ('draft','on','off')` · settings jsonb (validated by the
+recipe schema; unknown keys → 422; PHASE-8-6 §3, §11.1 C1–C2) · last_run_at timestamptz null · created_by FK users SET
+NULL null · revision int · timestamps. **U(store_id, recipe)** (one automation per recipe, P86-1). U(tenant_id, store_id,
+id). IX(tenant_id, store_id, status). Hard delete only for a `draft` that never ran.
+
+### automation_runs [S] (`000100`)
+id PK · tenant_id · store_id · automation_id FK (t, s) → automations CASCADE · trigger varchar(24) · dedupe_key
+varchar(120) · subject_type varchar(16) `CHECK IN ('order','cart','return','inventory')` · subject_id char(26) (soft ref;
+the subject may be pruned) · customer_id FK (t, s) → customers SET NULL null · contact_address varchar(254) null
+(normalized phone/email for exit matching and messages; masked in every response) · status varchar(10)
+`CHECK IN ('running','waiting','completed','skipped','stopped','failed')` · outcome_reason varchar(32) null · outcome_detail
+jsonb null (per-condition results) · next_step smallint default 0 · resume_at timestamptz null · recovery_code_hash
+char(64) null **U** (sha256 of the 10-char base62 `/r/{code}`; plain code never stored) · window_ends_at timestamptz null
+· context jsonb (trigger-time snapshot so the log survives cart pruning) · started_at, finished_at timestamptz ·
+timestamps. **U(automation_id, dedupe_key)** (inserted `ON CONFLICT DO NOTHING`, P86-4). IX(tenant_id, store_id,
+created_at DESC). IX(tenant_id, store_id, automation_id, created_at DESC). Partial IX(resume_at) `WHERE status =
+'waiting'` (`automations:resume-due`). Partial IX(store_id, contact_address) `WHERE status IN ('running','waiting')`
+(exit on order). State changes by conditional UPDATE. Pruned after 90 days (`automations:prune-runs`).
+
+### automation_run_steps [S] (`000100`)
+id PK · tenant_id · store_id · run_id FK (t, s) → automation_runs CASCADE · step_index smallint · action varchar(16)
+`CHECK IN ('send_message','add_tag','notify_team')` · status varchar(8) `CHECK IN ('sending','done','skipped','failed',
+'unknown')` · reason varchar(32) null · channel varchar(8) null · address varchar(254) null (normalized) · parts smallint
+default 0 · unsubscribe_code_hash char(64) null **U** · provider_message_id varchar(128) null · detail jsonb null ·
+executed_at timestamptz · timestamps. **U(run_id, step_index)** (at-most-once, P86-5). IX(tenant_id, store_id, channel,
+address, executed_at DESC) (frequency cap P86-10). IX(tenant_id, store_id, executed_at) (allowance
+`CampaignAllowance::used`). `wait` never writes a row. `sending` > 15 min → `unknown` (`automations:reap-stuck`), never
+retried. The rendered text is not stored. Pruned with its run.
+
+### automation_conversions [S] (`000100`)
+id PK · tenant_id · store_id · automation_id FK (t, s) → automations CASCADE · run_id FK → automation_runs SET NULL null ·
+step_id FK → automation_run_steps SET NULL null · order_id FK (t, s) → orders CASCADE **U** (one per order, last sent
+step wins, P86-15) · placed_at timestamptz · created_at. IX(tenant_id, store_id, placed_at). Kept 13 months (runs and
+steps are pruned earlier, hence SET NULL). Revenue is read at query time from non-cancelled `orders.total_amount`.
+
+### Changes to existing tables (`000200`)
+`carts` gains contact_phone varchar(13) null (`8801XXXXXXXXX`) · contact_name varchar(80) null · contact_email
+varchar(254) null (lower-cased) · contact_captured_at timestamptz null · recovery_detected_at timestamptz null; partial
+IX(store_id, last_activity_at) `WHERE status = 'active' AND contact_phone IS NOT NULL AND recovery_detected_at IS
+NULL` (`automations:detect-abandoned`, marked once by conditional UPDATE). The contact is deleted with the cart
+(`carts:prune`) and never returned by a storefront endpoint. `sms_messages.purpose` gains `automation` (documentation
+only, no CHECK). `audit_logs.actor_type` gains `automation` (`actor_id` = automation id) and the action catalogue gains
+`automation.created|updated|enabled|disabled|deleted|test_sent`; per-action effects (tags, messages, notifications)
+are recorded only in the run log.
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -898,7 +951,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns`, `campaign_recipients`, `campaign_conversions`, `marketing_suppressions` — **specified in 8.5 (§5.5, PHASE-8-5 §7, ADR 0019)** | 5 / 8.5 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
-| Automations (140:30335) | `automations(tenant_id, trigger, conditions jsonb, actions jsonb, is_active)`, `automation_runs(automation_id, subject_id, status, log)` | 8+ |
+| Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expense_categories(tenant_id, name)`, `expenses(tenant_id, category_id, amount, currency, spent_at, note, receipt_media_id)` | 8 |
 | Suppliers / purchasing / transfers (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `suppliers`, `purchase_orders`, `purchase_order_items(received_qty)`, `stock_transfers`, `stock_transfer_items` | 8+ |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |

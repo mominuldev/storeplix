@@ -8,14 +8,24 @@
 #   docker compose exec api php artisan migrate --seed --database=pgsql_owner   # migrations run as the schema owner
 #
 # URLs
-#   API (nginx -> php-fpm) ..... http://localhost:8000/api/v1/health
+#   API (nginx -> php-fpm) ..... http://localhost:8010/api/v1/health
 #   Storefront (via nginx) ..... http://demo.localhost  /  http://demo.storeplix.test (needs hosts/dnsmasq entry)
-#   Storefront (direct) ........ http://demo.localhost:3000
-#   Merchant dashboard ......... http://localhost:5173
-#   Super admin ................ http://localhost:5174
+#   Storefront (direct) ........ http://demo.localhost:3010
+#   Merchant dashboard ......... http://localhost:5183
+#   Super admin ................ http://localhost:5184
 #   Mailpit UI ................. http://localhost:8025
 #   Prod-like SPA hosts (Phase 4.7, Nginx same-origin /api + /sanctum proxy):
 #                                http://app.localhost  /  http://admin.localhost
+#
+# Ports (dev defaults moved off 8000/5173/5174/3000 so Store Plix can run beside other local projects)
+#   - Node dev servers listen on the SAME port inside and outside the container: storefront 3010, merchant 5183,
+#     super-admin 5184. Their package.json dev scripts already pass --port, so the compose command, the published
+#     port, the healthcheck and the nginx upstreams (infrastructure/nginx/conf.d) all use that one number.
+#   - nginx keeps its container-internal API listener on :8000 (api.conf; STOREFRONT_API_URL / VITE_API_PROXY_TARGET
+#     = http://nginx:8000 inside the compose network) and is published on host ${API_PORT:-8010}. Only the host-side
+#     URLs (APP_URL, MEDIA_URL, PUBLIC_API_URL, STOREFRONT_MEDIA_ORIGINS) use 8010. Laravel takes the port from the
+#     browser's Host header, so generated URLs carry :8010.
+#   - Postgres 5432, Redis 6379, Mailpit 1025/8025 and Gotenberg (internal :3000) are unchanged.
 #
 # Queues: `queue` works default,media (short jobs); `queue-bulk` works `bulk` (CSV import/export,
 # PHASE-4-CONTRACT §5.4: $timeout 300 s, $tries 1). REDIS_QUEUE_RETRY_AFTER must stay > 300.
@@ -34,18 +44,20 @@
 # `queue-billing` works `billing` (PHASE-7-CONTRACT §4.5: subscription lifecycle, billing payment reconcile, IPN;
 # --tries=3 --timeout=150); the scheduler runs billing:run hourly and billing:reconcile-payments every 5 min.
 # Billing (Phase 7): BILLING_FAKE=true (default here, DEV-ONLY) serves the fake platform gateway page
-# http://localhost:8000/api/v1/dev/fake-billing-gateway/{payment} and POST /api/v1/dev/billing/clock.
+# http://localhost:8010/api/v1/dev/fake-billing-gateway/{payment} and POST /api/v1/dev/billing/clock.
 #
 # `queue-campaigns` works `campaigns` (PHASE-8-5-CONTRACT §5.1: StartCampaign snapshot, SendCampaignBatch <= 100 recipients,
 # AttributeOrder; provider calls never retried). Without it campaigns stay `sending` with `queued` recipients. The scheduler
 # runs campaigns:dispatch-due (1 min), campaigns:reap-stuck (5 min) and campaigns:prune-recipients (daily).
+# `queue-automations` works `automations` (PHASE-8-6-CONTRACT P86-23: EvaluateAutomation + steps, --tries=1 --timeout=250).
+# Without it automation runs are never created/advanced. Automation SMS/email reuse the campaign settings below.
 # Campaigns (Phase 8.5): SMS through SMS_DRIVER (log here), email through the `campaigns` mailer (CAMPAIGN_MAILER=log here;
 # set `smtp` to see them in Mailpit). CAMPAIGNS_DEV_SINK=true (DEV-ONLY) records rendered messages for
 # GET /api/v1/dev/stores/{store}/message-sink. The API refuses to boot with the sink, or a log/array campaign mailer
 # while SMS_DRIVER=revesms, in production (S125).
 #
 # Payments (5b-2): PAYMENTS_FAKE=true (default here, DEV-ONLY) serves the fake hosted page
-# http://localhost:8000/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
+# http://localhost:8010/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
 # Sandbox runs: PAYMENTS_FAKE=false, PUBLIC_API_URL=<https tunnel>, credentials entered in the dashboard.
 # Couriers (5b-3): COURIERS_FAKE=true (default here, DEV-ONLY) binds FakeCourier for Steadfast/Pathao/RedX and the
 # testing-only fake-advance endpoint; set COURIERS_FAKE=false with real test-account credentials for certification.
@@ -75,7 +87,7 @@ x-api-env: &api-env
   APP_ENV: local
   APP_DEBUG: "true"
   LOG_CHANNEL: stderr
-  APP_URL: http://localhost:${API_PORT:-8000}
+  APP_URL: http://localhost:${API_PORT:-8010}
   DB_CONNECTION: pgsql
   DB_HOST: postgres
   DB_PORT: 5432
@@ -99,18 +111,18 @@ x-api-env: &api-env
   PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-storeplix.test}
   STOREFRONT_API_KEY: ${STOREFRONT_API_KEY:-dev-storefront-key-change-me}
   # Phase 2
-  MERCHANT_APP_URL: http://localhost:${MERCHANT_PORT:-5173}
+  MERCHANT_APP_URL: http://localhost:${MERCHANT_PORT:-5183}
   MEDIA_DISK: public
-  MEDIA_URL: http://localhost:${API_PORT:-8000}/storage
-  STOREFRONT_REVALIDATE_URL: http://storefront:3000/api/revalidate   # internal URL, never the public one
+  MEDIA_URL: http://localhost:${API_PORT:-8010}/storage
+  STOREFRONT_REVALIDATE_URL: http://storefront:3010/api/revalidate   # internal URL, never the public one
   REVALIDATE_SECRET: ${REVALIDATE_SECRET:-dev-revalidate-secret-change-me}
   SMS_DRIVER: ${SMS_DRIVER:-log}          # log = local only (enables dev_otp); revesms in prod
   REVESMS_API_KEY: ${REVESMS_API_KEY:-}
   REVESMS_SECRET_KEY: ${REVESMS_SECRET_KEY:-}
   REVESMS_CALLER_ID: ${REVESMS_CALLER_ID:-}
   # Phase 4.7 (PHASE-4-CONTRACT §7.2): cookie sessions for the SPAs, reached same-origin through the
-  # Vite proxy (:5173/:5174) or Nginx (app.localhost/admin.localhost). Exact list: never a storefront host.
-  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:5174,app.localhost,admin.localhost
+  # Vite proxy (:5183/:5184) or Nginx (app.localhost/admin.localhost). Exact list: never a storefront host.
+  SANCTUM_STATEFUL_DOMAINS: localhost:5183,localhost:5184,app.localhost,admin.localhost
   # Absolute session expiry (7 days) = SANCTUM_EXPIRATION minutes.
   SANCTUM_EXPIRATION: "10080"
   SESSION_DRIVER: redis
@@ -147,7 +159,7 @@ x-api-env: &api-env
   INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:-base64:97PbbDQ+sQ8MRru928hXvVNBBCs+bsxiMkiVbd3d0pc=}
   INTEGRATION_CREDENTIALS_PREVIOUS_KEYS: ${INTEGRATION_CREDENTIALS_PREVIOUS_KEYS:-}
   # Base of the signed payment return URLs and the webhook URLs shown to merchants. Sandbox work: the tunnel URL.
-  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
+  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8010}}
   # Phase 6 custom domains (PHASE-6-CONTRACT §11, P6-13, P6-17). DEV-ONLY values.
   # DOMAINS_FAKE binds the fake DNS resolver + fake Cloudflare for SaaS driver and the /api/v1/dev/domains/* routes;
   # refused in production (like PAYMENTS_FAKE). Real certification: DOMAINS_FAKE=false + CLOUDFLARE_* (RUNBOOK §9).
@@ -404,6 +416,26 @@ services:
       timeout: 5s
       retries: 3
 
+  # Phase 8.6 automations (PHASE-8-6-CONTRACT P86-23, §13 QA infra): EvaluateAutomation and its message/tag/notify steps
+  # ($timeout <= 240 each) on their own worker, so a burst of triggers never delays campaigns or order notifications.
+  # --tries=1: message steps are at-most-once (P86-5; a step stuck in `sending` becomes `unknown`, never retried). The
+  # scheduler runs automations:detect-abandoned (5 min), automations:resume-due (1 min), automations:reap-stuck (5 min)
+  # and automations:prune-runs (daily). Messages reuse the campaign env (SMS_DRIVER, CAMPAIGN_MAILER, CAMPAIGNS_DEV_SINK);
+  # team notifications go through `queue-notifications`.
+  queue-automations:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=automations", "--tries=1", "--timeout=250", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Phase 6 custom domains (PHASE-6-CONTRACT §2.2, §11): CheckDomainJob (DNS-over-HTTPS consensus + provider calls,
   # job timeout 60 s, 3 tries) and DeleteProviderHostnameJob (5 tries with backoff) on their own worker, so a slow DoH
   # resolver or Cloudflare API never delays storefront revalidation or order mail.
@@ -476,7 +508,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "${API_PORT:-8000}:8000"     # API
+      - "${API_PORT:-8010}:8000"     # API
       - "${HTTP_PORT:-80}:80"        # wildcard storefront hosts
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -506,25 +538,25 @@ services:
 
   storefront:
     <<: *node-common
-    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/storefront dev -H 0.0.0.0 -p 3000"]
+    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/storefront dev -H 0.0.0.0 -p 3010"]
     environment:
       <<: *node-env
       # Server-side only. The storefront calls the API through nginx inside the docker network.
       STOREFRONT_API_URL: http://nginx:8000
       # nginx overwrites X-Forwarded-Host with $host, so the storefront may trust it.
       TRUSTED_PROXY: "true"
-      STOREFRONT_LOCAL_PORT: ${HTTP_PORT:-80}   # canonical URLs point at nginx, not :3000
+      STOREFRONT_LOCAL_PORT: ${HTTP_PORT:-80}   # canonical URLs point at nginx, not :3010
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-dev-revalidate-secret-change-me}   # must equal the api value
-      STOREFRONT_MEDIA_ORIGINS: http://localhost:${API_PORT:-8000}
+      STOREFRONT_MEDIA_ORIGINS: http://localhost:${API_PORT:-8010}
       # Phase 3 (P3-10): exact dashboard origins allowed to frame the preview / talk to the PreviewBridge.
       # Comma list, no wildcards; empty = embedding impossible (fail closed). Prod: https://app.storeplix.com
-      STOREFRONT_EDITOR_ORIGINS: ${STOREFRONT_EDITOR_ORIGINS:-http://localhost:5173}
+      STOREFRONT_EDITOR_ORIGINS: ${STOREFRONT_EDITOR_ORIGINS:-http://localhost:5183}
       STOREFRONT_API_KEY: ${STOREFRONT_API_KEY:-dev-storefront-key-change-me}
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-storeplix.test}
     ports:
-      - "${STOREFRONT_PORT:-3000}:3000"
+      - "${STOREFRONT_PORT:-3010}:3010"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--header", "Host: demo.localhost", "http://127.0.0.1:3000/"]
+      test: ["CMD", "wget", "-qO-", "--header", "Host: demo.localhost", "http://127.0.0.1:3010/"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -532,7 +564,7 @@ services:
 
   merchant-dashboard:
     <<: *node-common
-    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/merchant-dashboard dev --host 0.0.0.0 --port 5173 --strictPort"]
+    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/merchant-dashboard dev --host 0.0.0.0 --port 5183 --strictPort"]
     environment:
       <<: *node-env
       # 4.7b+: empty → the SPA uses relative /api + /sanctum URLs through the Vite proxy below (same origin).
@@ -541,9 +573,9 @@ services:
       # so the target is the nginx API server inside the compose network (not api:8000).
       VITE_API_PROXY_TARGET: http://nginx:8000
     ports:
-      - "${MERCHANT_PORT:-5173}:5173"
+      - "${MERCHANT_PORT:-5183}:5183"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5183/"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -551,7 +583,7 @@ services:
 
   super-admin:
     <<: *node-common
-    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/super-admin dev --host 0.0.0.0 --port 5174 --strictPort"]
+    command: ["sh", "-c", "corepack enable && pnpm --filter @storeplix/super-admin dev --host 0.0.0.0 --port 5184 --strictPort"]
     environment:
       <<: *node-env
       # 4.7b+: empty → the SPA uses relative /api + /sanctum URLs through the Vite proxy below (same origin).
@@ -560,9 +592,9 @@ services:
       # so the target is the nginx API server inside the compose network (not api:8000).
       VITE_API_PROXY_TARGET: http://nginx:8000
     ports:
-      - "${ADMIN_PORT:-5174}:5174"
+      - "${ADMIN_PORT:-5184}:5184"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5174/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5184/"]
       interval: 15s
       timeout: 5s
       retries: 10

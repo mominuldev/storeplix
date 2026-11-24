@@ -77,7 +77,7 @@ final class PaymentUrls
         return $values;
     }
 
-    /** https://{primary host} (local: http://{host}:3000, like preview links). Null when the store has no primary domain. */
+    /** https://{primary host} (local: http://{host}:3010, like preview links). Null when the store has no primary domain. */
     public static function storefrontBase(Store $store): ?string
     {
         $host = $store->relationLoaded('primaryDomain') ? $store->primaryDomain?->hostname
@@ -86,7 +86,7 @@ final class PaymentUrls
             return null;
         }
 
-        return app()->environment('local') ? "http://{$host}:3000" : "https://{$host}";
+        return app()->environment('local') ? "http://{$host}:3010" : "https://{$host}";
     }
 
     /** Where the shopper lands after a gateway return (P5B-18). */

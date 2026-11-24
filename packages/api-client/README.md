@@ -6,7 +6,7 @@ Framework-free typed client for the Store Plix API (`/api/v1`). Unwraps `{data}`
 import { createApiClient, ApiError } from '@storeplix/api-client';
 
 const api = createApiClient({
-  baseUrl: 'http://localhost:8000',          // /api/v1 appended
+  baseUrl: 'http://localhost:8010',          // /api/v1 appended
   getToken: () => localStorage.getItem('token'),
   getTenantId: () => currentTenantId,        // sent as X-Tenant-Id
   onUnauthorized: () => logout(),

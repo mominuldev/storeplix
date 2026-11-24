@@ -42,5 +42,5 @@ return [
     ],
 
     // Base for signed return URLs and webhook URLs shown to merchants (a tunnel URL in sandbox work).
-    'public_api_url' => env('PUBLIC_API_URL', env('APP_URL', 'http://localhost:8000')),
+    'public_api_url' => env('PUBLIC_API_URL', env('APP_URL', 'http://localhost:8010')),
 ];

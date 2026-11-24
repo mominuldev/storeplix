@@ -68,8 +68,8 @@ export const mainNav: NavEntry[] = [
   },
   { label: 'Inventory', to: '/inventory', icon: Warehouse },
   { label: 'Customers', to: '/customers', icon: Users, requires: can.viewCustomers },
-  // PHASE-8-5 §8 (amends Phase 5a): Overview, Coupons, Campaigns. Overview and Campaigns need `marketing.manage`;
-  // abandoned cart / automations stay hidden (8.6).
+  // PHASE-8-5 §8 (amends Phase 5a): Overview, Coupons, Campaigns; PHASE-8-6 §10: + Automations (after Campaigns).
+  // Overview, Campaigns and Automations need `marketing.manage`.
   {
     label: 'Marketing',
     to: '/marketing',
@@ -78,6 +78,7 @@ export const mainNav: NavEntry[] = [
       { label: 'Overview', to: '/marketing', requires: can.manageMarketing },
       { label: 'Coupons', to: '/marketing/coupons' },
       { label: 'Campaigns', to: '/marketing/campaigns', requires: can.manageMarketing },
+      { label: 'Automations', to: '/marketing/automations', requires: can.manageMarketing },
     ],
   },
   { label: 'Reports', to: '/reports', icon: BarChart3, requires: can.viewReports },

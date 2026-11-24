@@ -13,7 +13,7 @@ class HostNormalizerTest extends TestCase
         return [
             ['Demo.StorePlix.test', 'demo.storeplix.test'],
             ['demo.storeplix.test.', 'demo.storeplix.test'],
-            ['demo.localhost:3000', 'demo.localhost'],
+            ['demo.localhost:3010', 'demo.localhost'],
             ['  shop.example.com  ', 'shop.example.com'],
             ['', null],
             ['bad host', null],

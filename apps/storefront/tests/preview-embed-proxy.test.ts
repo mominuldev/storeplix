@@ -5,7 +5,7 @@ import { EMBED_COOKIE, PREVIEW_COOKIE } from '@/lib/preview-token';
 import { parseEditorOrigins } from '@/lib/editor-origins';
 
 function run(url: string, init: { host?: string; cookie?: string } = {}) {
-  const headers: Record<string, string> = { host: init.host ?? 'demo.localhost:3000' };
+  const headers: Record<string, string> = { host: init.host ?? 'demo.localhost:3010' };
   if (init.cookie) headers.cookie = init.cookie;
   return proxy(new NextRequest(`http://placeholder${url}`, { headers }));
 }
@@ -15,7 +15,7 @@ describe('proxy: embedded preview (?preview=…&embed=1)', () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it('sets sp_preview + sp_embed as HttpOnly; Secure; SameSite=None; Partitioned and strips both params', () => {
-    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5183');
     const res = run('/pages/about?preview=tok.123&embed=1&x=1');
     expect(res.status).toBe(307);
     const u = new URL(res.headers.get('location')!);
@@ -32,7 +32,7 @@ describe('proxy: embedded preview (?preview=…&embed=1)', () => {
     expect(preview).toContain('sp_preview=tok.123');
     expect(embed).toContain('sp_embed=1');
     expect(res.headers.get('referrer-policy')).toBe('strict-origin');
-    expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'self' http://localhost:5173");
+    expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'self' http://localhost:5183");
   });
 
   it('non-embed preview keeps SameSite=Lax (no Partitioned) and clears sp_embed', () => {
@@ -54,16 +54,16 @@ describe('proxy: framing headers', () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("live pages: frame-ancestors 'none' + X-Frame-Options DENY", () => {
-    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5183');
     const res = run('/');
     expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
     expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
   it('with a preview cookie: only the exact editor origins may frame', () => {
-    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173,https://app.storeplix.com');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5183,https://app.storeplix.com');
     const res = run('/', { cookie: `${PREVIEW_COOKIE}=tok` });
-    expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'self' http://localhost:5173 https://app.storeplix.com");
+    expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'self' http://localhost:5183 https://app.storeplix.com");
     expect(res.headers.get('x-frame-options')).toBeNull();
   });
 
@@ -76,7 +76,7 @@ describe('proxy: framing headers', () => {
   });
 
   it('a garbage preview cookie does not unlock framing', () => {
-    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5183');
     expect(run('/', { cookie: `${PREVIEW_COOKIE}=%3Cx%3E` }).headers.get('x-frame-options')).toBe('DENY');
   });
 });
@@ -84,8 +84,8 @@ describe('proxy: framing headers', () => {
 describe('parseEditorOrigins', () => {
   it('keeps exact origins only (no wildcards, paths, credentials or junk)', () => {
     expect(
-      parseEditorOrigins(' http://localhost:5173 , https://app.storeplix.com/, https://*.storeplix.com, https://a.com/path, https://u:p@b.com, javascript:alert(1), nope'),
-    ).toEqual(['http://localhost:5173', 'https://app.storeplix.com']);
+      parseEditorOrigins(' http://localhost:5183 , https://app.storeplix.com/, https://*.storeplix.com, https://a.com/path, https://u:p@b.com, javascript:alert(1), nope'),
+    ).toEqual(['http://localhost:5183', 'https://app.storeplix.com']);
     expect(parseEditorOrigins(undefined)).toEqual([]);
   });
 });

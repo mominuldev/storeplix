@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
     // Exact media origins from STOREFRONT_MEDIA_ORIGINS (read at build time). No wildcards.
     remotePatterns: mediaRemotePatterns(),
     // Next 16 refuses to optimize images from local IPs; local dev serves media from the API on
-    // localhost:8000. Never in production builds.
+    // localhost:8010. Never in production builds.
     dangerouslyAllowLocalIP: process.env.NODE_ENV !== 'production' && parseMediaOrigins().some((o) => o.hostname === 'localhost' || o.hostname === '127.0.0.1'),
   },
 };

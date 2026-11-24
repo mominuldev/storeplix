@@ -3,7 +3,7 @@ import 'server-only';
 /** Server-only environment. STOREFRONT_API_KEY and REVALIDATE_SECRET must never reach the client. */
 export const serverEnv = {
   get apiUrl(): string {
-    return (process.env.STOREFRONT_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '');
+    return (process.env.STOREFRONT_API_URL ?? 'http://localhost:8010').replace(/\/+$/, '');
   },
   get apiKey(): string | undefined {
     return process.env.STOREFRONT_API_KEY || undefined;

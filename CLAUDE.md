@@ -16,7 +16,7 @@ Product brief: `docs/PRODUCT-BLUEPRINT.md`. Binding inter-app contract: `docs/de
 | `packages/*` | `@storeplix/ui`, `@storeplix/types`, `@storeplix/api-client`, `@storeplix/config` |
 | Infra | Docker, Nginx, S3-compatible storage, Cloudflare (DNS/CDN/SSL for SaaS), GitHub Actions |
 
-Ports: api 8000 · merchant 5173 · super-admin 5174 · storefront 3000 · postgres 5432 · redis 6379.
+Ports: api 8010 · merchant 5183 · super-admin 5184 · storefront 3010 · postgres 5432 · redis 6379.
 
 ## Repo layout
 ```
@@ -99,7 +99,7 @@ docs/                    architecture, adr, api (openapi.yaml), development, des
 - Install once: `cd tests/e2e && pnpm install --ignore-workspace && pnpm exec playwright install chromium`.
 - Ad-hoc check example (screenshot + console errors):
   ```bash
-  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3000 /tmp/home.png
+  cd tests/e2e && pnpm exec playwright screenshot --full-page http://demo.localhost:3010 /tmp/home.png
   ```
   For flows (login, editor, preview), write a spec under `tests/e2e/specs/` and run it with `pnpm exec playwright test <spec>`.
 - Save screenshots and traces outside the repo (or under the git-ignored `tests/e2e/test-results/`).

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Tenancy\Support;
 
+use App\Domain\Automations\Models\Automation;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
@@ -59,6 +60,7 @@ class AuditLogger
         CourierAccount::class => 'courier',
         StoreDomain::class => 'store_domain',
         ApiKey::class => 'api_key',
+        Automation::class => 'automation', // PHASE-8-6 §4.4
     ];
 
     public function __construct(

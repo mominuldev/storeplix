@@ -62,9 +62,9 @@ describe('primaryRedirectTarget', () => {
     expect(t({ path: '/' })).toBe('https://shop.acme.com/');
   });
   it('uses http + dev port for .localhost and .test hosts', () => {
-    vi.stubEnv('STOREFRONT_LOCAL_PORT', '3000');
-    expect(t({ redirectHost: 'shop-1.localhost', requestHost: 'acme.storeplix.test' })).toBe('http://shop-1.localhost:3000/products/x?ref=1');
-    expect(t({ redirectHost: 'shop.acme.test' })).toBe('http://shop.acme.test:3000/products/x?ref=1');
+    vi.stubEnv('STOREFRONT_LOCAL_PORT', '3010');
+    expect(t({ redirectHost: 'shop-1.localhost', requestHost: 'acme.storeplix.test' })).toBe('http://shop-1.localhost:3010/products/x?ref=1');
+    expect(t({ redirectHost: 'shop.acme.test' })).toBe('http://shop.acme.test:3010/products/x?ref=1');
   });
   it('never redirects a preview, the primary itself, or without a path', () => {
     expect(t({ preview: true })).toBeNull();
@@ -133,7 +133,7 @@ describe('storefront config + redirects', () => {
 
   beforeEach(() => {
     vi.stubEnv('STOREFRONT_API_KEY', 'k');
-    vi.stubEnv('STOREFRONT_LOCAL_PORT', '3000');
+    vi.stubEnv('STOREFRONT_LOCAL_PORT', '3010');
     vi.stubGlobal('fetch', fetchMock);
     previewToken = null;
   });
@@ -173,7 +173,7 @@ describe('storefront config + redirects', () => {
   it('page request on a non-primary host → 308 to the same path + query on the primary', async () => {
     respond({ redirect_host: 'shop-1.localhost', primary_host: 'shop-1.localhost' });
     setRequest(host(), '/products/x?ref=1');
-    await expect(requireCurrentStore()).rejects.toMatchObject({ url: 'http://shop-1.localhost:3000/products/x?ref=1', status: 308 });
+    await expect(requireCurrentStore()).rejects.toMatchObject({ url: 'http://shop-1.localhost:3010/products/x?ref=1', status: 308 });
   });
 
   it('no redirect without redirect_host (primary, platform host with platform primary)', async () => {

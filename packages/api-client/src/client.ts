@@ -207,6 +207,21 @@ import type {
   UnsubscribeInput,
   UnsubscribeStatus,
   UpdateCampaignInput,
+  Automation,
+  AutomationDetail,
+  AutomationDryRun,
+  AutomationDryRunInput,
+  AutomationListMeta,
+  AutomationRun,
+  AutomationRunFilters,
+  AutomationStats,
+  AutomationStatsDays,
+  AutomationTestResult,
+  CartContactInput,
+  CreateAutomationInput,
+  RecipeKey,
+  RecoverCartResult,
+  UpdateAutomationInput,
 } from '@storeplix/types';
 import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
@@ -217,7 +232,7 @@ import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryL
 export interface ApiClientOptions {
   /**
    * API origin. `''` (the SPAs, Phase 4.7) = same-origin relative URLs through the Vite/Nginx proxy;
-   * `http://localhost:8000` for server-to-server use. `/api/v1` is appended automatically.
+   * `http://localhost:8010` for server-to-server use. `/api/v1` is appended automatically.
    */
   baseUrl: string;
   /** fetch credentials mode. Default `same-origin` (session cookie, contract §7.3). */
@@ -1309,6 +1324,59 @@ export function createApiClient(options: ApiClientOptions) {
       devSink: (storeId: string) => request<DevSinkMessage[]>(`/dev${store(storeId)}/message-sink`),
     },
 
+    /**
+     * PHASE-8-6 §9.1 automations (store-scoped, `marketing.manage`; staff 403). Plan without `sms_automation` → 402
+     * `feature_not_in_plan` on create / enable / PATCH of an `on` automation / test message.
+     */
+    automations: {
+      /** `meta.recipes` = the catalogue (incl. `added`), `meta.kpis` = page tiles. */
+      list: (storeId: string) =>
+        listOf<Automation, AutomationListMeta>(`${store(storeId)}/automations`, undefined, {
+          recipes: [],
+          kpis: {
+            active: 0, drafts: 0, total: 0, runs_7d: 0, runs_7d_succeeded_pct: null, messages_sent_month: 0,
+            carts_recovered_30d: 0, recovered_revenue_30d: 0,
+          },
+        }),
+      get: (storeId: string, id: string) => request<AutomationDetail>(`${store(storeId)}/automations/${enc(id)}`),
+      /** 201 `draft` with the recipe defaults; 409 `automation_exists`. */
+      create: (storeId: string, input: CreateAutomationInput) =>
+        request<AutomationDetail>(`${store(storeId)}/automations`, { method: 'POST', body: input }),
+      /** `settings` replaces the whole object (validated per recipe); 409 `revision_conflict`. */
+      update: <R extends RecipeKey = RecipeKey>(storeId: string, id: string, input: UpdateAutomationInput<R>) =>
+        request<AutomationDetail>(`${store(storeId)}/automations/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** `draft|off → on`; 422 `automation_incomplete` (`details.fields`). */
+      enable: (storeId: string, id: string) =>
+        request<AutomationDetail>(`${store(storeId)}/automations/${enc(id)}/enable`, { method: 'POST' }),
+      /** `on → off`; waiting runs end `stopped/automation_off`. */
+      disable: (storeId: string, id: string) =>
+        request<AutomationDetail>(`${store(storeId)}/automations/${enc(id)}/disable`, { method: 'POST' }),
+      /** `draft` only, else 409 `automation_not_draft`. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/automations/${enc(id)}`, { method: 'DELETE' }),
+      /** P86-21: no side effects; 30/min per user (429). Pass at most one subject id. */
+      dryRun: (storeId: string, id: string, input: AutomationDryRunInput = {}, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<AutomationDryRun>(`${store(storeId)}/automations/${enc(id)}/dry-run`, { method: 'POST', body: input, signal: opts?.signal }),
+      /** P86-22 → 202; 5/hour per user (429); counts toward the allowance (402 `plan_limit_reached`). */
+      testMessage: (storeId: string, id: string, step: 1 | 2 = 1) =>
+        request<AutomationTestResult>(`${store(storeId)}/automations/${enc(id)}/test-message`, { method: 'POST', body: { step } }),
+      stats: (storeId: string, id: string, days: AutomationStatsDays = 14) =>
+        request<AutomationStats>(`${store(storeId)}/automations/${enc(id)}/stats`, { query: { days } }),
+      /** Run log: cursor pages of 50, newest first; addresses masked. */
+      runs: (storeId: string, filters: AutomationRunFilters = {}) =>
+        listOf<AutomationRun, CursorMeta>(
+          `${store(storeId)}/automation-runs`,
+          {
+            'filter[automation_id]': filters.automation_id || undefined,
+            'filter[recipe]': filters.recipe,
+            'filter[status]': filters.status?.length ? filters.status.join(',') : undefined,
+            'filter[since]': filters.since || undefined,
+            cursor: filters.cursor || undefined,
+          },
+          { next_cursor: null, prev_cursor: null, per_page: 50 },
+        ),
+      run: (storeId: string, runId: string) => request<AutomationRun>(`${store(storeId)}/automation-runs/${enc(runId)}`),
+    },
+
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */
     reports: {
       sales: (storeId: string, range: ReportRangeQuery = {}) => report<SalesReport>(storeId, 'sales', range),
@@ -1366,6 +1434,32 @@ export function createApiClient(options: ApiClientOptions) {
             headers: storefrontHeaders(host, key, opts?.clientIp),
           }),
       },
+      /**
+       * PHASE-8-6 §7 checkout contact (server-to-server only) → 204. Fire-and-forget from the checkout form: never block
+       * checkout on its failure. 404 `cart_not_found` (no/empty cart), 422 invalid phone, 10/min per shopper IP (429).
+       */
+      saveCartContact: (host: string, key: string, cartToken: string, input: CartContactInput, opts?: { clientIp?: string | null; signal?: AbortSignal }) =>
+        request<void>('/storefront/cart/contact', {
+          method: 'PUT',
+          body: input,
+          anonymous: true,
+          signal: opts?.signal,
+          init: { cache: 'no-store' },
+          headers: { ...storefrontHeaders(host, key, opts?.clientIp), 'X-Cart-Token': cartToken },
+        }),
+      /**
+       * P86-16 restore a cart from a recovery link code → 201 with a **new** cart token (set it as `sp_cart`). Invalid,
+       * stopped or expired → 404 `recovery_link_invalid`; 20/min per shopper IP (429).
+       */
+      recoverCart: (host: string, key: string, code: string, opts?: { clientIp?: string | null; signal?: AbortSignal }) =>
+        request<RecoverCartResult>('/storefront/carts/recover', {
+          method: 'POST',
+          body: { code },
+          anonymous: true,
+          signal: opts?.signal,
+          init: { cache: 'no-store' },
+          headers: storefrontHeaders(host, key, opts?.clientIp),
+        }),
     },
   };
 }

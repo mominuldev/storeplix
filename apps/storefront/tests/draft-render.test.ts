@@ -127,7 +127,7 @@ describe('live store', () => {
     expect(html).not.toContain('Preview');
     expect((await generateMetadata()).robots).toBeUndefined();
     expect(await robotsResponse(current).text()).toContain('Allow: /');
-    expect(await sitemapResponse(current).text()).toContain('<loc>http://demo.localhost:3000/</loc>');
+    expect(await sitemapResponse(current).text()).toContain('<loc>http://demo.localhost:3010/</loc>');
   });
 });
 
@@ -139,11 +139,11 @@ describe('embedded editor preview', () => {
 
   it('mounts no bridge for a normal preview, and no banner inside the editor iframe', async () => {
     current = makeStore('active', 'preview');
-    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5173, https://*.evil.com');
+    vi.stubEnv('STOREFRONT_EDITOR_ORIGINS', 'http://localhost:5183, https://*.evil.com');
     expect(await render()).not.toContain('data-bridge');
     embedded = true;
     const html = await render();
-    expect(html).toContain('data-bridge="http://localhost:5173"');
+    expect(html).toContain('data-bridge="http://localhost:5183"');
     expect(html).not.toContain('Preview mode');
     expect(html).toContain('STORE CONTENT');
   });
@@ -212,8 +212,8 @@ describe('SEO (Phase 3)', () => {
       { slug: 'about', updated_at: '2026-11-20T10:00:00Z' },
       { slug: 'contact', updated_at: null },
     ]).text();
-    expect(xml).toContain('<url><loc>http://demo.localhost:3000/</loc></url>');
-    expect(xml).toContain('<url><loc>http://demo.localhost:3000/pages/about</loc><lastmod>2026-11-20T10:00:00.000Z</lastmod></url>');
-    expect(xml).toContain('<loc>http://demo.localhost:3000/pages/contact</loc>');
+    expect(xml).toContain('<url><loc>http://demo.localhost:3010/</loc></url>');
+    expect(xml).toContain('<url><loc>http://demo.localhost:3010/pages/about</loc><lastmod>2026-11-20T10:00:00.000Z</lastmod></url>');
+    expect(xml).toContain('<loc>http://demo.localhost:3010/pages/contact</loc>');
   });
 });

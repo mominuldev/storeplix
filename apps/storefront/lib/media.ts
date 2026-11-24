@@ -1,6 +1,6 @@
 /**
  * Media origins (API `/storage` locally, the CDN in prod) from STOREFRONT_MEDIA_ORIGINS, a
- * comma-separated list of exact origins, e.g. "http://localhost:8000,https://cdn.storeplix.com".
+ * comma-separated list of exact origins, e.g. "http://localhost:8010,https://cdn.storeplix.com".
  * Used both for next.config `images.remotePatterns` (build time) and for URL checks at runtime.
  * No wildcards: anything not listed is never optimized, and http is only accepted for listed origins.
  */

@@ -3,6 +3,7 @@
 namespace App\Domain\Audit\Http\Controllers;
 
 use App\Domain\Audit\Http\Requests\ListAuditLogsRequest;
+use App\Domain\Automations\Models\Automation;
 use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Tenancy\Models\AuditLog;
@@ -66,6 +67,11 @@ class AuditLogController
         $keyIds = $page->getCollection()->where('actor_type', 'api_key')->pluck('actor_id')->filter()->unique();
         if ($keyIds->isNotEmpty()) {
             $actorNames = $actorNames->union(ApiKey::query()->whereIn('id', $keyIds)->pluck('name', 'id')->map(fn ($n) => 'API: '.$n));
+        }
+        // PHASE-8-6 C13: an automation actor is named after the automation.
+        $automationIds = $page->getCollection()->where('actor_type', 'automation')->pluck('actor_id')->filter()->unique();
+        if ($automationIds->isNotEmpty()) {
+            $actorNames = $actorNames->union(Automation::query()->whereIn('id', $automationIds)->pluck('name', 'id'));
         }
 
         return new JsonResponse([

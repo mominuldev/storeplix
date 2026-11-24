@@ -28,13 +28,15 @@ export function ChannelTag({ channel }: { channel: CampaignChannel }) {
   );
 }
 
-export type MarketingTab = 'overview' | 'coupons' | 'campaigns';
+export type MarketingTab = 'overview' | 'coupons' | 'campaigns' | 'automations';
 
-/** Overview · Coupons (n) · Campaigns (n); the Automations tab is hidden (8.6). */
-export function MarketingTabs({ value, counts }: { value: MarketingTab; counts?: { coupons: number; campaigns: number } }) {
+/** Overview · Coupons (n) · Campaigns (n) · Automations (n on) — the Automations tab is unhidden in 8.6 (§10.5). */
+export function MarketingTabs({ value, counts }: { value: MarketingTab; counts?: { coupons: number; campaigns: number; automations?: number } }) {
   const navigate = useNavigate();
-  const to: Record<MarketingTab, string> = { overview: '/marketing', coupons: '/marketing/coupons', campaigns: '/marketing/campaigns' };
+  const to: Record<MarketingTab, string> = { overview: '/marketing', coupons: '/marketing/coupons', campaigns: '/marketing/campaigns', automations: '/marketing/automations' };
+  // min-w-0 wrapper: with four tabs the list must scroll inside the page at 375 px, not widen it (Q166).
   return (
+    <div className="min-w-0">
     <Tabs<MarketingTab>
       aria-label="Marketing sections"
       value={value}
@@ -43,8 +45,10 @@ export function MarketingTabs({ value, counts }: { value: MarketingTab; counts?:
         { value: 'overview', label: 'Overview' },
         { value: 'coupons', label: 'Coupons', count: counts?.coupons },
         { value: 'campaigns', label: 'Campaigns', count: counts?.campaigns },
+        { value: 'automations', label: 'Automations', count: counts?.automations },
       ]}
     />
+    </div>
   );
 }
 

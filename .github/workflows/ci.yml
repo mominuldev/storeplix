@@ -256,6 +256,20 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'campaigns'"; exit 1; }
           exit $status
 
+      # Phase 8.6 (PHASE-8-6-CONTRACT §13, §16 AC 5): the `automations` group (every §9.1 route: happy, validation, authz,
+      # isolation; each recipe trigger → run → steps → outcomes with the fake gateway + array mailer; conditions matrix;
+      # dedupe; waits + resume-due; quiet hours; frequency cap; allowance shared with campaigns; exit on order; attribution;
+      # cart contact + detect-abandoned; recovery-link clone; automation unsubscribe codes; dry run; test message;
+      # reap-stuck; prune; plan downgrade; S127–S140) must exist and pass on sqlite.
+      - name: phase 8.6 group (automations)
+        run: |
+          mkdir -p build
+          php artisan test --group=automations --exclude-group perf --exclude-group race --log-junit build/automations.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/automations.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "automations tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'automations'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -395,6 +409,15 @@ jobs:
       # CHECKs, composite FKs) and the plans.limits backfill (000300) exist on Postgres; campaigns must pass there too.
       - name: phase 8.5 campaigns (postgres)
         run: php artisan test --group=campaigns --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.6 (§4.4): automations / automation_runs / automation_run_steps / automation_conversions (jsonb settings,
+      # CHECKs, composite FKs, partial indexes, ON CONFLICT DO NOTHING run dedupe) and the carts contact columns (000200)
+      # exist on Postgres; automations must pass there too.
+      - name: phase 8.6 automations (postgres)
+        run: php artisan test --group=automations --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -763,6 +786,10 @@ jobs:
       # campaign's tenant (their RLS probes are also in the `rls` step above).
       - name: phase 8.5 campaigns (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" campaigns lenient --group=campaigns --exclude-group perf --exclude-group race'
+      # Phase 8.6 (PHASE-8-6-CONTRACT §4.4, S130): the four new tables are RLS-forced; cart contact + recover resolve inside
+      # the host's tenant; EvaluateAutomation / resume-due / detect-abandoned run in the automation's tenant.
+      - name: phase 8.6 automations (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" automations lenient --group=automations --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
@@ -797,8 +824,8 @@ jobs:
       - run: pnpm -r --if-present run test
       - run: pnpm -r --if-present run build
         env:
-          STOREFRONT_API_URL: http://127.0.0.1:8000
-          VITE_API_URL: http://127.0.0.1:8000
+          STOREFRONT_API_URL: http://127.0.0.1:8010
+          VITE_API_URL: http://127.0.0.1:8010
       - name: Secret leak check (client bundles)
         run: |
           set -e

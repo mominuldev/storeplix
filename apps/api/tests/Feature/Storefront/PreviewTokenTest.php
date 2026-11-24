@@ -64,7 +64,7 @@ class PreviewTokenTest extends TestCase
         $store = $this->storeFor($tenant, 'loc');
 
         $url = $this->mint($store, $this->tenantHeaders($user, $tenant))->assertCreated()->json('data.url');
-        $this->assertStringStartsWith('http://loc.storeplix.test:3000/?preview=', $url);
+        $this->assertStringStartsWith('http://loc.storeplix.test:3010/?preview=', $url);
     }
 
     public function test_token_for_store_a_is_rejected_on_store_b(): void

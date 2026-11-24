@@ -26,6 +26,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 | `queue-webhooks` | `php artisan queue:work redis --queue=webhooks --tries=5 --backoff=10,60,300 --timeout=60 --sleep=1` | 1+ | SSLCommerz IPN verification, bKash notifications, courier webhook events (each re-queried with the provider before any effect) |
 | `queue-webhooks-out` | `php artisan queue:work redis --queue=webhooks-out --tries=1 --timeout=40 --sleep=1` | 1+ | Phase 8.4 outbound merchant webhooks (`DeliverWebhook`, one attempt each; retries are scheduled on the row by `webhooks:dispatch-due`). Without it deliveries stay `pending` forever |
 | `queue-campaigns` | `php artisan queue:work redis --queue=campaigns --tries=1 --timeout=250 --sleep=1` (needs `REDIS_QUEUE_RETRY_AFTER` > 250; the `config/queue.php` default is 90, so set 360) | 1+ | Phase 8.5 marketing campaigns (`StartCampaign` snapshot, `SendCampaignBatch` ≤ 100 recipients; provider calls never retried, P85-11). Throughput is capped by Redis limiters (10 SMS/s per store, 50/s platform, 20 emails/s per store), not by worker count. Without it campaigns stay `sending` with `queued` recipients |
+| `queue-automations` | `php artisan queue:work redis --queue=automations --tries=1 --timeout=250 --sleep=1` (same `REDIS_QUEUE_RETRY_AFTER` 360 rule) | 1+ | Phase 8.6 automations (`EvaluateAutomation` and its steps, `$timeout` ≤ 240 s; message steps never retried, P86-5). Messages share the 8.5 send path, allowances and limiters. Without it no run is evaluated: trigger occurrences queue up, recovery messages are never sent and `waiting` runs resumed by the scheduler are never executed |
 | `scheduler` | `php artisan schedule:work` (or cron `* * * * * php artisan schedule:run`) | **exactly 1** | §6. DB role `storeplix_admin` for discovery |
 | `gotenberg` | `gotenberg --api-enable-basic-auth --api-timeout=120s` | 1 per API node pool | Internal only (§5) |
 | migrate job | `php artisan migrate --force --database=pgsql_owner` | one-off per deploy | DB role `storeplix_owner` (§3) |
@@ -37,6 +38,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 - `composer dev` mirrors these workers locally but has no `webhooks` worker (it does run `webhooks-out`); the compose stack has all of them.
 - Phase 8.4: `WEBHOOKS_OUT_FAKE` and `WEBHOOKS_OUT_ALLOW_HTTP` must be `false`/unset outside local and CI (the API refuses to boot with either in production).
 - Phase 8.5: `CAMPAIGNS_DEV_SINK` must be `false`/unset in production, and `CAMPAIGN_MAILER` must be a real transport (not `log`/`array`) when `SMS_DRIVER=revesms` — the API refuses to boot otherwise (S125). Set `CAMPAIGN_MAIL_FROM` to an address on the platform sending domain (SPF/DKIM/DMARC aligned, Q146).
+- Phase 8.6: no new fake flag. The 8.5 boot guards cover automation messages too (`CAMPAIGNS_DEV_SINK` off and a real `CAMPAIGN_MAILER` in production, S140); `REDIS_QUEUE_RETRY_AFTER` must stay 360 for `queue-automations`. Team notifications (low stock) use the normal transactional mailer on `queue-notifications`.
 
 ---
 
@@ -271,6 +273,10 @@ Redis cache.
 | `campaigns:dispatch-due` | every minute, no overlap | Phase 8.5: `scheduled → sending` by conditional UPDATE for due campaigns (≤ 3 sending per store), dispatches `StartCampaign` on `campaigns` |
 | `campaigns:reap-stuck` | every 5 min, no overlap | Phase 8.5: recipients `sending` > 15 min → `unknown` (never retried); completes campaigns with nothing left |
 | `campaigns:prune-recipients` | daily | Phase 8.5: delete `campaign_recipients` older than 13 months (campaign rows and counters kept) |
+| `automations:detect-abandoned` | every 5 min, no overlap | Phase 8.6: per store with an `on` checkout-recovery automation, marks idle active carts with a checkout contact once (`recovery_detected_at`, conditional UPDATE) and dispatches `EvaluateAutomation` (`checkout.abandoned`) |
+| `automations:resume-due` | every minute, no overlap | Phase 8.6: `waiting → running WHERE resume_at <= now()` by conditional UPDATE (waits, quiet hours until 09:00 store time), dispatches the next step |
+| `automations:reap-stuck` | every 5 min, no overlap | Phase 8.6: message steps `sending` > 15 min → `unknown` (never retried); the run continues with its next step |
+| `automations:prune-runs` | daily | Phase 8.6: delete `automation_runs` (+ steps) older than 90 days and `automation_conversions` older than 13 months |
 | `analytics:aggregate` | hourly at :20 Asia/Dhaka, no overlap, one server, in-process | Phase 8.2 nightly analytics snapshot + 35-day restatement; later runs are the catch-up (§12) |
 
 Without the scheduler unpaid holds never expire, links never expire and a lost IPN is never reconciled. The `payments:*`,

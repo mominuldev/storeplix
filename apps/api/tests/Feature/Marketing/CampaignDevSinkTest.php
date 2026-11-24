@@ -41,7 +41,8 @@ class CampaignDevSinkTest extends TestCase
 
         $sink = $this->api($h, 'GET', $url)->assertOk()->json('data');
         $this->assertCount(2, $sink);
-        $this->assertSame(['channel', 'to', 'subject', 'text', 'unsubscribe_url', 'campaign_id', 'is_test', 'created_at'], array_keys($sink[0]));
+        $this->assertSame(['channel', 'to', 'subject', 'text', 'unsubscribe_url', 'campaign_id', 'is_test', 'automation_id', 'created_at'], array_keys($sink[0])); // PHASE-8-6 §8: automation_id (null here)
+        $this->assertNull($sink[0]['automation_id']);
         $this->assertTrue($sink[0]['is_test']);
         $this->assertFalse($sink[1]['is_test']);
         $this->assertSame($customer->phone, $sink[1]['to']);

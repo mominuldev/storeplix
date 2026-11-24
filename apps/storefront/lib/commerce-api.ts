@@ -6,6 +6,8 @@ import type {
   PaymentInitiation,
   PaymentLinkView,
   PaymentMethod,
+  CartContactInput,
+  RecoverCartResult,
   ShippingQuote,
   StorefrontAvailability,
   StorefrontCategory,
@@ -189,6 +191,27 @@ export function fetchShippingQuote(c: CartCall, districtCode: string, thanaCode:
 
 export function postCheckout(c: CartCall, idempotencyKey: string, body: unknown) {
   return request(c.host, '/storefront/checkout', cartCall(c, { method: 'POST', body, idempotencyKey }), parseCheckoutResult);
+}
+
+/**
+ * PHASE-8-6 P86-12: the checkout contact (phone required, name/email optional) saved on the cart when the shopper leaves
+ * the phone field. 204 on success; the caller ignores every failure (checkout never waits for it).
+ */
+export function putCartContact(c: CartCall, contact: CartContactInput): Promise<ApiResult<true>> {
+  if (!c.cartToken) return Promise.resolve({ ok: false, status: 404, code: 'cart_not_found', message: '', details: {} });
+  return request(c.host, '/storefront/cart/contact', cartCall(c, { method: 'PUT', body: contact }), () => true);
+}
+
+/**
+ * PHASE-8-6 P86-16: `/r/{code}` → a fresh copy of the run's cart (new token; the original is never revealed). Unknown,
+ * expired or stopped codes are one 404 `recovery_link_invalid`.
+ */
+export function postRecoverCart(host: string, code: string, clientIp: string | null): Promise<ApiResult<RecoverCartResult>> {
+  return request(host, '/storefront/carts/recover', { cache: { kind: 'no-store' }, method: 'POST', body: { code }, clientIp }, (d) => {
+    const v = d as Partial<RecoverCartResult> | null | undefined;
+    if (!v || typeof v.cart_token !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(v.cart_token)) return null;
+    return { cart_token: v.cart_token, next: v.next === 'cart' ? 'cart' : 'checkout' };
+  });
 }
 
 // ---------- orders ----------

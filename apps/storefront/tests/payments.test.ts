@@ -106,8 +106,8 @@ describe('Zod schemas for the 5b payment payloads', () => {
     for (const bad of ['javascript:alert(1)', '//evil.test/x', 'https://user:pw@evil.test/', '/relative', 42]) {
       expect(schemas.parsePaymentInitiation(initiation({ redirect_url: bad }))).toMatchObject({ status: 'initiation_failed', redirect_url: null });
     }
-    expect(schemas.safeGatewayUrl('http://localhost:8000/api/v1/dev/fake-gateway/x', false)).toBeNull();
-    expect(schemas.safeGatewayUrl('http://localhost:8000/api/v1/dev/fake-gateway/x', true)).toBe('http://localhost:8000/api/v1/dev/fake-gateway/x');
+    expect(schemas.safeGatewayUrl('http://localhost:8010/api/v1/dev/fake-gateway/x', false)).toBeNull();
+    expect(schemas.safeGatewayUrl('http://localhost:8010/api/v1/dev/fake-gateway/x', true)).toBe('http://localhost:8010/api/v1/dev/fake-gateway/x');
     expect(schemas.parsePaymentInitiation(initiation({ payment_id: '../x' }))).toBeNull();
     expect(schemas.parsePaymentInitiation(initiation({ provider: 'nagad' }))).toBeNull();
   });

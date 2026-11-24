@@ -112,7 +112,7 @@ class TeamTest extends TestCase
     public function test_invite_validates_domain_duplicates_and_existing_staff(): void
     {
         $this->invite('new@storeplix.com');
-        Mail::assertQueued(PlatformInvitationMail::class, fn (PlatformInvitationMail $m) => str_starts_with($m->url(), 'http://localhost:5174/accept-invite#token='));
+        Mail::assertQueued(PlatformInvitationMail::class, fn (PlatformInvitationMail $m) => str_starts_with($m->url(), 'http://localhost:5184/accept-invite#token='));
         $row = PlatformInvitation::query()->sole();
         $this->assertSame(64, strlen($row->token_hash));
         $this->assertTrue($row->expires_at->between(now()->addDays(7)->subMinute(), now()->addDays(7)->addMinute()));
@@ -186,7 +186,7 @@ class TeamTest extends TestCase
         $merchant->refresh();
         $this->assertSame('support', $merchant->platform_role);
         // Password unchanged and the shop membership untouched: merchant sign-in still works.
-        $this->spaOrigin = 'http://localhost:5173';
+        $this->spaOrigin = 'http://localhost:5183';
         $this->spaLogin($merchant);
         $this->browser('GET', '/api/v1/stores', headers: ['X-Tenant-Id' => $tenant->id])->assertOk();
     }
@@ -268,7 +268,7 @@ class TeamTest extends TestCase
         $this->adminSignIn($target);
         $adminJar = $this->jar;
         $this->jar = [];
-        $this->spaOrigin = 'http://localhost:5173';
+        $this->spaOrigin = 'http://localhost:5183';
         $this->spaLogin($target);
         $merchantJar = $this->jar;
         $this->assertSame(2, DB::table('sessions')->where('user_id', $target->id)->count());
@@ -292,7 +292,7 @@ class TeamTest extends TestCase
         $this->spaOrigin = self::ADMIN_ORIGIN;
         $this->browser('GET', '/api/v1/admin/auth/me')->assertUnauthorized();
         $this->jar = $merchantJar;
-        $this->spaOrigin = 'http://localhost:5173';
+        $this->spaOrigin = 'http://localhost:5183';
         $this->browser('GET', '/api/v1/auth/me')->assertOk();
 
         // Disabled → can't sign in (same 422).
