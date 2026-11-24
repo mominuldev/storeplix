@@ -47,6 +47,8 @@ jobs:
             echo 'SMS_DRIVER=log'
             echo 'CAMPAIGN_MAILER=log'
             echo 'CAMPAIGNS_DEV_SINK=true'
+            # Phase 8.6 (PHASE-8-6-CONTRACT §13 QA): automation messages reuse the same three flags (no new provider); the
+            # sink entries carry `automation_id`, which phase8-6.* reads. Nothing new to set here.
           } >> .env
           cp apps/api/.env.example apps/api/.env
           # The api/queue containers read apps/api/.env; set the flag there too in case compose doesn't forward it.
@@ -63,6 +65,11 @@ jobs:
           # Phase 8.5: StartCampaign / SendCampaignBatch run on the `campaigns` queue (§5.1, P85-12). Same fallback.
           if ! docker compose config --services | grep -qx 'queue-campaigns'; then
             docker compose exec -d -T api php artisan queue:work redis --queue=campaigns --sleep=1
+          fi
+          # Phase 8.6: EvaluateAutomation / step jobs run on the `automations` queue (P86-23, $timeout <= 240 s, message
+          # steps never retried). Same fallback; compose defines `queue-automations`.
+          if ! docker compose config --services | grep -qx 'queue-automations'; then
+            docker compose exec -d -T api php artisan queue:work redis --queue=automations --tries=1 --timeout=250 --sleep=1
           fi
       - uses: actions/setup-node@v4
         with:
@@ -93,6 +100,10 @@ jobs:
           WEBHOOKS_OUT_FAKE: 'true'
           # Phase 8.5 phase8-5.* specs read the campaign dev sink (must match the compose values above).
           CAMPAIGNS_DEV_SINK: 'true'
+          # Phase 8.6 phase8-6.* specs use the same sink (automation messages, `automation_id`) with SMS_DRIVER=log and
+          # CAMPAIGN_MAILER=log on the API side (compose values above).
+          SMS_DRIVER: log
+          CAMPAIGN_MAILER: log
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()
