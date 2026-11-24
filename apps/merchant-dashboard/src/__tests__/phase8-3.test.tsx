@@ -41,6 +41,7 @@ describe('PHASE-8-3 §7.1 permission helpers', () => {
       ['viewCustomers', 'customers.view'],
       ['editCustomers', 'customers.edit'],
       ['viewReports', 'reports.view'],
+      ['manageExpenses', 'expenses.manage'],
     ];
     for (const [helper, key] of map) {
       const fn = can[helper] as (m: unknown) => boolean;

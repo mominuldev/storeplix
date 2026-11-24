@@ -154,11 +154,12 @@ describe('report formatting', () => {
   });
   it('waterfall steps down from revenue and labels untracked costs', () => {
     const bars = waterfallBars(profitReport().summary);
-    expect(bars.map((b) => b.label)).toEqual(['Revenue', 'Product cost', 'Delivery charges', 'Courier COD fee', 'Gateway fees', 'Ad spend', 'Net profit']);
+    expect(bars.map((b) => b.label)).toEqual(['Revenue', 'Product cost', 'Delivery charges', 'Courier COD fee', 'Gateway fees', 'Ad spend', 'Other expenses', 'Net profit']);
     expect(bars[1]).toMatchObject({ value: 24830000, base: 48620000 - 24830000 });
     expect(bars[2]).toMatchObject({ base: 48620000 - 24830000 - 5230000 });
     expect(bars[4]).toMatchObject({ value: null, note: 'Not tracked' });
-    expect(bars[6]).toMatchObject({ value: 17374000, tone: 'success' });
+    expect(bars[5]).toMatchObject({ value: 0, display: '− ৳ 0' });
+    expect(bars[7]).toMatchObject({ value: 17374000, tone: 'success' });
   });
   it('heat tiles', () => {
     expect(heatTone(0.94)).toContain('success');

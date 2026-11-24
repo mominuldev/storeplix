@@ -247,15 +247,18 @@ export function salesReport(o: Partial<SalesReport> = {}): SalesReport {
   };
 }
 
-const profitSummary = (o: Partial<ProfitReport['summary']> = {}): ProfitReport['summary'] => ({
+export const profitSummary = (o: Partial<ProfitReport['summary']> = {}): ProfitReport['summary'] => ({
   revenue_amount: 48620000,
   delivered_orders_count: 369,
   product_cost_amount: 24830000,
   delivery_cost_amount: 5230000,
   cod_fee_amount: 1186000,
   gateway_fee_amount: null,
-  ad_spend_amount: null,
+  // PHASE-8-7 §7.3: a store with no expenses reports 0 (was null), other expenses 0, profit before = net profit.
+  ad_spend_amount: 0,
+  other_expenses_amount: 0,
   total_cost_amount: 31246000,
+  profit_before_expenses_amount: 17374000,
   net_profit_amount: 17374000,
   margin: 0.3573,
   profit_per_order_amount: 47084,
@@ -267,7 +270,7 @@ export function profitReport(o: Partial<ProfitReport> = {}): ProfitReport {
   return {
     summary: s,
     previous: profitSummary({ revenue_amount: 40000000, margin: 0.3, net_profit_amount: 12000000 }),
-    per_order: { order_value_amount: 131761, product_cost_amount: 67289, delivery_cost_amount: 14173, cod_fee_amount: 3214, gateway_fee_amount: null, profit_amount: 47084 },
+    per_order: { order_value_amount: 131761, product_cost_amount: 67289, delivery_cost_amount: 14173, cod_fee_amount: 3214, gateway_fee_amount: null, ad_spend_amount: 0, other_expenses_amount: 0, profit_amount: 47084 },
     weekly: Array.from({ length: 12 }, (_, i) => ({ week: `2026-W${36 + i}`, week_start: '2026-09-01', revenue_amount: 1000000, net_profit_amount: 250000 + i * 1000, margin: 0.25 + i * 0.001 })),
     daily: Array.from({ length: 9 }, (_, i) => ({
       date: `2026-11-${String(23 - i).padStart(2, '0')}`,
@@ -277,12 +280,14 @@ export function profitReport(o: Partial<ProfitReport> = {}): ProfitReport {
       delivery_cost_amount: 320000,
       cod_fee_amount: 72000,
       gateway_fee_amount: null,
-      ad_spend_amount: null,
+      ad_spend_amount: 0,
+      other_expenses_amount: 0,
       total_cost_amount: 1902000,
+      profit_before_expenses_amount: 1038000,
       net_profit_amount: 1038000,
       margin: 0.353,
     })),
-    data_quality: { items_without_cost: 12, shipments_without_fee: 0 },
+    data_quality: { items_without_cost: 12, shipments_without_fee: 0, expenses_count: 0 },
     ...o,
   };
 }

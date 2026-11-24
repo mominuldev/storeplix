@@ -81,7 +81,8 @@ export const mainNav: NavEntry[] = [
       { label: 'Automations', to: '/marketing/automations', requires: can.manageMarketing },
     ],
   },
-  { label: 'Reports', to: '/reports', icon: BarChart3, requires: can.viewReports },
+  // PHASE-8-7 P87-16: also shown to expenses-only members (they land on the Expenses tab).
+  { label: 'Reports', to: '/reports', icon: BarChart3, requires: can.seeReports },
   {
     label: 'Online store',
     to: '/online-store',
