@@ -6,6 +6,7 @@ use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Orders\Notifications\StoreCommerce;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
+use App\Domain\Stores\Services\StoreSettingsUpdater;
 use App\Domain\Themes\Models\StoreTheme;
 use App\Domain\Themes\ThemeRegistry;
 
@@ -54,6 +55,7 @@ final class StoreSettingsPresenter
             'region' => [
                 'country' => $store->country,
                 'currency' => $store->currency,
+                'currency_locked' => StoreSettingsUpdater::currencyLocked($store), // PHASE-8-7 §6.4
                 'timezone' => $store->timezone,
             ],
             'seo' => [

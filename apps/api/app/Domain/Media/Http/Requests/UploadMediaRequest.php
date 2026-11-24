@@ -23,7 +23,8 @@ class UploadMediaRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file'],
-            'purpose' => ['required', 'string', Rule::enum(MediaPurpose::class)],
+            // PHASE-8-7 §5.4: library purposes only (`expense_receipt` → 422; receipts upload through the expenses domain).
+            'purpose' => ['required', 'string', Rule::in(MediaPurpose::libraryValues())],
             'alt' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }

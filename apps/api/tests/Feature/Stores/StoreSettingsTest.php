@@ -30,7 +30,7 @@ class StoreSettingsTest extends TestCase
                 'contact' => ['phone', 'email', 'whatsapp', 'support_hours'],
                 'social' => ['facebook', 'instagram', 'youtube'],
                 'address' => ['street', 'division', 'district', 'area', 'postcode', 'use_for_returns'],
-                'region' => ['country', 'currency', 'timezone'],
+                'region' => ['country', 'currency', 'currency_locked', 'timezone'],
                 'seo' => ['title', 'description', 'share_image', 'hide_from_search'],
                 'commerce' => [
                     'checkout' => ['cod_enabled', 'cod_advance'], 'order_prefix', 'next_order_number', 'tax' => ['display', 'rate_bps', 'bin'], 'invoice' => ['footer'],

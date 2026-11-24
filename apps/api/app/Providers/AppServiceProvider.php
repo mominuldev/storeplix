@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Domain\Automations\AutomationsServiceProvider;
 use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
+use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
@@ -22,6 +23,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // Phase 8.6: automations (commands + limiters) live in their domain provider.
         $this->app->register(AutomationsServiceProvider::class);
+        // Phase 8.7: expenses (commands + limiters).
+        $this->app->register(ExpensesServiceProvider::class);
     }
 
     public function boot(): void

@@ -72,3 +72,8 @@ Schedule::command('automations:detect-abandoned')->everyFiveMinutes()->withoutOv
 Schedule::command('automations:resume-due')->everyMinute()->withoutOverlapping();
 Schedule::command('automations:reap-stuck')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('automations:prune-runs')->dailyAt('04:40')->timezone('Asia/Dhaka')->withoutOverlapping();
+
+// Phase 8.7 (PHASE-8-7 §6.2, §9): "Repeat every month" occurrences hourly; unattached receipts pruned daily (24 h).
+// Discovery on the platform connection, work per tenant.
+Schedule::command('expenses:repeat')->hourly()->withoutOverlapping();
+Schedule::command('expenses:prune-receipts')->dailyAt('03:30')->timezone('UTC')->withoutOverlapping();

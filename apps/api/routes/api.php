@@ -24,6 +24,7 @@ use App\Domain\Documents\Http\DocumentController;
 use App\Domain\Domains\Http\DevDomainController;
 use App\Domain\Domains\Http\DomainAskController;
 use App\Domain\Domains\Http\DomainController;
+use App\Domain\Expenses\Http\Controllers\ExpenseReceiptController;
 use App\Domain\Geo\Http\GeoController;
 use App\Domain\Identity\Http\Controllers\AccountController;
 use App\Domain\Identity\Http\Controllers\AuthController;
@@ -353,6 +354,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.6 (PHASE-8-6-CONTRACT §9.1, §7): automations, run log and storefront checkout recovery (own groups).
     require __DIR__.'/automations.php';
 
+    // Phase 8.7 (PHASE-8-7-CONTRACT §8.1): expenses ledger, receipts, summary and CSV export (own group).
+    require __DIR__.'/expenses.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
@@ -453,6 +457,10 @@ Route::prefix('v1')->group(function (): void {
 
     Route::get('documents/{document}/download', [DocumentController::class, 'download'])
         ->middleware(['signed', 'throttle:60,1,documents.download'])->name('documents.download');
+
+    // Phase 8.7 (PHASE-8-7 §5.3): signed 5-minute expense receipt download (tenant from the signed parameters).
+    Route::get('expense-receipts/{media}/download', [ExpenseReceiptController::class, 'download'])->where('media', '[0-9A-Za-z]{26}')
+        ->middleware(['signed', 'throttle:60,1,expense-receipts.download'])->name('expense-receipts.download');
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])

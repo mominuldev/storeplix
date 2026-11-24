@@ -124,15 +124,17 @@ class ReportsTest extends TestCase
         $r = $this->report($h, $store, 'profit', self::OCT)->assertOk();
         $this->assertSame([
             'revenue_amount' => 145000, 'delivered_orders_count' => 2, 'product_cost_amount' => 50000,
-            'delivery_cost_amount' => 6000, 'cod_fee_amount' => 1000, 'gateway_fee_amount' => null, 'ad_spend_amount' => null,
-            'total_cost_amount' => 57000, 'net_profit_amount' => 88000, 'margin' => round(88000 / 145000, 4),
+            'delivery_cost_amount' => 6000, 'cod_fee_amount' => 1000, 'gateway_fee_amount' => null, 'ad_spend_amount' => 0,
+            'other_expenses_amount' => 0, 'total_cost_amount' => 57000, 'profit_before_expenses_amount' => 88000,
+            'net_profit_amount' => 88000, 'margin' => round(88000 / 145000, 4),
             'profit_per_order_amount' => 44000,
         ], $r->json('data.summary'));
         $this->assertSame([
             'order_value_amount' => 72500, 'product_cost_amount' => 25000, 'delivery_cost_amount' => 3000,
-            'cod_fee_amount' => 500, 'gateway_fee_amount' => null, 'profit_amount' => 44000,
+            'cod_fee_amount' => 500, 'gateway_fee_amount' => null, 'ad_spend_amount' => 0, 'other_expenses_amount' => 0,
+            'profit_amount' => 44000,
         ], $r->json('data.per_order'));
-        $r->assertJsonPath('data.data_quality', ['items_without_cost' => 1, 'shipments_without_fee' => 1]);
+        $r->assertJsonPath('data.data_quality', ['items_without_cost' => 1, 'shipments_without_fee' => 1, 'expenses_count' => 0]);
         $r->assertJsonPath('data.previous.revenue_amount', 30000)->assertJsonPath('data.previous.net_profit_amount', 30000);
 
         $daily = $r->json('data.daily');
@@ -140,8 +142,9 @@ class ReportsTest extends TestCase
         $this->assertSame('2026-10-31', $daily[0]['date']);
         $oct5 = collect($daily)->firstWhere('date', '2026-10-05');
         $this->assertEquals(['date' => '2026-10-05', 'orders_count' => 1, 'revenue_amount' => 100000, 'product_cost_amount' => 30000,
-            'delivery_cost_amount' => 6000, 'cod_fee_amount' => 1000, 'gateway_fee_amount' => null, 'ad_spend_amount' => null,
-            'total_cost_amount' => 37000, 'net_profit_amount' => 63000, 'margin' => 0.63], $oct5);
+            'delivery_cost_amount' => 6000, 'cod_fee_amount' => 1000, 'gateway_fee_amount' => null, 'ad_spend_amount' => 0,
+            'other_expenses_amount' => 0, 'total_cost_amount' => 37000, 'profit_before_expenses_amount' => 63000,
+            'net_profit_amount' => 63000, 'margin' => 0.63], $oct5);
 
         $weekly = $r->json('data.weekly');
         $this->assertCount(12, $weekly);

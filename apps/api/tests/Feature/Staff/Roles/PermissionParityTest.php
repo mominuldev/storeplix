@@ -132,6 +132,16 @@ class PermissionParityTest extends TestCase
         'GET api/v1/stores/{store}/automations/{automation}/stats' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'GET api/v1/stores/{store}/automation-runs' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'GET api/v1/stores/{store}/automation-runs/{run}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.7 (PHASE-8-7 §2.1, §8.1): expenses.manage → O and A allowed, S 403.
+        'GET api/v1/stores/{store}/expenses' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/expenses' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/expenses/summary' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/expenses/export' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/expenses/receipts' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/expenses/{expense}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/expenses/{expense}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/expenses/{expense}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'GET api/v1/stores/{store}/expenses/{expense}/receipt' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -303,6 +313,12 @@ class PermissionParityTest extends TestCase
 
             return $row->id;
         });
+        // Phase 8.7: an expense with a (PDF, ready at upload) receipt.
+        $receipt = $this->flushHeaders()->withHeaders($h)->post("{$base}/expenses/receipts", [
+            'file' => UploadedFile::fake()->createWithContent('r.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $expense = $this->req($h, 'POST', "{$base}/expenses", ['amount' => 50000, 'category' => 'rent_bills', 'paid_from' => 'cash',
+            'spent_on' => now('Asia/Dhaka')->format('Y-m-d'), 'receipt_id' => $receipt])->assertCreated()->json('data.id');
         $this->req($h, 'POST', "{$base}/customers/{$customer}/notes", ['body' => 'VIP'])->assertSuccessful();
         $note = $this->inTenant($tenant, fn () => CustomerNote::query()->where('customer_id', $customer)->value('id'));
         $coupon = $this->req($h, 'POST', "{$base}/coupons", ['code' => 'PARITY', 'type' => 'fixed', 'amount' => 100])->assertCreated()->json('data.id');
@@ -352,6 +368,7 @@ class PermissionParityTest extends TestCase
             'media' => $media, 'import' => $import, 'export' => $export, 'pickup' => $pickup, 'invoice' => $invoice,
             'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
             'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign, 'automation' => $automation['id'], 'draft_automation' => $draftAutomation, 'run' => $run,
+            'expense' => $expense,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -469,6 +486,19 @@ class PermissionParityTest extends TestCase
             'GET api/v1/stores/{store}/automations/{automation}/stats' => $r('GET', "{$b}/automations/{$s['automation']}/stats"),
             'GET api/v1/stores/{store}/automation-runs' => $r('GET', "{$b}/automation-runs"),
             'GET api/v1/stores/{store}/automation-runs/{run}' => $r('GET', "{$b}/automation-runs/{$s['run']}"),
+
+            // --- Phase 8.7 expenses ---
+            'GET api/v1/stores/{store}/expenses' => $r('GET', "{$b}/expenses"),
+            'POST api/v1/stores/{store}/expenses' => $r('POST', "{$b}/expenses", ['amount' => 1000, 'category' => 'ads', 'paid_from' => 'card', 'spent_on' => now('Asia/Dhaka')->format('Y-m-d')]),
+            'GET api/v1/stores/{store}/expenses/summary' => $r('GET', "{$b}/expenses/summary"),
+            'GET api/v1/stores/{store}/expenses/export' => $r('GET', "{$b}/expenses/export"),
+            'POST api/v1/stores/{store}/expenses/receipts' => fn (array $h) => $this->flushHeaders()->withHeaders($h)->post("{$b}/expenses/receipts", [
+                'file' => UploadedFile::fake()->createWithContent('r.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+            ], ['Accept' => 'application/json']),
+            'GET api/v1/stores/{store}/expenses/{expense}' => $r('GET', "{$b}/expenses/{$s['expense']}"),
+            'PATCH api/v1/stores/{store}/expenses/{expense}' => $r('PATCH', "{$b}/expenses/{$s['expense']}", ['note' => 'June rent']),
+            'DELETE api/v1/stores/{store}/expenses/{expense}' => $r('DELETE', "{$b}/expenses/{$s['expense']}"),
+            'GET api/v1/stores/{store}/expenses/{expense}/receipt' => $r('GET', "{$b}/expenses/{$s['expense']}/receipt"),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),
