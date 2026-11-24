@@ -134,6 +134,20 @@ export interface ShopOptions {
   publish?: boolean;
   stock?: number;
   freeOver?: number | null;
+  /**
+   * Phase 8.8a fake-order guard (PHASE-8-8 §4, §6.6). New shops trial Starter, which has `fake_order_guard`, and the
+   * guard is on by default (OTP for new numbers, daily limit 3, duplicates, holds). Every spec written before 8.8a
+   * expects the 8.7 checkout, so the guard is switched OFF here unless `guard: true` (phase8-8.* only). "Guard off"
+   * = order flow identical to 8.7 (§6.6), apart from the tier change.
+   */
+  guard?: boolean;
+}
+
+/** PATCH the store's guard settings (§6.1). Tolerates a pre-8.8a API without the route (404 that isn't store_not_found). */
+export async function setGuardEnabled(s: Session, enabled: boolean): Promise<void> {
+  const r = await api(s, 'PATCH', `/stores/${s.storeId}/fraud-guard/settings`, { enabled });
+  if (r.status === 404 && r.json.error?.code !== 'store_not_found') return;
+  expect(r.status, `fraud-guard settings enabled=${enabled}: ${JSON.stringify(r.json)}`).toBe(200);
 }
 
 export async function setupShop(label: string, o: ShopOptions = {}): Promise<CommerceShop> {
@@ -174,6 +188,7 @@ export async function setupShop(label: string, o: ShopOptions = {}): Promise<Com
       ],
     });
     expect(ship.status, JSON.stringify(ship.json)).toBe(200);
+    if (o.guard !== true) await setGuardEnabled(s, false);
     if (o.publish !== false) {
       const pub = await api(s, 'POST', `/stores/${sid}/publish`, {});
       expect(pub.status, JSON.stringify(pub.json)).toBe(200);

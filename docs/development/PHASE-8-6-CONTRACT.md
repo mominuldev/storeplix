@@ -4,7 +4,8 @@ Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q152–Q16
 `feat/phase-8-6-automations` (from `feat/phase-8-5-campaigns` @ fd69083, Phase 8.5 accepted; rebase onto `main` once
 8.5 and `chore/dev-ports` merge).
 Roadmap task **8.6** "Automations (Figma 140:30335)"; AC: **"Trigger → action runs logged"**.
-Tasks 8.7–8.9 are **not** in this contract (fake-order guard, risky-order holds and courier success rate are 8.8).
+Tasks 8.7–8.9 are **not** in this contract (fake-order guard, risky-order holds and courier success rate are 8.8; built
+as 8.8a in PHASE-8-8-CONTRACT.md, own-shop data only, no courier success rate).
 
 Everything in AGENT-CONTRACTS.md, PHASE-2 … PHASE-7 contracts, PHASE-8-1 … PHASE-8-5 contracts and
 docs/api/API-CONVENTIONS.md still applies (envelope, snake_case, ULIDs, cookie sessions, `BelongsToTenant` /
@@ -217,7 +218,7 @@ pruning.
 | `order.channel` | `in` | subset of `Order::CHANNELS` (labels: Storefront = website, Landing pages, Facebook, Instagram, Phone / manual = phone + walk_in, Other) | thank_you |
 | `customer.tag` | `has`, `not_has` | tag | thank_you |
 | `customer.delivered_orders_count` | `gte` | 2–50 | vip_tag (required) |
-| `customer.risk` | `is_not` | `risky` (toggle "Skip risky customers"; `CustomerRisk`, P85-25) | checkout_recovery |
+| `customer.risk` | `is_not` | `risky` (toggle "Skip risky customers"; `CustomerRisk`, P85-25 — **since 8.8a evaluated with `RiskTier`, PHASE-8-8 P88-3/P88-4; recipe "Hold risky COD orders" stays hidden, Q193**) | checkout_recovery |
 ≤ 5 conditions, all must hold (Figma "Match any of these" for the 8.8 risk recipe is not built). Unknown field/op → 422.
 
 ## 6. Actions

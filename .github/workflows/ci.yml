@@ -284,6 +284,21 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'expenses'"; exit 1; }
           exit $status
 
+      # Phase 8.8a (PHASE-8-8-CONTRACT §12, §13, §16 AC 7): the `fraud` group (every §8.1 route: happy, validation, authz,
+      # isolation; P88-4 tier vectors + SQL/PHP parity; decision matrix (duplicate, risky × hold on/off, careful × advance
+      # on/off × gateway); hold enforcement on every confirm/booking/external path (S156); check idempotency + stale
+      # `checking` sweep; advance paid/expired; blocklist + repeat-returner auto block; storefront OTP + checkout errors
+      # (cod_unavailable, order_limit_reached, otp_required, otp_invalid, fail-open); Free plan; S154–S166) must exist and
+      # pass on sqlite.
+      - name: phase 8.8a group (fraud)
+        run: |
+          mkdir -p build
+          php artisan test --group=fraud --exclude-group perf --exclude-group race --log-junit build/fraud.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/fraud.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "fraud tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'fraud'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -441,6 +456,16 @@ jobs:
       # Postgres; expenses must pass there too.
       - name: phase 8.7 expenses (postgres)
         run: php artisan test --group=expenses --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.8a (§4): fraud_guard_settings / blocked_phones / order_risk_checks / fraud_guard_events / checkout_otps
+      # (CHECKs incl. advance_below >= hold_below, partial unique (tenant_id, store_id, phone) WHERE unblocked_at IS NULL,
+      # composite FKs, jsonb reasons/detail), orders.guard_hold CHECK and the re-created order_events type CHECK exist
+      # on Postgres; fraud must pass there too.
+      - name: phase 8.8a fraud (postgres)
+        run: php artisan test --group=fraud --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -818,6 +843,11 @@ jobs:
       # download resolves the tenant from the signature (their RLS probes are also in the `rls` step above).
       - name: phase 8.7 expenses (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" expenses lenient --group=expenses --exclude-group perf --exclude-group race'
+      # Phase 8.8a (PHASE-8-8-CONTRACT §4, §9, S154, S161): the five guard tables are RLS-forced; CheckOrderRisk runs in
+      # the order's tenant; fraud:resolve-stale and fraud:prune discover cross-tenant and work inside each tenant; the
+      # storefront OTP + checkout rules resolve inside the host's tenant (their RLS probes are also in the `rls` step above).
+      - name: phase 8.8a fraud (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" fraud lenient --group=fraud --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

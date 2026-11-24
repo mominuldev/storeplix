@@ -8,6 +8,8 @@ use App\Domain\Customers\Http\Requests\CustomerRequest;
 use App\Domain\Customers\Http\Resources\CustomerPresenter;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Customers\Models\CustomerNote;
+use App\Domain\FraudGuard\GuardSettings;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Phone;
 use App\Domain\Stores\Models\Store;
@@ -29,7 +31,9 @@ class CustomerController
         Gate::authorize('view', $store);
         $channels = implode('|', Customer::CHANNELS);
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:channel,created_at,tag'],
+            'filter' => ['sometimes', 'array:channel,created_at,tag,risk'],
+            // PHASE-8-8 §10.3: own-shop risk tier (P88-4, store thresholds).
+            'filter.risk' => ['sometimes', 'string', 'regex:/^('.implode('|', RiskTier::ALL).')(,('.implode('|', RiskTier::ALL).'))*$/'],
             'filter.channel' => ['sometimes', 'string', "regex:/^({$channels})(,({$channels}))*$/"],
             'filter.created_at' => ['sometimes', 'array:gte'],
             'filter.created_at.gte' => ['sometimes', 'date'],
@@ -133,6 +137,10 @@ class CustomerController
         }
         if (isset($filter['tag']) && $filter['tag'] !== '') {
             $query->whereJsonContains('tags', mb_strtolower(trim($filter['tag'])));
+        }
+        if (isset($filter['risk']) && is_string($filter['risk'])) {
+            $tiers = array_values(array_intersect(explode(',', $filter['risk']), RiskTier::ALL));
+            $query->whereRaw(RiskTier::sqlAny($tiers, app(GuardSettings::class)->thresholds($store->id)));
         }
         if ($q !== '') {
             $digits = ltrim(Phone::clean($q), '+');

@@ -96,3 +96,5 @@ export { WizardModal } from './components/WizardModal';
 export type { WizardModalProps } from './components/WizardModal';
 export { BarChart, ChartLegend, chartToneClass, DonutMeter, Heatmap, HeatmapScale, heatStep, LineChart, niceCeil, StackedMeter, thinIndexes } from './components/Charts';
 export type { BarDatum, BarSegment, ChartSeries, ChartTone, HeatmapRow, LineChartProps, MeterSegment } from './components/Charts';
+export { RiskBadge, riskTierMeta } from './components/RiskBadge';
+export type { RiskTierValue } from './components/RiskBadge';

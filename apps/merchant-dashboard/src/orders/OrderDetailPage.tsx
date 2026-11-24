@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { CourierProvider, Order, OrderStatus, Payment } from '@storeplix/types';
-import { Avatar, Badge, Button, buttonVariants, cn, Menu, OrderStatusBadge, PaymentStatusBadge, TagInput, Timeline } from '@storeplix/ui';
+import { Avatar, Badge, Button, buttonVariants, cn, Menu, OrderStatusBadge, PaymentStatusBadge, RiskBadge, TagInput, Timeline } from '@storeplix/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronRight, Clock, MapPin, MessageCircle, Phone, Printer, Store } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -26,6 +26,10 @@ import { BookShipmentDialog } from '../shipments/BookShipmentDialog';
 import { OrderCourierCard } from '../shipments/OrderCourierCard';
 import { handleOrderError, ITEM_EDIT_STATUSES, useQuickTransition } from './transitions';
 import { eventToEntry } from './timeline';
+import { BlockNumberDialog } from '../fraud/dialogs';
+import { orderTier } from '../fraud/fraud';
+import { DeliveryRecordCard, GuardBanner, HoldTag } from '../fraud/OrderGuard';
+import { can } from '../lib/permissions';
 
 // Figma Order detail 33:3676 (mobile 32:309). Contract §9: actions from `allowed_transitions`, Items, Payments,
 // Shipping, Timeline with notes, Customer card (this shop only), Delivery address with Edit, Order details and tags.
@@ -34,6 +38,9 @@ import { eventToEntry } from './timeline';
 // active-link banner, awaiting-payment banner, cancel with "Refund ৳N to {gateway}". Not built: Assigned to, Delivery
 // record / fraud (Phase 8), Block this number, campaign field. 5b-3: courier card in Shipping (book with a connected
 // courier, or the active parcel with status and tracking), ship dialog offers "Book with {courier}".
+// PHASE-8-8 §10.2: RiskBadge 33:3890 + hold Tag beside Pending (composed), guard banners 33:3923 (advance) / call_first /
+// checking, Delivery record card 33:4122 ("Your shop" bar only) with Block this number, `guard` timeline rows. Confirm is
+// not offered while the order is held (API 409 `order_held`).
 
 export function OrderDetailPage() {
   const { orderId } = useParams();
@@ -55,7 +62,7 @@ export function OrderDetailPage() {
   return <OrderView order={query.data} />;
 }
 
-type DialogKind = 'cancel' | 'ship' | 'return' | 'refund' | 'restock' | 'createReturn' | 'advance' | 'book' | null;
+type DialogKind = 'cancel' | 'cancelFake' | 'ship' | 'return' | 'refund' | 'restock' | 'createReturn' | 'advance' | 'book' | 'block' | null;
 
 export function Card({ title, actions, children, className, label }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; label?: string }) {
   return (
@@ -115,7 +122,11 @@ function OrderView({ order }: { order: Order }) {
     if (to === 'confirmed' || to === 'ready_to_ship' || to === 'delivered') quick.mutate({ target, to });
   };
 
-  const forward = order.allowed_transitions.filter((t) => t !== 'cancelled' && t !== 'returned');
+  const held = !!order.guard?.hold;
+  // P88-2: a held order can't be confirmed (or packed) until it's released — the guard banner offers that.
+  const forward = order.allowed_transitions.filter((t) => t !== 'cancelled' && t !== 'returned' && !(held && (t === 'confirmed' || t === 'ready_to_ship')));
+  const tier = orderTier(order);
+  const canBlock = can.manageFraudGuard(scope.membership);
   // ready_to_ship → confirmed is "move back"; show it as a secondary action.
   const primary = forward.find((t) => !(order.status === 'ready_to_ship' && t === 'confirmed'));
   const canCancel = order.allowed_transitions.includes('cancelled') && order.can.cancel;
@@ -143,6 +154,8 @@ function OrderView({ order }: { order: Order }) {
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-heading-32 text-text-primary">{order.number}</h1>
             <OrderStatusBadge status={order.status} />
+            {order.guard?.hold && <HoldTag hold={order.guard.hold} />}
+            {tier && <RiskBadge tier={tier} />}
             <PaymentStatusBadge status={order.payment_status} />
             {order.return_status !== 'none' && (
               <Link to={`/returns?q=${encodeURIComponent(order.number)}`} aria-label={`${orderReturnStatusLabels[order.return_status]} · see returns`}>
@@ -212,7 +225,8 @@ function OrderView({ order }: { order: Order }) {
           Waiting for the customer to pay online{order.payment_expires_at ? ` · ${timeLeft(order.payment_expires_at)}` : ''}. The order confirms itself when the payment arrives; if it doesn’t, it’s cancelled and the stock goes back.
         </p>
       )}
-      {link && <ActiveLinkBanner order={order} link={link} />}
+      {held && <GuardBanner order={order} canProcess={scope.canProcessOrders} onCancelFake={() => setDialog('cancelFake')} />}
+      {link && order.guard?.hold !== 'advance' && <ActiveLinkBanner order={order} link={link} />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-5">
         <div className="flex flex-col gap-5 max-lg:contents">
@@ -382,6 +396,8 @@ function OrderView({ order }: { order: Order }) {
             </div>
           </section>
 
+          <DeliveryRecordCard order={order} onBlock={canBlock ? () => setDialog('block') : undefined} />
+
           <Card title="Order details" className="gap-2.5">
             <dl className="flex flex-col gap-2.5">
               <Row label="Source" value={orderChannelLabels[order.channel]} />
@@ -400,6 +416,10 @@ function OrderView({ order }: { order: Order }) {
       {dialog === 'cancel' && (
         <CancelOrderDialog open order={target} smsDefault={sms?.order_cancelled ?? true} onlineRefund={online.amount > 0 && online.provider ? online : undefined} onClose={() => setDialog(null)} />
       )}
+      {dialog === 'cancelFake' && (
+        <CancelOrderDialog open order={target} defaultReason="fake_order" smsDefault={sms?.order_cancelled ?? true} onlineRefund={online.amount > 0 && online.provider ? online : undefined} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'block' && <BlockNumberDialog initialPhone={order.contact.phone} onClose={() => setDialog(null)} />}
       {dialog === 'advance' && <AskAdvanceDialog order={order} onClose={() => setDialog(null)} />}
       {refundCharge && <GatewayRefundDialog order={order} payment={refundCharge} onClose={() => setRefundCharge(null)} />}
       {dialog === 'ship' && <ShipOrderDialog open order={target} smsDefault={sms?.order_shipped ?? true} onClose={() => setDialog(null)} onBookCourier={openBook} />}

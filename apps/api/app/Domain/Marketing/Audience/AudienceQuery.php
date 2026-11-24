@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Marketing\Audience;
 
-use App\Domain\Customers\CustomerRisk;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\FraudGuard\GuardSettings;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Marketing\Models\Campaign;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * Builds customer queries for a store, channel and audience (PHASE-8-5 §3.2, §3.3, P85-3, P85-10, P85-25).
  *
  * Exclusion buckets are disjoint and applied in this order (each bucket counts only customers not already excluded):
- * no_address → opted_out → not_eligible → risky (when `exclude.risky`) → recent_orders (when
+ * no_address → opted_out → not_eligible → risky (RiskTier, when `exclude.risky`) → recent_orders (when
  * `exclude.ordered_within_days`). recipients = matched − Σ excluded.
  */
 final class AudienceQuery
@@ -78,8 +79,9 @@ final class AudienceQuery
 
         $risk = ['good' => 0.0, 'careful' => 0.0, 'risky' => 0.0];
         if ($recipients > 0) {
-            $risky = $this->recipients()->whereRaw(CustomerRisk::riskySql())->count();
-            $careful = $this->recipients()->whereRaw(CustomerRisk::carefulSql())->count();
+            // PHASE-8-8 P88-3: RiskTier with the store's thresholds; `new` counts as good (3 keys kept).
+            $risky = $this->recipients()->whereRaw($this->tierSql(RiskTier::RISKY))->count();
+            $careful = $this->recipients()->whereRaw($this->tierSql(RiskTier::CAREFUL))->count();
             $risk = [
                 'good' => round(($recipients - $risky - $careful) * 100 / $recipients, 1),
                 'careful' => round($careful * 100 / $recipients, 1),
@@ -88,6 +90,12 @@ final class AudienceQuery
         }
 
         return ['matched' => $matched, 'excluded' => $excluded, 'recipients' => $recipients, 'risk_breakdown' => $risk];
+    }
+
+    /** PHASE-8-8 P88-3/P88-4: the tier condition on `customers` counters with this store's thresholds. */
+    private function tierSql(string $tier): string
+    {
+        return RiskTier::sql($tier, app(GuardSettings::class)->thresholds($this->storeId), 'customers.');
     }
 
     /** The address column of the channel on `customers`. */
@@ -125,7 +133,7 @@ final class AudienceQuery
                 'no_address' => $q->whereNotNull($this->addressColumn())->where($this->addressColumn(), '<>', ''),
                 'opted_out' => $q->whereRaw('NOT '.self::suppressedSql($this->channel)),
                 'not_eligible' => $q->where(fn (Builder $w) => $w->where('accepts_marketing', true)->orWhere('orders_count', '>=', 1)),
-                'risky' => $q->whereRaw('NOT '.CustomerRisk::riskySql()),
+                'risky' => $q->whereRaw('NOT '.$this->tierSql(RiskTier::RISKY)),
                 'recent_orders' => $q->where(fn (Builder $w) => $w->whereNull('last_order_at')
                     ->orWhere('last_order_at', '<', $this->now->copy()->subDays((int) $this->audience->exclude['ordered_within_days']))),
             };
@@ -141,7 +149,7 @@ final class AudienceQuery
             'no_address' => $q->where(fn (Builder $w) => $w->whereNull($this->addressColumn())->orWhere($this->addressColumn(), '')),
             'opted_out' => $q->whereRaw(self::suppressedSql($this->channel)),
             'not_eligible' => $q->where('accepts_marketing', false)->where('orders_count', '<', 1),
-            'risky' => $q->whereRaw(CustomerRisk::riskySql()),
+            'risky' => $q->whereRaw($this->tierSql(RiskTier::RISKY)),
             'recent_orders' => $q->whereNotNull('last_order_at')
                 ->where('last_order_at', '>=', $this->now->copy()->subDays((int) $this->audience->exclude['ordered_within_days'])),
         };

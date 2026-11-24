@@ -249,9 +249,10 @@ IX(tenant_id, variant_id, created_at).
 ### customers [S]
 id PK · tenant_id · store_id · name varchar(120) · email citext null · phone varchar(20) null · password varchar(255) null
 (null = guest) · accepts_marketing boolean · notes text · tags text[] · orders_count int · total_spent_amount bigint ·
-risk_flags jsonb (fake-order guard later) · last_order_at · deleted_at · timestamps.
+last_order_at · deleted_at · timestamps.
 **U(store_id, email) WHERE email IS NOT NULL AND deleted_at IS NULL**; **U(store_id, phone) WHERE phone IS NOT NULL AND deleted_at IS NULL**.
-Customers are per-store identities, never shared across stores or tenants.
+Customers are per-store identities, never shared across stores or tenants. (The early `risk_flags jsonb` sketch was
+never built: the risk tier is computed from the own-shop counters, PHASE-8-8 §3 / §5.8.)
 
 ### customer_addresses
 id PK · tenant_id · customer_id FK(t) CASCADE · name · phone · line1 · line2 · area varchar(120) · city varchar(80) ·
@@ -486,7 +487,8 @@ coupon_id FK3(coupons) null NO ACTION · coupon_code varchar(32) null · shippin
 shipping_zone_name varchar(60) · delivery_min_days, delivery_max_days smallint null · shipping_overridden boolean
 default false · customer_note varchar(500) null · tags jsonb default `'[]'` · revision int default 1 ·
 idempotency_key varchar(64) null · confirmation_token_hash char(64) null · confirmation_expires_at timestamptz null ·
-cancel_reason varchar(32) null `CHECK IN ('customer_request','fake_order','unreachable','out_of_stock','duplicate','other')` ·
+cancel_reason varchar(32) null `CHECK IN ('customer_request','fake_order','unreachable','out_of_stock','duplicate','other')`
+(5b adds `payment_timeout`, `payment_link_expired`, §5.2) ·
 placed_at timestamptz · confirmed_at, shipped_at, delivered_at, returned_at, cancelled_at timestamptz null · created_by
 FK users null SET NULL (manual orders) · ip varchar(45) null · user_agent varchar(255) null · timestamps. **No soft
 delete.**
@@ -973,6 +975,57 @@ deleted after 24 h (`expenses:prune-receipts`: row first guarded by NOT EXISTS, 
 action catalogue gains `expense.created|updated|deleted|exported|recurrence_started|recurrence_stopped|repeated`
 (`repeated` with actor type `system`). Store currency lock (P87-18) needs no column: `EXISTS` on orders/expenses.
 
+## 5.8 Phase 8.8a fake-order guard tables (PHASE-8-8-CONTRACT §4, ADR 0022, migrations `2026_12_05_*`)
+Replaces the §6 "Fake-order guard" sketch: no `customers.risk_flags` (tiers are computed from own-shop counters, P88-3)
+and no per-courier `provider`/`score` on checks (own-shop data only, P88-1). All five tables are store-scoped `[S]`,
+have RLS forced in their create migration and are listed in `RlsTables::TENANT` (76 after Phase 8.8a) and
+`database/sql/rls-emergency-off.sql`. Plan feature `fake_order_guard`; permission `fraud.manage`. Phones are stored in
+`Phone::bdMsisdn` form (`8801XXXXXXXXX`, varchar(13)).
+
+### fraud_guard_settings [S] (`000100`)
+id PK · tenant_id · store_id · enabled bool (true) · hold_enabled bool (true) · hold_below smallint `CHECK 1–100` (60) ·
+advance_enabled bool (true) · advance_below smallint `CHECK 1–100` (75) · advance_expiry_minutes int `CHECK IN (120,
+360, 1440, 2880)` (1440) · advance_cancel_if_unpaid bool (true) · otp_enabled bool (true) · block_returners bool (true)
+· block_after_returns smallint `CHECK 1–20` (3) · duplicates_enabled bool (true) · duplicate_window_hours smallint
+`CHECK IN (6, 12, 24, 48, 72)` (24) · daily_limit_enabled bool (true) · daily_limit smallint `CHECK 1–50` (3) ·
+min_parcels smallint `CHECK 1–20` (3) · updated_by FK users SET NULL null · timestamps. **U(tenant_id, store_id)**.
+`CHECK (advance_below >= hold_below)`. Created lazily with the defaults on first read.
+
+### blocked_phones [S] (`000100`)
+id PK · tenant_id · store_id · phone varchar(13) · customer_id char(26) null, FK (tenant_id, store_id, customer_id) →
+customers SET NULL (customer_id) · reason varchar(16) `CHECK IN ('manual','repeat_returns')` · note varchar(200) null ·
+source varchar(8) `CHECK IN ('staff','auto')` · created_by FK users SET NULL null · unblocked_at timestamptz null ·
+unblocked_by FK users SET NULL null · timestamps. Partial **U(tenant_id, store_id, phone) WHERE unblocked_at IS NULL**;
+IX(tenant_id, store_id, phone) (also finds unblocked rows, so the repeat-returners rule never re-adds them, P88-10).
+Unblock keeps the row.
+
+### order_risk_checks [S] (`000100`)
+id PK · tenant_id · store_id · order_id char(26) **U**, FK (tenant_id, store_id, order_id) → orders CASCADE · phone
+varchar(13) · tier varchar(8) `CHECK IN ('good','careful','risky','new')` · rate smallint null · delivered int · total
+int · shop_delivered int · shop_total int · reasons jsonb (list of §5.4 codes) · decision varchar(12) `CHECK IN
+('none','hold','advance','skipped')` · with_actions bool · duplicate_of char(26) null (an order of the same store) ·
+payment_link_id char(26) null (the guard's advance link) · released_at timestamptz null · released_by FK users SET
+NULL null · timestamps. One check per order (the job is idempotent on the unique key).
+
+### fraud_guard_events [S] (`000100`; append-only)
+id PK · tenant_id · store_id · type varchar(20) `CHECK IN ('held','advance_asked','advance_paid','released',
+'duplicate','blocked_checkout','limit_reached','auto_blocked','otp_failed')` · order_id char(26) null · phone varchar(13) · detail jsonb · created_at. IX(tenant_id, store_id, created_at DESC). Retention 13 months
+(`fraud:prune`). The API returns `phone_masked` only.
+
+### checkout_otps [S] (`000100`)
+id PK · tenant_id · store_id · phone varchar(13) · code_hash char(64) (HMAC-SHA256, app key) · attempts smallint
+default 0 · sent_at · expires_at (sent_at + 5 min) · verified_at null · ip varchar(45) null. IX(tenant_id, store_id,
+phone, sent_at DESC). Rows older than 24 h are pruned (`fraud:prune`).
+
+### Changes to existing tables (`000200`)
+- **orders**: + `guard_hold varchar(12) null CHECK IN ('call_first','advance','checking')` · `guard_hold_at timestamptz
+  null`. A held order keeps `status = 'pending'` (no new status, P88-2). Index choice is the API's (recommended: a partial
+  index on `guard_hold_at WHERE guard_hold = 'checking'` for `fraud:resolve-stale`, and one leading with
+  `(tenant_id, store_id) WHERE guard_hold IS NOT NULL` for the held filter and `counts.held`).
+- **order_events**: type CHECK re-created with `guard` (as `2026_06_01_001800`).
+- `audit_logs` action catalogue gains `fraud.settings_updated`, `fraud.number_blocked`, `fraud.number_unblocked`,
+  `fraud.hold_released`, `fraud.number_checked` (meta: masked phone and tier only).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -987,7 +1040,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing / transfers (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `suppliers`, `purchase_orders`, `purchase_order_items(received_qty)`, `stock_transfers`, `stock_transfer_items` | 8+ |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
-| Fake-order guard (41:12365) | `customers.risk_flags`, `order_risk_checks(order_id, provider, score, result jsonb)` | 8 |
+| Fake-order guard (41:12365) | `fraud_guard_settings`, `blocked_phones`, `order_risk_checks`, `fraud_guard_events`, `checkout_otps`, `orders.guard_hold` (no `customers.risk_flags`, no courier provider rows) — **specified in 8.8a (§5.8, PHASE-8-8 §4, ADR 0022)** | 8.8a |
 | Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |
 
 ## 7. Migration & operations rules

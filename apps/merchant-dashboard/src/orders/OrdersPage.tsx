@@ -1,5 +1,5 @@
-import type { OrderChannel, OrderListFilters, OrderStatus, OrderSummary, PaymentStatus } from '@storeplix/types';
-import { Avatar, Button, buttonVariants, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { RISK_TIERS, type OrderChannel, type OrderListFilters, type OrderStatus, type OrderSummary, type PaymentStatus, type RiskTier } from '@storeplix/types';
+import { Avatar, Button, buttonVariants, Chip, cn, DataTable, Menu, OrderStatusBadge, Pagination, paymentStatusMeta, RiskBadge, riskTierMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { ChevronDown, Package, Phone, Printer, ShoppingBag, Truck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -18,10 +18,14 @@ import { usePrintJob } from '../documents/usePrintJob';
 import { BulkBookDialog } from '../shipments/BulkBookDialog';
 import { ShipOrderDialog } from './actions';
 import { useQuickTransition } from './transitions';
+import { holdLabels, orderTier } from '../fraud/fraud';
+import { HoldTag } from '../fraud/OrderGuard';
 
 // Figma Orders 7:276 (mobile Orders 31:4886, OrderCard 30:3171). Contract §9: status tabs with counts, search,
-// Payment / Source / District / date filters, Next step button, bulk Confirm / Mark packed. Not built (§11): Risk
-// column and filter, Courier problems tab, Quick chips (advance), Export. 5b-3: bulk "Book courier" (39:18808). 5b-4: bulk Print (documents)
+// Payment / Source / District / date filters, Next step button, bulk Confirm / Mark packed. Not built (§11): Courier
+// problems tab, "Advance unpaid" quick chip, Export. PHASE-8-8 §10.2: RISK column (guard tier, else the customer's),
+// Risk filter, composed quick chip "On hold · n" (`filter[guard_hold]`), hold Tag beside Pending; held orders show
+// "Call first" / "Review" instead of Confirm (API 409 `order_held`). 5b-3: bulk "Book courier" (39:18808). 5b-4: bulk Print (documents)
 // and the Printed filter (`filter[printed]` / `filter[not_printed]`).
 
 const RANGES = [
@@ -56,6 +60,8 @@ export function OrdersPage() {
   const district = params.get('district') ?? '';
   const range = params.get('range') ?? '30';
   const printedParam = PRINTED.find((p) => p.value === params.get('printed'));
+  const risk = (RISK_TIERS as readonly string[]).includes(params.get('risk') ?? '') ? (params.get('risk') as RiskTier) : '';
+  const heldOnly = params.get('held') === '1';
   const print = usePrintJob();
   const [selected, setSelected] = useState<string[]>([]);
   const [shipping, setShipping] = useState<OrderSummary | null>(null);
@@ -69,6 +75,8 @@ export function OrdersPage() {
     channel: channel ? [channel] : undefined,
     district_code: district || undefined,
     ...(printedParam?.filter ?? {}),
+    risk: risk ? [risk] : undefined,
+    guard_hold: heldOnly || undefined,
     placed_from: placedFrom,
     q: debounced || undefined,
     page,
@@ -94,7 +102,10 @@ export function OrdersPage() {
     mutationFn: (action: 'confirm' | 'ready') => api.orders.bulk(scope.storeId!, { action, ids: selected }),
     onSuccess: async (r) => {
       const verb = r.action === 'confirm' ? 'Confirmed' : 'Marked packed';
-      toast(r.skipped.length ? `${verb} ${r.updated}. ${r.skipped.length} skipped — their status had changed.` : `${verb} ${r.updated} ${r.updated === 1 ? 'order' : 'orders'}.`);
+      const held = r.skipped.filter((x) => x.reason === 'order_held').length;
+      const other = r.skipped.length - held;
+      const why = [held ? `${held} held by the fake order guard` : null, other ? `${other} changed status` : null].filter(Boolean).join(', ');
+      toast(r.skipped.length ? `${verb} ${r.updated}. ${r.skipped.length} skipped — ${why}.` : `${verb} ${r.updated} ${r.updated === 1 ? 'order' : 'orders'}.`);
       setSelected([]);
       await invalidate.afterOrderChange();
     },
@@ -102,6 +113,7 @@ export function OrdersPage() {
   });
 
   const runNext = (o: OrderSummary) => {
+    if (o.guard?.hold) return navigate(`/orders/${o.id}`);
     const step = nextStep(o.status);
     if (!step) return;
     if (step.to === 'shipped') return setShipping(o);
@@ -122,6 +134,15 @@ export function OrdersPage() {
       ),
     },
     { key: 'customer', header: 'Customer', mobileLabel: false, cell: (o) => <Cell2 top={o.customer.name} bottom={customerLine(o.customer)} topClass="font-medium" /> },
+    {
+      key: 'risk',
+      header: 'Risk',
+      width: 112,
+      cell: (o) => {
+        const t = orderTier(o);
+        return t ? <RiskBadge tier={t} /> : <span className="text-text-muted">—</span>;
+      },
+    },
     { key: 'district', header: 'District', width: 120, cell: (o) => <span className="truncate text-body text-text-primary">{o.district || '—'}</span> },
     {
       key: 'total',
@@ -135,7 +156,17 @@ export function OrdersPage() {
         />
       ),
     },
-    { key: 'status', header: 'Status', width: 110, cell: (o) => <OrderStatusBadge status={o.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      width: 120,
+      cell: (o) => (
+        <span className="flex flex-col items-start gap-1">
+          <OrderStatusBadge status={o.status} />
+          {o.guard?.hold && <HoldTag hold={o.guard.hold} />}
+        </span>
+      ),
+    },
     {
       key: 'next',
       header: 'Next step',
@@ -143,6 +174,7 @@ export function OrdersPage() {
       align: 'end',
       mobileLabel: false,
       cell: (o) => {
+        if (o.guard?.hold) return <HeldStep order={o} />;
         const step = nextStep(o.status);
         if (!step) return null;
         const busy = quick.isPending && quick.variables?.target.id === o.id;
@@ -164,7 +196,7 @@ export function OrdersPage() {
     },
   ];
 
-  const filtered = !!(debounced || payment || channel || district || printedParam || tab !== 'all');
+  const filtered = !!(debounced || payment || channel || district || printedParam || risk || heldOnly || tab !== 'all');
   const counts = meta?.counts;
 
   const listState =
@@ -254,6 +286,14 @@ export function OrdersPage() {
           className="h-12 w-full rounded-lg border border-border-strong bg-surface-card md:h-9 md:w-[280px] md:rounded-md md:border-border-default md:[&>svg]:size-4"
         />
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 md:contents">
+        <FilterSelect label="Risk" value={risk} onChange={(e) => set({ risk: e.target.value })}>
+          <option value="">Risk</option>
+          {RISK_TIERS.map((t) => (
+            <option key={t} value={t}>
+              {riskTierMeta[t].label}
+            </option>
+          ))}
+        </FilterSelect>
         <FilterSelect label="Payment" value={payment} onChange={(e) => set({ payment: e.target.value })}>
           <option value="">Payment</option>
           {(Object.keys(paymentStatusMeta) as PaymentStatus[]).map((p) => (
@@ -293,6 +333,19 @@ export function OrdersPage() {
             </option>
           ))}
         </FilterSelect>
+        {(heldOnly || (counts?.held ?? 0) > 0) && (
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="text-caption text-text-muted max-md:hidden">Quick:</span>
+            <Chip
+              check={false}
+              selected={heldOnly}
+              onClick={() => set({ held: heldOnly ? null : '1' })}
+              className={cn('h-[38px] shrink-0 py-0', !heldOnly && 'bg-warning-bg text-warning shadow-none hover:bg-warning-bg')}
+            >
+              On hold · {counts?.held ?? 0}
+            </Chip>
+          </span>
+        )}
         </div>
       </div>
       {isMobile ? (
@@ -414,6 +467,7 @@ function dayLabel(iso: string): string {
 /** OrderCard 30:3171: customer, number · time, total + due, phone and items, status badge, one next-step button. */
 function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; busy: boolean; onOpen: () => void; onNext: () => void }) {
   const step = nextStep(o.status);
+  const tier = orderTier(o);
   const time = new Date(o.placed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   return (
     <article
@@ -448,8 +502,14 @@ function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; bu
         </span>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <OrderStatusBadge status={o.status} />
-        {step && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <OrderStatusBadge status={o.status} />
+          {o.guard?.hold && <HoldTag hold={o.guard.hold} />}
+          {tier && <RiskBadge tier={tier} />}
+        </span>
+        {o.guard?.hold ? (
+          <HeldStep order={o} className="h-11" />
+        ) : step && (
           <Button
             variant={o.status === 'pending' ? 'primary' : 'secondary'}
             className="h-11"
@@ -465,6 +525,22 @@ function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; bu
         )}
       </div>
     </article>
+  );
+}
+
+/** Next step of a held order (7:276 "Call first"): opens the order, where the guard banner releases or cancels it. */
+function HeldStep({ order: o, className }: { order: OrderSummary; className?: string }) {
+  const hold = o.guard!.hold!;
+  if (hold === 'checking')
+    return (
+      <Button size="sm" variant="secondary" disabled className={className}>
+        {holdLabels.checking}
+      </Button>
+    );
+  return (
+    <Link to={`/orders/${o.id}`} onClick={(e) => e.stopPropagation()} aria-label={`${hold === 'call_first' ? 'Call first' : 'Review'} ${o.number}`} className={cn(buttonVariants({ size: 'sm', variant: 'secondary' }), className)}>
+      {hold === 'call_first' ? 'Call first' : 'Review'}
+    </Link>
   );
 }
 

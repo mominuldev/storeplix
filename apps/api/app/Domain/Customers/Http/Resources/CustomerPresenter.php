@@ -4,6 +4,7 @@ namespace App\Domain\Customers\Http\Resources;
 
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Customers\Models\CustomerNote;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Marketing\Suppressions;
 use App\Domain\Shared\Http\UserRef;
 use App\Domain\Tenancy\Authorization\Permission;
@@ -39,6 +40,8 @@ final class CustomerPresenter
             'created_by' => UserRef::of($customer->createdBy),
             // PHASE-8-5 §4.1: computed per-channel marketing status (suppressions + eligibility P85-3).
             'marketing' => Suppressions::customerMarketing($customer),
+            // PHASE-8-8 §6.5: own-shop risk tier (P88-4; replaces the 8.5 risk class).
+            'risk' => RiskTier::payload($customer),
         ];
     }
 

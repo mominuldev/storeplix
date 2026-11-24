@@ -32,6 +32,10 @@
         <env name="REVALIDATE_SECRET" value="" force="true"/>
         <server name="REVALIDATE_SECRET" value="" force="true"/>
         <env name="SMS_DRIVER" value="fake"/>
+        <!-- Phase 8.8a: stores without a guard settings row start with the guard OFF in tests (earlier phases' checkout
+             flows stay as in 8.7); tests/Feature/FraudGuard turns it on per store. Production default: on. -->
+        <env name="FRAUD_GUARD_DEFAULT_ENABLED" value="false" force="true"/>
+        <server name="FRAUD_GUARD_DEFAULT_ENABLED" value="false" force="true"/>
         <!-- Phase 6: fake DNS + fake provider (CI never calls Cloudflare or a public DoH resolver). -->
         <env name="DOMAINS_FAKE" value="true"/>
         <env name="DOMAINS_ASK_KEY" value="test-ask-key-0123456789abcdef0123"/>

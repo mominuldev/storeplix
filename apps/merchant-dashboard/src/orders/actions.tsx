@@ -52,16 +52,19 @@ export function CancelOrderDialog({
   onClose,
   smsDefault = true,
   onlineRefund,
+  defaultReason,
 }: {
   order: Target;
   open: boolean;
   onClose: () => void;
   smsDefault?: boolean;
   onlineRefund?: { amount: number; provider: GatewayProvider | null };
+  /** PHASE-8-8 §10.2 "Cancel as fake" preselects `fake_order`. */
+  defaultReason?: CancelReason;
 }) {
   const { storeId } = useStoreScope();
   const invalidate = useCommerceInvalidate();
-  const [reason, setReason] = useState<CancelReason | ''>('');
+  const [reason, setReason] = useState<CancelReason | ''>(defaultReason ?? '');
   const [note, setNote] = useState('');
   const [notify, setNotify] = useState(smsDefault);
   const [refundOnline, setRefundOnline] = useState(true);

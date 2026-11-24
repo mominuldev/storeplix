@@ -9,7 +9,7 @@ import { setPlan } from './commerce';
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export type PermissionKey =
-  | 'orders.view' | 'orders.process' | 'orders.refund' | 'shipments.manage' | 'shipments.cancel'
+  | 'orders.view' | 'orders.process' | 'orders.refund' | 'fraud.manage' | 'shipments.manage' | 'shipments.cancel'
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
   | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage';
@@ -19,6 +19,7 @@ export const LABEL: Record<PermissionKey, string> = {
   'orders.view': 'View & create orders',
   'orders.process': 'Confirm & cancel orders',
   'orders.refund': 'Refunds & paid cancellations',
+  'fraud.manage': 'Fake order guard', // PHASE-8-8 §2.1 (sensitive, requires orders.view)
   'shipments.manage': 'Book courier & print labels',
   'shipments.cancel': 'Change courier after booking',
   'products.edit': 'Edit products & prices',

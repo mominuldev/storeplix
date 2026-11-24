@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Automations\Engine;
 
-use App\Domain\Customers\CustomerRisk;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Shared\Support\Money;
 use Illuminate\Validation\ValidationException;
@@ -107,8 +107,8 @@ final class Conditions
             ],
             // P86-11: "Skip risky customers" applies when the phone matches a customer; an unknown contact passes.
             'customer.risk' => $customer === null ? [true, 'Not a customer yet'] : [
-                CustomerRisk::of($customer) !== CustomerRisk::RISKY,
-                'Risk: '.CustomerRisk::of($customer),
+                RiskTier::forCustomer($customer) !== RiskTier::RISKY, // PHASE-8-8 P88-3
+                'Risk: '.RiskTier::forCustomer($customer),
             ],
             default => [false, null],
         };

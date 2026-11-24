@@ -15,6 +15,12 @@ final class SmsTemplates
 {
     public const EVENTS = ['order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link'];
 
+    /** PHASE-8-8 P88-13: the shopper checkout code (not an order event; vars `shop`, `code`). */
+    public const CHECKOUT_OTP = 'checkout_otp';
+
+    /** `sms_messages.purpose` values counted against the `sms_per_month` allowance (P5-26 + P88-13). */
+    public const COUNTED = [...self::EVENTS, self::CHECKOUT_OTP];
+
     public const LABELS = [
         'order_placed' => 'Order received',
         'order_confirmed' => 'Order confirmed',

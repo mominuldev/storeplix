@@ -101,6 +101,7 @@ unchanged from earlier phases, the Staff page "Online now", "Actions today", "St
 | 1 | `orders.view` | orders "Orders" | View & create orders · Orders, unfinished orders, returns | — | | operate |
 | 2 | `orders.process` | orders | Confirm & cancel orders · Status changes, edit items, returns, payment links | 1 | | operate |
 | 3 | `orders.refund` | orders | Refunds & paid cancellations · Refund money, cancel paid orders, change COD amount | 2 | ✓ | manage_refunds |
+| 3a | `fraud.manage` | orders | **Phase 8.8a** (PHASE-8-8 §2.1): Fake order guard · Guard rules, blocked numbers and number checks; requires `orders.view`; O ✓ A ✓ S ✗, grantable (catalogue 26 keys, 25 grantable) | 1 | ✓ | — |
 | 4 | `shipments.manage` | shipping "Shipping" | Book courier & print labels · Steadfast, Pathao, RedX | — | | operate |
 | 5 | `shipments.cancel` | shipping | Change courier after booking · Cancel a booked parcel | 4 | | operate |
 | 6 | `products.edit` | products "Products & stock" | Edit products & prices · Products, categories, images | — | | operate |
@@ -159,6 +160,8 @@ fields need `costs.view`), `GET /media[/{media}]`, `GET /coupons[/{coupon}]`, `G
 | | `POST /orders`, `POST /orders/quote`, `POST /orders/{order}/notes`, `GET /orders/{order}/payment-links` | `orders.view` |
 | | `PATCH /orders/{order}`, `confirm`, `ready`, `ship`, `deliver`, `return`, `cancel`, `POST /orders/bulk`, `PUT /orders/{order}/items`, `POST /orders/{order}/items/quote`, `POST /orders/{order}/restock`, `POST|DELETE /payment-links[/{link}]`, `POST …/resend` | `orders.process` |
 | | `POST /orders/{order}/refunds` | `orders.refund` |
+| | `POST /orders/{order}/guard/release` (Phase 8.8a) | `orders.process` |
+| Fake order guard (Phase 8.8a) | every `/fraud-guard/*` route: settings, reset, overview, events, blocked numbers, check (PHASE-8-8 §8.1) | `fraud.manage` |
 | Returns | `GET /returns`, `GET /returns/{return}`, `POST /returns/{return}/notes` | `orders.view` |
 | | `POST /orders/{order}/returns`, `approve`, `reject`, `receive`, `close`, `exchange-order` | `orders.process` |
 | Shipments | `GET /shipments`, `GET /shipments/{shipment}`, `GET /shipment-batches/{batch}` | `shipments.manage\|orders.view` |

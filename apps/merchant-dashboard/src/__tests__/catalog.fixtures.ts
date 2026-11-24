@@ -169,6 +169,8 @@ export function customer(overrides: Partial<CustomerDetail> = {}): CustomerDetai
     updated_at: '2025-06-01T00:00:00Z',
     created_by: null,
     marketing: { sms: 'not_eligible', email: 'no_address', unsubscribed_sms_at: null, unsubscribed_email_at: null, unsubscribed_source: { sms: null, email: null } },
+    // PHASE-8-8 §6.5: own-shop tier (no parcels → new).
+    risk: { tier: 'new', rate: null, delivered: 0, total: 0 },
     notes: [],
     ...overrides,
   };

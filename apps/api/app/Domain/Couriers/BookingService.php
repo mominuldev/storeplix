@@ -11,6 +11,7 @@ use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Couriers\Models\CourierAreaMapping;
 use App\Domain\Couriers\Models\ShipmentEvent;
 use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
@@ -290,6 +291,7 @@ class BookingService
 
     public function assertBookable(Order $o): void
     {
+        FraudGuard::assertNotHeld($o); // PHASE-8-8 §5.5 (S156): before the status check → 409 order_held
         if (! in_array($o->status, [Order::CONFIRMED, Order::READY_TO_SHIP], true)) {
             throw new ApiException(409, 'invalid_state_transition', 'Only confirmed or packed orders can be booked with a courier.');
         }

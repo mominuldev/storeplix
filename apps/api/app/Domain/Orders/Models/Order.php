@@ -3,6 +3,7 @@
 namespace App\Domain\Orders\Models;
 
 use App\Domain\Customers\Models\Customer;
+use App\Domain\FraudGuard\Models\OrderRiskCheck;
 use App\Domain\Identity\Models\User;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -68,6 +69,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_order_id
  * @property Carbon|null $invoice_printed_at
  * @property Carbon|null $label_printed_at
+ * @property string|null $guard_hold PHASE-8-8 P88-2: call_first | advance | checking
+ * @property Carbon|null $guard_hold_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -137,6 +140,7 @@ class Order extends Model
             'payment_expires_at' => 'datetime',
             'invoice_printed_at' => 'datetime',
             'label_printed_at' => 'datetime',
+            'guard_hold_at' => 'datetime',
         ];
         foreach (['subtotal', 'discount', 'shipping', 'shipping_discount', 'tax', 'total', 'paid', 'refunded'] as $money) {
             $casts["{$money}_amount"] = 'integer';
@@ -174,6 +178,12 @@ class Order extends Model
     {
         // 5b-3 (§4.7): the active shipment = the newest one not cancelled / booking_failed (eager loads keep the first row per order).
         return $this->hasOne(Shipment::class)->whereNotIn('status', ['cancelled', 'booking_failed'])->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    /** PHASE-8-8 §4: the order's one risk check (null until CheckOrderRisk ran). */
+    public function riskCheck(): HasOne
+    {
+        return $this->hasOne(OrderRiskCheck::class);
     }
 
     public function customer(): BelongsTo

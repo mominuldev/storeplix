@@ -28,10 +28,12 @@ import {
 import { usePaymentGateways, usePaymentInvalidate } from '../payments/queries';
 import { useStoreSettings } from '../settings/commerceSettings';
 import { refundAmountError } from './transitions';
+import { AdvanceWhy } from '../fraud/OrderGuard';
 
 // Order detail · Payments card 33:3676 + Ask for an advance 144:46081 (PHASE-5B §10, P5B-22, P5B-24). Online charges
 // with TrxID, links, refunds; "Refund" on a charge row → gateway refund (O A); active-link banner with Copy / Resend /
-// Cancel. Not built (§14, Phase 8): the "Risky" banner and the Delivery record card in the advance dialog.
+// Cancel. PHASE-8-8 §10.2: the advance dialog (144:46570) gains the "why" box (RiskBadge + own-shop record); the
+// Delivery record card stays on the order page.
 
 function Row({ icon, title, sub, amount, state, action }: { icon: ReactNode; title: ReactNode; sub?: ReactNode; amount: ReactNode; state?: ReactNode; action?: ReactNode }) {
   return (
@@ -299,6 +301,7 @@ export function AskAdvanceDialog({ order, onClose }: { order: Order; onClose: ()
         </p>
       ) : (
         <div className="flex flex-col gap-5">
+          <AdvanceWhy order={order} />
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-2 text-body font-medium text-text-primary">How much?</legend>
             {AMOUNT_OPTIONS.map((o) => {

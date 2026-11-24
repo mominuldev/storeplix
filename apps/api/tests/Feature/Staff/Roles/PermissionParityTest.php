@@ -142,6 +142,17 @@ class PermissionParityTest extends TestCase
         'PATCH api/v1/stores/{store}/expenses/{expense}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'DELETE api/v1/stores/{store}/expenses/{expense}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
         'GET api/v1/stores/{store}/expenses/{expense}/receipt' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.8a (PHASE-8-8 §2.1, §8.1): fraud.manage → O and A allowed, S 403; the hold release is orders.process.
+        'GET api/v1/stores/{store}/fraud-guard/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/fraud-guard/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/fraud-guard/settings/reset' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/fraud-guard/overview' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/fraud-guard/events' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/fraud-guard/blocked-numbers' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/fraud-guard/blocked-numbers' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/fraud-guard/blocked-numbers/{entry}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/fraud-guard/check' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/orders/{order}/guard/release' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
     ];
 
     /** @var array<string, mixed> */
@@ -319,6 +330,10 @@ class PermissionParityTest extends TestCase
         ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
         $expense = $this->req($h, 'POST', "{$base}/expenses", ['amount' => 50000, 'category' => 'rent_bills', 'paid_from' => 'cash',
             'spent_on' => now('Asia/Dhaka')->format('Y-m-d'), 'receipt_id' => $receipt])->assertCreated()->json('data.id');
+        // Phase 8.8a: a blocked number and an order held for a call.
+        $blocked = $this->req($h, 'POST', "{$base}/fraud-guard/blocked-numbers", ['phone' => '01712000999', 'note' => 'Parity'])->assertCreated()->json('data.id');
+        $held = $this->manual($h, $store, $this->manualBody($variant))->assertCreated()->json('data.id');
+        $this->inTenant($tenant, fn () => Order::query()->whereKey($held)->update(['guard_hold' => 'call_first', 'guard_hold_at' => now()]));
         $this->req($h, 'POST', "{$base}/customers/{$customer}/notes", ['body' => 'VIP'])->assertSuccessful();
         $note = $this->inTenant($tenant, fn () => CustomerNote::query()->where('customer_id', $customer)->value('id'));
         $coupon = $this->req($h, 'POST', "{$base}/coupons", ['code' => 'PARITY', 'type' => 'fixed', 'amount' => 100])->assertCreated()->json('data.id');
@@ -368,7 +383,7 @@ class PermissionParityTest extends TestCase
             'media' => $media, 'import' => $import, 'export' => $export, 'pickup' => $pickup, 'invoice' => $invoice,
             'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
             'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign, 'automation' => $automation['id'], 'draft_automation' => $draftAutomation, 'run' => $run,
-            'expense' => $expense,
+            'expense' => $expense, 'blocked' => $blocked, 'held' => $held,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -499,6 +514,18 @@ class PermissionParityTest extends TestCase
             'PATCH api/v1/stores/{store}/expenses/{expense}' => $r('PATCH', "{$b}/expenses/{$s['expense']}", ['note' => 'June rent']),
             'DELETE api/v1/stores/{store}/expenses/{expense}' => $r('DELETE', "{$b}/expenses/{$s['expense']}"),
             'GET api/v1/stores/{store}/expenses/{expense}/receipt' => $r('GET', "{$b}/expenses/{$s['expense']}/receipt"),
+
+            // --- Phase 8.8a fake-order guard ---
+            'GET api/v1/stores/{store}/fraud-guard/settings' => $r('GET', "{$b}/fraud-guard/settings"),
+            'PATCH api/v1/stores/{store}/fraud-guard/settings' => $r('PATCH', "{$b}/fraud-guard/settings", ['hold_below' => 55]),
+            'POST api/v1/stores/{store}/fraud-guard/settings/reset' => $r('POST', "{$b}/fraud-guard/settings/reset"),
+            'GET api/v1/stores/{store}/fraud-guard/overview' => $r('GET', "{$b}/fraud-guard/overview"),
+            'GET api/v1/stores/{store}/fraud-guard/events' => $r('GET', "{$b}/fraud-guard/events"),
+            'GET api/v1/stores/{store}/fraud-guard/blocked-numbers' => $r('GET', "{$b}/fraud-guard/blocked-numbers"),
+            'POST api/v1/stores/{store}/fraud-guard/blocked-numbers' => $r('POST', "{$b}/fraud-guard/blocked-numbers", ['phone' => '01712000888']),
+            'DELETE api/v1/stores/{store}/fraud-guard/blocked-numbers/{entry}' => $r('DELETE', "{$b}/fraud-guard/blocked-numbers/{$s['blocked']}"),
+            'POST api/v1/stores/{store}/fraud-guard/check' => $r('POST', "{$b}/fraud-guard/check", ['phone' => '01712000777']),
+            'POST api/v1/stores/{store}/orders/{order}/guard/release' => $r('POST', "{$b}/orders/{$s['held']}/guard/release"),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),

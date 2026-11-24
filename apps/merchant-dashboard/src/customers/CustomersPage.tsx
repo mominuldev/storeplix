@@ -1,5 +1,5 @@
-import type { Customer, CustomerListFilters } from '@storeplix/types';
-import { Avatar, Button, buttonVariants, cn, DataTable, KpiTile, Pagination, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { RISK_TIERS, type Customer, type CustomerListFilters, type RiskTier } from '@storeplix/types';
+import { Avatar, Button, buttonVariants, cn, DataTable, KpiTile, Pagination, RiskBadge, riskTierMeta, Tabs, type DataTableColumn } from '@storeplix/ui';
 import { ChevronRight, Plus, Repeat, ShoppingCart, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
@@ -8,14 +8,14 @@ import { formatBdt, formatCount, formatIntlPhone, monthYear } from '../catalog/f
 import { useCustomers } from '../catalog/queries';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, LoadingRows, NoResults } from '../catalog/states';
-import { Cell2, iconButton, SearchBox, useDebounced } from '../catalog/ui';
+import { Cell2, FilterSelect, iconButton, SearchBox, useDebounced } from '../catalog/ui';
 import { useExport } from '../imports/useExport';
 import { timeAgo } from '../commerce/format';
 import { channelLabels, CustomerFormDialog } from './CustomerFormDialog';
 
 // Figma Customers 63:14972 (Main 63:14974), Customer/Row 61:12494, Avatar 61:12493. Contract §9.1: tabs Repeat /
-// Risky / Blocked, the risky banner, district/risk/last-order filters, Delivered/Returns/Risk columns and
-// order-number search are not built. Phase 5a: Delivered and Returns columns show this shop's counters.
+// Risky / Blocked, the risky banner, district/last-order filters and order-number search are not built. Phase 5a:
+// Delivered and Returns columns show this shop's counters. PHASE-8-8 §10.3: Risk column (own-shop tier) + Risk filter.
 
 export function startOfMonthIso(now = new Date()): string {
   return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -32,7 +32,8 @@ export function CustomersPage() {
   const page = Number(params.get('page') ?? '1') || 1;
   const [adding, setAdding] = useState(false);
 
-  const filters: CustomerListFilters = { q: debounced || undefined, created_from: tab === 'new' ? startOfMonthIso() : undefined, page, per_page: 25 };
+  const risk = (RISK_TIERS as readonly string[]).includes(params.get('risk') ?? '') ? (params.get('risk') as RiskTier) : '';
+  const filters: CustomerListFilters = { q: debounced || undefined, created_from: tab === 'new' ? startOfMonthIso() : undefined, risk: risk ? [risk] : undefined, page, per_page: 25 };
   const list = useCustomers(filters);
   const rows = list.data?.data ?? [];
   const meta = list.data?.meta;
@@ -64,6 +65,7 @@ export function CustomersPage() {
     { key: 'orders', header: 'Orders', width: 52, cell: (c) => <span className="text-body font-semibold text-text-primary">{formatCount(c.orders_count)}</span> },
     { key: 'delivered', header: 'Delivered', width: 96, cell: (c) => <DeliveryMeter delivered={c.delivered_orders_count} returned={c.returned_orders_count} /> },
     { key: 'returns', header: 'Returns', width: 64, cell: (c) => <span className="text-body text-text-primary">{formatCount(c.returned_orders_count)}</span> },
+    { key: 'risk', header: 'Risk', width: 104, cell: (c) => (c.risk ? <RiskBadge tier={c.risk.tier} /> : <span className="text-text-muted">—</span>) },
     { key: 'spent', header: 'Total spent', width: 96, cell: (c) => <span className="text-body font-semibold text-text-primary">{formatBdt(c.total_spent_amount)}</span> },
     { key: 'last', header: 'Last order', width: 88, cell: (c) => <span className="text-caption whitespace-nowrap text-text-muted">{c.last_order_at ? timeAgo(c.last_order_at) : '—'}</span> },
     {
@@ -135,6 +137,14 @@ export function CustomersPage() {
               label="Search customers"
               className="h-[38px] w-full border border-border-default bg-surface-card sm:max-w-[300px] [&>svg]:size-4"
             />
+            <FilterSelect label="Risk" value={risk} onChange={(e) => set({ risk: e.target.value })}>
+              <option value="">Risk</option>
+              {RISK_TIERS.map((t) => (
+                <option key={t} value={t}>
+                  {riskTierMeta[t].label}
+                </option>
+              ))}
+            </FilterSelect>
           </div>
         }
         columns={columns}
@@ -147,9 +157,9 @@ export function CustomersPage() {
           ) : list.isError ? (
             <ErrorBlock error={list.error} onRetry={() => void list.refetch()} />
           ) : rows.length === 0 ? (
-            debounced || tab === 'new' ? (
+            debounced || tab === 'new' || risk ? (
               <NoResults
-                title={debounced ? `No customers match “${debounced}”` : 'No new customers this month'}
+                title={debounced ? `No customers match “${debounced}”` : risk ? `No ${riskTierMeta[risk].label} customers` : 'No new customers this month'}
                 description={debounced ? 'Check the number, or search by name or email instead.' : undefined}
                 onClear={() => {
                   setQ('');

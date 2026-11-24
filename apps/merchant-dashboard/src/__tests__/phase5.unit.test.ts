@@ -22,10 +22,10 @@ describe('orders: next step (§4)', () => {
     expect(ordinal(3)).toBe('3rd');
     expect(ordinal(11)).toBe('11th');
     expect(ordinal(22)).toBe('22nd');
-    expect(customerLine({ id: 'C', name: 'N', phone: '8801712345678', email: null, orders_count: 3, delivered_orders_count: 3, returned_orders_count: 0, total_spent_amount: 0 })).toBe(
+    expect(customerLine({ id: 'C', name: 'N', phone: '8801712345678', email: null, orders_count: 3, delivered_orders_count: 3, returned_orders_count: 0, total_spent_amount: 0, risk: { tier: 'good', rate: 100, delivered: 3, total: 3 } })).toBe(
       '01712-345678 · 3rd order · 3/3 delivered',
     );
-    expect(customerLine({ id: null, name: 'N', phone: '8801556778899', email: null, orders_count: 1, delivered_orders_count: 0, returned_orders_count: 0, total_spent_amount: 0 })).toBe('01556-778899 · first order');
+    expect(customerLine({ id: null, name: 'N', phone: '8801556778899', email: null, orders_count: 1, delivered_orders_count: 0, returned_orders_count: 0, total_spent_amount: 0, risk: { tier: 'good', rate: 100, delivered: 3, total: 3 } })).toBe('01556-778899 · first order');
   });
 });
 

@@ -101,6 +101,8 @@ export const can = {
   manageExpenses: (m: PermissionHolder) => hasPermission(m, 'expenses.manage'),
   /** P87-16: the Reports nav item and `/reports` show with `reports.view` or `expenses.manage`. */
   seeReports: (m: PermissionHolder) => any(m, 'reports.view', 'expenses.manage'),
+  /** PHASE-8-8 §2.1 `fraud.manage`: Fake order guard page, blocked numbers, number checks, decision log. */
+  manageFraudGuard: (m: PermissionHolder) => hasPermission(m, 'fraud.manage'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

@@ -8,4 +8,6 @@ return [
     'order_cancelled' => '{shop}: Order {number} has been cancelled.',
     'payment_link' => '{shop}: Pay Tk {amount} to confirm order {number}: {url}',
     'order_updated' => '{shop}: Order {number} was updated. New total Tk {total}, pay Tk {due} on delivery.',
+    // PHASE-8-8 P88-13: shopper checkout code (vars: shop, code).
+    'checkout_otp' => '{shop}: Your checkout code is {code}. It is valid for 5 minutes. Do not share it.',
 ];

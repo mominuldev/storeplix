@@ -59,6 +59,8 @@ export function customerListQuery(f: CustomerListFilters = {}): Query {
     'filter[channel]': list(f.channel),
     'filter[tag]': f.tag || undefined,
     'filter[created_at][gte]': f.created_from || undefined,
+    // PHASE-8-8 §10.3
+    'filter[risk]': list(f.risk),
     q: text(f.q),
     sort: f.sort,
     page: f.page,
@@ -82,6 +84,9 @@ export function orderListQuery(f: OrderListFilters = {}): Query {
     'filter[not_printed]': f.not_printed || undefined,
     // 5b-3: "Book parcels" loads orders without an active shipment.
     'filter[has_shipment]': f.has_shipment === undefined ? undefined : f.has_shipment ? '1' : '0',
+    // PHASE-8-8 §6.5: risk tiers and held orders.
+    'filter[risk]': list(f.risk),
+    'filter[guard_hold]': f.guard_hold ? '1' : undefined,
     q: text(f.q),
     sort: f.sort,
     page: f.page,

@@ -53,6 +53,11 @@ jobs:
             # (storeplix.private_disk, default `local`); image receipts are re-encoded by ProcessMedia on `media` and
             # recurring expenses are generated on `default`, both worked by compose's `queue` service. phase8-7.* runs
             # `expenses:repeat` through `docker compose exec api php artisan tinker` (E2E_ARTISAN=docker).
+            # Phase 8.8a (PHASE-8-8-CONTRACT §13 QA): no new provider or flag. CheckOrderRisk runs on `default` (compose's
+            # `queue` service); advance links pay on the fake gateway (PAYMENTS_FAKE), bookings on FakeCourier
+            # (COURIERS_FAKE); the checkout OTP SMS goes through SMS_DRIVER=log and phase8-8.* reads the code from the
+            # dev sink (CAMPAIGNS_DEV_SINK) or, failing that, from the API log through tinker. Every older spec turns the
+            # guard off on its throwaway shop (support/commerce.ts setupShop), so their checkouts are unchanged.
           } >> .env
           cp apps/api/.env.example apps/api/.env
           # The api/queue containers read apps/api/.env; set the flag there too in case compose doesn't forward it.

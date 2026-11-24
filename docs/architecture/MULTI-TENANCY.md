@@ -179,7 +179,9 @@ existed before 5b and revokes `UPDATE, DELETE ON audit_logs` from the app role (
 ### 9.2 Forced RLS on every tenant table
 - `RlsTables::TENANT` is the single list: **52 tables** (40 from Phases 1–5a + `return_requests`, `return_items`,
   `return_events`, `document_templates`, `documents`, `payment_gateway_accounts`, `payment_links`, `webhook_events`,
-  `courier_accounts`, `shipment_events`, `courier_area_mappings`, `shipment_batches`). `RlsTables::PLATFORM` lists the
+  `courier_accounts`, `shipment_events`, `courier_area_mappings`, `shipment_batches`) at 5b-1; later phases add their
+  tables in the same change (**76 after Phase 8.8a**: + `fraud_guard_settings`, `blocked_phones`,
+  `order_risk_checks`, `fraud_guard_events`, `checkout_otps`; the `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
   tables without `tenant_id` and without RLS (`users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`,
   `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`, `tenants`, `plans`, `otp_codes`, `migrations`).
 - Every listed table is `ENABLE` **and** `FORCE ROW LEVEL SECURITY` (so even the owning role is subject to policies
@@ -282,6 +284,14 @@ nothing (404). Receipts are never served by the tenant-agnostic CDN and never by
 by tenant **and** store inside the settings transaction (store row locked `FOR UPDATE`); expense create locks the same
 row `FOR SHARE` before reading `stores.currency`.
 
+**Fake-order guard signals are per tenant and per store only (Phase 8.8a, PHASE-8-8 P88-1, ADR 0022).** A phone's
+delivery record, risk tier, blocklist entry, daily-limit count, duplicate search and OTP are all computed from rows of
+the current tenant **and** store (`BelongsToStore` + RLS), by normalised phone. No query joins another tenant's or
+store's orders, no cross-tenant aggregate exists (the "Delivery record across Storeplix" and super-admin Risk network
+designs stay unbuilt, Q23) and the guard makes no outbound call. The storefront OTP and checkout rules run after the
+storefront host lookup has set `TenantContext`, so they need no definer function. Test: the same phone with returns in
+another tenant and in another store never changes this store's tier (S154, S161).
+
 ### 9.5 Cross-tenant platform code (`withoutTenancy()` → `pgsql_admin`)
 - `Model::withoutTenancy()` removes the `TenantScope` **and**, with RLS on, moves the query onto `pgsql_admin`
   (`PlatformDb::reroute`). With RLS off it stays on the default connection, exactly as before 5b.
@@ -310,6 +320,10 @@ row `FOR SHARE` before reading `stores.currency`.
   spent_on)`). `expenses:prune-receipts` (daily) finds unattached `expense_receipt` media older than 24 h on
   `pgsql_admin`, then per tenant deletes the row first (`NOT EXISTS` on `expenses.receipt_media_id`, FK RESTRICT as
   backstop) and the private object after commit when `ownsPath()` holds.
+- Phase 8.8a: `fraud:resolve-stale` (every 5 min) finds orders with `guard_hold = 'checking'` older than 10 min on
+  `pgsql_admin` (ids and tenant ids only), then per tenant inside `TenantContext::run()` re-dispatches `CheckOrderRisk`
+  (`TenantAware`, queue `default`, idempotent on `order_risk_checks.order_id`) with own-shop data only. `fraud:prune`
+  (daily) deletes `checkout_otps` older than 24 h and `fraud_guard_events` older than 13 months per tenant.
 - Seeders run with `--database=pgsql_owner` (the owner bypasses RLS) and keep `TenantContext::run()` around tenant writes.
 - Super-admin `/admin/*` (not built yet) must use `pgsql_admin` and stay out of merchant request paths.
 

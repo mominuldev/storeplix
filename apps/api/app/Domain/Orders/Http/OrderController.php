@@ -3,6 +3,8 @@
 namespace App\Domain\Orders\Http;
 
 use App\Domain\Catalog\Support\StockSql;
+use App\Domain\FraudGuard\GuardSettings;
+use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Geo\AddressValidator;
 use App\Domain\Geo\BdGeo;
 use App\Domain\Orders\Models\Order;
@@ -40,7 +42,10 @@ class OrderController
         Gate::authorize('view', $store);
         $list = fn (array $values) => 'regex:/^('.implode('|', $values).')(,('.implode('|', $values).'))*$/';
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed,has_shipment'],
+            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed,has_shipment,risk,guard_hold'],
+            // PHASE-8-8 §6.5: `filter[risk]` (guard.tier, else the customer's tier) and `filter[guard_hold]=1`.
+            'filter.risk' => ['sometimes', 'string', $list(RiskTier::ALL)],
+            'filter.guard_hold' => ['sometimes', 'string', 'in:0,1'],
             'filter.has_shipment' => ['sometimes', 'string', 'in:0,1'],
             'filter.printed' => ['sometimes', 'string', 'in:invoice,label'],
             'filter.not_printed' => ['sometimes', 'string', 'in:invoice,label'],
@@ -81,7 +86,7 @@ class OrderController
             '-total' => $query->orderByDesc('total_amount')->orderByDesc('id'),
             default => $query->orderByDesc('placed_at')->orderByDesc('id'),
         };
-        $page = $query->with(['customer', 'shipment'])->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
+        $page = $query->with(['customer', 'shipment', 'riskCheck'])->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
 
         $byStatus = self::filtered($store, $filter, $q, withStatus: false)->toBase()->reorder()
             ->groupBy('status')->selectRaw('status, count(*) as aggregate')->pluck('aggregate', 'status');
@@ -89,6 +94,8 @@ class OrderController
         foreach (Order::STATUSES as $status) {
             $counts[$status] = (int) ($byStatus[$status] ?? 0);
         }
+        // PHASE-8-8 §6.5: held orders (any status; ignores the status filter like the rest).
+        $counts['held'] = self::filtered($store, $filter, $q, withStatus: false)->whereNotNull('orders.guard_hold')->count();
 
         return new JsonResponse([
             'data' => $page->getCollection()->map(fn (Order $o) => OrderPresenter::summary($o))->all(),
@@ -124,6 +131,18 @@ class OrderController
         }
         if (isset($filter['placed_at']['lte'])) {
             $query->where('placed_at', '<=', Carbon::parse($filter['placed_at']['lte'])->utc());
+        }
+        if (isset($filter['guard_hold'])) {
+            $filter['guard_hold'] === '1' ? $query->whereNotNull('orders.guard_hold') : $query->whereNull('orders.guard_hold');
+        }
+        if (isset($filter['risk'])) {
+            $tiers = explode(',', $filter['risk']);
+            $sql = RiskTier::sqlAny($tiers, app(GuardSettings::class)->thresholds($store->id), 'customers.');
+            $query->where(function (Builder $w) use ($tiers, $sql) {
+                $w->whereExists(fn ($c) => $c->selectRaw('1')->from('order_risk_checks')->whereColumn('order_risk_checks.order_id', 'orders.id')->whereIn('order_risk_checks.tier', $tiers))
+                    ->orWhere(fn (Builder $n) => $n->whereNotExists(fn ($c) => $c->selectRaw('1')->from('order_risk_checks')->whereColumn('order_risk_checks.order_id', 'orders.id'))
+                        ->whereExists(fn ($c) => $c->selectRaw('1')->from('customers')->whereColumn('customers.id', 'orders.customer_id')->whereRaw($sql)));
+            });
         }
         if ($q !== '') {
             $digits = ltrim(Phone::clean($q), '+');

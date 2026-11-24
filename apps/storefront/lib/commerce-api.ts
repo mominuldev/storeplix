@@ -7,6 +7,7 @@ import type {
   PaymentLinkView,
   PaymentMethod,
   CartContactInput,
+  CheckoutOtpInput,
   RecoverCartResult,
   ShippingQuote,
   StorefrontAvailability,
@@ -46,6 +47,7 @@ import {
   type ProductPage,
 } from './commerce-schemas';
 import { commerceMockFetch, commerceMockEnabled } from './commerce-mock';
+import { parseCheckoutOtp, type CheckoutOtp } from './checkout-guard';
 import type { StorefrontTracking } from './tracking';
 
 /**
@@ -191,6 +193,14 @@ export function fetchShippingQuote(c: CartCall, districtCode: string, thanaCode:
 
 export function postCheckout(c: CartCall, idempotencyKey: string, body: unknown) {
   return request(c.host, '/storefront/checkout', cartCall(c, { method: 'POST', body, idempotencyKey }), parseCheckoutResult);
+}
+
+/**
+ * PHASE-8-8 §7 / P88-13: ask whether this COD checkout needs a phone code (and send it when it does). The answer never
+ * says why (blocked, known or new numbers look the same); 429 from the per-phone/IP limiters.
+ */
+export function postCheckoutOtp(c: CartCall, phone: string): Promise<ApiResult<CheckoutOtp>> {
+  return request(c.host, '/storefront/checkout/otp', cartCall(c, { method: 'POST', body: { phone } satisfies CheckoutOtpInput }), parseCheckoutOtp);
 }
 
 /**
