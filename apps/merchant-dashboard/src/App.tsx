@@ -96,6 +96,10 @@ const PurchaseOrderPage = lazy(() => import('./purchasing/PurchaseOrderPage'));
 const SuppliersPage = lazy(() => import('./purchasing/SuppliersPage'));
 // Phase 8.8c part A: Inventory → Warehouses (code-split).
 const WarehousesPage = lazy(() => import('./inventory/warehouses/WarehousesPage'));
+// Phase 8.8c part B: Inventory → Transfers + Stock count (code-split).
+const TransfersPage = lazy(() => import('./inventory/transfers/TransfersPage'));
+const CountsPage = lazy(() => import('./inventory/counts/CountsPage'));
+const CountPage = lazy(() => import('./inventory/counts/CountPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -230,6 +234,10 @@ export function AppRoutes() {
               <Route path="/inventory/purchase-orders/:id/edit" element={gated(can.managePurchasing, <PurchaseOrderFormPage />)} />
               <Route path="/inventory/suppliers" element={gated(can.managePurchasing, <SuppliersPage />)} />
               <Route path="/inventory/warehouses" element={lazyEl(<WarehousesPage />)} />
+              <Route path="/inventory/transfers" element={lazyEl(<TransfersPage />)} />
+              <Route path="/inventory/transfers/:id" element={lazyEl(<TransfersPage />)} />
+              <Route path="/inventory/counts" element={lazyEl(<CountsPage />)} />
+              <Route path="/inventory/counts/:id" element={lazyEl(<CountPage />)} />
               <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
               <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
               <Route path="/orders" element={gated(can.seeOrders, <OrdersPage />)} />

@@ -13,15 +13,18 @@ import { ReorderCard } from '../purchasing/ReorderCard';
 import { movementPoRef } from '../purchasing/purchasing';
 import { AdjustDialog, reasonLabels } from './AdjustDialog';
 import { InventoryTabs } from './InventoryTabs';
-import { stockAt, useStockLocations } from './locations';
+import { multiWarehouseLocked, stockAt, useStockLocations } from './locations';
+import { movementRefLabel } from './transfers/transfers';
+import { useFeatures } from '../plan/useFeatures';
 
 // Figma Inventory 11:589 (Main 11:743). Contract §9.1: tabs Stock levels + Stock movements. PHASE-8-8B §10.1 adds the
 // Purchase orders + Suppliers tabs (own routes), the INCOMING column, the "Purchase order" header button, the reorder
 // suggestion card and "Received · PO-0012" movement rows. PHASE-8-8C part A (§10.1): location selector 11:842 ("All
 // locations" + each, only with > 1 active location; with a location the table shows that row's numbers, with All
 // locations a row expands to per-location numbers — composed), Warehouses tab 11:808, adjust dialog location select,
-// movement rows and the latest-changes card show the location. Transfer stock 11:788, Stock count and barcode scan stay
-// hidden (part B / later). A one-location store renders exactly as before (no location UI).
+// movement rows and the latest-changes card show the location. Part B: "Transfer stock" 11:788 (→ new transfer; only
+// with `multi_warehouse`, > 1 active location and `inventory.adjust`), movement rows "Transfer → {location}" /
+// "Count · {name}" linking to the transfer / count. A one-location store renders exactly as before (no location UI).
 
 const movementReasonLabel: Record<StockMovementReason, string> = {
   initial: 'Opening stock',
@@ -60,6 +63,8 @@ export function InventoryPage() {
   const paramLocation = params.get('location');
   const locationId = locs.multi && paramLocation && locs.active.some((l) => l.id === paramLocation) ? paramLocation : null;
   const [receiving, setReceiving] = useState(false);
+  const features = useFeatures().data;
+  const canTransfer = scope.canAdjustInventory && locs.multi && !!features && !multiWarehouseLocked(features);
 
   const setTab = (t: 'levels' | 'movements') => {
     const next = new URLSearchParams(params);
@@ -75,6 +80,11 @@ export function InventoryPage() {
         subtitle="Every stock change is recorded. Available = on hand − held for orders."
         actions={
           <>
+            {canTransfer && (
+              <Link to={`/inventory/transfers/new${locationId ? `?from=${locationId}` : ''}`} className={buttonVariants({ variant: 'secondary' })}>
+                Transfer stock
+              </Link>
+            )}
             {scope.canManagePurchasing && (
               <Link to="/inventory/purchase-orders/new" className={buttonVariants({ variant: 'secondary' })}>
                 Purchase order
@@ -329,7 +339,7 @@ function StockLevels({
                   <MovementIcon m={m} />
                   <span className="flex min-w-0 flex-1 flex-col gap-px">
                     <span className="truncate text-body font-medium text-text-primary">
-                      {movementPoRef(m) ? `Received · ${movementPoRef(m)!.number}` : movementReasonLabel[m.reason]} · {m.product.name}
+                      {movementPoRef(m) ? `Received · ${movementPoRef(m)!.number}` : (movementRefLabel(m)?.label ?? movementReasonLabel[m.reason])} · {m.product.name}
                     </span>
                     <span className="truncate text-caption text-text-muted">
                       {[m.variant_title !== 'Default' ? m.variant_title : null, locations && !locationId ? m.location.name : null, movementPoRef(m)?.supplier ?? null, m.actor?.name ? `By ${m.actor.name}` : null, shortDate(m.created_at)].filter(Boolean).join(' · ')}
@@ -411,6 +421,23 @@ function Movements({ locations }: { locations: Location[] | null }) {
       width: 170,
       cell: (m) => {
         const po = movementPoRef(m);
+        const ref = po ? null : movementRefLabel(m);
+        if (ref)
+          return (
+            <Cell2
+              top={
+                ref.to ? (
+                  <Link to={ref.to} className="text-brand-600 hover:text-brand-700">
+                    {ref.label}
+                  </Link>
+                ) : (
+                  ref.label
+                )
+              }
+              bottom={ref.sub ?? undefined}
+              topClass="font-medium"
+            />
+          );
         if (!po) return <Cell2 top={movementReasonLabel[m.reason]} bottom={m.note ?? undefined} topClass="font-medium" />;
         return (
           <Cell2
@@ -447,7 +474,7 @@ function Movements({ locations }: { locations: Location[] | null }) {
         <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
           <FilterSelect label="Reason" value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}>
             <option value="">All reasons</option>
-            {reasonOptions.map((r) => (
+            {[...reasonOptions, ...(locations ? (['transfer_out', 'transfer_in'] as const) : []), 'count' as const].map((r) => (
               <option key={r} value={r}>
                 {r in reasonLabels ? reasonLabels[r as keyof typeof reasonLabels] : movementReasonLabel[r]}
               </option>

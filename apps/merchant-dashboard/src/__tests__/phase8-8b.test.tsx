@@ -190,8 +190,8 @@ describe('Purchase orders list (§10.2)', () => {
     const tabs = screen.getByRole('tablist', { name: 'Inventory' });
     expect(within(tabs).getByRole('tab', { name: 'Purchase orders' })).toHaveAttribute('aria-selected', 'true');
     expect(within(tabs).getByRole('tab', { name: 'Suppliers' })).toBeInTheDocument();
-    expect(within(tabs).queryByRole('tab', { name: /Stock count/ })).toBeNull();
-    // PHASE-8-8C part A: Warehouses is now a tab (Stock count stays hidden until part B).
+    // PHASE-8-8C: Warehouses (part A) and Stock count (part B) are tabs.
+    expect(within(tabs).getByRole('tab', { name: 'Stock count' })).toBeInTheDocument();
     expect(within(tabs).getByRole('tab', { name: 'Warehouses' })).toBeInTheDocument();
     const kpis = await screen.findByRole('region', { name: 'Purchase order summary' });
     expect(within(kpis).getByText('৳ 2,48,600 in total')).toBeInTheDocument();
@@ -636,7 +636,7 @@ describe('Inventory additions (§10.1)', () => {
     expect(await screen.findByText('Received · PO-0012 · Jamdani Three-Piece')).toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Reorder suggestions' })).toBeInTheDocument();
     const tabs = screen.getByRole('tablist', { name: 'Inventory' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Stock levels', 'Stock movements', 'Purchase orders', 'Suppliers', 'Warehouses']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Stock levels', 'Stock movements', 'Purchase orders', 'Suppliers', 'Warehouses', 'Stock count']);
   });
 
   it('Stock movements: PO reference links to the purchase order', async () => {
