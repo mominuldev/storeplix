@@ -1,0 +1,242 @@
+{
+  "description": "Shared SMS part-count vectors (PHASE-8-5 §5.3, P85-18). API SmsParts::count and WEB smsParts() must both pass every vector.",
+  "algorithm": {
+    "gsm7_basic": "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà",
+    "gsm7_extension": "^{}\\[~]|€",
+    "rule": "If every character is in gsm7_basic or gsm7_extension: encoding gsm7, units = septets (extension chars count 2), single part <= 160, else ceil(units / 153). Otherwise: encoding ucs2, units = UTF-16 code units, single part <= 70, else ceil(units / 67). Empty text = 0 parts. Parts are a plain ceil (no special handling of escape pairs or surrogate pairs at part boundaries). Form feed is NOT in the extension set here.",
+    "max_campaign_parts": 5
+  },
+  "vectors": [
+    {
+      "name": "empty string",
+      "text": "",
+      "encoding": "gsm7",
+      "units": 0,
+      "parts": 0
+    },
+    {
+      "name": "short GSM",
+      "text": "Hello Rahim, your coupon is EID20",
+      "encoding": "gsm7",
+      "units": 33,
+      "parts": 1
+    },
+    {
+      "name": "GSM exactly 160",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoding": "gsm7",
+      "units": 160,
+      "parts": 1
+    },
+    {
+      "name": "GSM 161 -> 2 parts",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoding": "gsm7",
+      "units": 161,
+      "parts": 2
+    },
+    {
+      "name": "GSM exactly 306 (2x153)",
+      "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "encoding": "gsm7",
+      "units": 306,
+      "parts": 2
+    },
+    {
+      "name": "GSM 307 -> 3 parts",
+      "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "encoding": "gsm7",
+      "units": 307,
+      "parts": 3
+    },
+    {
+      "name": "GSM 765 (5x153) max campaign size",
+      "text": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "encoding": "gsm7",
+      "units": 765,
+      "parts": 5
+    },
+    {
+      "name": "GSM 766 -> 6 parts",
+      "text": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "encoding": "gsm7",
+      "units": 766,
+      "parts": 6
+    },
+    {
+      "name": "GSM basic specials",
+      "text": "@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ¤¡ÄÖÑÜ§¿äöñüà",
+      "encoding": "gsm7",
+      "units": 42,
+      "parts": 1
+    },
+    {
+      "name": "GSM newline and CR",
+      "text": "Line one\nLine two\r\nEnd",
+      "encoding": "gsm7",
+      "units": 22,
+      "parts": 1
+    },
+    {
+      "name": "extension chars count 2",
+      "text": "^{}\\[~]|€",
+      "encoding": "gsm7",
+      "units": 18,
+      "parts": 1
+    },
+    {
+      "name": "euro price",
+      "text": "Only €5 today",
+      "encoding": "gsm7",
+      "units": 14,
+      "parts": 1
+    },
+    {
+      "name": "159 basic + 1 extension = 161 septets",
+      "text": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd€",
+      "encoding": "gsm7",
+      "units": 161,
+      "parts": 2
+    },
+    {
+      "name": "158 basic + 1 extension = 160 septets",
+      "text": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd{",
+      "encoding": "gsm7",
+      "units": 160,
+      "parts": 1
+    },
+    {
+      "name": "lowercase c-cedilla is not GSM",
+      "text": "Façade sale",
+      "encoding": "ucs2",
+      "units": 11,
+      "parts": 1
+    },
+    {
+      "name": "curly apostrophe forces UCS-2",
+      "text": "Don’t miss it",
+      "encoding": "ucs2",
+      "units": 13,
+      "parts": 1
+    },
+    {
+      "name": "tab is not GSM",
+      "text": "a\tb",
+      "encoding": "ucs2",
+      "units": 3,
+      "parts": 1
+    },
+    {
+      "name": "Bangla short",
+      "text": "আমাদের দোকানে নতুন পণ্য এসেছে",
+      "encoding": "ucs2",
+      "units": 29,
+      "parts": 1
+    },
+    {
+      "name": "Bangla shop prefix + footer",
+      "text": "রঙিন বাজার: ঈদ অফার! কোড EID20 ব্যবহার করুন\nবন্ধ করতে: rongin.shop/u/Ab3dE5gH9z",
+      "encoding": "ucs2",
+      "units": 79,
+      "parts": 2
+    },
+    {
+      "name": "English prefix + footer",
+      "text": "Rongin Bazar: Eid offer! Use EID20\nSTOP: rongin.shop/u/Ab3dE5gH9z",
+      "encoding": "gsm7",
+      "units": 65,
+      "parts": 1
+    },
+    {
+      "name": "UCS-2 exactly 70",
+      "text": "কককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককক",
+      "encoding": "ucs2",
+      "units": 70,
+      "parts": 1
+    },
+    {
+      "name": "UCS-2 71 -> 2 parts",
+      "text": "ককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককককক",
+      "encoding": "ucs2",
+      "units": 71,
+      "parts": 2
+    },
+    {
+      "name": "UCS-2 exactly 134 (2x67)",
+      "text": "খখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখ",
+      "encoding": "ucs2",
+      "units": 134,
+      "parts": 2
+    },
+    {
+      "name": "UCS-2 135 -> 3 parts",
+      "text": "খখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখখ",
+      "encoding": "ucs2",
+      "units": 135,
+      "parts": 3
+    },
+    {
+      "name": "UCS-2 exactly 335 (5x67)",
+      "text": "গগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগ",
+      "encoding": "ucs2",
+      "units": 335,
+      "parts": 5
+    },
+    {
+      "name": "UCS-2 336 -> 6 parts",
+      "text": "গগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগগ",
+      "encoding": "ucs2",
+      "units": 336,
+      "parts": 6
+    },
+    {
+      "name": "mixed Latin + one Bangla char",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaক",
+      "encoding": "ucs2",
+      "units": 70,
+      "parts": 1
+    },
+    {
+      "name": "mixed Latin + one Bangla char over 70",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaক",
+      "encoding": "ucs2",
+      "units": 71,
+      "parts": 2
+    },
+    {
+      "name": "emoji counts 2 UTF-16 units",
+      "text": "Sale 🎉",
+      "encoding": "ucs2",
+      "units": 7,
+      "parts": 1
+    },
+    {
+      "name": "35 emoji = 70 units",
+      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "encoding": "ucs2",
+      "units": 70,
+      "parts": 1
+    },
+    {
+      "name": "36 emoji = 72 units -> 2 parts",
+      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "encoding": "ucs2",
+      "units": 72,
+      "parts": 2
+    },
+    {
+      "name": "Bangla digits",
+      "text": "৳ ১২০০ ছাড়",
+      "encoding": "ucs2",
+      "units": 11,
+      "parts": 1
+    },
+    {
+      "name": "taka sign is not GSM",
+      "text": "Price 1200৳",
+      "encoding": "ucs2",
+      "units": 11,
+      "parts": 1
+    }
+  ]
+}

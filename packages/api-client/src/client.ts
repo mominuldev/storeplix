@@ -187,6 +187,26 @@ import type {
   WebhookResendFailedResult,
   WebhookSecret,
   WebhookSecretRevealed,
+  AudiencePreview,
+  AudiencePreviewInput,
+  Campaign,
+  CampaignEstimate,
+  CampaignEstimateInput,
+  CampaignListFilters,
+  CampaignListItem,
+  CampaignRecipient,
+  CampaignRecipientFilters,
+  CampaignTestResult,
+  CreateCampaignInput,
+  CustomerMarketing,
+  DevSinkMessage,
+  MarketingChannel,
+  MarketingOverview,
+  MarketingRange,
+  ScheduleCampaignInput,
+  UnsubscribeInput,
+  UnsubscribeStatus,
+  UpdateCampaignInput,
 } from '@storeplix/types';
 import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
@@ -849,6 +869,12 @@ export function createApiClient(options: ApiClientOptions) {
         request<CustomerNote>(`${store(storeId)}/customers/${enc(id)}/notes`, { method: 'POST', body: { body } }),
       deleteNote: (storeId: string, id: string, noteId: string) =>
         request<void>(`${store(storeId)}/customers/${enc(id)}/notes/${enc(noteId)}`, { method: 'DELETE' }),
+      /** PHASE-8-5 §4.1 "Stop marketing messages" (`customers.edit`): adds a `merchant` suppression; idempotent. */
+      marketingOptOut: (storeId: string, id: string, channel: MarketingChannel) =>
+        request<CustomerMarketing>(`${store(storeId)}/customers/${enc(id)}/marketing-opt-out`, { method: 'POST', body: { channel } }),
+      /** "Allow again": removes a `merchant` suppression only; a customer-owned one → 409 `suppression_customer_owned`. */
+      removeMarketingOptOut: (storeId: string, id: string, channel: MarketingChannel) =>
+        request<CustomerMarketing>(`${store(storeId)}/customers/${enc(id)}/marketing-opt-out/${enc(channel)}`, { method: 'DELETE' }),
     },
 
     /** Phase 4 §3.4 (O A only). Poll `get` every 2 s while `validating`/`importing`. */
@@ -1211,6 +1237,78 @@ export function createApiClient(options: ApiClientOptions) {
       },
     },
 
+    /** PHASE-8-5 §6.1 Marketing overview (`marketing.manage`). */
+    marketing: {
+      overview: (storeId: string, range: MarketingRange = '30d') =>
+        request<MarketingOverview>(`${store(storeId)}/marketing/overview`, { query: { range } }),
+    },
+
+    /**
+     * PHASE-8-5 §6.1 campaigns (store-scoped, `marketing.manage`). Writes: 409 `store_not_live` (draft/suspended store),
+     * 422 `limit_reached` (50 non-terminal), `campaign_unknown_merge_field` / `campaign_too_long` /
+     * `campaign_coupon_inactive` / `validation_failed`. Schedule/send: 402 `plan_limit_reached`, 422 `campaign_quiet_hours` /
+     * `campaign_no_recipients`, `Idempotency-Key` required (create once per confirm dialog, reuse on retry).
+     */
+    campaigns: {
+      list: (storeId: string, filters: CampaignListFilters = {}) =>
+        listOf<CampaignListItem, PaginationMeta>(
+          `${store(storeId)}/campaigns`,
+          {
+            'filter[status]': filters.status?.length ? filters.status.join(',') : undefined,
+            'filter[channel]': filters.channel,
+            q: filters.q?.trim() || undefined,
+            sort: filters.sort,
+            page: filters.page,
+            per_page: filters.per_page,
+          },
+          emptyPage(),
+        ),
+      get: (storeId: string, id: string) => request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}`),
+      /** 201 `draft`. */
+      create: (storeId: string, input: CreateCampaignInput) => request<Campaign>(`${store(storeId)}/campaigns`, { method: 'POST', body: input }),
+      /** `draft` / `scheduled` only; needs `revision` (409 `revision_conflict`). */
+      update: (storeId: string, id: string, input: UpdateCampaignInput) =>
+        request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** `draft` only (hard delete), else 409 `invalid_state_transition`. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/campaigns/${enc(id)}`, { method: 'DELETE' }),
+      /** §3.3; throttled 30/min per user (429). */
+      audiencePreview: (storeId: string, input: AudiencePreviewInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<AudiencePreview>(`${store(storeId)}/campaigns/audience-preview`, { method: 'POST', body: input, signal: opts?.signal }),
+      estimate: (storeId: string, input: CampaignEstimateInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<CampaignEstimate>(`${store(storeId)}/campaigns/estimate`, { method: 'POST', body: input, signal: opts?.signal }),
+      /** P85-26 "Send test to me" → 202; 5/hour per user (429); counts toward the allowance (402). */
+      sendTest: (storeId: string, id: string) =>
+        request<CampaignTestResult>(`${store(storeId)}/campaigns/${enc(id)}/test`, { method: 'POST' }),
+      schedule: (storeId: string, id: string, input: ScheduleCampaignInput, idempotencyKey: string) =>
+        request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}/schedule`, {
+          method: 'POST',
+          body: input,
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** Send now → 202 with the campaign in `sending`. */
+      send: (storeId: string, id: string, idempotencyKey: string) =>
+        request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}/send`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+      /** `scheduled → draft`. */
+      unschedule: (storeId: string, id: string) => request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}/unschedule`, { method: 'POST' }),
+      /** `draft|scheduled|sending → cancelled`; already-sent recipients stay sent. */
+      cancel: (storeId: string, id: string) => request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}/cancel`, { method: 'POST' }),
+      /** 201 new draft "{name} (copy)". */
+      duplicate: (storeId: string, id: string) => request<Campaign>(`${store(storeId)}/campaigns/${enc(id)}/duplicate`, { method: 'POST' }),
+      /** Needs `marketing.manage` AND `customers.view`; cursor pages of 50; addresses masked. */
+      recipients: (storeId: string, id: string, filters: CampaignRecipientFilters = {}) =>
+        listOf<CampaignRecipient, CursorMeta>(
+          `${store(storeId)}/campaigns/${enc(id)}/recipients`,
+          {
+            'filter[status]': filters.status?.length ? filters.status.join(',') : undefined,
+            'filter[skip_reason]': filters.skip_reason?.length ? filters.skip_reason.join(',') : undefined,
+            cursor: filters.cursor || undefined,
+          },
+          { next_cursor: null, prev_cursor: null, per_page: 50 },
+        ),
+      /** §5.4 dev message sink (non-production with `CAMPAIGNS_DEV_SINK=true`; 404 otherwise). Newest first. */
+      devSink: (storeId: string) => request<DevSinkMessage[]>(`/dev${store(storeId)}/message-sink`),
+    },
+
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */
     reports: {
       sales: (storeId: string, range: ReportRangeQuery = {}) => report<SalesReport>(storeId, 'sales', range),
@@ -1245,11 +1343,42 @@ export function createApiClient(options: ApiClientOptions) {
             ...(opts?.previewToken ? { 'X-Storefront-Preview': opts.previewToken } : {}),
           },
         }),
+      /**
+       * PHASE-8-5 §4.2 unsubscribe (server-to-server only). GET never changes state. Unknown or malformed code →
+       * 404 `unsubscribe_link_invalid`; 20/min per shopper IP (429). `clientIp` → `X-Storefront-Client-Ip`.
+       */
+      unsubscribe: {
+        get: (host: string, key: string, code: string, opts?: { clientIp?: string | null; signal?: AbortSignal }) =>
+          request<UnsubscribeStatus>(`/storefront/unsubscribe/${enc(code)}`, {
+            anonymous: true,
+            signal: opts?.signal,
+            init: { cache: 'no-store' },
+            headers: storefrontHeaders(host, key, opts?.clientIp),
+          }),
+        /** Idempotent; a test code answers 200 with `is_test: true` and changes nothing. */
+        post: (host: string, key: string, code: string, input: UnsubscribeInput, opts?: { clientIp?: string | null; signal?: AbortSignal }) =>
+          request<UnsubscribeStatus>(`/storefront/unsubscribe/${enc(code)}`, {
+            method: 'POST',
+            body: input,
+            anonymous: true,
+            signal: opts?.signal,
+            init: { cache: 'no-store' },
+            headers: storefrontHeaders(host, key, opts?.clientIp),
+          }),
+      },
     },
   };
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+function storefrontHeaders(host: string, key: string, clientIp?: string | null): Record<string, string> {
+  return {
+    'X-Storefront-Host': normalizeHost(host),
+    'X-Storefront-Key': key,
+    ...(clientIp ? { 'X-Storefront-Client-Ip': clientIp } : {}),
+  };
+}
 
 /** Lowercase, strip port and trailing dot. `Demo.LocalHost:3000` → `demo.localhost`. */
 export function normalizeHost(host: string): string {

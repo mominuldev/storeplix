@@ -191,7 +191,9 @@ export type FeatureKey =
   | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks';
 export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
   /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
-  | 'custom_domains';
+  | 'custom_domains'
+  /** Phase 8.5 (PHASE-8-5 P85-13): campaign SMS **parts** / campaign emails per calendar month (store tz). Free 0. */
+  | 'campaign_sms_per_month' | 'campaign_emails_per_month';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
 
 // ---------- Audit ----------
@@ -570,6 +572,8 @@ export interface Customer {
   orders_count: number; total_spent_amount: number; currency: string; last_order_at: string | null;
   delivered_orders_count: number; returned_orders_count: number;
   notes_count: number; revision: number; created_at: string; updated_at: string; created_by: UserRef | null;
+  /** Phase 8.5 (PHASE-8-5 §4.1): computed per-channel marketing status (suppressions + eligibility P85-3). */
+  marketing: CustomerMarketing;
 }
 export interface CustomerNote { id: string; body: string; author: UserRef | null; created_at: string; can_delete: boolean }
 export interface CustomerDetail extends Customer { notes: CustomerNote[] }
@@ -1707,3 +1711,240 @@ export interface WebhookDeliveryFilters {
   endpoint_id?: string; status?: WebhookDeliveryStatus; event_type?: WebhookDeliveryEventType; cursor?: string;
 }
 export interface WebhookResendFailedResult { count: number }
+
+// ---------- Phase 8.5: marketing campaigns SMS + email (PHASE-8-5-CONTRACT §3–§6; openapi 1.13.0) ----------
+/** P85-1: one channel per campaign. WhatsApp is out of scope (hidden). */
+export type MarketingChannel = 'sms' | 'email';
+export type CampaignChannel = MarketingChannel;
+export const CAMPAIGN_CHANNELS: readonly CampaignChannel[] = ['sms', 'email'];
+/** Campaign language: SMS footer, `{name}` fallback ("গ্রাহক" / "there"). */
+export type CampaignLanguage = 'bn' | 'en';
+/** P85-17 state machine: `draft → scheduled → sending → sent`; `draft|scheduled|sending → cancelled`; `scheduled|sending → failed`. */
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
+export const CAMPAIGN_STATUSES: readonly CampaignStatus[] = ['draft', 'scheduled', 'sending', 'sent', 'cancelled', 'failed'];
+export type CampaignFailureReason = 'limit' | 'plan' | 'store_unavailable' | 'no_recipients';
+
+/** §3.2 predefined segments (UI order). No saved/custom segments in 8.5 (Q143). */
+export type CampaignSegment = 'all' | 'repeat_inactive' | 'vip' | 'new_customers' | 'one_time' | 'district' | 'tag';
+export const CAMPAIGN_SEGMENTS: readonly CampaignSegment[] = [
+  'all', 'repeat_inactive', 'vip', 'new_customers', 'one_time', 'district', 'tag',
+];
+/** §3.2 parameter defaults and bounds (server validates; WEB pre-fills). `vip.min_spent_amount` is minor units. */
+export const CAMPAIGN_SEGMENT_PARAMS = {
+  repeat_inactive: { min_orders: { default: 2, min: 2, max: 20 }, inactive_days: { default: 60, min: 14, max: 365 } },
+  vip: { min_spent_amount: { default: 2_000_000, min: 1 } },
+  new_customers: { days: { default: 30, min: 1, max: 365 } },
+  district: { districts: { min: 1, max: 10 } },
+  tag: { tag: { min_length: 1, max_length: 40 } },
+} as const;
+export interface CampaignAudienceExclude {
+  /** P85-25 risk class `risky` */
+  risky: boolean;
+  /** null or 1–60 (Figma default 7) */
+  ordered_within_days: number | null;
+}
+/**
+ * `audience` jsonb (§3.2). `params` is always present (`{}` for `all` / `one_time`). Unknown keys → 422.
+ * Opted-out and ineligible customers (P85-3) are always excluded — not a flag.
+ */
+export type CampaignAudience = (
+  | { segment: 'all'; params: Record<string, never> }
+  | { segment: 'repeat_inactive'; params: { min_orders: number; inactive_days: number } }
+  | { segment: 'vip'; params: { min_spent_amount: number } }
+  | { segment: 'new_customers'; params: { days: number } }
+  | { segment: 'one_time'; params: Record<string, never> }
+  | { segment: 'district'; params: { districts: string[] } }
+  | { segment: 'tag'; params: { tag: string } }
+) & { exclude: CampaignAudienceExclude };
+
+/** §1 limits the UI mirrors (server is authoritative). */
+export const CAMPAIGN_LIMITS = {
+  name_max: 80,
+  /** P85-18: SMS parts incl. the `"{shop}: "` prefix and the opt-out footer */
+  sms_max_parts: 5,
+  /** shop name in the SMS prefix is truncated to this many chars */
+  sms_prefix_shop_name_max: 20,
+  email_subject_max: 150,
+  email_body_max: 5000,
+  /** P85-16 */
+  schedule_min_lead_minutes: 5,
+  schedule_max_days: 90,
+  /** P85-15 quiet hours, store time: no start from 21:00 until 09:00 */
+  quiet_hours: { from: '21:00', to: '09:00' },
+  /** P85-27 */
+  non_terminal_per_store: 50,
+  sending_per_store: 3,
+  /** P85-26 test sends per user per hour */
+  test_sends_per_hour: 5,
+  /** P85-21 attribution window */
+  attribution_days: 7,
+} as const;
+
+/** Merge fields (P85-20). Anything else in `{…}` → 422 `campaign_unknown_merge_field`. */
+export type CampaignMergeField = '{name}' | '{coupon}' | '{shop_link}' | '{product}';
+export const CAMPAIGN_MERGE_FIELDS: readonly CampaignMergeField[] = ['{name}', '{coupon}', '{shop_link}', '{product}'];
+
+export interface CampaignStats {
+  recipients: number; sent: number; failed: number; skipped: number; unsubscribed: number;
+  /** SMS parts sent (0 for email) */
+  parts_sent: number;
+  /** attributed orders (P85-21), cancelled excluded */
+  orders: number; revenue_amount: number; currency: string;
+}
+/** `CampaignListItem` = `Campaign` without `body` / `subject` / `audience` (§6.2). */
+export interface CampaignListItem {
+  id: string; name: string; channel: CampaignChannel; language: CampaignLanguage; status: CampaignStatus;
+  /** server-rendered segment label in the campaign language, e.g. "Bought 2+ times, inactive 60 days" */
+  audience_label: string;
+  coupon: { id: string; code: string } | null;
+  product: { id: string; name: string; slug: string } | null;
+  scheduled_at: string | null; started_at: string | null; completed_at: string | null; cancelled_at: string | null;
+  failure_reason: CampaignFailureReason | null;
+  stats: CampaignStats;
+  created_by: UserRef | null; created_at: string; updated_at: string; revision: number;
+}
+export interface Campaign extends CampaignListItem {
+  audience: CampaignAudience;
+  /** merchant text with merge fields; never includes the auto prefix/footer */
+  body: string;
+  /** email only (null for SMS) */
+  subject: string | null;
+}
+export interface CreateCampaignInput {
+  name: string; channel: CampaignChannel; language: CampaignLanguage; audience: CampaignAudience; body: string;
+  /** required for email (1–150, no CR/LF), must be null/absent for SMS */
+  subject?: string | null;
+  coupon_id?: string | null; product_id?: string | null;
+  /**
+   * Remembered schedule time. Stored on a draft (no effect until `/schedule`); on a `scheduled` campaign a change is
+   * re-validated (P85-15/16, allowance P85-14).
+   */
+  scheduled_at?: string | null;
+}
+/** PATCH — `draft` / `scheduled` only (else 409 `invalid_state_transition`); `revision` required (409 `revision_conflict`). */
+export interface UpdateCampaignInput extends Partial<CreateCampaignInput> { revision: number }
+export interface CampaignListFilters {
+  status?: CampaignStatus[]; channel?: CampaignChannel; q?: string;
+  sort?: '-created_at' | '-started_at'; page?: number; per_page?: number;
+}
+export interface ScheduleCampaignInput { scheduled_at: string }
+/** POST /campaigns/{id}/test → 202 */
+export interface CampaignTestResult { to_masked: string }
+
+/** POST /campaigns/audience-preview (§3.3). Counts are an estimate; the snapshot at send start is authoritative. */
+export interface AudiencePreviewInput { channel: CampaignChannel; audience: CampaignAudience }
+export interface AudiencePreview {
+  /** segment size before exclusions */
+  matched: number;
+  excluded: { risky: number; recent_orders: number; opted_out: number; no_address: number; not_eligible: number };
+  recipients: number;
+  /** percent of `recipients`, one decimal */
+  risk_breakdown: { good: number; careful: number; risky: number };
+}
+
+export type SmsEncoding = 'gsm7' | 'ucs2';
+export interface CampaignEstimateInput {
+  channel: CampaignChannel; language: CampaignLanguage; body: string; subject?: string | null;
+  audience: CampaignAudience; coupon_id?: string | null; product_id?: string | null;
+}
+/**
+ * POST /campaigns/estimate. SMS: parts of the rendered sample (20-char sample name, prefix + footer included).
+ * Email: `parts_per_recipient` 1, `total_parts` = emails, `encoding` null, `characters` = body length.
+ */
+export interface CampaignEstimate {
+  recipients: number; parts_per_recipient: number; total_parts: number; encoding: SmsEncoding | null; characters: number;
+  /** the channel's monthly allowance (`campaign_sms_per_month` parts / `campaign_emails_per_month`); null limit = unlimited */
+  allowance: { limit: number | null; used: number; remaining: number | null; after: number | null };
+}
+
+export type CampaignRecipientStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped' | 'unknown';
+/** contract name */
+export type RecipientStatus = CampaignRecipientStatus;
+/** §4.3 send-time checks */
+export type SkipReason =
+  | 'opted_out' | 'customer_deleted' | 'address_changed' | 'not_eligible' | 'cancelled' | 'plan' | 'store_unavailable';
+export type CampaignRecipientErrorCode = 'provider_error' | 'invalid_address';
+export interface CampaignRecipient {
+  id: string; customer: { id: string; name: string } | null;
+  /** `+880 17•• •••123` / `n•••@gmail.com` — never the full address */
+  masked_address: string;
+  status: CampaignRecipientStatus; skip_reason: SkipReason | null; error_code: CampaignRecipientErrorCode | null;
+  parts: number; sent_at: string | null; unsubscribed_at: string | null;
+  attributed_order: { id: string; number: string; total_amount: number } | null;
+}
+export interface CampaignRecipientFilters {
+  status?: CampaignRecipientStatus[]; skip_reason?: SkipReason[]; cursor?: string;
+}
+
+export type MarketingRange = '7d' | '30d' | '90d';
+export interface MarketingOverview {
+  range: MarketingRange;
+  kpis: {
+    /** P85-22: non-cancelled orders in range with a coupon redemption or a campaign conversion (each once) */
+    revenue_amount: number;
+    /** vs the previous range of the same length; null when the previous range had no revenue */
+    revenue_change_pct: number | null;
+    campaign_orders: number;
+    /** percent of all orders in range, one decimal */
+    campaign_orders_share_pct: number;
+    /** campaign messages (SMS recipients + emails) sent in range */
+    messages_sent: number;
+    unsubscribes: number;
+  };
+  /** 8 weeks, oldest first; `week_start` = ISO-week Monday (`YYYY-MM-DD`, store tz), as in reports */
+  series: { week_start: string; coupons_amount: number; campaigns_amount: number }[];
+  /** top 4 active coupons by revenue */
+  active_coupons: {
+    id: string; code: string; type: CouponType; percent_bps: number | null; amount: number | null;
+    ends_at: string | null; used_count: number; usage_limit: number | null; revenue_amount: number;
+  }[];
+  /** latest 5 */
+  recent_campaigns: CampaignListItem[];
+  counts: { coupons: number; campaigns: number };
+  currency: string;
+}
+
+// Consent + opt-out (§4)
+export type SuppressionSource = 'link' | 'merchant' | 'import';
+export type CustomerMarketingStatus = 'subscribed' | 'unsubscribed' | 'not_eligible' | 'no_address';
+/**
+ * `Customer.marketing` (§4.1, computed). `unsubscribed_source` is per channel (null when that channel is not suppressed):
+ * `link` = by the customer (merchant can't remove), `merchant` = by you ("Allow again").
+ */
+export interface CustomerMarketing {
+  sms: CustomerMarketingStatus; email: CustomerMarketingStatus;
+  unsubscribed_sms_at: string | null; unsubscribed_email_at: string | null;
+  unsubscribed_source: { sms: SuppressionSource | null; email: SuppressionSource | null };
+}
+export interface MarketingOptOutInput { channel: MarketingChannel }
+
+/** Storefront GET/POST /storefront/unsubscribe/{code} (§4.2). */
+export interface UnsubscribeStatus {
+  channel: MarketingChannel;
+  masked_address: string;
+  status: 'subscribed' | 'unsubscribed';
+  /** a test-send code: POST changes nothing */
+  is_test: boolean;
+  store_name: string;
+}
+export type UnsubscribeAction = 'unsubscribe' | 'resubscribe';
+export interface UnsubscribeInput { action: UnsubscribeAction; one_click?: boolean }
+/** `^[A-Za-z0-9]{10}$` */
+export const UNSUBSCRIBE_CODE_PATTERN = /^[A-Za-z0-9]{10}$/;
+
+/** GET /dev/stores/{store}/message-sink (non-production only, `CAMPAIGNS_DEV_SINK=true`; 404 otherwise). Newest first, ≤ 200. */
+export interface DevSinkMessage {
+  channel: MarketingChannel; to: string; subject: string | null;
+  /** full rendered SMS text, or the email plain-text part */
+  text: string;
+  unsubscribe_url: string; campaign_id: string | null; is_test: boolean; created_at: string;
+}
+
+/** Audit actions written by Phase 8.5 (§6.1). `AuditLog.action` stays `string`; this lists the new values. */
+export type CampaignAuditAction =
+  | 'campaign.created' | 'campaign.deleted' | 'campaign.test_sent' | 'campaign.scheduled' | 'campaign.sent'
+  | 'campaign.unscheduled' | 'campaign.cancelled' | 'customer.marketing_opted_out' | 'customer.marketing_opt_out_removed';
+export const CAMPAIGN_AUDIT_ACTIONS: readonly CampaignAuditAction[] = [
+  'campaign.created', 'campaign.deleted', 'campaign.test_sent', 'campaign.scheduled', 'campaign.sent',
+  'campaign.unscheduled', 'campaign.cancelled', 'customer.marketing_opted_out', 'customer.marketing_opt_out_removed',
+];
