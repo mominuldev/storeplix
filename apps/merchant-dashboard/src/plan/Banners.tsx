@@ -55,6 +55,7 @@ const lostFeatureLabel: Partial<Record<FeatureKey, string>> = {
   bulk_courier_booking: 'bulk courier booking',
   profit_reports: 'profit reports',
   fake_order_guard: 'the fake order guard',
+  purchasing: 'suppliers and purchase orders',
   sms_automation: 'SMS automation',
 };
 

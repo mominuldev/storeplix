@@ -37,6 +37,7 @@ const featureLabel: Record<string, string> = {
   all_couriers: 'All couriers',
   bulk_courier_booking: 'Bulk courier booking',
   fake_order_guard: 'Fake order guard',
+  purchasing: 'Suppliers & purchase orders',
   sms_automation: 'SMS automation',
   custom_roles: 'Custom roles',
   multi_warehouse: 'Multiple warehouses',

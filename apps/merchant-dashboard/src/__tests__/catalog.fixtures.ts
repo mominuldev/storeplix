@@ -122,6 +122,7 @@ export function inventoryItem(overrides: Partial<InventoryItem> = {}): Inventory
     price_amount: 345000,
     cost_amount: 210000,
     updated_at: '2026-11-01T00:00:00Z',
+    incoming: 0,
     ...overrides,
   };
 }

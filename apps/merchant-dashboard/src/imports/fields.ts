@@ -1,4 +1,4 @@
-import type { CustomerImportField, DataImport, DataImportType, ImportField, ProductImportField } from '@storeplix/types';
+import type { CustomerImportField, DataImport, DataImportType, ImportField, ProductImportField, SupplierImportField } from '@storeplix/types';
 
 // Contract §5.2 / §5.3 field labels (WEB mirrors the API's column spec) and the wizard's pure state helpers.
 
@@ -39,8 +39,39 @@ export const customerFieldLabels: Record<CustomerImportField, string> = {
   note: 'Note',
 };
 
+/** PHASE-8-8B P88B-15 supplier columns. */
+export const supplierFieldLabels: Record<SupplierImportField, string> = {
+  name: 'Supplier name',
+  contact_name: 'Contact person',
+  phone: 'Phone',
+  city: 'City / area',
+  supplies: 'What they supply',
+  payment_terms_days: 'Payment terms (days)',
+  lead_time_days: 'Lead time (days)',
+  pays_by_method: 'Pay by',
+  pays_by_account: 'Pay to (account)',
+  notes: 'Notes',
+};
+
 export function fieldLabels(type: DataImportType): Record<string, string> {
-  return type === 'products' ? productFieldLabels : customerFieldLabels;
+  return type === 'products' ? productFieldLabels : type === 'suppliers' ? supplierFieldLabels : customerFieldLabels;
+}
+
+/** `?type=` → import type (unknown → products). */
+export function importTypeOf(raw: string | null): DataImportType {
+  return raw === 'customers' || raw === 'suppliers' ? raw : 'products';
+}
+
+/** Copy per import type: plural noun, singular noun, back link, back label, page description, update-existing labels. */
+export function importCopy(type: DataImportType) {
+  switch (type) {
+    case 'products':
+      return { noun: 'products', one: 'product', back: '/products', backLabel: 'Products', intro: 'Bring products from a spreadsheet, Shopify or WooCommerce export.', updateRow: 'Update existing (same SKU)', updateOpt: 'Update products with the same SKU', updateHint: 'Price, stock and details are replaced' };
+    case 'customers':
+      return { noun: 'customers', one: 'customer', back: '/customers', backLabel: 'Customers', intro: 'Bring customers from a spreadsheet or your old shop.', updateRow: 'Update existing (same phone/email)', updateOpt: 'Update customers with the same phone', updateHint: 'Filled cells replace current details' };
+    case 'suppliers':
+      return { noun: 'suppliers', one: 'supplier', back: '/inventory/suppliers', backLabel: 'Suppliers', intro: 'Bring your supplier list from a spreadsheet.', updateRow: 'Update existing (same phone or name)', updateOpt: 'Update suppliers with the same phone or name', updateHint: 'Filled cells replace current details' };
+  }
 }
 
 export type ColumnMap = Record<string, ImportField | null>;
@@ -58,6 +89,8 @@ export function columnMapErrors(type: DataImportType, map: ColumnMap): string[] 
   if (type === 'products') {
     if (!mapped.has('name')) errors.push('Match a column to Product name.');
     if (!mapped.has('price')) errors.push('Match a column to Price.');
+  } else if (type === 'suppliers') {
+    if (!mapped.has('name')) errors.push('Match a column to Supplier name.');
   } else {
     if (!mapped.has('name')) errors.push('Match a column to Name.');
     if (!mapped.has('phone') && !mapped.has('email')) errors.push('Match a column to Phone or Email.');

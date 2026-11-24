@@ -27,7 +27,13 @@ export const catalogue: PermissionGroup[] = [
   {
     key: 'products',
     label: 'Products & stock',
-    permissions: [def('products.edit', 'Edit products & prices'), def('products.delete', 'Delete products & categories', ['products.edit']), def('inventory.adjust', 'Adjust stock')],
+    permissions: [
+      def('products.edit', 'Edit products & prices'),
+      def('products.delete', 'Delete products & categories', ['products.edit']),
+      def('inventory.adjust', 'Adjust stock'),
+      // PHASE-8-8B §2.1
+      def('purchasing.manage', 'Suppliers & purchase orders', ['costs.view'], true, 'Suppliers, purchase orders, supplier payments and purchase prices'),
+    ],
   },
   {
     key: 'customers',

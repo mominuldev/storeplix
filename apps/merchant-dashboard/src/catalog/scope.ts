@@ -35,6 +35,9 @@ export function useStoreScope() {
     canManageShipments: can.manageShipments(m),
     canCancelShipments: can.cancelShipments(m),
     canEditCustomers: can.editCustomers(m),
+    /** PHASE-8-8B §10: `purchasing.manage` / `purchasing.manage|inventory.adjust`. */
+    canManagePurchasing: can.managePurchasing(m),
+    canReceiveStock: can.receiveStock(m),
   };
 }
 

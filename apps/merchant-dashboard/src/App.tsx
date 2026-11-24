@@ -89,6 +89,11 @@ const ExpensesPage = lazy(() => import('./expenses/ExpensesPage'));
 const FraudGuardPage = lazy(() => import('./fraud/FraudGuardPage'));
 const BlockedNumbersPage = lazy(() => import('./fraud/BlockedNumbersPage'));
 const DecisionLogPage = lazy(() => import('./fraud/DecisionLogPage'));
+// Phase 8.8b suppliers + purchase orders (code-split).
+const PurchaseOrdersPage = lazy(() => import('./purchasing/PurchaseOrdersPage'));
+const PurchaseOrderFormPage = lazy(() => import('./purchasing/PurchaseOrderFormPage'));
+const PurchaseOrderPage = lazy(() => import('./purchasing/PurchaseOrderPage'));
+const SuppliersPage = lazy(() => import('./purchasing/SuppliersPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -217,6 +222,11 @@ export function AppRoutes() {
               <Route path="/products/import" element={lazyEl(<ImportPage />)} />
               <Route path="/products/:productId" element={lazyEl(<ProductEditorPage />)} />
               <Route path="/inventory" element={lazyEl(<InventoryPage />)} />
+              <Route path="/inventory/purchase-orders" element={gated(can.receiveStock, <PurchaseOrdersPage />)} />
+              <Route path="/inventory/purchase-orders/new" element={gated(can.managePurchasing, <PurchaseOrderFormPage />)} />
+              <Route path="/inventory/purchase-orders/:id" element={gated(can.receiveStock, <PurchaseOrderPage />)} />
+              <Route path="/inventory/purchase-orders/:id/edit" element={gated(can.managePurchasing, <PurchaseOrderFormPage />)} />
+              <Route path="/inventory/suppliers" element={gated(can.managePurchasing, <SuppliersPage />)} />
               <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
               <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
               <Route path="/orders" element={gated(can.seeOrders, <OrdersPage />)} />
