@@ -257,7 +257,7 @@ describe('super-admin sign-in (Phase 8.1 §3.1)', () => {
     });
   });
 
-  it('renders only the built navigation (unbuilt sections are removed; Revenue reports needs view_analytics)', async () => {
+  it('renders only the built navigation (unbuilt sections are removed; Revenue reports needs view_analytics, Platform settings manage_settings)', async () => {
     session.start({
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
     });
@@ -265,7 +265,7 @@ describe('super-admin sign-in (Phase 8.1 §3.1)', () => {
     renderApp(<AppRoutes />, { route: '/' });
     expect(await screen.findByRole('heading', { name: 'Platform overview' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation');
-    for (const label of ['Dashboard', 'Merchants', 'Billing', 'Revenue reports', 'Domains', 'Impersonations', 'Team & roles', 'Audit log']) {
+    for (const label of ['Dashboard', 'Merchants', 'Billing', 'Revenue reports', 'Domains', 'Impersonations', 'Team & roles', 'Audit log', 'Platform settings']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
     expect(within(nav).getByRole('link', { name: 'Revenue reports' })).toHaveAttribute('href', '/revenue');
@@ -276,7 +276,6 @@ describe('super-admin sign-in (Phase 8.1 §3.1)', () => {
       'Announcements',
       'Plans & features',
       'Themes & templates',
-      'Platform settings',
     ]) {
       expect(within(nav).queryByRole('link', { name: label })).toBeNull();
     }

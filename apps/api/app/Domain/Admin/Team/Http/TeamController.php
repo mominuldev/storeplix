@@ -6,6 +6,7 @@ namespace App\Domain\Admin\Team\Http;
 
 use App\Domain\Admin\Authorization\PlatformRole;
 use App\Domain\Admin\Authorization\PlatformRoleMatrix;
+use App\Domain\Admin\Settings\PlatformSettings;
 use App\Domain\Admin\Team\Http\Requests\ChangeStaffRoleRequest;
 use App\Domain\Admin\Team\Http\Requests\InviteStaffRequest;
 use App\Domain\Admin\Team\Http\Requests\ListTeamRequest;
@@ -75,7 +76,7 @@ class TeamController
                 'counts' => $counts,
                 'matrix' => PlatformRoleMatrix::toArray(),
                 'security' => [
-                    'totp_required' => true,
+                    'totp_required' => app(PlatformSettings::class)->staffTwoFactorRequired(), // amendment A1: effective setting
                     'ip_allowlist_enabled' => (array) config('admin.ip_allowlist', []) !== [],
                     'session_idle_minutes' => (int) config('admin.session_idle_minutes', 30),
                     'impersonation_minutes' => (int) config('admin.impersonation_minutes', 15),

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Admin\Auth;
 
 use App\Domain\Admin\Authorization\PlatformRole;
+use App\Domain\Admin\Settings\PlatformSettings;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\CredentialVerifier;
 use App\Domain\Shared\Http\ApiException;
@@ -14,6 +15,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * PHASE-8-1 §3.1 sign-in state machine: password → login token → TOTP / enrolment / recovery code. Every credential
  * failure answers the same 422 (S70); five wrong codes drop the token and lock the account for 15 minutes (S69).
+ * Amendment A1-3: while `staff_two_factor_required` is off, a correct password alone signs in (enrolled or not).
  */
 final class AdminLogin
 {
@@ -26,10 +28,14 @@ final class AdminLogin
         private readonly Totp $totp,
         private readonly RecoveryCodes $recoveryCodes,
         private readonly AuditLogger $audit,
+        private readonly PlatformSettings $settings,
     ) {}
 
-    /** @return array{0: string, 1: PendingLogin} */
-    public function attempt(string $email, string $password, string $ip): array
+    /**
+     * @return array{0: string, 1: PendingLogin}|User a pending second step, or the user to sign in at once (A1-3:
+     *                                                staff two-step sign-in is off)
+     */
+    public function attempt(string $email, string $password, string $ip): array|User
     {
         $user = User::query()->where('email', $email)->first();
         $passwordOk = CredentialVerifier::check($user, $password); // always hashes (constant work)
@@ -38,6 +44,10 @@ final class AdminLogin
             $this->audit->log('admin.login_failed', meta: ['email_hash' => hash('sha256', $email), 'ip' => $ip], tenantId: false, system: true); // never the browser's signed-in user
 
             throw ValidationException::withMessages(['email' => [__('auth.failed')]]);
+        }
+
+        if (! $this->settings->staffTwoFactorRequired()) {
+            return $user;
         }
 
         return $this->tokens->issue($user, self::needsEnrolment($user) ? LoginTokens::STEP_ENROLL : LoginTokens::STEP_TOTP, $ip);

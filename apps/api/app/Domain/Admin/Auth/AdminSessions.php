@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Admin\Auth;
 
 use App\Domain\Admin\Auth\Http\Resources\PlatformUserResource;
+use App\Domain\Admin\Settings\PlatformSettings;
 use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\SessionSurface;
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class AdminSessions
 {
+    public function __construct(private readonly PlatformSettings $settings) {}
+
     public function start(Request $request, User $user): void
     {
         Auth::guard('web')->login($user);
@@ -28,7 +31,11 @@ final class AdminSessions
         $request->session()->put(EnforceAbsoluteSessionExpiry::LAST_SEEN_KEY, now()->getTimestamp());
     }
 
-    /** @return array{user: array<string, mixed>, session_expires_at: string|null, idle_expires_at: string|null} openapi `AdminSession` */
+    /**
+     * openapi `AdminSession` (+ amendment A1-5: `environment`, `security`).
+     *
+     * @return array{user: array<string, mixed>, session_expires_at: string|null, idle_expires_at: string|null, environment: string, security: array{staff_two_factor_required: bool}}
+     */
     public function payload(Request $request, User $user): array
     {
         $absolute = $request->session()->get(EnforceAbsoluteSessionExpiry::KEY);
@@ -42,6 +49,8 @@ final class AdminSessions
             'user' => (new PlatformUserResource($user))->resolve($request),
             'session_expires_at' => is_int($absolute) ? Carbon::createFromTimestamp($absolute)->toIso8601ZuluString() : null,
             'idle_expires_at' => is_int($idle) ? Carbon::createFromTimestamp($idle)->toIso8601ZuluString() : null,
+            'environment' => (string) app()->environment(),
+            'security' => ['staff_two_factor_required' => $this->settings->staffTwoFactorRequired()],
         ];
     }
 

@@ -245,6 +245,12 @@ transfer line on an untracked variant), `idempotency_key_required` (400) / `idem
 line of another store, > 200 lines, received > sent, scan `code` > 64), `location_archived` (422) also on a count
 start, `impersonation_read_only`, `rate_limited`.
 
+**PHASE-8-1 amendment A1 codes** (PHASE-8-1-AMENDMENT-ADMIN-2FA, switchable staff two-step sign-in):
+| HTTP | code | When |
+|---|---|---|
+| 422 | `invalid_password` | `PATCH /admin/settings/security` with a wrong `current_password` (field `current_password` in `details`) |
+Reused: `forbidden` (403, no `manage_settings`), `validation_failed`, `rate_limited` (`admin-write`).
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).

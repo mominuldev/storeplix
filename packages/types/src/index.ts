@@ -1557,7 +1557,9 @@ export type PlatformRole = 'super_admin' | 'billing' | 'support' | 'read_only';
 export type PlatformPermission =
   | 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team'
   /** Phase 8.2 (PHASE-8-2 §2.1): super_admin, billing, read_only */
-  | 'view_analytics';
+  | 'view_analytics'
+  /** Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA A1-4): super_admin only — platform settings (`/admin/settings/*`) */
+  | 'manage_settings';
 export type SuspensionReasonCode = 'unpaid' | 'fraud' | 'terms_violation' | 'merchant_request' | 'other';
 export type AdminPlanChangeEffective = 'now' | 'next_renewal';
 export type ImpersonationStatus = 'pending' | 'active' | 'ended' | 'expired';
@@ -1567,13 +1569,32 @@ export type AdminDomainState = 'all' | 'dns_pending' | 'ssl_failing' | 'active' 
 
 export interface AdminLoginInput { email: string; password: string }
 export type AdminTotpInput = { login_token: string; code: string } | { login_token: string; recovery_code: string };
+/** Amendment A1: `signed_in` = password-only sign-in while staff two-step sign-in is switched off. */
+export type AdminLoginStepName = 'totp' | 'enroll' | 'signed_in';
+/** A second step is needed (always the case while `staff_two_factor_required` is on; invitation accept always `enroll`). */
 export interface AdminLoginStep { step: 'totp' | 'enroll'; login_token: string; expires_at: string }
+/**
+ * Amendment A1-3: the password alone signed the staff member in (setting off). Same session payload as the
+ * `/admin/auth/totp` success (`AdminSession`: `user`, expiry times, `environment`, `security`) plus `step`.
+ */
+export interface AdminLoginSignedIn extends AdminSession { step: 'signed_in' }
+/** `POST /admin/auth/login` answer — discriminate on `step`. */
+export type AdminLoginResult = AdminLoginStep | AdminLoginSignedIn;
 export interface TotpEnrollment { otpauth_uri: string; qr_svg: string; secret: string }
 export interface PlatformUser {
   id: string; name: string; email: string; platform_role: PlatformRole; permissions: PlatformPermission[];
   totp_enrolled: boolean; recovery_codes_left: number;
 }
-export interface AdminSession { user: PlatformUser; session_expires_at: string; idle_expires_at: string }
+/** Amendment A1-5: what the SPA needs to show the "two-step sign-in is off" banner. */
+export interface AdminSessionSecurity { staff_two_factor_required: boolean }
+/** `/admin/auth/me`, `/admin/auth/totp`, `/admin/auth/enroll` (POST) payload. */
+export interface AdminSession {
+  user: PlatformUser; session_expires_at: string; idle_expires_at: string;
+  /** Amendment A1-5: the API's `APP_ENV` (`local`, `staging`, `production`, …). */
+  environment: string;
+  /** Amendment A1-5: effective platform security settings. */
+  security: AdminSessionSecurity;
+}
 export interface PlatformInvitationLookup { email: string; role: PlatformRole; existing_user: boolean }
 export interface AcceptPlatformInvitationInput { name?: string; password: string; password_confirmation?: string }
 
@@ -1662,8 +1683,27 @@ export interface PlatformRoleMatrix {
 export interface PlatformTeamMeta {
   counts: { all: number; active: number; invited: number; disabled: number };
   matrix: PlatformRoleMatrix;
-  security: { totp_required: true; ip_allowlist_enabled: boolean; session_idle_minutes: number; impersonation_minutes: number };
+  /** Amendment A1: `totp_required` mirrors the effective `staff_two_factor_required` (was always `true`). */
+  security: { totp_required: boolean; ip_allowlist_enabled: boolean; session_idle_minutes: number; impersonation_minutes: number };
 }
+
+/** Amendment A1-4: `GET|PATCH /admin/settings/security` (`manage_settings`). */
+export type PlatformSettingSource = 'setting' | 'default';
+export interface PlatformSecuritySettings {
+  /** Effective value: the stored setting, else `environment_default`. */
+  staff_two_factor_required: boolean;
+  /** `ADMIN_TWO_FACTOR_REQUIRED`, else false only when `APP_ENV=local`. */
+  environment_default: boolean;
+  /** `setting` = a super admin stored a value; `default` = nothing stored, the environment default applies. */
+  source: PlatformSettingSource;
+  updated_at: string | null;
+  updated_by: { id: string; name: string } | null;
+}
+/** 422 `invalid_password` when `current_password` is wrong. Audit `admin.settings_updated` `{key, from, to}`. */
+export interface UpdatePlatformSecuritySettingsInput { staff_two_factor_required: boolean; current_password: string }
+export type PlatformSettingsErrorCode = 'invalid_password';
+export type PlatformSettingsAuditAction = 'admin.settings_updated';
+export const PLATFORM_SETTINGS_AUDIT_ACTIONS: readonly PlatformSettingsAuditAction[] = ['admin.settings_updated'];
 
 export interface AdminSuspendInput { reason_code: SuspensionReasonCode; reason: string; notify: boolean }
 export interface AdminReactivateInput { reason: string; notify: boolean }

@@ -18,7 +18,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 
-/** PHASE-8-1 §3.1 / §6.1: admin sign-in with mandatory TOTP, `GET /admin/auth/me`, `POST /admin/auth/logout`. */
+/**
+ * PHASE-8-1 §3.1 / §6.1: admin sign-in with TOTP (switchable: amendment A1, `step: signed_in` when off),
+ * `GET /admin/auth/me`, `POST /admin/auth/logout`.
+ */
 class AdminAuthController
 {
     public function __construct(
@@ -29,7 +32,11 @@ class AdminAuthController
 
     public function login(AdminLoginRequest $request): JsonResponse
     {
-        [$token, $pending] = $this->login->attempt((string) $request->validated('email'), (string) $request->validated('password'), (string) $request->ip());
+        $result = $this->login->attempt((string) $request->validated('email'), (string) $request->validated('password'), (string) $request->ip());
+        if ($result instanceof User) { // amendment A1-3: staff two-step sign-in is off
+            return new JsonResponse(['data' => ['step' => 'signed_in'] + $this->signIn($request, $result, 'password')]);
+        }
+        [$token, $pending] = $result;
 
         return self::step($token, $pending);
     }

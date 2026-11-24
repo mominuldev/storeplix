@@ -26,7 +26,8 @@ class LocationBackfillMigrationTest extends TestCase
 {
     use LocationFixtures, RefreshDatabase;
 
-    private const STEPS = 8; // the six 2026_12_07 migrations + the two part-B 2026_12_08 ones after them
+    /** The first 8.8c migration: the rollback undoes it and every migration after it (8.8c part B, amendment A1, …). */
+    private const FIRST = '2026_12_07_000100';
 
     protected function setUp(): void
     {
@@ -62,7 +63,8 @@ class LocationBackfillMigrationTest extends TestCase
 
     private function rollBack(): void
     {
-        $this->artisan('migrate:rollback', ['--step' => self::STEPS])->assertSuccessful();
+        $steps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $f) => strcmp(basename($f), self::FIRST) >= 0));
+        $this->artisan('migrate:rollback', ['--step' => $steps])->assertSuccessful();
         $this->assertFalse(Schema::hasTable('locations'));
         foreach (['inventories', 'inventory_movements', 'order_items', 'purchase_orders', 'purchase_receipts'] as $table) {
             $this->assertFalse(Schema::hasColumn($table, 'location_id'), "{$table}.location_id after rollback");

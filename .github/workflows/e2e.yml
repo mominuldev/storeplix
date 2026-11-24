@@ -63,6 +63,11 @@ jobs:
           # The api/queue containers read apps/api/.env; set the flag there too in case compose doesn't forward it.
           echo 'WEBHOOKS_OUT_FAKE=true' >> apps/api/.env
           printf '%s\n' 'SMS_DRIVER=log' 'CAMPAIGN_MAILER=log' 'CAMPAIGNS_DEV_SINK=true' >> apps/api/.env
+          # Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA A1-7): compose runs the API with APP_ENV=local, whose default for
+          # staff two-step sign-in is now OFF. Force it ON so phase8.admin-auth (password → TOTP) stays valid;
+          # phase8.admin-2fa-setting covers the off path by changing the stored setting through the admin API (the stored
+          # value wins over this env default). compose loads apps/api/.env as env_file and doesn't set the key itself.
+          echo 'ADMIN_TWO_FACTOR_REQUIRED=true' >> apps/api/.env
           docker compose up -d --build --wait
           docker compose exec -T api php artisan key:generate --force
           docker compose exec -T api php artisan migrate --seed --force --database=pgsql_owner
@@ -113,6 +118,8 @@ jobs:
           # CAMPAIGN_MAILER=log on the API side (compose values above).
           SMS_DRIVER: log
           CAMPAIGN_MAILER: log
+          # Amendment A1: same value as the API (apps/api/.env above); tinker()/artisan calls inherit it.
+          ADMIN_TWO_FACTOR_REQUIRED: 'true'
           E2E_VISUAL: ${{ inputs.visual && '1' || '' }}
         run: npx playwright test
       - if: failure()

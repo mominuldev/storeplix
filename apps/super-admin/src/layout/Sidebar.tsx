@@ -89,7 +89,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
           <span className="truncate text-body font-semibold text-text-inverse" title={user?.email}>
             {user?.name}
           </span>
-          <span className="truncate text-caption text-text-muted">{user ? `${roleLabel[user.platform_role]} · 2FA on` : ''}</span>
+          <span className="truncate text-caption text-text-muted">{user ? `${roleLabel[user.platform_role]}${user.totp_enrolled ? ' · 2FA on' : ''}` : ''}</span>
         </span>
         <button
           type="button"

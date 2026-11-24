@@ -36,13 +36,17 @@ export const unauthenticated = () =>
 
 // §2.1 matrix (mirrors App\Domain\Admin\Authorization\PlatformRole).
 export const grants: Record<PlatformRole, PlatformPermission[]> = {
-  super_admin: ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics'],
+  super_admin: ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics', 'manage_settings'],
   billing: ['view_merchants', 'manage_billing', 'view_analytics'],
   support: ['view_merchants', 'impersonate', 'manage_domains'],
   read_only: ['view_merchants', 'view_analytics'],
 };
 
-export function adminSession(role: PlatformRole = 'super_admin', extra: Partial<AdminSession['user']> = {}): AdminSession {
+export function adminSession(
+  role: PlatformRole = 'super_admin',
+  extra: Partial<AdminSession['user']> = {},
+  rest: Partial<Pick<AdminSession, 'environment' | 'security'>> = {},
+): AdminSession {
   const soon = (ms: number) => new Date(Date.now() + ms).toISOString();
   return {
     user: {
@@ -57,6 +61,9 @@ export function adminSession(role: PlatformRole = 'super_admin', extra: Partial<
     },
     session_expires_at: soon(12 * 3600_000),
     idle_expires_at: soon(30 * 60_000),
+    environment: 'production',
+    security: { staff_two_factor_required: true },
+    ...rest,
   };
 }
 

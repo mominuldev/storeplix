@@ -125,6 +125,14 @@ preview_image_url · timestamps. Theme code/schemas live in the storefront repo;
 ### personal_access_tokens
 Laravel Sanctum default, `tokenable_id char(26)`. `expires_at` set at issue from `SANCTUM_EXPIRATION` (default 10080 min = 7 days, not sliding, D3); `sanctum:prune-expired --hours=24` daily.
 
+### platform_settings (platform, no tenant_id, no RLS; PHASE-8-1 amendment A1, Q231)
+key varchar(64) PK · value jsonb · updated_by char(26) FK users null **SET NULL** · updated_at timestamptz. No
+`created_at`, no soft deletes. Listed in `RlsTables::PLATFORM` and treated like the other platform tables: written only
+from the super-admin surface (`PATCH /admin/settings/security`, `manage_settings`), read through the cached
+`PlatformSettings` service (cache key is platform-wide, **not** tenant-prefixed; busted on write). Known keys:
+`staff_two_factor_required` (`true` / `false`). A missing row means "use the environment default"
+(`ADMIN_TWO_FACTOR_REQUIRED`, else false only when `APP_ENV=local`); the API reports that as `source: "default"`.
+
 ## 5. Tenant-owned core tables
 
 ### tenant_users

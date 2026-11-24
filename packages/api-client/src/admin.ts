@@ -1,4 +1,4 @@
-// Phase 8.1 super admin (PHASE-8-1-CONTRACT §6; openapi 1.9.0 tag `admin`). Every /admin/* call is account-level: no
+// Phase 8.1 super admin (PHASE-8-1-CONTRACT §6; openapi 1.9.0 tag `admin`; amendment A1 adds `settings`). Every /admin/* call is account-level: no
 // X-Tenant-Id is ever sent (the admin API never reads it). Writes take a `reason` (5–500 chars, stored in the audit log).
 import type {
   AcceptPlatformInvitationInput,
@@ -11,6 +11,7 @@ import type {
   AdminInvoice,
   AdminInvoiceSummary,
   AdminLoginInput,
+  AdminLoginResult,
   AdminLoginStep,
   AdminMarkPaidInput,
   AdminOverview,
@@ -44,10 +45,12 @@ import type {
   PlatformInvitation,
   PlatformInvitationLookup,
   PlatformRole,
+  PlatformSecuritySettings,
   PlatformStaff,
   PlatformTeamMeta,
   Subscription,
   TotpEnrollment,
+  UpdatePlatformSecuritySettingsInput,
   UpdatePlatformStaffInput,
 } from '@storeplix/types';
 import type { DownloadedFile, RequestOptions } from './client';
@@ -211,8 +214,12 @@ export function createAdminApi(t: AdminTransport) {
   return {
     /** §3.1 sign-in. Pre-auth routes need CSRF but no session; wrong credentials → the same 422 on `email`. */
     auth: {
+      /**
+       * Amendment A1: `step: 'signed_in'` (setting off) carries the `AdminSession` and the session cookie is set;
+       * `totp` / `enroll` carry a `login_token` for the second step.
+       */
       login: (input: AdminLoginInput) =>
-        t.request<AdminLoginStep>('/admin/auth/login', { method: 'POST', body: { email: input.email, password: input.password }, anonymous: true }),
+        t.request<AdminLoginResult>('/admin/auth/login', { method: 'POST', body: { email: input.email, password: input.password }, anonymous: true }),
       /** Once per login token; 404 when the token is unknown, expired or already used. */
       enrollment: (loginToken: string) =>
         t.request<TotpEnrollment>('/admin/auth/enroll', { query: { login_token: loginToken }, anonymous: true }),
@@ -324,6 +331,18 @@ export function createAdminApi(t: AdminTransport) {
       list: (filters: AdminImpersonationFilters = {}) =>
         list<Impersonation, PaginationMeta>('/admin/impersonations', adminImpersonationQuery(filters), emptyPage()),
       revoke: (id: string, reason: string) => post<Impersonation>(`/admin/impersonations/${enc(id)}/revoke`, { reason }),
+    },
+
+    /** Amendment A1-4 (`manage_settings`, super_admin only). */
+    settings: {
+      getSecurity: () => get<PlatformSecuritySettings>('/admin/settings/security'),
+      /** 422 `invalid_password` (on `current_password`) when the password is wrong. Audited `admin.settings_updated`. */
+      updateSecurity: (input: UpdatePlatformSecuritySettingsInput) =>
+        t.request<PlatformSecuritySettings>('/admin/settings/security', {
+          method: 'PATCH',
+          body: { staff_two_factor_required: input.staff_two_factor_required, current_password: input.current_password },
+          noTenant: true,
+        }),
     },
 
     team: {

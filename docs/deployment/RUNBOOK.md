@@ -603,7 +603,8 @@ Needs from the PO (Q90, Q82): Storeplix's bKash PGW sandbox credentials and SSLC
 
 Sources: PHASE-8-1-CONTRACT §1–§4, §11; ADR 0015; SECURITY T32, T11. Owner: QA (ARCH reviews).
 
-How it fits together: platform staff sign in to the super-admin app (`ADMIN_APP_URL`) with password **and** TOTP. An
+How it fits together: platform staff sign in to the super-admin app (`ADMIN_APP_URL`) with password **and** TOTP
+(switchable, §11.7; always on in production). An
 admin session never works on merchant routes and a merchant session never works on `/api/v1/admin/*`. Every admin write
 needs a reason and leaves an `audit_logs` row with the platform actor; the merchant sees it as "Store Plix support".
 Impersonation is read-only, 15 minutes at most, and audited at start and end on the shop's log.
@@ -617,6 +618,7 @@ Impersonation is read-only, 15 minutes at most, and audited at start and end on 
 | `ADMIN_SESSION_IDLE_MINUTES` / `ADMIN_SESSION_ABSOLUTE_HOURS` | 30 / 12 | Admin sessions only; merchant sessions keep their own limits |
 | `IMPERSONATION_MINUTES` | 15 | Capped at 15 in code |
 | `IMPERSONATION_TICKET_SECONDS` | 60 | Single-use ticket in the URL fragment; never logged or stored in plain text |
+| `ADMIN_TWO_FACTOR_REQUIRED` | `true` (or unset) | Default for staff two-step sign-in when no super admin has stored a value (§11.7). Unset = false only when `APP_ENV=local`, true everywhere else. **Never `false` in production or staging** |
 
 ### 11.2 Processes and schedule
 | Command | Schedule | Notes |
@@ -667,6 +669,29 @@ support" and every storefront host answers the "temporarily unavailable" page (H
   work if you are also a merchant.
 - Exit ends the session at once; otherwise it ends after 15 minutes. Start and end are on the shop's audit log and in
   the merchant's Activity log as "Store Plix support".
+
+### 11.7 Staff two-step sign-in on/off (PHASE-8-1 amendment A1, Q231)
+One platform setting, `staff_two_factor_required`, decides whether staff need TOTP after their password.
+- **Effective value** = the value a super admin stored (table `platform_settings`), else the environment default:
+  `ADMIN_TWO_FACTOR_REQUIRED`, and when that is unset, **off only for `APP_ENV=local`**, on for production, staging
+  and testing. Super admin → **Platform settings → Security** shows the value, the environment default and whether it
+  comes from the stored setting or the default.
+- **Production must keep it on.** Leave `ADMIN_TWO_FACTOR_REQUIRED` unset or `true`, and do not switch it off in the
+  UI. Switching it off outside local is allowed only as a short, ticketed emergency (e.g. TOTP provider/time-sync
+  outage locking out every staff member); switch it back on as soon as the incident ends.
+- **Turn it on/off (UI)**: sign in as a super admin → Platform settings → Security → toggle "Require two-step sign-in
+  for platform staff" → confirm with your current password. Takes effect at the next sign-in (existing sessions are not
+  ended). Staff who already enrolled keep their authenticator and are asked for it again once it is back on; staff who
+  never enrolled are sent through enrolment at their next sign-in.
+- **Turn it on without the UI** (suspected staff compromise, no trusted super admin available): a stored value wins over `ADMIN_TWO_FACTOR_REQUIRED`, so changing the
+  env alone does not help while a `false` row exists. On a ticket, from a bastion shell with the admin DB role, delete
+  the `staff_two_factor_required` row from `platform_settings` (the env default, on outside local, applies again), then
+  clear the application cache so the cached `PlatformSettings` value is dropped. Record who did it on the ticket.
+- **Audit**: every change writes `admin.settings_updated` `{key, from, to}`; turning it off outside local is flagged
+  `meta.risk: "high"`. Review `/audit-log` filtered by action `admin.settings_updated` after any incident; super admins
+  see a persistent banner "Two-step sign-in is off for platform staff" while it is off outside local.
+- **Local development**: off by default so `php artisan serve` + the super-admin SPA need only a password. The E2E
+  stack sets `ADMIN_TWO_FACTOR_REQUIRED=true` so the TOTP specs keep running.
 
 ## 12. Platform analytics (Phase 8.2)
 
