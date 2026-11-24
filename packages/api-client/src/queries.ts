@@ -11,6 +11,8 @@ import type {
   CourierProvider,
   ShipmentListFilters,
   StockMovementFilters,
+  PurchaseOrderListFilters,
+  SupplierListFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -49,6 +51,8 @@ export function movementListQuery(f: StockMovementFilters = {}): Query {
     'filter[reason]': list(f.reason),
     'filter[created_at][gte]': f.created_from || undefined,
     'filter[created_at][lte]': f.created_to || undefined,
+    // PHASE-8-8B §8.1
+    'filter[reference_type]': f.reference_type || undefined,
     page: f.page,
     per_page: f.per_page,
   };
@@ -158,4 +162,25 @@ export function filenameFromDisposition(header: string | null, fallback: string)
   }
   const plain = /filename="?([^";]+)"?/i.exec(header);
   return plain?.[1] ?? fallback;
+}
+
+// PHASE-8-8B §4 / §8.1
+export function supplierListQuery(f: SupplierListFilters = {}): Query {
+  return {
+    'filter[archived]': f.archived === undefined ? undefined : f.archived ? '1' : '0',
+    q: text(f.q),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+export function purchaseOrderListQuery(f: PurchaseOrderListFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[supplier_id]': f.supplier_id || undefined,
+    q: text(f.q),
+    page: f.page,
+    per_page: f.per_page,
+  };
 }

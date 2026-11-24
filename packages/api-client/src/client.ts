@@ -239,12 +239,34 @@ import type {
   RecipeKey,
   RecoverCartResult,
   UpdateAutomationInput,
+  CreatePurchaseOrderInput,
+  PurchaseInvoice,
+  PurchaseOrder,
+  PurchaseOrderDetail,
+  PurchaseOrderListFilters,
+  PurchaseOrderListMeta,
+  PurchaseOrderSummary,
+  PurchaseOrderTransitionInput,
+  QuickPurchaseInput,
+  ReceivePurchaseOrderInput,
+  ReorderSuggestionGroup,
+  SendPurchaseOrderInput,
+  Supplier,
+  SupplierDetail,
+  SupplierInput,
+  SupplierListFilters,
+  SupplierListMeta,
+  SupplierPayment,
+  SupplierPaymentInput,
+  SupplierSummary,
+  UpdatePurchaseOrderInput,
+  UpdateSupplierInput,
 } from '@storeplix/types';
 import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1478,6 +1500,113 @@ export function createApiClient(options: ApiClientOptions) {
       /** §6.3 own-shop record of one phone; 30/min per user (429); 403 under impersonation; audited (masked). */
       check: (storeId: string, phone: string) =>
         request<NumberCheck>(`${store(storeId)}/fraud-guard/check`, { method: 'POST', body: { phone } }),
+    },
+
+    /**
+     * PHASE-8-8B §8.1 suppliers (store-scoped, `purchasing.manage`; staff 403). Writes need the `purchasing` plan feature
+     * (402 `feature_not_in_plan`); reads are allowed without it. Writes 60/min per user (429).
+     */
+    suppliers: {
+      /** 50 per page; `archived` false (default) = active only. */
+      list: (storeId: string, filters: SupplierListFilters = {}) =>
+        listOf<Supplier, SupplierListMeta>(`${store(storeId)}/suppliers`, supplierListQuery(filters), {
+          ...emptyPage(), per_page: 50, counts: { active: 0, archived: 0 },
+        }),
+      /** §6.1 KPI tiles. */
+      summary: (storeId: string) => request<SupplierSummary>(`${store(storeId)}/suppliers/summary`),
+      get: (storeId: string, id: string) => request<SupplierDetail>(`${store(storeId)}/suppliers/${enc(id)}`),
+      /** 201; 422 duplicate active name. */
+      create: (storeId: string, input: SupplierInput) => request<Supplier>(`${store(storeId)}/suppliers`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateSupplierInput) =>
+        request<Supplier>(`${store(storeId)}/suppliers/${enc(id)}`, { method: 'PATCH', body: input }),
+      archive: (storeId: string, id: string) => request<Supplier>(`${store(storeId)}/suppliers/${enc(id)}/archive`, { method: 'POST' }),
+      unarchive: (storeId: string, id: string) => request<Supplier>(`${store(storeId)}/suppliers/${enc(id)}/unarchive`, { method: 'POST' }),
+      /** 204; 409 `supplier_in_use` when it has POs or payments (archive instead). */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/suppliers/${enc(id)}`, { method: 'DELETE' }),
+      /** Newest first (`paid_on desc`), 50 per page. */
+      payments: (storeId: string, id: string, page?: number) =>
+        listOf<SupplierPayment, PaginationMeta>(`${store(storeId)}/suppliers/${enc(id)}/payments`, { page }, { ...emptyPage(), per_page: 50 }),
+      /** 201; `purchase_order_id` must be one of this supplier's POs (422). Audited. */
+      recordPayment: (storeId: string, id: string, input: SupplierPaymentInput) =>
+        request<SupplierPayment>(`${store(storeId)}/suppliers/${enc(id)}/payments`, { method: 'POST', body: input }),
+    },
+
+    /** PHASE-8-8B §6.2 supplier payments (`purchasing.manage`, plan `purchasing`). Hard delete, audited with a snapshot. */
+    supplierPayments: {
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/supplier-payments/${enc(id)}`, { method: 'DELETE' }),
+    },
+
+    /**
+     * PHASE-8-8B §5, §8.1 purchase orders. `list`, `get` and `receive` also work with `inventory.adjust` only (every money
+     * and cost field null, sent costs ignored); everything else needs `purchasing.manage`. Writes need plan `purchasing`.
+     * Wrong state → 409 `invalid_state_transition`; stale `revision` → 409 `revision_mismatch`.
+     */
+    purchaseOrders: {
+      /** Newest first; `meta.counts` per status. */
+      list: (storeId: string, filters: PurchaseOrderListFilters = {}) =>
+        listOf<PurchaseOrder, PurchaseOrderListMeta>(`${store(storeId)}/purchase-orders`, purchaseOrderListQuery(filters), {
+          ...emptyPage(),
+          counts: { all: 0, draft: 0, ordered: 0, partially_received: 0, received: 0, closed: 0, cancelled: 0 },
+        }),
+      /** §6.2 KPI tiles (`purchasing.manage`). */
+      summary: (storeId: string) => request<PurchaseOrderSummary>(`${store(storeId)}/purchase-orders/summary`),
+      get: (storeId: string, id: string) => request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}`),
+      /** 201 draft with its `PO-{n}` number; 422 `variant_not_tracked`. */
+      create: (storeId: string, input: CreatePurchaseOrderInput) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders`, { method: 'POST', body: input }),
+      /** `draft` / `ordered` only; `revision` required. */
+      update: (storeId: string, id: string, input: UpdatePurchaseOrderInput) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}`, { method: 'PATCH', body: input }),
+      /** `draft` only → 204. */
+      delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/purchase-orders/${enc(id)}`, { method: 'DELETE' }),
+      /** "Send to supplier": records `sent_at` + `sent_via`, `draft → ordered` (an ordered PO may be re-sent). */
+      send: (storeId: string, id: string, input: SendPurchaseOrderInput) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}/send`, { method: 'POST', body: input }),
+      markOrdered: (storeId: string, id: string, input: PurchaseOrderTransitionInput = {}) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}/mark-ordered`, { method: 'POST', body: input }),
+      /** Finish early (`ordered` / `partially_received`): remaining quantities stop counting as incoming. */
+      close: (storeId: string, id: string, input: PurchaseOrderTransitionInput = {}) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}/close`, { method: 'POST', body: input }),
+      /** Only when nothing has been received. */
+      cancel: (storeId: string, id: string, input: PurchaseOrderTransitionInput = {}) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}/cancel`, { method: 'POST', body: input }),
+      /**
+       * §5.3 receipt → 201 updated detail. `idempotencyKey` is created once per receive form and reused on retry.
+       * 422 `over_receive` (received + damaged > left).
+       */
+      receive: (storeId: string, id: string, input: ReceivePurchaseOrderInput, idempotencyKey: string) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/${enc(id)}/receipts`, {
+          method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** §5.5 quick purchase → 201 `received` PO (+ payment). Idempotency-Key required. */
+      quick: (storeId: string, input: QuickPurchaseInput, idempotencyKey: string) =>
+        request<PurchaseOrderDetail>(`${store(storeId)}/purchase-orders/quick`, {
+          method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+      /** §5.6 A4 PDF (`application/pdf`) as a blob (sends `X-Tenant-Id`; use this to print/download). */
+      pdf: (storeId: string, id: string, number?: string) =>
+        requestBlob(`${store(storeId)}/purchase-orders/${enc(id)}/pdf`, { fallbackName: `${number ?? 'purchase-order'}.pdf` }),
+      /**
+       * Absolute API URL of the PDF. Only for callers that add `X-Tenant-Id` themselves (the API needs the header, so a
+       * bare link/`<a href>` will not work from the SPA — use `pdf`).
+       */
+      pdfUrl: (storeId: string, id: string) => buildUrl(`${store(storeId)}/purchase-orders/${enc(id)}/pdf`),
+    },
+
+    /** PHASE-8-8B §7 and §8.1 purchasing helpers. */
+    purchasing: {
+      /** §7 groups by last supplier; empty when no units shipped in 30 days (`purchasing.manage`). */
+      reorderSuggestions: (storeId: string) =>
+        request<ReorderSuggestionGroup[]>(`${store(storeId)}/purchasing/reorder-suggestions`),
+      /**
+       * Supplier invoice photo/PDF (private; JPG/PNG/WebP/PDF ≤ 5 MB, sniffed) → 201. Attach with `invoice_media_id` on a
+       * receipt or quick purchase. `purchasing.manage` or `inventory.adjust`.
+       */
+      uploadInvoice: (storeId: string, input: { file: Blob; filename?: string }, opts?: UploadOptions) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'invoice'));
+        return uploadForm<PurchaseInvoice>(`${store(storeId)}/purchasing/invoices`, form, opts);
+      },
     },
 
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */
