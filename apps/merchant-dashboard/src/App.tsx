@@ -58,6 +58,7 @@ const ShipmentsPage = lazy(() => import('./shipments/ShipmentsPage'));
 const ShipmentDetailPage = lazy(() => import('./shipments/ShipmentDetailPage'));
 const PrintPage = lazy(() => import('./documents/PrintPage'));
 const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
+const DeveloperPage = lazy(() => import('./developer/DeveloperPage'));
 const CouponsPage = lazy(() => import('./coupons/CouponsPage'));
 const CouponEditorPage = lazy(() => import('./coupons/CouponEditorPage'));
 const ShippingPage = lazy(() => import('./settings/ShippingPage'));
@@ -202,6 +203,7 @@ export function AppRoutes() {
               <Route path="/orders/:orderId" element={gated(can.seeOrders, <OrderDetailPage />)} />
               <Route path="/orders/:orderId/edit" element={gated(can.processOrders, <OrderEditPage />)} />
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
+              <Route path="/integrations/developer" element={gated(can.manageDevelopers, <DeveloperPage />)} />
               <Route path="/marketing" element={<Navigate to="/marketing/coupons" replace />} />
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />

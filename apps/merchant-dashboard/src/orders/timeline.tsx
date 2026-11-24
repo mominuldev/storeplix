@@ -6,7 +6,7 @@ import { clock } from '../commerce/format';
 
 // Order detail 33:3676 Timeline: events newest first, with actor names.
 
-const actorName = (e: OrderEvent) => (e.actor.type === 'customer' ? 'Customer' : e.actor.type === 'system' ? 'Store Plix' : (e.actor.user?.name ?? 'A teammate'));
+const actorName = (e: OrderEvent) => (e.actor.type === 'customer' ? 'Customer' : e.actor.type === 'system' ? 'Store Plix' : e.actor.type === 'api_key' ? e.actor.name : (e.actor.user?.name ?? 'A teammate'));
 
 function dayTime(iso: string): string {
   const d = new Date(iso);

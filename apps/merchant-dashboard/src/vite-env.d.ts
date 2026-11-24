@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_ADMIN_APP_URL?: string;
   /** Phase 8.1: "Contact Store Plix support" link on the suspended screen. */
   readonly VITE_SUPPORT_URL?: string;
+  /** Phase 8.4 (Q134): public API reference; the docs links are hidden when unset. */
+  readonly VITE_DEVELOPER_DOCS_URL?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

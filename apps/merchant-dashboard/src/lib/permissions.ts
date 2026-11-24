@@ -77,6 +77,8 @@ export const can = {
   createStore: (m: PermissionHolder) => hasPermission(m, 'settings.manage'),
   manageIntegrations: (m: PermissionHolder) => hasPermission(m, 'integrations.manage'),
   manageDomains: (m: PermissionHolder) => hasPermission(m, 'domains.manage'),
+  /** PHASE-8-4 §2.1 `developers.manage`: API keys, webhooks and the signing secret (Developer page). */
+  manageDevelopers: (m: PermissionHolder) => hasPermission(m, 'developers.manage'),
   manageStaff: (m: PermissionHolder) => hasPermission(m, 'staff.manage'),
   viewAuditLog: (m: PermissionHolder) => hasPermission(m, 'audit.view'),
   viewBilling: (m: PermissionHolder) => hasPermission(m, 'billing.view'),

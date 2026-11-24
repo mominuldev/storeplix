@@ -1,7 +1,9 @@
 import type { CourierAccount, CourierProvider, GatewayProvider, PaymentGatewayAccount } from '@storeplix/types';
-import { Badge, Button, cn, ProviderLogo, Skeleton } from '@storeplix/ui';
+import { Badge, Button, buttonVariants, cn, ProviderLogo, Skeleton } from '@storeplix/ui';
 import { Search } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
+import { useAuth } from '../auth/AuthProvider';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock } from '../catalog/states';
 import { timeAgo } from '../commerce/format';
@@ -9,6 +11,8 @@ import { CourierDialog } from '../couriers/CourierDialog';
 import { courierConnected, courierFooter, courierMeta, COURIERS, couriersByProvider, courierStatusMeta } from '../couriers/couriers';
 import { useCouriers } from '../couriers/queries';
 import { PageHeader } from '../layout/PageHeader';
+import { can } from '../lib/permissions';
+import { DEVELOPER_DOCS_URL } from '../lib/links';
 import { ConnectGatewayDialog } from '../payments/ConnectGatewayDialog';
 import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, modeLabel } from '../payments/gateways';
 import { usePaymentGateways } from '../payments/queries';
@@ -16,14 +20,15 @@ import { usePaymentGateways } from '../payments/queries';
 // Figma Integrations 14:980 (PHASE-5B §10). Filter chips All / Connected / Couriers / Payments with counts. Payments
 // (bKash, SSLCommerz) live since 5b-2; couriers (Steadfast, Pathao, RedX) since 5b-3: status badge, capability line,
 // "Live mode · Synced 2 min ago" and Connect/Manage, which opens the courier dialog (couriers/CourierDialog).
-// Hidden (§10): Paperfly, CarryBee, Nagad, EPS, aamarPay, PayStation, Marketing & tracking, Messaging, AI, Developer
-// banner. Filter pills follow the Figma frames (selected = text-primary fill, white text; counts on All and
+// Hidden (§10): Paperfly, CarryBee, Nagad, EPS, aamarPay, PayStation, Marketing & tracking, Messaging, AI.
+// Phase 8.4 §7: the Developer banner 14:1441 links to /integrations/developer (only with `developers.manage`). Filter pills follow the Figma frames (selected = text-primary fill, white text; counts on All and
 // Connected only); the search box filters the cards by name. Staff see the page read-only.
 
 type Filter = 'all' | 'connected' | 'couriers' | 'payments';
 
 export function IntegrationsPage() {
   const scope = useStoreScope();
+  const { activeTenant } = useAuth();
   const gateways = usePaymentGateways();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
@@ -125,9 +130,38 @@ export function IntegrationsPage() {
         </Section>
       )}
 
+      {filter === 'all' && !q && can.manageDevelopers(activeTenant) && <DeveloperBanner />}
+
       {connecting && <ConnectGatewayDialog provider={connecting} account={accounts[connecting]} onClose={() => setConnecting(null)} />}
       {courier && <CourierDialog provider={courier} account={courierAccounts[courier]} onClose={() => setCourier(null)} />}
     </div>
+  );
+}
+
+/** Figma Developer banner 14:1441: ink card (radius 16, px 24 py 18, gap 16), Body/16 Medium inverse title, Caption
+ * muted line, secondary sm "Read API docs" (only with a docs URL) + primary sm "Create API key". */
+function DeveloperBanner() {
+  return (
+    <section aria-label="Developer" className="flex flex-col gap-4 rounded-card bg-text-primary px-6 py-[18px] sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h2 className="text-body-lg font-medium text-text-inverse">
+          <Link to="/integrations/developer" className="rounded-sm outline-none hover:underline focus-visible:shadow-focus">
+            Developer: API keys and webhooks
+          </Link>
+        </h2>
+        <p className="text-caption text-text-muted">Send orders to Google Sheets, your accounting tool or a custom app. Signed webhooks, scoped keys.</p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-4">
+        {DEVELOPER_DOCS_URL && (
+          <a href={DEVELOPER_DOCS_URL} target="_blank" rel="noreferrer noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+            Read API docs
+          </a>
+        )}
+        <Link to="/integrations/developer?create=key" className={buttonVariants({ size: 'sm' })}>
+          Create API key
+        </Link>
+      </div>
+    </section>
   );
 }
 
