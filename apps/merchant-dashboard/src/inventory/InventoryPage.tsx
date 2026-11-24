@@ -266,7 +266,7 @@ function StockLevels({
         <StatTile label="Held for orders" value={formatCount(summary?.committed_units ?? 0)} hint="Starts with orders" />
         <StatTile label="Low or out of stock" value={`${formatCount(summary?.low_stock_variants ?? 0)} · ${formatCount(summary?.out_of_stock_variants ?? 0)}`} hint="low · out" />
       </section>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <div className="grid gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_340px] min-[1400px]:items-start">
         <DataTable
           className="min-w-0"
           label="Stock levels"
