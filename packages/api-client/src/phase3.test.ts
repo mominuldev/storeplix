@@ -138,7 +138,7 @@ describe('Phase 3 endpoints', () => {
   });
 
   it('preview token', async () => {
-    const { client, call } = setup(json(201, { data: { token: 't', url: 'http://demo.localhost:3000/?preview=t', expires_at: 'x' } }));
+    const { client, call } = setup(json(201, { data: { token: 't', url: 'http://demo.localhost:3010/?preview=t', expires_at: 'x' } }));
     await expect(client.stores.createPreviewToken('S1')).resolves.toMatchObject({ token: 't' });
     expect(call().url).toBe('http://api.test/api/v1/stores/S1/preview-token');
   });

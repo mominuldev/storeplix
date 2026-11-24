@@ -33,7 +33,7 @@ import { originForHost } from '@/lib/seo';
 describe('originForHost', () => {
   it('uses https for real domains and http+port for local dev hosts', () => {
     expect(originForHost('shop.example.com')).toBe('https://shop.example.com');
-    expect(originForHost('demo.localhost')).toBe('http://demo.localhost:3000');
+    expect(originForHost('demo.localhost')).toBe('http://demo.localhost:3010');
   });
 });
 

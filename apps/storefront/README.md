@@ -3,9 +3,9 @@
 One shared Next.js (App Router) app that renders every merchant's store. The tenant is resolved
 from the request hostname; store config comes from Laravel `GET /api/v1/storefront/config`.
 
-## Run locally (demo.localhost:3000)
+## Run locally (demo.localhost:3010)
 
-1. Start the API (`apps/api`) on port 8000 and seed it: `php artisan db:seed`
+1. Start the API (`apps/api`) on port 8010 and seed it: `php artisan db:seed`
    (creates store slug `demo` with domains `demo.localhost` and `demo.storeplix.test`).
 2. Configure the storefront:
    ```sh
@@ -13,22 +13,22 @@ from the request hostname; store config comes from Laravel `GET /api/v1/storefro
    # set STOREFRONT_API_KEY to the same value as the API's STOREFRONT_API_KEY
    ```
 3. From the repo root: `pnpm install && pnpm dev:storefront`
-4. Open **http://demo.localhost:3000** (`*.localhost` resolves to 127.0.0.1 in modern browsers;
-   with curl use `curl -H 'Host: demo.localhost' http://127.0.0.1:3000/`).
+4. Open **http://demo.localhost:3010** (`*.localhost` resolves to 127.0.0.1 in modern browsers;
+   with curl use `curl -H 'Host: demo.localhost' http://127.0.0.1:3010/`).
 
 Useful checks:
 
 | URL | Expected |
 |---|---|
-| http://demo.localhost:3000/ | Demo store homepage (modern-commerce theme) |
-| http://nope.localhost:3000/ | 404 "Store not found" (Store Plix branded) |
-| http://demo.localhost:3000/robots.txt, /sitemap.xml | Per-host robots / sitemap |
-| `curl -H 'Host: bad_host' http://127.0.0.1:3000/` | 400 invalid host |
+| http://demo.localhost:3010/ | Demo store homepage (modern-commerce theme) |
+| http://nope.localhost:3010/ | 404 "Store not found" (Store Plix branded) |
+| http://demo.localhost:3010/robots.txt, /sitemap.xml | Per-host robots / sitemap |
+| `curl -H 'Host: bad_host' http://127.0.0.1:3010/` | 400 invalid host |
 
 Revalidate after publishing (Laravel calls this):
 
 ```sh
-curl -X POST http://demo.localhost:3000/api/revalidate \
+curl -X POST http://demo.localhost:3010/api/revalidate \
   -H "Authorization: Bearer $REVALIDATE_SECRET" -H 'content-type: application/json' \
   -d '{"host":"demo.localhost"}'        # or {"hosts":["a.example.com","b.example.com"]}
 ```
@@ -37,13 +37,13 @@ curl -X POST http://demo.localhost:3000/api/revalidate \
 
 | Var | Purpose |
 |---|---|
-| `STOREFRONT_API_URL` | Laravel base URL (default `http://localhost:8000`) |
+| `STOREFRONT_API_URL` | Laravel base URL (default `http://localhost:8010`) |
 | `STOREFRONT_API_KEY` | Sent as `X-Storefront-Key` |
 | `REVALIDATE_SECRET` | Bearer secret for `POST /api/revalidate` (endpoint returns 503 when unset) |
 | `STOREFRONT_CONFIG_REVALIDATE` | Config cache TTL in seconds (default 60) |
 | `TRUSTED_PROXY` | `true` only behind our own proxy that overwrites `X-Forwarded-Host` |
-| `STOREFRONT_MEDIA_ORIGINS` | Exact media origins (e.g. `http://localhost:8000,https://cdn.storeplix.com`) for `next/image` remotePatterns — read at **build** time; also the only origins where http logo/icon URLs are accepted |
-| `STOREFRONT_LOCAL_PORT` | Port used in canonical URLs for `*.localhost` / `*.test` hosts (default 3000) |
+| `STOREFRONT_MEDIA_ORIGINS` | Exact media origins (e.g. `http://localhost:8010,https://cdn.storeplix.com`) for `next/image` remotePatterns — read at **build** time; also the only origins where http logo/icon URLs are accepted |
+| `STOREFRONT_LOCAL_PORT` | Port used in canonical URLs for `*.localhost` / `*.test` hosts (default 3010) |
 
 ## How it works
 

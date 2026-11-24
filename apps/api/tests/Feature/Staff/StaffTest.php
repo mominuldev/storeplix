@@ -67,7 +67,7 @@ class StaffTest extends TestCase
             ->assertJsonPath('data.invited_by.id', $owner->id);
 
         Mail::assertQueued(StaffInvitationMail::class, fn ($m) => $m->hasTo('rafi@example.com')
-            && str_starts_with($m->url(), 'http://localhost:5173/invite?token=') && $m->shopName === 'Shop Store');
+            && str_starts_with($m->url(), 'http://localhost:5183/invite?token=') && $m->shopName === 'Shop Store');
 
         $this->getJson('/api/v1/staff')
             ->assertOk()
@@ -268,11 +268,11 @@ class StaffTest extends TestCase
         $this->postJson("/api/v1/invitations/{$token}/accept", ['name' => 'X', 'password' => 'secret12', 'password_confirmation' => 'secret12'])
             ->assertStatus(409)->assertJsonPath('error.code', 'login_required');
 
-        $this->withHeaders(['X-Testing-User' => $stranger->id, 'Referer' => 'http://localhost:5173/'])->postJson("/api/v1/invitations/{$token}/accept")
+        $this->withHeaders(['X-Testing-User' => $stranger->id, 'Referer' => 'http://localhost:5183/'])->postJson("/api/v1/invitations/{$token}/accept")
             ->assertForbidden()->assertJsonPath('error.code', 'invitation_email_mismatch');
         $this->app['auth']->forgetGuards();
 
-        $this->withHeaders(['X-Testing-User' => $existing->id, 'Referer' => 'http://localhost:5173/'])->postJson("/api/v1/invitations/{$token}/accept")
+        $this->withHeaders(['X-Testing-User' => $existing->id, 'Referer' => 'http://localhost:5183/'])->postJson("/api/v1/invitations/{$token}/accept")
             ->assertOk()
             ->assertExactJson(['data' => [
                 'id' => $tenant->id, 'name' => $tenant->name, 'role' => 'staff', 'role_id' => $this->membership($existing, $tenant)->role_id,

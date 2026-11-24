@@ -100,7 +100,7 @@ describe('api-client', () => {
 
 describe('api-client phase 1.1', () => {
   it('stores.createPreviewToken posts to the store-scoped path', async () => {
-    const preview = { token: 'p', url: 'http://demo.localhost:3000/?preview=p', expires_at: 'x' };
+    const preview = { token: 'p', url: 'http://demo.localhost:3010/?preview=p', expires_at: 'x' };
     const { client, fetchMock } = setup(jsonResponse(201, { data: preview }), { getTenantId: () => 'ten' });
     await expect(client.stores.createPreviewToken('01STORE')).resolves.toEqual(preview);
     expect(fetchMock).toHaveBeenCalledWith(

@@ -202,13 +202,13 @@ describe('AutosaveController', () => {
 
 describe('postMessage bridge', () => {
   const frame = {} as Window;
-  const origin = 'http://demo.localhost:3000';
+  const origin = 'http://demo.localhost:3010';
   const ready = { source: 'storeplix-preview', v: 1, type: 'ready', path: '/' };
 
   it('accepts only the iframe window, the exact origin and valid shapes', () => {
     expect(readPreviewMessage({ source: frame, origin, data: ready }, frame, origin)).toEqual(ready);
     expect(readPreviewMessage({ source: {} as Window, origin, data: ready }, frame, origin)).toBeNull();
-    expect(readPreviewMessage({ source: frame, origin: 'http://evil.localhost:3000', data: ready }, frame, origin)).toBeNull();
+    expect(readPreviewMessage({ source: frame, origin: 'http://evil.localhost:3010', data: ready }, frame, origin)).toBeNull();
     expect(readPreviewMessage({ source: frame, origin: 'http://demo.localhost:3001', data: ready }, frame, origin)).toBeNull();
     expect(readPreviewMessage({ source: frame, origin, data: { ...ready, v: 2 } }, frame, origin)).toBeNull();
     expect(readPreviewMessage({ source: frame, origin, data: { ...ready, source: 'storeplix-editor' } }, frame, origin)).toBeNull();
@@ -226,7 +226,7 @@ describe('postMessage bridge', () => {
   });
 
   it('derives the origin from the preview URL', () => {
-    expect(previewOriginOf('http://demo.localhost:3000/?preview=abc')).toBe(origin);
+    expect(previewOriginOf('http://demo.localhost:3010/?preview=abc')).toBe(origin);
     expect(previewOriginOf('javascript:alert(1)')).toBeNull();
     expect(previewOriginOf('nope')).toBeNull();
   });

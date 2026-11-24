@@ -53,7 +53,7 @@ flowchart LR
 | `api.storeplix.com` | Laravel API |
 | `{slug}.storeplix.com` | Storefront (wildcard) |
 | merchant custom hosts | Storefront via Cloudflare custom hostname → fallback origin |
-| Dev | `api` localhost:8000, merchant :5173, admin :5174, storefront `demo.localhost:3000`; `PLATFORM_DOMAIN=storeplix.test` |
+| Dev | `api` localhost:8010, merchant :5183, admin :5184, storefront `demo.localhost:3010`; `PLATFORM_DOMAIN=storeplix.test` |
 
 Reserved slugs (cannot be store slugs): `app, admin, api, www, mail, cdn, static, assets, status, help,
 docs, blog, shop, store, storeplix, dashboard, billing, support, ns1, ns2`, any slug < 3 chars.

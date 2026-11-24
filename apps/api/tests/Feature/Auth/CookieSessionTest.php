@@ -75,7 +75,7 @@ class CookieSessionTest extends TestCase
     public function test_storefront_origin_is_never_stateful(): void
     {
         $this->spaLogin(User::factory()->create());
-        $this->browser('GET', '/api/v1/auth/me', headers: ['Referer' => 'http://demo.localhost:3000/', 'Origin' => 'http://demo.localhost:3000'])->assertUnauthorized();
+        $this->browser('GET', '/api/v1/auth/me', headers: ['Referer' => 'http://demo.localhost:3010/', 'Origin' => 'http://demo.localhost:3010'])->assertUnauthorized();
     }
 
     public function test_session_past_absolute_expiry_is_401(): void
@@ -131,7 +131,7 @@ class CookieSessionTest extends TestCase
             'token' => hash('sha256', $plain), 'abilities' => '["*"]', 'created_at' => now(), 'updated_at' => now(),
         ]);
         $id = DB::table('personal_access_tokens')->value('id');
-        foreach ([[], ['Referer' => 'http://localhost:5173/']] as $extra) {
+        foreach ([[], ['Referer' => 'http://localhost:5183/']] as $extra) {
             $this->flushHeaders()->withHeaders(['Authorization' => "Bearer {$id}|{$plain}", 'Origin' => 'https://script.test'] + $extra)
                 ->getJson('/api/v1/auth/me')->assertUnauthorized();
         }

@@ -57,7 +57,7 @@ test('storefront-host origin is never stateful; bearer is gone after 4.7c', asyn
     storageState: state,
     extraHTTPHeaders: { Accept: 'application/json', Origin: urls.storefront, Referer: `${urls.storefront}/`, 'X-Tenant-Id': s.tenantId },
   });
-  // Cookies are host-only for localhost, so they would be sent to :8000 too; the origin decides.
+  // Cookies are host-only for localhost, so they would be sent to :8010 too; the origin decides.
   const me = await ctx.get('/api/v1/auth/me', { failOnStatusCode: false });
   expect(me.status()).toBe(401);
   await ctx.dispose();

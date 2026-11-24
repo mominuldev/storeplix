@@ -133,7 +133,7 @@ short-circuit polling (Q74). Ops: `domains:suspend {host}`, `domains:reinstate {
    Shopper cookies (`sp_cart`, `sp_order`) are host-only, so a primary switch starts new carts on the new host.
 
 ## 6. Local development
-`demo.localhost:3000` (browsers resolve `*.localhost` to 127.0.0.1) and `demo.storeplix.test` (add to `/etc/hosts`).
+`demo.localhost:3010` (browsers resolve `*.localhost` to 127.0.0.1) and `demo.storeplix.test` (add to `/etc/hosts`).
 Seeder creates both rows as `active` platform rows (primary `demo.storeplix.test`). `DOMAINS_FAKE=true` (compose,
 CI) binds the fake DNS resolver and fake Cloudflare provider; testing-only `/api/v1/dev/domains/{id}/{dns|provider|age}`
 endpoints drive them, and custom hosts ending in `.localhost` are accepted so e2e can browse them. The API refuses to

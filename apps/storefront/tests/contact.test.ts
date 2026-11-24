@@ -117,19 +117,19 @@ describe('media origins (remotePatterns, no wildcard)', () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it('parses exact origins and ignores junk/wildcards', () => {
-    const origins = parseMediaOrigins('http://localhost:8000, https://cdn.storeplix.com ,https://*.evil.com,ftp://x,nope');
-    expect(origins.map((o) => o.origin)).toEqual(['http://localhost:8000', 'https://cdn.storeplix.com']);
+    const origins = parseMediaOrigins('http://localhost:8010, https://cdn.storeplix.com ,https://*.evil.com,ftp://x,nope');
+    expect(origins.map((o) => o.origin)).toEqual(['http://localhost:8010', 'https://cdn.storeplix.com']);
     expect(mediaRemotePatterns(origins)).toEqual([
-      { protocol: 'http', hostname: 'localhost', port: '8000', pathname: '/**' },
+      { protocol: 'http', hostname: 'localhost', port: '8010', pathname: '/**' },
       { protocol: 'https', hostname: 'cdn.storeplix.com', port: '', pathname: '/**' },
     ]);
     expect(parseMediaOrigins(undefined)).toEqual([]);
   });
 
   it('allows http images only from configured origins', () => {
-    vi.stubEnv('STOREFRONT_MEDIA_ORIGINS', 'http://localhost:8000');
-    expect(isAllowedMediaOrigin('http://localhost:8000/storage/a.png')).toBe(true);
-    expect(sanitizeImageUrl('http://localhost:8000/storage/a.png')).toBe('http://localhost:8000/storage/a.png');
+    vi.stubEnv('STOREFRONT_MEDIA_ORIGINS', 'http://localhost:8010');
+    expect(isAllowedMediaOrigin('http://localhost:8010/storage/a.png')).toBe(true);
+    expect(sanitizeImageUrl('http://localhost:8010/storage/a.png')).toBe('http://localhost:8010/storage/a.png');
     expect(sanitizeImageUrl('http://localhost:9999/a.png')).toBeNull();
     expect(sanitizeImageUrl('http://evil.example/a.png')).toBeNull();
     expect(sanitizeImageUrl('data:image/png;base64,AAAA')).toBeNull();

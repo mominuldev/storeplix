@@ -228,7 +228,7 @@ describe('dialogs', () => {
           jsonResponse(201, {
             data: {
               id: 'IM1',
-              url: 'http://localhost:5173/impersonate#ticket=abc',
+              url: 'http://localhost:5183/impersonate#ticket=abc',
               ticket_expires_at: 'x',
             },
           }),
@@ -245,7 +245,7 @@ describe('dialogs', () => {
     await userEvent.type(within(dialog).getByLabelText(/Reason/), 'Check courier booking');
     await userEvent.type(within(dialog).getByLabelText('Support ticket (optional)'), 'TK-4821');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Start read-only session' }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith('http://localhost:5173/impersonate#ticket=abc', '_blank', 'noopener,noreferrer'));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('http://localhost:5183/impersonate#ticket=abc', '_blank', 'noopener,noreferrer'));
     expect(api.find('POST', '/admin/tenants/T1/impersonations')[0]!.body).toEqual({ reason: 'Check courier booking', ticket_ref: 'TK-4821' });
     expect(await screen.findByRole('link', { name: /Open the merchant dashboard/ })).toHaveAttribute('rel', 'noopener noreferrer');
   });

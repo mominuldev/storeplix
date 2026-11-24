@@ -158,7 +158,7 @@ abstract class TestCase extends BaseTestCase
         // Sign-in endpoints are stateful-only (4.7c): unless a test sets Referer/Origin itself, requests come from the
         // merchant SPA origin, like the real same-origin app. Tests of non-SPA callers send their own Origin.
         if (! isset($server['HTTP_REFERER']) && ! isset($server['HTTP_ORIGIN']) && $actingAs === null) {
-            $server['HTTP_REFERER'] = 'http://localhost:5173/';
+            $server['HTTP_REFERER'] = 'http://localhost:5183/';
         }
 
         return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);

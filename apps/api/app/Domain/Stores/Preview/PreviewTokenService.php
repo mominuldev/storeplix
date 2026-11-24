@@ -62,7 +62,7 @@ class PreviewTokenService
             return null;
         }
 
-        $origin = app()->environment('local') ? "http://{$host}:3000" : "https://{$host}";
+        $origin = app()->environment('local') ? "http://{$host}:3010" : "https://{$host}";
 
         return $origin.'/?preview='.rawurlencode($token);
     }

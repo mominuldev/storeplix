@@ -195,7 +195,7 @@ export async function setupShop(label: string, o: ShopOptions = {}): Promise<Com
   }
 }
 
-/** `http://{host}:{port}` with the port of STOREFRONT_URL (default 3000). */
+/** `http://{host}:{port}` with the port of STOREFRONT_URL (default 3010). */
 export function storefrontOrigin(host: string): string {
   const u = new URL(urls.storefront);
   return `${u.protocol}//${host}${u.port ? `:${u.port}` : ''}`;
@@ -454,7 +454,7 @@ export function leaks(payload: unknown, needles: string[]): string[] {
 
 /**
  * The API redirects gateway returns and builds link URLs from the store's PRIMARY host (local env:
- * `http://{primary}:3000`). Playwright doesn't route requests that are the target of a redirect, and the
+ * `http://{primary}:3010`). Playwright doesn't route requests that are the target of a redirect, and the
  * shopper's `sp_order` cookie lives on `{slug}.localhost`, so browser payment specs make `{slug}.localhost` the
  * primary domain (test-only DB write; `browserHost()` must have added it). API calls keep using `apiHost`.
  */

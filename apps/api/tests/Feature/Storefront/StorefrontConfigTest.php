@@ -72,7 +72,7 @@ class StorefrontConfigTest extends TestCase
         [, $tenant] = $this->merchant();
         $this->storeFor($tenant, 'demo', ['demo.localhost']);
 
-        foreach (['DEMO.storeplix.test', 'demo.storeplix.test.', 'demo.localhost:3000', ' demo.localhost '] as $host) {
+        foreach (['DEMO.storeplix.test', 'demo.storeplix.test.', 'demo.localhost:3010', ' demo.localhost '] as $host) {
             $this->config($host)->assertOk()->assertJsonPath('data.store.slug', 'demo');
         }
     }

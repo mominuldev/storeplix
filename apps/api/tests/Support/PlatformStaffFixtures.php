@@ -21,7 +21,7 @@ trait PlatformStaffFixtures
 {
     protected const STAFF_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 
-    protected const ADMIN_ORIGIN = 'http://localhost:5174';
+    protected const ADMIN_ORIGIN = 'http://localhost:5184';
 
     /** @param array<string, mixed> $attributes */
     protected function staffUser(PlatformRole|string $role = PlatformRole::SuperAdmin, array $attributes = []): User

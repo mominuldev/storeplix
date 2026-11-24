@@ -225,11 +225,11 @@ class BillingApiTest extends TestCase
         $payment = $this->payInvoice($h, $this->changePlan($h, 'starter')->json('data.invoice.id'))->json('data.id');
         $return = $this->inTenant($tenant, fn () => BillingUrls::returnUrl(BillingPayment::query()->findOrFail($payment)));
         $this->flushHeaders()->get($return.'&next=https://evil.example')->assertStatus(303)
-            ->assertHeader('Location', 'http://localhost:5173/settings/plan?payment='.$payment);
+            ->assertHeader('Location', 'http://localhost:5183/settings/plan?payment='.$payment);
         $this->flushHeaders()->get("/api/v1/billing/payments/return/bkash/{$payment}?expires=1&signature=".str_repeat('a', 64))
-            ->assertStatus(303)->assertHeader('Location', 'http://localhost:5173/settings/plan?payment_error=1');
+            ->assertStatus(303)->assertHeader('Location', 'http://localhost:5183/settings/plan?payment_error=1');
         $this->flushHeaders()->get(str_replace('/bkash/', '/sslcommerz/', $return))->assertStatus(303)
-            ->assertHeader('Location', 'http://localhost:5173/settings/plan?payment_error=1');
+            ->assertHeader('Location', 'http://localhost:5183/settings/plan?payment_error=1');
     }
 
     /** S64 */
@@ -274,10 +274,10 @@ class BillingApiTest extends TestCase
     /** The fake page URL the API hands out verifies on another API origin too (e2e port ≠ APP_URL); tampering still fails. */
     public function test_fake_page_signature_survives_a_different_api_origin_but_not_tampering(): void
     {
-        config(['app.url' => 'http://localhost:8000', 'payments.public_api_url' => 'http://localhost:8000']);
+        config(['app.url' => 'http://localhost:8010', 'payments.public_api_url' => 'http://localhost:8010']);
         [, $tenant, , $h] = $this->shop();
         $url = $this->payInvoice($h, $this->changePlan($h, 'starter')->json('data.invoice.id'))->assertCreated()->json('data.redirect_url');
-        $this->assertStringStartsWith('http://localhost:8000/api/v1/dev/fake-billing-gateway/', $url);
+        $this->assertStringStartsWith('http://localhost:8010/api/v1/dev/fake-billing-gateway/', $url);
         $parts = parse_url($url);
         $path = $parts['path'].'?'.$parts['query'];
 

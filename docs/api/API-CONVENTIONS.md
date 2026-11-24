@@ -5,7 +5,7 @@ Spec: `docs/api/openapi.yaml` (Phase 1 endpoints; extended per phase; v1.6.1 aft
 **Change process:** response shape change ⇒ update Laravel API Resource + `packages/types` + `openapi.yaml` in the same PR.
 
 ## 1. Base & versioning
-- Base URL `https://api.storeplix.com/api/v1` (local `http://localhost:8000/api/v1`).
+- Base URL `https://api.storeplix.com/api/v1` (local `http://localhost:8010/api/v1`).
 - Major version in path. Within v1 only additive changes (new endpoints, new optional fields, new enum values clients
   must tolerate). Breaking change ⇒ `/api/v2` for the affected routes, v1 kept ≥ 6 months, responses carry
   `Deprecation: true` and `Sunset: <date>` headers.

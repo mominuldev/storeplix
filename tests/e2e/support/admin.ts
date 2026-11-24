@@ -10,7 +10,7 @@ import { API_DIR, E2E_ROOT, tinker, xsrfToken } from './api';
  * SPA origin (Vite proxy → Laravel, stateful Sanctum session), and the e2e staff fixture
  * (`php artisan db:seed --class=PlatformStaffE2eSeeder`, see that seeder for the credentials).
  */
-export const adminUrl = process.env.ADMIN_URL ?? 'http://localhost:5174';
+export const adminUrl = process.env.ADMIN_URL ?? 'http://localhost:5184';
 
 export const SUPER_ADMIN = {
   email: 'e2e-superadmin@storeplix.com',

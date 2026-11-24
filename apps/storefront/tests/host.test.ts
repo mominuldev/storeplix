@@ -5,7 +5,7 @@ const h = (record: Record<string, string>) => new Headers(record);
 
 describe('normalizeHost', () => {
   it.each([
-    ['demo.localhost:3000', 'demo.localhost'],
+    ['demo.localhost:3010', 'demo.localhost'],
     ['Demo.StorePlix.COM', 'demo.storeplix.com'],
     ['shop.example.com.', 'shop.example.com'],
     ['SHOP.example.com.:443', 'shop.example.com'],
@@ -57,11 +57,11 @@ describe('normalizeHost', () => {
 
 describe('resolveRequestHost', () => {
   it('uses the Host header', () => {
-    expect(resolveRequestHost(h({ host: 'demo.localhost:3000' }))).toBe('demo.localhost');
+    expect(resolveRequestHost(h({ host: 'demo.localhost:3010' }))).toBe('demo.localhost');
   });
 
   it('ignores X-Forwarded-Host by default (spoofing attempt)', () => {
-    const headers = h({ host: 'demo.localhost:3000', 'x-forwarded-host': 'victim.storeplix.com' });
+    const headers = h({ host: 'demo.localhost:3010', 'x-forwarded-host': 'victim.storeplix.com' });
     expect(resolveRequestHost(headers)).toBe('demo.localhost');
     expect(resolveRequestHost(headers, { trustedProxy: false })).toBe('demo.localhost');
   });

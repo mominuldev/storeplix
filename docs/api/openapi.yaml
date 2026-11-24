@@ -86,7 +86,7 @@ info:
     Merchant routes need Bearer + X-Tenant-Id: missing header → 400 `tenant_required`; not a member → 403 `tenant_forbidden`;
     a resource id of another tenant → 404 `not_found`.
 servers:
-- url: http://localhost:8000/api/v1
+- url: http://localhost:8010/api/v1
   description: Local
 - url: https://api.storeplix.com/api/v1
   description: Production
@@ -767,7 +767,7 @@ paths:
       operationId: createPreviewToken
       description: |
         Issues a signed preview token (60 min, bound to the store) so the merchant can view a draft store.
-        `url` = https://{primary_domain}/?preview={token} (http + :3000 in local env). See STOREFRONT-ENGINE.md §4.1.
+        `url` = https://{primary_domain}/?preview={token} (http + :3010 in local env). See STOREFRONT-ENGINE.md §4.1.
       security:
       - bearerAuth: []
       parameters:
@@ -2425,7 +2425,7 @@ paths:
                 $ref: '#/components/schemas/ApiError'
   /sanctum/csrf-cookie:
     servers:
-    - url: http://localhost:5173
+    - url: http://localhost:5183
       description: Merchant SPA origin (dev, via Vite proxy)
     - url: https://app.storeplix.com
       description: Merchant SPA origin (prod, via Nginx)

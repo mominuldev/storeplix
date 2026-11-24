@@ -128,7 +128,7 @@ keyed by host, so publishing shows the live store at once. On draft → active t
 1. Dashboard calls `POST /api/v1/stores/{store}/preview-token` (Bearer + `X-Tenant-Id`, any role with store access)
    → 201 `{data:{token, url, expires_at}}`. Token = HMAC-SHA256-signed payload `{store_id, exp, jti}` with
    `PREVIEW_TOKEN_SECRET` (separate from `APP_KEY` and the storefront key), TTL **60 min**.
-   `url` = `https://{primary_domain}/?preview={token}` (local: `http://{host}:3000/...`).
+   `url` = `https://{primary_domain}/?preview={token}` (local: `http://{host}:3010/...`).
 2. Storefront `middleware.ts` sees `?preview=`: sets cookie `sp_preview` (httpOnly, `Secure` in prod, `SameSite=Lax`,
    `Max-Age=3600`, host-only) and 302s to the same URL **without** the param, so the token doesn't stay in history,
    logs or `Referer`.
@@ -155,7 +155,7 @@ keyed by host, so publishing shows the live store at once. On draft → active t
 
 Revalidation flow (as implemented; details PHASE-2-CONTRACT §1.8): `StorefrontRevalidationObserver` (Store status/name/slug,
 StoreSettings incl. theme, StoreDomain) → queued `RevalidateStorefront` job (after commit, unique per store for 2 s, retries) →
-`POST ${STOREFRONT_REVALIDATE_URL}` (internal, e.g. `http://storefront:3000/api/revalidate`) with
+`POST ${STOREFRONT_REVALIDATE_URL}` (internal, e.g. `http://storefront:3010/api/revalidate`) with
 `Authorization: Bearer ${REVALIDATE_SECRET}` and `{ "hosts": [...] }` → route handler expires tag `store:{host}` for each
 host. `REVALIDATE_SECRET` is distinct from `STOREFRONT_API_KEY`. Phase 1 uses a single host-level tag; per-product/catalog
 tags in the table above arrive with the catalog endpoints (Phase 5). If Cloudflare caches
