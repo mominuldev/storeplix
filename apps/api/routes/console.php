@@ -58,3 +58,9 @@ Schedule::command('analytics:aggregate')->hourlyAt(20)->timezone('Asia/Dhaka')->
 Schedule::command('webhooks:dispatch-due')->everyMinute()->withoutOverlapping();
 Schedule::command('webhooks:prune-deliveries')->dailyAt('04:10')->timezone('Asia/Dhaka')->withoutOverlapping();
 Schedule::command('webhooks:auto-disable')->hourly()->withoutOverlapping();
+
+// Phase 8.5 (PHASE-8-5 §5.1, P85-16, P85-28): start due campaigns / resume paused ones every minute, mark stuck sends
+// `unknown` every 5 minutes, prune recipients after 13 months. Discovery on the platform connection, work per tenant.
+Schedule::command('campaigns:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('campaigns:reap-stuck')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('campaigns:prune-recipients')->dailyAt('04:30')->timezone('Asia/Dhaka')->withoutOverlapping();

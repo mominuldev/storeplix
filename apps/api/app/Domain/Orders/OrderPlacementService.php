@@ -16,6 +16,7 @@ use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
+use App\Domain\Marketing\Attribution;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
@@ -440,6 +441,7 @@ class OrderPlacementService
         }
         OrderTimeline::record($order, 'placed', $storefront ? null : $user, null, $meta, null, $order->status, $storefront ? 'customer' : null);
         WebhookEvents::emit(WebhookEventType::OrderCreated, $order);
+        Attribution::orderPlaced($order); // PHASE-8-5 §5.5: campaign attribution, queued after commit
 
         if ($hold) {
             $payments = app(PaymentService::class);

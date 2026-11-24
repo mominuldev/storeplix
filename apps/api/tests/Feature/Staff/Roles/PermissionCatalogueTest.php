@@ -33,7 +33,7 @@ class PermissionCatalogueTest extends TestCase
         }
         $this->assertSame(['orders', 'shipping', 'products', 'customers', 'money', 'store', 'team'], array_keys(Permission::GROUPS));
         $this->assertSame(
-            ['orders.refund', 'costs.view', 'data.export', 'integrations.manage', 'developers.manage', 'staff.manage', 'billing.manage'],
+            ['orders.refund', 'costs.view', 'data.export', 'marketing.manage', 'integrations.manage', 'developers.manage', 'staff.manage', 'billing.manage'], // PHASE-8-5 §2.1: marketing.manage sensitive
             array_values(array_map(fn (Permission $p) => $p->value, array_filter(Permission::cases(), fn (Permission $p) => $p->sensitive()))),
         );
     }

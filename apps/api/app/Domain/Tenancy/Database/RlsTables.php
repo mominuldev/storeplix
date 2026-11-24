@@ -18,7 +18,7 @@ final class RlsTables
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -41,6 +41,8 @@ final class RlsTables
         'roles', 'role_permissions',
         // Phase 8.4 developer API (PHASE-8-4 §5.1; api_keys in 2026_12_01_000100, the webhook tables in 000200)
         'api_keys', 'webhook_endpoints', 'webhook_secrets', 'webhook_deliveries',
+        // Phase 8.5 marketing campaigns (PHASE-8-5 §7.1; campaign tables in 2026_12_02_000100, suppressions in 000200)
+        'campaigns', 'campaign_recipients', 'campaign_conversions', 'marketing_suppressions',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */

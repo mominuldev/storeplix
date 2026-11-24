@@ -347,6 +347,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.4 (PHASE-8-4-CONTRACT §3): external API authenticated by API keys, never by a session.
     require __DIR__.'/external.php';
 
+    // Phase 8.5 (PHASE-8-5-CONTRACT §6.1, §4.2): campaigns, opt-outs and the storefront unsubscribe API (own groups).
+    require __DIR__.'/campaigns.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
