@@ -10,6 +10,7 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\ProductPayloadValidator;
 use App\Domain\Catalog\ProductService;
 use App\Domain\Catalog\Support\StockSql;
+use App\Domain\Inventory\InventorySql;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
@@ -168,8 +169,8 @@ class ProductController
                 ->where('product_categories.category_id', strtolower($filter['category_id'])));
         }
         if (isset($filter['stock'])) {
-            $exists = fn (string $status) => fn ($sub) => $sub->select(DB::raw(1))->from('product_variants')
-                ->join('inventories', 'inventories.variant_id', '=', 'product_variants.id')
+            // PHASE-8-8C §5.3: TOTAL reader (Σ over non-archived locations).
+            $exists = fn (string $status) => fn ($sub) => InventorySql::joinTotals($sub->select(DB::raw(1))->from('product_variants'), $store->id)
                 ->whereColumn('product_variants.product_id', 'products.id')
                 ->whereNull('product_variants.deleted_at')
                 ->whereRaw(StockSql::condition($status));
@@ -208,9 +209,8 @@ class ProductController
     /** Active products, their enabled variants, and low/out among tracked enabled variants of active products. */
     private function summary(Store $store): array
     {
-        $base = DB::table('product_variants')
-            ->join('products', 'products.id', '=', 'product_variants.product_id')
-            ->join('inventories', 'inventories.variant_id', '=', 'product_variants.id')
+        $base = InventorySql::joinTotals(DB::table('product_variants')
+            ->join('products', 'products.id', '=', 'product_variants.product_id'), $store->id) // TOTAL reader (PHASE-8-8C §5.3)
             ->where('products.tenant_id', $this->context->requireId())
             ->where('products.store_id', $store->id)
             ->whereNull('products.deleted_at')->whereNull('product_variants.deleted_at')

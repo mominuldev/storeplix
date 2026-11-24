@@ -6,8 +6,10 @@ namespace App\Domain\Purchasing;
 
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Identity\Models\User;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrderItem;
+use App\Domain\Purchasing\Models\PurchaseReceipt;
 use App\Domain\Purchasing\Models\Supplier;
 use App\Domain\Purchasing\Models\SupplierPayment;
 use App\Domain\Shared\Http\ApiException;
@@ -37,6 +39,7 @@ final class PurchaseOrderService
             $po = new PurchaseOrder;
             $po->store_id = $store->id;
             $po->supplier_id = $supplier->id;
+            $po->location_id = Locations::resolve($store->id, isset($input['location_id']) ? (string) $input['location_id'] : null)->id;
             $po->sequence = StoreCounter::next($store->id, StoreCounter::PURCHASE_ORDERS);
             $po->number = PurchaseOrder::numberFor($po->sequence);
             $po->status = PurchaseOrder::DRAFT;
@@ -72,6 +75,11 @@ final class PurchaseOrderService
     public function update(Store $store, PurchaseOrder $po, array $input, User $user): PurchaseOrder
     {
         return DB::transaction(function () use ($store, $po, $input, $user) {
+            // PHASE-8-8C P88C-8: once stock was received the location is locked (also on a no-longer-editable PO).
+            if (isset($input['location_id']) && strtolower((string) $input['location_id']) !== $po->location_id
+                && PurchaseReceipt::query()->where('purchase_order_id', $po->id)->exists()) {
+                throw self::locationLocked();
+            }
             $row = $this->lock($store, $po, $input['revision'] ?? null, PurchaseOrder::EDITABLE);
             $changed = [];
 
@@ -85,6 +93,17 @@ final class PurchaseOrderService
                 }
                 $row->supplier_id = $this->activeSupplier($store, (string) $input['supplier_id'])->id;
                 $changed[] = 'supplier_id';
+            }
+            // PHASE-8-8C P88C-8: "Receive at" is editable until the first receipt (then 422 location_locked).
+            if (array_key_exists('location_id', $input) && $input['location_id'] !== null) {
+                $location = Locations::resolve($store->id, (string) $input['location_id']);
+                if ($location->id !== $row->location_id) {
+                    if (PurchaseReceipt::query()->where('purchase_order_id', $row->id)->exists()) {
+                        throw self::locationLocked();
+                    }
+                    $row->location_id = $location->id;
+                    $changed[] = 'location_id';
+                }
             }
             foreach (['expected_on', 'notes'] as $field) {
                 if (array_key_exists($field, $input)) {
@@ -223,6 +242,11 @@ final class PurchaseOrderService
     }
 
     /** @return array<string, mixed> */
+    private static function locationLocked(): ApiException
+    {
+        return new ApiException(422, 'location_locked', 'Stock was already received at this purchase order’s location. It can’t change now.', ['location_id' => ['Already received at this location.']]);
+    }
+
     public static function meta(PurchaseOrder $po): array
     {
         return ['number' => $po->number, 'supplier_id' => $po->supplier_id, 'status' => $po->status, 'total_amount' => $po->total_amount, 'currency' => $po->currency];

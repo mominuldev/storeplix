@@ -7,6 +7,7 @@ use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -80,8 +81,15 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class)->withTrashed();
     }
 
+    /** PHASE-8-8C P88C-6: the ONLINE location's stock row (storefront, carts, checkout, order presenters). */
     public function inventory(): HasOne
     {
-        return $this->hasOne(Inventory::class, 'variant_id');
+        return $this->hasOne(Inventory::class, 'variant_id')->whereRaw(Inventory::ONLINE_SQL);
+    }
+
+    /** Every stock row of the variant (one per location it ever held stock at). */
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class, 'variant_id');
     }
 }

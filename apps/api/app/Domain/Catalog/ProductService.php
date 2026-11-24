@@ -167,10 +167,11 @@ class ProductService
      * @param  array<string, array<string, mixed>>  $variantFields  variant id → changed fields
      * @param  array<string, int>  $stock  variant id → new on_hand
      * @param  array{type: string, id: string}  $reference
+     * @param  array<string, string>  $stockLocations  variant id → location id (CSV `location`; omitted = default location, PHASE-8-8C P88C-7)
      */
-    public function importUpdate(Store $store, Product $product, ?array $productFields, ?array $categoryIds, array $variantFields, array $stock, ?User $user, array $reference): Product
+    public function importUpdate(Store $store, Product $product, ?array $productFields, ?array $categoryIds, array $variantFields, array $stock, ?User $user, array $reference, array $stockLocations = []): Product
     {
-        return DB::transaction(function () use ($store, $product, $productFields, $categoryIds, $variantFields, $stock, $user, $reference) {
+        return DB::transaction(function () use ($store, $product, $productFields, $categoryIds, $variantFields, $stock, $user, $reference, $stockLocations) {
             /** @var Product $locked */
             $locked = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
             foreach ($productFields ?? [] as $key => $value) {
@@ -193,7 +194,7 @@ class ProductService
             if ($stock !== []) {
                 $items = [];
                 foreach ($stock as $variantId => $qty) {
-                    $items[] = ['variant_id' => $variantId, 'mode' => 'set', 'quantity' => $qty];
+                    $items[] = ['variant_id' => $variantId, 'mode' => 'set', 'quantity' => $qty, 'location_id' => $stockLocations[$variantId] ?? null];
                 }
                 $this->inventory->adjust($store->id, 'import', null, $items, $user?->getKey(), $reference);
             }
@@ -424,7 +425,8 @@ class ProductService
                 'barcode' => null, 'compare_at_amount' => null, 'cost_amount' => null, 'weight_grams' => null,
                 'is_enabled' => true, 'track_inventory' => true, 'allow_backorder' => false, 'image_media_id' => null,
             ]);
-            $stock[] = ['variant_id' => $id, 'store_id' => $product->store_id, 'on_hand' => (int) ($v['initial_on_hand'] ?? 0), 'threshold' => $v['low_stock_threshold'] ?? null];
+            $stock[] = ['variant_id' => $id, 'store_id' => $product->store_id, 'on_hand' => (int) ($v['initial_on_hand'] ?? 0), 'threshold' => $v['low_stock_threshold'] ?? null,
+                'location_id' => $v['initial_location_id'] ?? null]; // default location unless an import names one
         }
 
         foreach (array_chunk($new, 100) as $chunk) {
@@ -432,7 +434,7 @@ class ProductService
         }
         $this->inventory->createMany($stock, $reason, $reference, $user?->getKey());
         foreach ($thresholds as $variantId => $threshold) {
-            Inventory::query()->where('variant_id', $variantId)->update(['low_stock_threshold' => $threshold, 'updated_at' => now()]);
+            Inventory::query()->online()->where('variant_id', $variantId)->update(['low_stock_threshold' => $threshold, 'updated_at' => now()]); // default location row (PHASE-8-8C P88C-7)
         }
     }
 

@@ -25,6 +25,7 @@ class PurchaseOrderRequest extends PurchasingWriteRequest
             'revision' => $patch ? ['required', 'integer:strict', 'min:1'] : ['prohibited'],
             'supplier_id' => [$patch ? 'sometimes' : 'required', 'string', 'size:26'],
             'expected_on' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'after_or_equal:'.self::DATE_MIN, 'before_or_equal:'.$max],
+            'location_id' => ['sometimes', 'nullable', 'string', 'size:26'], // PHASE-8-8C P88C-8 "Receive at"
             'shipping_amount' => ['sometimes', 'integer:strict', 'min:0', 'max:1000000000'],
             'discount_amount' => ['sometimes', 'integer:strict', 'min:0', 'max:1000000000'],
             'notes' => ['sometimes', ...self::text(1000)],

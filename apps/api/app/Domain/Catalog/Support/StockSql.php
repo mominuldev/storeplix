@@ -5,12 +5,15 @@ namespace App\Domain\Catalog\Support;
 use App\Domain\Inventory\Models\Inventory;
 use Illuminate\Support\Facades\DB;
 
-/** SQL fragments for the stock status rules of §3.3 (inventories joined as "inventories"). */
+/**
+ * SQL fragments for the stock status rules of §3.3 (inventories joined as "inventories" through InventorySql; a
+ * LEFT-joined missing row reads as 0, PHASE-8-8C P88C-3).
+ */
 final class StockSql
 {
     public static function available(string $table = 'inventories'): string
     {
-        return "({$table}.on_hand - {$table}.committed)";
+        return "(COALESCE({$table}.on_hand, 0) - COALESCE({$table}.committed, 0))";
     }
 
     public static function threshold(string $table = 'inventories'): string

@@ -7,7 +7,7 @@ namespace App\Domain\Purchasing;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
-use App\Domain\Inventory\Models\Inventory;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrderItem;
 use App\Domain\Purchasing\Models\PurchaseReceipt;
@@ -24,8 +24,9 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Receiving (PHASE-8-8B §5.3–§5.5, P88B-4/5/6/13). One transaction: lock the PO (FOR UPDATE; concurrent receipts
- * serialise here and never exceed ordered, S170) → validate left quantities (422 `over_receive`) → lock the inventory
- * rows in variant_id order and read on hand BEFORE the adjust → one `InventoryService::adjust` call (reason `received`,
+ * serialise here and never exceed ordered, S170) → validate left quantities (422 `over_receive`) → lock ALL inventory
+ * rows of the variants in (variant_id, location_id) order and read TOTAL on hand BEFORE the adjust (PHASE-8-8C P88C-8;
+ * stock goes to the PO's location) → one `InventoryService::adjust` call (reason `received`,
  * reference the PO; damaged units never stocked, S171) → weighted-average landed cost written to the variant (P88B-5;
  * also for actors who can't see costs) → receipt rows with the cost trail → PO counters / status / received value /
  * due date → audit. Stock and cost never change any other way. Purchases never write `expenses` (P88B-10).
@@ -71,6 +72,7 @@ final class ReceivingService
             $po = new PurchaseOrder;
             $po->store_id = $store->id;
             $po->supplier_id = $supplier->id;
+            $po->location_id = Locations::resolve($store->id, isset($input['location_id']) ? (string) $input['location_id'] : null)->id;
             $po->sequence = StoreCounter::next($store->id, StoreCounter::PURCHASE_ORDERS);
             $po->number = PurchaseOrder::numberFor($po->sequence);
             $po->status = PurchaseOrder::ORDERED;
@@ -169,16 +171,22 @@ final class ReceivingService
             $po->shipping_amount, $po->discount_amount,
         );
 
-        // On hand BEFORE the adjust, read under the inventory row locks (variant_id order, the InventoryService order).
+        // PHASE-8-8C P88C-8: the PO's "Receive at" location (must be active).
+        $location = Locations::resolve($store->id, $po->location_id, 'location_id');
+
+        // TOTAL on hand BEFORE the adjust (P88C-8: the weighted average counts stock at every location), read under
+        // the locks of ALL stock rows of the variants, in (variant_id, location_id) order (§3.3).
         $variantIds = array_values(array_unique(array_map(fn ($w) => $w[0]->variant_id, $wanted)));
         sort($variantIds, SORT_STRING);
-        $onHand = Inventory::query()->where('store_id', $store->id)->whereIn('variant_id', $variantIds)
-            ->orderBy('variant_id')->lockForUpdate()->pluck('on_hand', 'variant_id')->map(fn ($v) => (int) $v)->all();
+        $onHand = [];
+        foreach ($this->inventory->lockAllRows($store->id, $variantIds) as $stockRow) {
+            $onHand[$stockRow->variant_id] = ($onHand[$stockRow->variant_id] ?? 0) + $stockRow->on_hand;
+        }
 
         $adjust = [];
         foreach ($wanted as [$item, $received]) {
             if ($received > 0) {
-                $adjust[] = ['variant_id' => $item->variant_id, 'mode' => 'delta', 'quantity' => $received];
+                $adjust[] = ['variant_id' => $item->variant_id, 'mode' => 'delta', 'quantity' => $received, 'location_id' => $location->id];
             }
         }
         if ($adjust !== []) {
@@ -188,6 +196,7 @@ final class ReceivingService
         $receipt = new PurchaseReceipt;
         $receipt->store_id = $store->id;
         $receipt->purchase_order_id = $po->id;
+        $receipt->location_id = $location->id;
         $receipt->received_at = now();
         $receipt->received_by = $user->id;
         $receipt->supplier_invoice_ref = self::text($extras['supplier_invoice_ref'] ?? null);

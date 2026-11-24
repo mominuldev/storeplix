@@ -8,6 +8,7 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Support\StockSql;
 use App\Domain\Customers\Http\Controllers\CustomerController;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Inventory\InventorySql;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Shipment;
@@ -32,9 +33,9 @@ class DashboardController
         $total = (int) $byStatus->sum();
 
         $onHand = 'CASE WHEN inventories.on_hand > 0 THEN inventories.on_hand ELSE 0 END';
-        $stock = DB::table('product_variants')
-            ->join('products', 'products.id', '=', 'product_variants.product_id')
-            ->join('inventories', 'inventories.variant_id', '=', 'product_variants.id')
+        // PHASE-8-8C §5.3: TOTAL reader (Σ over non-archived locations); low = any row at or below its threshold.
+        $stock = InventorySql::joinTotals(DB::table('product_variants')
+            ->join('products', 'products.id', '=', 'product_variants.product_id'), $store->id)
             ->where('products.tenant_id', $context->requireId())
             ->where('products.store_id', $store->id)
             ->whereNull('products.deleted_at')->whereNull('product_variants.deleted_at')
@@ -42,7 +43,7 @@ class DashboardController
             ->where('product_variants.is_enabled', true)
             ->where('product_variants.track_inventory', true)
             ->selectRaw(implode(', ', [
-                'coalesce(sum(CASE WHEN '.StockSql::condition('low').' THEN 1 ELSE 0 END), 0) as low_count',
+                'coalesce(sum(CASE WHEN inventories.low_rows > 0 AND NOT ('.StockSql::condition('out').') THEN 1 ELSE 0 END), 0) as low_count',
                 'coalesce(sum(CASE WHEN '.StockSql::condition('out').' THEN 1 ELSE 0 END), 0) as out_count',
                 "coalesce(sum({$onHand}), 0) as units",
                 "coalesce(sum(CASE WHEN product_variants.cost_amount IS NOT NULL THEN {$onHand} * product_variants.cost_amount ELSE 0 END), 0) as value_cost",

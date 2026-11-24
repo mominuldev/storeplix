@@ -14,6 +14,12 @@ final class ImportColumns
         'seo_title', 'seo_description', 'image_urls',
     ];
 
+    /**
+     * PHASE-8-8C P88C-7 / Q220: optional import-only column `location` (a location NAME; empty = the default
+     * location). Not part of the template or the export.
+     */
+    public const PRODUCT_IMPORT_ONLY = ['location'];
+
     public const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'district', 'area', 'channel', 'tags', 'accepts_marketing', 'note'];
 
     /** PHASE-8-8B P88B-15: supplier import columns (import only). */
@@ -45,6 +51,7 @@ final class ImportColumns
         'seo_title' => ['seo title'],
         'seo_description' => ['seo description'],
         'image_urls' => ['image', 'image url', 'photos', 'image src', 'images'],
+        'location' => ['location', 'warehouse', 'stock location'],
     ];
 
     private const CUSTOMER_ALIASES = [
@@ -76,7 +83,7 @@ final class ImportColumns
     public static function fields(string $type): array
     {
         return match ($type) {
-            DataImport::PRODUCTS => self::PRODUCT_FIELDS,
+            DataImport::PRODUCTS => [...self::PRODUCT_FIELDS, ...self::PRODUCT_IMPORT_ONLY],
             DataImport::SUPPLIERS => self::SUPPLIER_FIELDS,
             default => self::CUSTOMER_FIELDS,
         };

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Stores\Services;
 
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
 use App\Domain\Stores\Models\StoreSetting;
@@ -98,6 +99,9 @@ class StoreProvisioner
             }
 
             StoreSetting::query()->create(['store_id' => $store->id]);
+
+            // PHASE-8-8C §3.1: every store starts with its default ("Main warehouse") = online stock location.
+            Locations::ensureDefault($store->id);
 
             // Phase 3 (P3-13): active theme, default pages and menus.
             $this->content->ensure($store);

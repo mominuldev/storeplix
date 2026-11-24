@@ -6,6 +6,7 @@ namespace App\Domain\Purchasing;
 
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductVariant;
+use App\Domain\Inventory\Http\Resources\InventoryPresenter;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\Supplier;
@@ -99,7 +100,7 @@ final class PurchasingInsights
 
         $variants = ProductVariant::query()->where('store_id', $store->id)->whereIn('id', array_keys($sold))->where('track_inventory', true)
             ->whereHas('product', fn ($q) => $q->where('status', Product::ACTIVE))
-            ->with(['inventory', 'product.images.media'])->get()->keyBy('id');
+            ->with(['inventories.location', 'product.images.media'])->get()->keyBy('id');
         $incoming = PurchaseHistory::incoming($store, $variants->keys()->all());
         $last = PurchaseHistory::lastUnitCosts($store, $variants->keys()->all());
         $suppliers = Supplier::query()->where('store_id', $store->id)->whereIn('id', array_values(array_unique(array_column($last, 'supplier_id'))))->get()->keyBy('id');
@@ -107,7 +108,7 @@ final class PurchasingInsights
         $items = [];
         foreach ($variants as $id => $variant) {
             $units = $sold[$id];
-            $available = (int) (($variant->inventory?->on_hand ?? 0) - ($variant->inventory?->committed ?? 0));
+            $available = InventoryPresenter::totalAvailable($variant); // PHASE-8-8C §5.3: Σ available over locations
             $coming = $incoming[$id] ?? 0;
             $daysLeft = max(0, intdiv(max(0, $available + $coming) * 30, $units)); // floor((available + incoming) ÷ (units ÷ 30))
             $supplier = isset($last[$id]) ? $suppliers->get($last[$id]['supplier_id']) : null;

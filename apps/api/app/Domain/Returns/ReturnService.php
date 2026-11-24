@@ -281,7 +281,7 @@ class ReturnService
                 if ($restock > 0) {
                     OrderItem::query()->whereKey($item->id)->update(['restocked_quantity' => DB::raw('restocked_quantity + '.$restock), 'updated_at' => now()]);
                     if ($item->tracked && $item->variant_id !== null) {
-                        $ledger[] = ['variant_id' => $item->variant_id, 'quantity' => $restock];
+                        $ledger[] = ['variant_id' => $item->variant_id, 'quantity' => $restock, 'location_id' => $item->location_id];
                     }
                     $restocked[] = ['return_item_id' => $ri->id, 'product_name' => $item->product_name, 'variant_title' => $item->variant_title, 'quantity' => $restock];
                 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Models;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Inventory\Models\Location;
 use App\Domain\Media\Models\Media;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -20,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $tenant_id
  * @property string $store_id
+ * @property string $location_id PHASE-8-8C P88C-8 "Receive at"
  * @property string $purchase_order_id
  * @property Carbon $received_at
  * @property string|null $received_by
@@ -60,5 +62,11 @@ class PurchaseReceipt extends Model
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class);
+    }
+
+    /** PHASE-8-8C P88C-8: where receipts stock. */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
     }
 }

@@ -373,6 +373,7 @@ final class AutomationEngine
                     $context['variant_name'] ?? null,
                     (int) ($subject->inventory?->on_hand ?? $context['on_hand'] ?? 0),
                     $url,
+                    isset($context['location_name']) ? (string) $context['location_name'] : null,
                 ))->onQueue((string) config('automations.notifications_queue', 'notifications')));
             }
         } catch (Throwable $e) {
