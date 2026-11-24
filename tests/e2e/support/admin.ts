@@ -99,24 +99,67 @@ export async function adminTotpStep(ctx: APIRequestContext, loginToken: string, 
   return post(ctx, '/admin/auth/totp', { login_token: loginToken, ...body });
 }
 
-/** Full sign-in (password + current TOTP) saved to `.auth/<name>.json`. */
+/**
+ * Full sign-in saved to `.auth/<name>.json`: password + current TOTP while staff two-step sign-in is required, or the
+ * password alone when it is off (amendment A1-3: `step: "signed_in"` answers with the same payload as the TOTP success).
+ * Pass `expectStep` to assert which path the API took.
+ */
 export async function adminLogin(
   name = 'admin-super',
   who: { email: string; password: string; totpSecret: string } = SUPER_ADMIN,
+  expectStep?: 'totp' | 'signed_in',
 ): Promise<AdminSession> {
   const { ctx, status, json } = await adminPasswordStep(who.email, who.password);
   try {
     expect(status, JSON.stringify(json)).toBe(200);
-    expect(json.data.step).toBe('totp');
-    const done = await adminTotpStep(ctx, json.data.login_token, { code: await nextTotp(who.totpSecret) });
-    expect(done.status, JSON.stringify(done.json)).toBe(200);
+    if (expectStep) expect(json.data.step, JSON.stringify(json)).toBe(expectStep);
+    else expect(['totp', 'signed_in'], JSON.stringify(json)).toContain(json.data.step);
+    let data: Json = json.data;
+    if (json.data.step === 'totp') {
+      const done = await adminTotpStep(ctx, json.data.login_token, { code: await nextTotp(who.totpSecret) });
+      expect(done.status, JSON.stringify(done.json)).toBe(200);
+      data = done.json.data;
+    }
     const storageState = resolve(E2E_ROOT, `.auth/${name}.json`);
     mkdirSync(dirname(storageState), { recursive: true });
     await ctx.storageState({ path: storageState });
-    return { storageState, user: done.json.data.user, session_expires_at: done.json.data.session_expires_at };
+    return { storageState, user: data.user, session_expires_at: data.session_expires_at };
   } finally {
     await ctx.dispose();
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA): the platform setting `staff_two_factor_required`.
+// ---------------------------------------------------------------------------------------------
+export interface SecuritySetting {
+  staff_two_factor_required: boolean;
+  environment_default: boolean;
+  source: 'setting' | 'default';
+  updated_at: string | null;
+  updated_by: { id: string; name: string } | null;
+}
+
+export async function getSecuritySetting(s: AdminSession): Promise<SecuritySetting> {
+  const r = await adminApi(s, 'GET', '/admin/settings/security');
+  expect(r.status, r.text).toBe(200);
+  return r.json.data as SecuritySetting;
+}
+
+/** PATCH /admin/settings/security with the super admin's password (A1-4). Returns the raw response for error checks. */
+export function patchSecuritySetting(s: AdminSession, required: boolean, currentPassword = SUPER_ADMIN.password) {
+  return adminApi(s, 'PATCH', '/admin/settings/security', { staff_two_factor_required: required, current_password: currentPassword });
+}
+
+/**
+ * Test-only: forget the stored setting so the environment default applies again (`source: "default"`), then flush the
+ * cache so the API's cached `PlatformSettings` read and the `admin-login` throttle are both reset. There is no API to
+ * "unset" (PATCH only stores a bool), so this restores a run that started from the default.
+ */
+export function clearStoredSecuritySetting(): void {
+  tinker(
+    "if (Illuminate\\Support\\Facades\\Schema::hasTable('platform_settings')) { Illuminate\\Support\\Facades\\DB::table('platform_settings')->where('key','staff_two_factor_required')->delete(); } Illuminate\\Support\\Facades\\Cache::flush(); echo 'ok';",
+  );
 }
 
 const contexts = new Map<string, Promise<APIRequestContext>>();

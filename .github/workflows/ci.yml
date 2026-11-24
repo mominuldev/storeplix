@@ -345,6 +345,19 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'stocktransfer'"; exit 1; }
           exit $status
 
+      # Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA §2, Q231): the `admin-settings` group (env default local off / testing
+      # on / ADMIN_TWO_FACTOR_REQUIRED override, stored value wins, login `signed_in` path with session + audit, required
+      # path unchanged, GET/PATCH /admin/settings/security authz (support, read_only, merchant → 403/401), wrong password
+      # 422 `invalid_password`, audit + `risk: high`, cache bust) must exist and pass on sqlite.
+      - name: amendment A1 group (admin-settings)
+        run: |
+          mkdir -p build
+          php artisan test --group=admin-settings --exclude-group perf --exclude-group race --log-junit build/admin-settings.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/admin-settings.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "admin-settings tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'admin-settings'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -552,6 +565,20 @@ jobs:
           ran=$(grep -o 'tests="[0-9]*"' build/stocktransfer-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
           echo "stocktransfer tests executed (postgres): ${ran}"
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'stocktransfer' on Postgres"; exit 1; }
+          exit $status
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Amendment A1 (§1 A1-2): `platform_settings` (key PK, jsonb value, updated_by FK SET NULL, timestamptz) exists on
+      # Postgres; admin-settings must pass there too and must not be empty.
+      - name: amendment A1 admin-settings (postgres)
+        run: |
+          mkdir -p build
+          php artisan test --group=admin-settings --exclude-group perf --exclude-group race --log-junit build/admin-settings-pg.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/admin-settings-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "admin-settings tests executed (postgres): ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'admin-settings' on Postgres"; exit 1; }
           exit $status
         env:
           DB_CONNECTION: pgsql
@@ -1010,6 +1037,11 @@ jobs:
       # `rls` step above). Must not be empty.
       - name: phase 8.8c-B stocktransfer (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" stocktransfer lenient --group=stocktransfer --exclude-group perf --exclude-group race'
+      # Amendment A1 (§1 A1-2): `platform_settings` follows RlsTables::PLATFORM (the app role can't write it outside the
+      # admin surface); the setting is read/written on the admin connection and login reads it before any tenant context.
+      # Must not be empty.
+      - name: amendment A1 admin-settings (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" admin-settings lenient --group=admin-settings --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
