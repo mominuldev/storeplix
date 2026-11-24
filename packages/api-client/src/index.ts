@@ -1,6 +1,6 @@
 export { auditLogQuery, createApiClient, mediaListQuery, normalizeHost, readCookie } from './client';
 export type { ApiClient, ApiClientOptions, DownloadedFile, Paginated, RequestOptions, UploadMediaInput, UploadOptions } from './client';
-export { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery } from './queries';
+export { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, productListQuery, returnListQuery, shipmentListQuery } from './queries';
 export type { ReturnListFilters } from './queries';
 export { adminAuditQuery, adminDomainQuery, adminImpersonationQuery, adminInvoiceQuery, adminTeamQuery, adminTenantQuery, analyticsQuery } from './admin';
 export type { AdminApi, AdminAuditFilters, AdminDomainFilters, AdminImpersonationFilters, AdminInvoiceFilters, AdminTeamFilters, AdminTenantFilters, AdminTenantListMeta, AnalyticsResult } from './admin';
