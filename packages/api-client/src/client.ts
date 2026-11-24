@@ -177,8 +177,18 @@ import type {
   CreateApiKeyInput,
   CreateWebhookEndpointInput,
   CursorMeta,
+  BlockNumberInput,
+  BlockedNumber,
+  BlockedNumberCreated,
+  BlockedNumberFilters,
   Expense,
   ExpenseFilters,
+  FraudGuardEvent,
+  FraudGuardEventFilters,
+  FraudGuardOverview,
+  FraudGuardSettings,
+  NumberCheck,
+  UpdateFraudGuardSettingsInput,
   ExpenseInput,
   ExpenseReceipt,
   ExpenseReceiptLink,
@@ -594,7 +604,7 @@ export function createApiClient(options: ApiClientOptions) {
 
   const emptyPage = (): PaginationMeta => ({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
   const emptyOrderCounts = (): OrderListMeta['counts'] => ({
-    all: 0, pending_payment: 0, pending: 0, confirmed: 0, ready_to_ship: 0, shipped: 0, delivered: 0, returned: 0, cancelled: 0,
+    all: 0, pending_payment: 0, pending: 0, confirmed: 0, ready_to_ship: 0, shipped: 0, delivered: 0, returned: 0, cancelled: 0, held: 0,
   });
   const emptyReturnMeta = (): ReturnListMeta => ({
     ...emptyPage(),
@@ -1009,6 +1019,12 @@ export function createApiClient(options: ApiClientOptions) {
       /** 5b P5B-63: delivered orders; 409 `return_not_allowed`. */
       createReturn: (storeId: string, id: string, input: CreateReturnInput) =>
         request<ReturnRequest>(`${store(storeId)}/orders/${enc(id)}/returns`, { method: 'POST', body: input }),
+      /**
+       * PHASE-8-8 §5.3 (`orders.process`): clears `guard.hold` → updated `Order`; 409 `order_not_held`. "Confirm without
+       * advance" / "Release and confirm" = `releaseHold` then `confirm`. Held orders answer 409 `order_held` on confirm,
+       * bulk confirm (per-order skip), ready and courier booking.
+       */
+      releaseHold: (storeId: string, id: string) => request<Order>(`${store(storeId)}/orders/${enc(id)}/guard/release`, { method: 'POST' }),
     },
 
     /**
@@ -1419,6 +1435,49 @@ export function createApiClient(options: ApiClientOptions) {
       /** P87-14 `text/csv` for one month; 422 `export_too_large` (> 5,000 rows). */
       exportCsv: (storeId: string, month: string) =>
         requestBlob(`${store(storeId)}/expenses/export`, { query: { month }, fallbackName: `expenses-${month}.csv` }),
+    },
+
+    /**
+     * PHASE-8-8 §8.1 fake-order guard (store-scoped, `fraud.manage`; staff 403). Writes and `check` need the
+     * `fake_order_guard` plan feature (402 `feature_not_in_plan`); reads are allowed without it.
+     */
+    fraudGuard: {
+      settings: {
+        get: (storeId: string) => request<FraudGuardSettings>(`${store(storeId)}/fraud-guard/settings`),
+        /** Partial; 422 on out-of-range values or `advance_below < hold_below`. Audited. */
+        update: (storeId: string, input: UpdateFraudGuardSettingsInput) =>
+          request<FraudGuardSettings>(`${store(storeId)}/fraud-guard/settings`, { method: 'PATCH', body: input }),
+        /** "Reset to recommended" → the §4 defaults. */
+        reset: (storeId: string) => request<FraudGuardSettings>(`${store(storeId)}/fraud-guard/settings/reset`, { method: 'POST' }),
+      },
+      /** `month` YYYY-MM (store tz; default current month). */
+      overview: (storeId: string, month?: string) =>
+        request<FraudGuardOverview>(`${store(storeId)}/fraud-guard/overview`, { query: { month: month || undefined } }),
+      /** Decision log, newest first, cursor pages of 50. */
+      events: (storeId: string, filters: FraudGuardEventFilters = {}) =>
+        listOf<FraudGuardEvent, CursorMeta>(
+          `${store(storeId)}/fraud-guard/events`,
+          { 'filter[type]': filters.type?.length ? filters.type.join(',') : undefined, cursor: filters.cursor || undefined },
+          { next_cursor: null, prev_cursor: null, per_page: 50 },
+        ),
+      blockedNumbers: {
+        /** Active entries; `q` = phone digits (suffix match); cursor pages of 50. */
+        list: (storeId: string, filters: BlockedNumberFilters = {}) =>
+          listOf<BlockedNumber, CursorMeta>(
+            `${store(storeId)}/fraud-guard/blocked-numbers`,
+            { q: filters.q?.trim() || undefined, cursor: filters.cursor || undefined },
+            { next_cursor: null, prev_cursor: null, per_page: 50 },
+          ),
+        /** 201 (+ `open_orders_count`; nothing is cancelled); 409 `already_blocked`. */
+        create: (storeId: string, input: BlockNumberInput) =>
+          request<BlockedNumberCreated>(`${store(storeId)}/fraud-guard/blocked-numbers`, { method: 'POST', body: input }),
+        /** Unblock → 204; the repeat-returners rule never re-adds this phone (P88-10). */
+        remove: (storeId: string, id: string) =>
+          request<void>(`${store(storeId)}/fraud-guard/blocked-numbers/${enc(id)}`, { method: 'DELETE' }),
+      },
+      /** §6.3 own-shop record of one phone; 30/min per user (429); 403 under impersonation; audited (masked). */
+      check: (storeId: string, phone: string) =>
+        request<NumberCheck>(`${store(storeId)}/fraud-guard/check`, { method: 'POST', body: { phone } }),
     },
 
     /** Phase 7 §6.3 reports (store-scoped). Profit → 402 `feature_not_in_plan` (non-Growth), 403 for staff. */

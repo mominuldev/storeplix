@@ -388,7 +388,7 @@ export interface MeMeta {
 
 // ---------- Roles & permissions (Phase 8.3, PHASE-8-3 §2, §8) ----------
 export type PermissionKey =
-  | 'orders.view' | 'orders.process' | 'orders.refund' | 'shipments.manage' | 'shipments.cancel'
+  | 'orders.view' | 'orders.process' | 'orders.refund' | 'fraud.manage' | 'shipments.manage' | 'shipments.cancel'
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
   | 'costs.view' | 'reports.view' | 'expenses.manage' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
@@ -399,9 +399,11 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
  * §2.1 order (UI order); `billing.manage` last (owner only, never grantable). Phase 8.4 (PHASE-8-4 §2.1):
  * `developers.manage` (group `store`, sensitive) after `domains.manage`; owner + admin, never staff.
  * Phase 8.7 (PHASE-8-7 §2.1): `expenses.manage` (group `money`, sensitive) after `reports.view`; owner + admin, never staff.
+ * Phase 8.8a (PHASE-8-8 §2.1): `fraud.manage` (group `orders`, sensitive, requires `orders.view`) after `orders.refund`;
+ * owner + admin, never staff.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
-  'orders.view', 'orders.process', 'orders.refund', 'shipments.manage', 'shipments.cancel',
+  'orders.view', 'orders.process', 'orders.refund', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
   'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
   'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
@@ -582,6 +584,8 @@ export interface Customer {
   notes_count: number; revision: number; created_at: string; updated_at: string; created_by: UserRef | null;
   /** Phase 8.5 (PHASE-8-5 §4.1): computed per-channel marketing status (suppressions + eligibility P85-3). */
   marketing: CustomerMarketing;
+  /** Phase 8.8a (PHASE-8-8 §6.5): own-shop risk tier (P88-4); replaces the 8.5 risk class. Shown with `customers.view`. */
+  risk: CustomerRisk;
 }
 export interface CustomerNote { id: string; body: string; author: UserRef | null; created_at: string; can_delete: boolean }
 export interface CustomerDetail extends Customer { notes: CustomerNote[] }
@@ -592,6 +596,8 @@ export interface CreateCustomerInput {
 export interface UpdateCustomerInput extends Partial<CreateCustomerInput> { revision: number }
 export interface CustomerListFilters {
   q?: string; channel?: CustomerChannel[]; tag?: string; created_from?: string;
+  /** Phase 8.8a (PHASE-8-8 §10.3): `filter[risk]=good,careful,risky,new` */
+  risk?: RiskTier[];
   sort?: '-created_at' | 'name' | '-total_spent' | '-last_order_at'; page?: number; per_page?: number;
 }
 export interface CustomerListMeta extends PaginationMeta { counts: { all: number; new_this_month: number } }
@@ -822,6 +828,11 @@ export interface CheckoutInput {
   customer_note?: string | null; accepts_marketing?: boolean; expected_total_amount: number;
   /** 5b: COD order with the delivery charge paid in advance */
   advance_gateway?: GatewayProvider | null;
+  /**
+   * Phase 8.8a (PHASE-8-8 §7, P88-13): 6-digit code from `POST /storefront/checkout/otp` when it answered
+   * `required: true`. Missing → 422 `otp_required`; wrong → 422 `otp_invalid` (`details.attempts_left`).
+   */
+  otp_code?: string | null;
 }
 export interface StorefrontOrderLine {
   product_name: string; variant_title: string; quantity: number; image: StorefrontMedia | null;
@@ -865,6 +876,8 @@ export interface OrderCustomerSummary {
   id: string | null; name: string; phone: string; email: string | null;
   orders_count: number; delivered_orders_count: number; returned_orders_count: number;
   total_spent_amount: number;
+  /** Phase 8.8a (PHASE-8-8 §6.5): own-shop tier of the customer row (or of the phone when `id` is null). */
+  risk: CustomerRisk;
 }
 export interface OrderSummary {
   id: string; number: string; status: OrderStatus; payment_status: PaymentStatus; payment_method: PaymentMethod;
@@ -875,6 +888,8 @@ export interface OrderSummary {
   /** 5b */
   shipment: { provider: Shipment['provider']; status: ShipmentStatus; consignment_id: string | null } | null;
   return_status: OrderReturnStatus;
+  /** Phase 8.8a (PHASE-8-8 §6.5): fake-order guard state; null when the order has no check and no hold. */
+  guard: OrderGuard | null;
 }
 export interface OrderItem {
   id: string; product_id: string | null; variant_id: string | null;
@@ -887,7 +902,9 @@ export interface OrderItem {
 }
 export interface OrderEvent {
   id: string; type: 'placed' | 'status_changed' | 'note' | 'edited' | 'payment' | 'refund' | 'shipment' | 'notification' | 'coupon_released'
-    | 'payment_link' | 'items_edited' | 'return' | 'document';
+    | 'payment_link' | 'items_edited' | 'return' | 'document'
+    /** Phase 8.8a: guard decision / release (`meta`: `decision`, `hold`, `tier`, `rate`, `reasons`). */
+    | 'guard';
   from_status: OrderStatus | null; to_status: OrderStatus | null;
   /** Phase 8.4: `api_key` = written through the external API (`id` = key id, `name` = "API: <key name>", `user` null). */
   actor: { type: 'user' | 'customer' | 'system'; user: UserRef | null } | { type: 'api_key'; user: null; id: string; name: string };
@@ -938,8 +955,13 @@ export interface OrderListFilters {
   printed?: 'invoice' | 'label'; not_printed?: 'invoice' | 'label';
   /** 5b-3: `filter[has_shipment]=0|1` (active courier or manual shipment) */
   has_shipment?: boolean;
+  /** Phase 8.8a (PHASE-8-8 §6.5): `filter[risk]` = `guard.tier`, else the customer's tier */
+  risk?: RiskTier[];
+  /** Phase 8.8a: `filter[guard_hold]=1` → held orders only (`guard.hold` not null) */
+  guard_hold?: boolean;
 }
-export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus, number> }
+/** Phase 8.8a: `counts.held` = orders with `guard.hold` not null (any status, ignores the status filter like the rest). */
+export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus | 'held', number> }
 export interface ManualOrderInput extends Omit<CheckoutInput, 'expected_total_amount' | 'payment_method'> {
   items: { variant_id: string; quantity: number }[]; channel: Exclude<OrderChannel, 'website'>;
   payment_method?: 'cod'; coupon_code?: string | null; shipping_amount_override?: number | null;
@@ -1758,7 +1780,7 @@ export const CAMPAIGN_SEGMENT_PARAMS = {
   tag: { tag: { min_length: 1, max_length: 40 } },
 } as const;
 export interface CampaignAudienceExclude {
-  /** P85-25 risk class `risky` */
+  /** risk tier `risky` (PHASE-8-8 P88-4; was P85-25) */
   risky: boolean;
   /** null or 1–60 (Figma default 7) */
   ordered_within_days: number | null;
@@ -1858,8 +1880,11 @@ export interface AudiencePreview {
   matched: number;
   excluded: { risky: number; recent_orders: number; opted_out: number; no_address: number; not_eligible: number };
   recipients: number;
-  /** percent of `recipients`, one decimal */
-  risk_breakdown: { good: number; careful: number; risky: number };
+  /**
+   * percent of `recipients`, one decimal. PHASE-8-8 §6.6: tiers per P88-4; tier `new` (no parcels) is counted in
+   * `good` ("campaigns treat new like good"), so the shape keeps three keys.
+   */
+  risk_breakdown: Record<Exclude<RiskTier, 'new'>, number>;
 }
 
 export type SmsEncoding = 'gsm7' | 'ucs2';
@@ -2068,7 +2093,8 @@ export type AutomationCondition =
   | { field: 'customer.tag'; op: 'has' | 'not_has'; value: string }
   /** 2–50 */
   | { field: 'customer.delivered_orders_count'; op: 'gte'; value: number }
-  | { field: 'customer.risk'; op: 'is_not'; value: 'risky' };
+  /** PHASE-8-8 P88-3: evaluated with `RiskTier` (P88-4) */
+  | { field: 'customer.risk'; op: 'is_not'; value: Extract<RiskTier, 'risky'> };
 export type AutomationConditionOp = AutomationCondition['op'];
 /** Conditions a recipe's `settings.conditions` may hold (only `thank_you` has a free list; see §11.1 C2). */
 export const RECIPE_CONDITION_FIELDS: Readonly<Record<RecipeKey, readonly AutomationConditionField[]>> = {
@@ -2433,4 +2459,181 @@ export type ExpenseAuditAction =
 export const EXPENSE_AUDIT_ACTIONS: readonly ExpenseAuditAction[] = [
   'expense.created', 'expense.updated', 'expense.deleted', 'expense.exported', 'expense.recurrence_started',
   'expense.recurrence_stopped', 'expense.repeated',
+];
+
+// ---------- Fake-order guard (Phase 8.8a, PHASE-8-8-CONTRACT §3–§8; openapi 1.16.0) ----------
+/**
+ * P88-4 tier from the phone's **own-shop** record (this store's orders/shipments/returns only, never another shop or a
+ * courier): total = 0 → `new`; total < `min_parcels` → `careful` if returned ≥ 1 else `good`; rate < `hold_below` →
+ * `risky`; rate < `advance_below` → `careful`; else `good`. One tier everywhere (orders, customers, campaigns, automations).
+ */
+export type RiskTier = 'good' | 'careful' | 'risky' | 'new';
+export const RISK_TIERS: readonly RiskTier[] = ['good', 'careful', 'risky', 'new'];
+/** §6.5 `Customer.risk` and `OrderCustomerSummary.risk`. `rate` = whole percent delivered ÷ total (null when total 0). */
+export interface CustomerRisk { tier: RiskTier; rate: number | null; delivered: number; total: number }
+
+/** P88-2: hold flag on a `pending` order (no new order status). `checking` = placed, check not finished yet. */
+export type GuardHold = 'call_first' | 'advance' | 'checking';
+export const GUARD_HOLDS: readonly GuardHold[] = ['call_first', 'advance', 'checking'];
+/** §4 `order_risk_checks.decision`; `skipped` = check without actions (manual / online-paid orders, guard off, no plan). */
+export type GuardDecision = 'none' | 'hold' | 'advance' | 'skipped';
+/** §5.4 reason codes (stored; WEB renders the text). */
+export type GuardReason =
+  | 'rate_below_hold' | 'rate_below_advance' | 'few_parcels' | 'new_number' | 'duplicate' | 'blocked_number'
+  | 'no_gateway' | 'otp_unavailable';
+export const GUARD_REASONS: readonly GuardReason[] = [
+  'rate_below_hold', 'rate_below_advance', 'few_parcels', 'new_number', 'duplicate', 'blocked_number', 'no_gateway',
+  'otp_unavailable',
+];
+/** P88-1 / P88-7: the only record source is this shop (no courier rows). */
+export interface GuardRecordSource { key: 'shop'; delivered: number; total: number }
+export interface GuardRecord { total: number; delivered: number; sources: GuardRecordSource[] }
+/**
+ * §6.5 `Order.guard` (list + detail). While `hold = 'checking'` the check hasn't run yet: `tier`, `rate`, `decision`,
+ * `record` and `checked_at` are null and `reasons` is empty. After a check without actions `hold` is null and
+ * `decision = 'skipped'` (badge + record only).
+ */
+export interface OrderGuard {
+  hold: GuardHold | null;
+  tier: RiskTier | null;
+  rate: number | null;
+  reasons: GuardReason[];
+  decision: GuardDecision | null;
+  record: GuardRecord | null;
+  /** the advance link created by the guard (`decision = 'advance'`) */
+  payment_link_id: string | null;
+  checked_at: string | null;
+}
+
+/** §4 / §6.1 `GET|PATCH /stores/{store}/fraud-guard/settings`. PATCH is partial; changes apply to later checks only. */
+export type GuardAdvanceExpiryMinutes = 120 | 360 | 1440 | 2880;
+export type GuardDuplicateWindowHours = 6 | 12 | 24 | 48 | 72;
+export interface FraudGuardSettings {
+  enabled: boolean;
+  hold_enabled: boolean;
+  /** 1–100 (%) */
+  hold_below: number;
+  advance_enabled: boolean;
+  /** 1–100 (%), ≥ `hold_below` */
+  advance_below: number;
+  advance_expiry_minutes: GuardAdvanceExpiryMinutes;
+  advance_cancel_if_unpaid: boolean;
+  otp_enabled: boolean;
+  block_returners: boolean;
+  /** 1–20 */
+  block_after_returns: number;
+  duplicates_enabled: boolean;
+  duplicate_window_hours: GuardDuplicateWindowHours;
+  daily_limit_enabled: boolean;
+  /** 1–50 storefront COD orders per phone per store day */
+  daily_limit: number;
+  /** 1–20; below this many parcels there is no ratio verdict */
+  min_parcels: number;
+  updated_by: { id: string; name: string } | null;
+  updated_at: string | null;
+}
+export type UpdateFraudGuardSettingsInput = Partial<Omit<FraudGuardSettings, 'updated_by' | 'updated_at'>>;
+/** §4 defaults ("Reset to recommended") and §8.3 bounds. */
+export const FRAUD_GUARD_DEFAULTS: Omit<FraudGuardSettings, 'updated_by' | 'updated_at'> = {
+  enabled: true, hold_enabled: true, hold_below: 60, advance_enabled: true, advance_below: 75,
+  advance_expiry_minutes: 1440, advance_cancel_if_unpaid: true, otp_enabled: true, block_returners: true,
+  block_after_returns: 3, duplicates_enabled: true, duplicate_window_hours: 24, daily_limit_enabled: true, daily_limit: 3,
+  min_parcels: 3,
+};
+export const FRAUD_GUARD_BOUNDS = {
+  hold_below: { min: 1, max: 100 }, advance_below: { min: 1, max: 100 }, block_after_returns: { min: 1, max: 20 },
+  daily_limit: { min: 1, max: 50 }, min_parcels: { min: 1, max: 20 },
+  advance_expiry_minutes: [120, 360, 1440, 2880] as readonly GuardAdvanceExpiryMinutes[],
+  duplicate_window_hours: [6, 12, 24, 48, 72] as readonly GuardDuplicateWindowHours[],
+} as const;
+/** §6.4 / §10.1: six built rules (courier record and VPN rules are hidden). */
+export const FRAUD_GUARD_RULES_TOTAL = 6;
+export const FRAUD_GUARD_NOTE_MAX = 200;
+
+/** §8.2 blocklist entry. `phone` is null without `customers.view`; `phone_masked` always ("01712•••678"). */
+export type BlockedNumberReason = 'manual' | 'repeat_returns';
+export type BlockedNumberSource = 'staff' | 'auto';
+export interface BlockedNumber {
+  id: string;
+  phone_masked: string;
+  phone: string | null;
+  customer: { id: string; name: string } | null;
+  reason: BlockedNumberReason;
+  note: string | null;
+  source: BlockedNumberSource;
+  /** own-shop returned parcels of this phone now ("n returns at your shop" for `repeat_returns`) */
+  returned_count: number;
+  /** null for `source = 'auto'` */
+  created_by: { id: string; name: string; role_label: string } | null;
+  created_at: string;
+}
+/** POST …/blocked-numbers → 201: the entry + open (not shipped, not cancelled) orders of that phone; nothing is cancelled. */
+export interface BlockedNumberCreated extends BlockedNumber { open_orders_count: number }
+export interface BlockNumberInput { phone: string; note?: string | null }
+/** `q` = phone digits (suffix match), cursor pages of 50. */
+export interface BlockedNumberFilters { q?: string; cursor?: string }
+
+/** §6.3 `POST …/fraud-guard/check` → own-shop record of one phone (limiter `fraud-check` 30/min per user; audited). */
+export interface NumberCheck {
+  phone_masked: string;
+  tier: RiskTier;
+  rate: number | null;
+  delivered: number;
+  total: number;
+  sources: GuardRecordSource[];
+  blocked: boolean;
+  /** `YYYY-MM-DD` (store tz) of the latest own-shop return, null if none */
+  last_return_on: string | null;
+}
+
+/** §6.4 `GET …/fraud-guard/overview?month=YYYY-MM` (store tz; default current month). */
+export interface FraudGuardOverview {
+  month: string;
+  rules_on: number;
+  rules_total: number;
+  orders_checked: number;
+  stopped: { held: number; blocked: number; duplicates: number; limited: number };
+  /** Σ paid guard advance links in the month (Q191 "Advance collected"), minor units */
+  advance_collected_amount: number;
+  currency: string;
+  /** active blocklist entries now */
+  blocked_count: number;
+}
+
+/** §4 `fraud_guard_events.type`. */
+export type FraudGuardEventType =
+  | 'held' | 'advance_asked' | 'advance_paid' | 'released' | 'duplicate' | 'blocked_checkout' | 'limit_reached'
+  | 'auto_blocked' | 'otp_failed';
+export const FRAUD_GUARD_EVENT_TYPES: readonly FraudGuardEventType[] = [
+  'held', 'advance_asked', 'advance_paid', 'released', 'duplicate', 'blocked_checkout', 'limit_reached', 'auto_blocked',
+  'otp_failed',
+];
+/** Decision log row (`GET …/fraud-guard/events`, cursor pages of 50, newest first). `detail` never holds a raw phone. */
+export interface FraudGuardEvent {
+  id: string;
+  type: FraudGuardEventType;
+  order: { id: string; number: string } | null;
+  phone_masked: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+export interface FraudGuardEventFilters { type?: FraudGuardEventType[]; cursor?: string }
+
+/** §7 storefront `POST /storefront/checkout/otp`. Same shape for blocked, known and unknown numbers (no oracle). */
+export interface CheckoutOtpInput { phone: string }
+export interface CheckoutOtpResponse { required: boolean; expires_at: string | null; resend_after_seconds: number }
+export const CHECKOUT_OTP_LENGTH = 6;
+/** §7 / §8.4 storefront checkout error codes added by 8.8a (all 422). */
+export type FraudCheckoutErrorCode = 'otp_required' | 'otp_invalid' | 'cod_unavailable' | 'order_limit_reached';
+/** `otp_invalid` `error.details` */
+export interface OtpInvalidDetails { attempts_left: number }
+/** §8.4 merchant error codes added by 8.8a (409). */
+export type FraudGuardErrorCode = 'order_held' | 'order_not_held' | 'already_blocked';
+
+/** §4 audit actions (`fraud.number_checked` meta: masked phone + tier only). */
+export type FraudAuditAction =
+  | 'fraud.settings_updated' | 'fraud.number_blocked' | 'fraud.number_unblocked' | 'fraud.hold_released'
+  | 'fraud.number_checked';
+export const FRAUD_AUDIT_ACTIONS: readonly FraudAuditAction[] = [
+  'fraud.settings_updated', 'fraud.number_blocked', 'fraud.number_unblocked', 'fraud.hold_released', 'fraud.number_checked',
 ];
