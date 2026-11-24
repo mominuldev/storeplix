@@ -1,8 +1,8 @@
 # Phase 8.8b contract: Suppliers + purchase orders (binding for ARCH, API, WEB, QA)
 
-Status: **Draft, 2026-11-24 — scope and key choices set by the PO (suppliers + purchase orders first; weighted-average
-cost; no approval step; Starter + Growth; PO PDF + WhatsApp link, quick purchase, supplier CSV import, reorder
-suggestions); proposed defaults for Q200–Q214 awaiting the PO**. Branch `feat/phase-8-8b-suppliers-pos` (from `main`
+Status: **Accepted, 2026-11-24 — PO (product owner) set the scope and key choices (suppliers + purchase orders first;
+weighted-average cost; no approval step; Starter + Growth; PO PDF + WhatsApp link, quick purchase, supplier CSV import,
+reorder suggestions) and accepted the proposed defaults for Q200–Q214**. Branch `feat/phase-8-8b-suppliers-pos` (from `main`
 @ b331633). "PO" in this file means **purchase order**; the product owner is written "PO (product owner)".
 Roadmap task **8.8b+** is split again: this file is **8.8b "suppliers + purchase orders"** only. Multi-location,
 transfers, stock count, POS (point of sale) and Inbox stay **8.8c+** and are not in this contract.
@@ -93,7 +93,7 @@ becomes more accurate going forward without counting purchases twice.
 | P88B-17 | **Carry-over**: remove the `CustomerRisk` alias (PHASE-8-8 §3.3); all callers use `RiskTier` | Promised in 8.8a |
 | P88B-18 | **Audit**: supplier created/updated/archived, PO created/updated/sent/cancelled/closed/deleted, receipt recorded (with line quantities and cost before/after), payment recorded/deleted, quick purchase, import run (`purchasing.*` actions) | Money and stock-value changes must be explainable |
 
-### 1.1 Product-owner questions (OPEN-QUESTIONS Q200–Q214; proposed defaults)
+### 1.1 Product-owner questions (OPEN-QUESTIONS Q200–Q214; **answered 2026-11-24: proposed defaults accepted**)
 
 | Q | Question | Proposed default |
 |---|---|---|
