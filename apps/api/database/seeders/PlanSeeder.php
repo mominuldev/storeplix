@@ -6,12 +6,12 @@ use App\Domain\Billing\Models\Plan;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Schema;
 
-/** Idempotent (updateOrCreate by code). Values from Figma Settings → Plan & billing 60:16361; sms_per_month P5-26 / Q33; custom_domains P6-7 / Q70; campaign_* P85-13 / Q140; price_yearly_amount P7-3 (10 × monthly). */
+/** Idempotent (updateOrCreate by code). Values from Figma Settings → Plan & billing 60:16361; sms_per_month P5-26 / Q33; custom_domains P6-7 / Q70; campaign_* P85-13 / Q140; price_yearly_amount P7-3 (10 × monthly); purchasing PHASE-8-8B §2.2 (Starter + Growth). */
 class PlanSeeder extends Seeder
 {
     public function run(): void
     {
-        $starterFeatures = ['custom_domain', 'all_couriers', 'bulk_courier_booking', 'fake_order_guard', 'sms_automation'];
+        $starterFeatures = ['custom_domain', 'all_couriers', 'bulk_courier_booking', 'fake_order_guard', 'sms_automation', 'purchasing'];
 
         $plans = [
             [

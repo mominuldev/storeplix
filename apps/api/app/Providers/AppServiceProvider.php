@@ -7,6 +7,7 @@ use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\FraudGuard\FraudGuardServiceProvider;
+use App\Domain\Purchasing\PurchasingServiceProvider;
 use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
@@ -28,6 +29,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->register(ExpensesServiceProvider::class);
         // Phase 8.8a: fake-order guard (scoped settings memo, commands + limiters).
         $this->app->register(FraudGuardServiceProvider::class);
+        // Phase 8.8b: purchasing (limiters).
+        $this->app->register(PurchasingServiceProvider::class);
     }
 
     public function boot(): void

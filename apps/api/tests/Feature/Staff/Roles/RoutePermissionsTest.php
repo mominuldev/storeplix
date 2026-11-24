@@ -319,6 +319,38 @@ class RoutePermissionsTest extends TestCase
             'stores.fraud-guard.settings.show',
             'stores.fraud-guard.settings.update',
         ],
+        // PHASE-8-8B §8.1: suppliers, PO money routes, payments, PDF, suggestions are purchasing.manage.
+        'purchasing.manage' => [
+            'stores.purchase-orders.cancel',
+            'stores.purchase-orders.close',
+            'stores.purchase-orders.destroy',
+            'stores.purchase-orders.mark-ordered',
+            'stores.purchase-orders.pdf',
+            'stores.purchase-orders.quick',
+            'stores.purchase-orders.send',
+            'stores.purchase-orders.store',
+            'stores.purchase-orders.summary',
+            'stores.purchase-orders.update',
+            'stores.purchasing.reorder-suggestions',
+            'stores.supplier-payments.destroy',
+            'stores.suppliers.archive',
+            'stores.suppliers.destroy',
+            'stores.suppliers.index',
+            'stores.suppliers.payments.index',
+            'stores.suppliers.payments.store',
+            'stores.suppliers.show',
+            'stores.suppliers.store',
+            'stores.suppliers.summary',
+            'stores.suppliers.unarchive',
+            'stores.suppliers.update',
+        ],
+        // P88B-11: listing, viewing and receiving (+ invoice upload) also with inventory.adjust (quantities only).
+        'purchasing.manage|inventory.adjust' => [
+            'stores.purchase-orders.index',
+            'stores.purchase-orders.receipts.store',
+            'stores.purchase-orders.show',
+            'stores.purchasing.invoices.store',
+        ],
     ];
 
     /** @return array<string, string> route name → perm spec */

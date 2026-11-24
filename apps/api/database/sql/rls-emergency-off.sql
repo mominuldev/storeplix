@@ -842,6 +842,66 @@ BEGIN
   END IF;
 END
 $$;
+-- table: suppliers
+DO $$
+BEGIN
+  IF to_regclass('public.suppliers') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "suppliers";
+    ALTER TABLE "suppliers" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "suppliers" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: purchase_orders
+DO $$
+BEGIN
+  IF to_regclass('public.purchase_orders') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "purchase_orders";
+    ALTER TABLE "purchase_orders" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "purchase_orders" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: purchase_order_items
+DO $$
+BEGIN
+  IF to_regclass('public.purchase_order_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "purchase_order_items";
+    ALTER TABLE "purchase_order_items" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "purchase_order_items" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: purchase_receipts
+DO $$
+BEGIN
+  IF to_regclass('public.purchase_receipts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "purchase_receipts";
+    ALTER TABLE "purchase_receipts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "purchase_receipts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: purchase_receipt_items
+DO $$
+BEGIN
+  IF to_regclass('public.purchase_receipt_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "purchase_receipt_items";
+    ALTER TABLE "purchase_receipt_items" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "purchase_receipt_items" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: supplier_payments
+DO $$
+BEGIN
+  IF to_regclass('public.supplier_payments') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "supplier_payments";
+    ALTER TABLE "supplier_payments" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "supplier_payments" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

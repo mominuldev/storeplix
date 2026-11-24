@@ -8,6 +8,10 @@ namespace App\Domain\Media;
  * PHASE-8-7 §5.4: `ExpenseReceipt` is NOT a library purpose. It lives on the private disk and only the expenses domain
  * uploads, attaches and deletes it; the generic `/media` routes use libraryCases() and never accept, list, show, delete
  * or present one. Every match below has an explicit `ExpenseReceipt` arm (no reliance on `default`).
+ *
+ * PHASE-8-8B §3 (S176): `PurchaseInvoice` (a supplier invoice photo/PDF attached to a purchase receipt) follows exactly
+ * the `ExpenseReceipt` rules: private disk, same MIME/size/side limits, no variants, never a library purpose, uploaded,
+ * attached and deleted only by the purchasing domain.
  */
 enum MediaPurpose: string
 {
@@ -16,6 +20,7 @@ enum MediaPurpose: string
     case ProductImage = 'product_image';
     case PageImage = 'page_image';
     case ExpenseReceipt = 'expense_receipt'; // PHASE-8-7 P87-7
+    case PurchaseInvoice = 'purchase_invoice'; // PHASE-8-8B §3
 
     public const MAX_PIXELS = 40_000_000;
 
@@ -24,7 +29,7 @@ enum MediaPurpose: string
     {
         return match ($this) {
             self::Favicon => ['image/png'],
-            self::ExpenseReceipt => ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
+            self::ExpenseReceipt, self::PurchaseInvoice => ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
             default => ['image/png', 'image/jpeg', 'image/webp'],
         };
     }
@@ -34,7 +39,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => 2 * 1024 * 1024,
             self::Favicon => 1024 * 1024,
-            self::ExpenseReceipt => 5 * 1024 * 1024,
+            self::ExpenseReceipt, self::PurchaseInvoice => 5 * 1024 * 1024,
             default => 5 * 1024 * 1024,
         };
     }
@@ -45,9 +50,15 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => [64, 4096],
             self::Favicon => [64, 1024],
-            self::ExpenseReceipt => [100, 10000],
+            self::ExpenseReceipt, self::PurchaseInvoice => [100, 10000],
             default => [200, 6000],
         };
+    }
+
+    /** PHASE-8-8B: private documents (receipts, supplier invoices) that never get a public URL. */
+    public function isPrivate(): bool
+    {
+        return ! $this->isLibrary();
     }
 
     public function mustBeSquare(): bool
@@ -65,7 +76,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => [['w160', 160, 'webp'], ['w320', 320, 'webp'], ['w640', 640, 'webp']],
             self::Favicon => [['favicon_32', 32, 'png'], ['apple_180', 180, 'png'], ['icon_192', 192, 'png'], ['icon_512', 512, 'png']],
-            self::ExpenseReceipt => [], // the original is re-encoded (EXIF/GPS stripped); no variants
+            self::ExpenseReceipt, self::PurchaseInvoice => [], // the original is re-encoded (EXIF/GPS stripped); no variants
             default => [['w320', 320, 'webp'], ['w640', 640, 'webp'], ['w1024', 1024, 'webp'], ['w1600', 1600, 'webp']],
         };
     }
@@ -76,7 +87,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => 'w320',
             self::Favicon => 'icon_192',
-            self::ExpenseReceipt => null,
+            self::ExpenseReceipt, self::PurchaseInvoice => null,
             default => 'w640',
         };
     }
@@ -84,10 +95,10 @@ enum MediaPurpose: string
     /** True for the purposes of the generic media library (`/media`). */
     public function isLibrary(): bool
     {
-        return $this !== self::ExpenseReceipt;
+        return $this !== self::ExpenseReceipt && $this !== self::PurchaseInvoice;
     }
 
-    /** @return list<self> every purpose the generic `/media` routes accept, list and show (all but ExpenseReceipt) */
+    /** @return list<self> every purpose the generic `/media` routes accept, list and show (all but ExpenseReceipt and PurchaseInvoice) */
     public static function libraryCases(): array
     {
         return array_values(array_filter(self::cases(), fn (self $p) => $p->isLibrary()));

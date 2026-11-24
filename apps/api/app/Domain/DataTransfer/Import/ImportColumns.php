@@ -16,6 +16,9 @@ final class ImportColumns
 
     public const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'district', 'area', 'channel', 'tags', 'accepts_marketing', 'note'];
 
+    /** PHASE-8-8B P88B-15: supplier import columns (import only). */
+    public const SUPPLIER_FIELDS = ['name', 'contact_name', 'phone', 'city', 'supplies', 'payment_terms_days', 'lead_time_days', 'pays_by_method', 'pays_by_account', 'notes'];
+
     /** Customer export = import columns minus `note`. */
     public const CUSTOMER_EXPORT_FIELDS = ['name', 'phone', 'email', 'district', 'area', 'channel', 'tags', 'accepts_marketing'];
 
@@ -56,10 +59,27 @@ final class ImportColumns
         'note' => ['note', 'notes'],
     ];
 
+    private const SUPPLIER_ALIASES = [
+        'name' => ['name', 'supplier', 'supplier name', 'company'],
+        'contact_name' => ['contact', 'contact name', 'contact person'],
+        'phone' => ['phone', 'mobile', 'phone number', 'mobile number'],
+        'city' => ['city', 'district', 'location'],
+        'supplies' => ['supplies', 'what they supply', 'products'],
+        'payment_terms_days' => ['payment terms', 'payment terms days', 'terms', 'credit days'],
+        'lead_time_days' => ['lead time', 'lead time days', 'delivery days'],
+        'pays_by_method' => ['pays by', 'pays by method', 'payment method'],
+        'pays_by_account' => ['pays by account', 'account', 'account number'],
+        'notes' => ['notes', 'note'],
+    ];
+
     /** @return list<string> */
     public static function fields(string $type): array
     {
-        return $type === DataImport::PRODUCTS ? self::PRODUCT_FIELDS : self::CUSTOMER_FIELDS;
+        return match ($type) {
+            DataImport::PRODUCTS => self::PRODUCT_FIELDS,
+            DataImport::SUPPLIERS => self::SUPPLIER_FIELDS,
+            default => self::CUSTOMER_FIELDS,
+        };
     }
 
     /**
@@ -70,7 +90,11 @@ final class ImportColumns
      */
     public static function suggest(string $type, array $headers): array
     {
-        $aliases = $type === DataImport::PRODUCTS ? self::PRODUCT_ALIASES : self::CUSTOMER_ALIASES;
+        $aliases = match ($type) {
+            DataImport::PRODUCTS => self::PRODUCT_ALIASES,
+            DataImport::SUPPLIERS => self::SUPPLIER_ALIASES,
+            default => self::CUSTOMER_ALIASES,
+        };
         $lower = array_map(fn ($h) => mb_strtolower(trim($h)), $headers);
         $map = array_fill_keys($headers, null);
         $used = [];
@@ -121,6 +145,12 @@ final class ImportColumns
                     'Size', 'M', '', '', '', '', 'JT-M', '', '3450', '3950', '2100', '14', '0.6', '', '', ''],
                 ['jamdani-three-piece', '', '', '', '', '',
                     'Size', 'L', '', '', '', '', 'JT-L', '', '3450', '3950', '2100', '9', '0.6', '', '', ''],
+            ];
+        } elseif ($type === DataImport::SUPPLIERS) {
+            $header = self::SUPPLIER_FIELDS;
+            $rows = [
+                ['Rahman Fabrics', 'Abdur Rahman', '01711000222', 'Dhaka', 'Cotton fabric, three-piece', '30', '5', 'bkash', '01711000222', 'Islampur wholesale'],
+                ['PackRight BD', '', '01819000333', 'Narayanganj', 'Boxes and tags', '', '3', 'cash', '', ''],
             ];
         } else {
             $header = self::CUSTOMER_FIELDS;

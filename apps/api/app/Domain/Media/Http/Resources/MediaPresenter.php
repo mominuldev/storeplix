@@ -90,6 +90,6 @@ final class MediaPresenter
     /** Receipts (private disk, §5.4) never get a URL from the presenter. */
     private static function presentable(Media $media): bool
     {
-        return $media->purpose !== MediaPurpose::ExpenseReceipt->value;
+        return ! (MediaPurpose::tryFrom($media->purpose)?->isPrivate() ?? false); // + PHASE-8-8B purchase_invoice
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Marketing;
 
-use App\Domain\Customers\CustomerRisk;
 use App\Domain\FraudGuard\RiskTier;
 use App\Domain\Stores\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -159,18 +158,17 @@ class AudienceTest extends TestCase
             ->assertJsonPath('data.marketing.sms', $expected)->assertJsonPath('data.marketing.email', 'no_address');
     }
 
-    /** PHASE-8-8 P88-3/P88-4 (§6.6): the 8.5 classes now come from RiskTier (CustomerRisk is a deprecated alias). */
+    /** PHASE-8-8 P88-3/P88-4 (§6.6): the 8.5 classes now come from RiskTier (the CustomerRisk alias was removed in 8.8b, P88B-17). */
     public function test_risk_classes(): void
     {
-        $this->assertSame('new', CustomerRisk::classify(0, 0)); // was good
-        $this->assertSame('good', CustomerRisk::classify(4, 1)); // 80 %
-        $this->assertSame('good', CustomerRisk::classify(3, 1)); // 75 %: was careful
-        $this->assertSame('careful', CustomerRisk::classify(0, 1)); // one parcel, returned: no ratio verdict
-        $this->assertSame('careful', CustomerRisk::classify(0, 2)); // 2 returned / 0 delivered: was risky (total < 3)
-        $this->assertSame('careful', CustomerRisk::classify(3, 2)); // 60 %: not below the hold line (60), below 75
-        $this->assertSame('risky', CustomerRisk::classify(2, 2)); // 50 %: stays risky
-        $this->assertSame('careful', CustomerRisk::classify(6, 3)); // 67 %: stays careful
-        $this->assertSame('risky', CustomerRisk::classify(0, 5));
-        $this->assertSame(RiskTier::classify(2, 2), CustomerRisk::classify(2, 2));
+        $this->assertSame('new', RiskTier::classify(0, 0)); // was good
+        $this->assertSame('good', RiskTier::classify(4, 1)); // 80 %
+        $this->assertSame('good', RiskTier::classify(3, 1)); // 75 %: was careful
+        $this->assertSame('careful', RiskTier::classify(0, 1)); // one parcel, returned: no ratio verdict
+        $this->assertSame('careful', RiskTier::classify(0, 2)); // 2 returned / 0 delivered: was risky (total < 3)
+        $this->assertSame('careful', RiskTier::classify(3, 2)); // 60 %: not below the hold line (60), below 75
+        $this->assertSame('risky', RiskTier::classify(2, 2)); // 50 %: stays risky
+        $this->assertSame('careful', RiskTier::classify(6, 3)); // 67 %: stays careful
+        $this->assertSame('risky', RiskTier::classify(0, 5));
     }
 }

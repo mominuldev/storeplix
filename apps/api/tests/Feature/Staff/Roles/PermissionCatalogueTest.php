@@ -16,15 +16,15 @@ class PermissionCatalogueTest extends TestCase
 {
     private const KEYS = [
         'orders.view', 'orders.process', 'orders.refund', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
-        'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
+        'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
         'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
         'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
     ];
 
-    public function test_26_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
+    public function test_27_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
     {
         $this->assertSame(self::KEYS, Permission::values());
-        $this->assertCount(25, Permission::grantableCases()); // PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage
+        $this->assertCount(26, Permission::grantableCases()); // PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage; PHASE-8-8B §2.1: + purchasing.manage
         $this->assertSame([Permission::BillingManage], array_values(array_filter(Permission::cases(), fn (Permission $p) => ! $p->grantable())));
         foreach (Permission::cases() as $p) {
             $this->assertMatchesRegularExpression('/^[a-z]+\.[a-z_]+$/', $p->value); // the DB CHECK
@@ -33,7 +33,7 @@ class PermissionCatalogueTest extends TestCase
         }
         $this->assertSame(['orders', 'shipping', 'products', 'customers', 'money', 'store', 'team'], array_keys(Permission::GROUPS));
         $this->assertSame(
-            ['orders.refund', 'fraud.manage', 'costs.view', 'expenses.manage', 'data.export', 'marketing.manage', 'integrations.manage', 'developers.manage', 'staff.manage', 'billing.manage'], // PHASE-8-5 §2.1: marketing.manage sensitive
+            ['orders.refund', 'fraud.manage', 'purchasing.manage', 'costs.view', 'expenses.manage', 'data.export', 'marketing.manage', 'integrations.manage', 'developers.manage', 'staff.manage', 'billing.manage'], // PHASE-8-5 §2.1: marketing.manage sensitive
             array_values(array_map(fn (Permission $p) => $p->value, array_filter(Permission::cases(), fn (Permission $p) => $p->sensitive()))),
         );
     }
@@ -42,7 +42,7 @@ class PermissionCatalogueTest extends TestCase
     {
         $expected = [
             'orders.process' => ['orders.view'], 'orders.refund' => ['orders.process'], 'fraud.manage' => ['orders.view'], 'shipments.cancel' => ['shipments.manage'],
-            'products.delete' => ['products.edit'], 'customers.edit' => ['customers.view'], 'customers.delete' => ['customers.edit'],
+            'products.delete' => ['products.edit'], 'purchasing.manage' => ['costs.view'], 'customers.edit' => ['customers.view'], 'customers.delete' => ['customers.edit'],
             'billing.manage' => ['billing.view'],
         ];
         foreach (Permission::cases() as $p) {

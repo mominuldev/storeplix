@@ -24,7 +24,9 @@ class StoreCounter extends Model
 
     public const RETURNS = 'returns';
 
-    public const START = [self::ORDERS => 1001, self::RETURNS => 1];
+    public const PURCHASE_ORDERS = 'purchase_orders'; // PHASE-8-8B P88B-3: `PO-{n}` per store, from 1
+
+    public const START = [self::ORDERS => 1001, self::RETURNS => 1, self::PURCHASE_ORDERS => 1];
 
     public $incrementing = false;
 

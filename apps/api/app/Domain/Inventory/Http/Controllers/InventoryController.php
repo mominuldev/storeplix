@@ -8,6 +8,7 @@ use App\Domain\Inventory\Http\Resources\InventoryPresenter;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
+use App\Domain\Purchasing\PurchaseHistory;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\TenantContext;
@@ -79,9 +80,10 @@ class InventoryController
 
         $paginator = $query->with(['inventory', 'product.images.media'])->paginate((int) ($input['per_page'] ?? 25));
         $costs = $this->costs();
+        $incoming = PurchaseHistory::incoming($store, $paginator->getCollection()->pluck('id')->all()); // PHASE-8-8B §8.1
 
         return new JsonResponse([
-            'data' => $paginator->getCollection()->map(fn (ProductVariant $v) => InventoryPresenter::item($v, $costs))->all(),
+            'data' => $paginator->getCollection()->map(fn (ProductVariant $v) => InventoryPresenter::item($v, $costs) + ['incoming' => $incoming[$v->id] ?? 0])->all(),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
@@ -101,7 +103,7 @@ class InventoryController
 
         Inventory::query()->where('variant_id', $variant->id)->update(['low_stock_threshold' => $input['low_stock_threshold'], 'updated_at' => now()]);
 
-        return new JsonResponse(['data' => $this->item($variant->id)]);
+        return new JsonResponse(['data' => $this->item($store, $variant->id)]);
     }
 
     /** POST /stores/{store}/inventory/adjustments */
@@ -138,10 +140,11 @@ class InventoryController
 
         $variants = $this->variants(array_column($items, 'variant_id'));
         $costs = $this->costs();
+        $incoming = PurchaseHistory::incoming($store, array_column($items, 'variant_id'));
         $movements = (new Collection($result['movements']))->load(['variant.product', 'actor']);
 
         return new JsonResponse(['data' => [
-            'items' => array_values(array_map(fn ($id) => InventoryPresenter::item($variants[$id], $costs), array_column($items, 'variant_id'))),
+            'items' => array_values(array_map(fn ($id) => InventoryPresenter::item($variants[$id], $costs) + ['incoming' => $incoming[$id] ?? 0], array_column($items, 'variant_id'))),
             'movements' => $movements->map(fn (InventoryMovement $m) => InventoryPresenter::movement($m))->values()->all(),
         ]]);
     }
@@ -151,7 +154,8 @@ class InventoryController
     {
         Gate::authorize('view', $store);
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:variant_id,product_id,reason,created_at'],
+            'filter' => ['sometimes', 'array:variant_id,product_id,reason,reference_type,created_at'],
+            'filter.reference_type' => ['sometimes', 'string', 'in:import,order,return,purchase_order'], // PHASE-8-8B §8.1
             'filter.variant_id' => ['sometimes', 'string', 'size:26'],
             'filter.product_id' => ['sometimes', 'string', 'size:26'],
             'filter.reason' => ['sometimes', 'string', 'regex:/^('.implode('|', InventoryMovement::REASONS).')(,('.implode('|', InventoryMovement::REASONS).'))*$/'],
@@ -168,6 +172,7 @@ class InventoryController
             ->when(isset($filter['product_id']), fn ($q) => $q->whereIn('variant_id', ProductVariant::withTrashed()
                 ->where('store_id', $store->id)->where('product_id', strtolower($filter['product_id']))->select('id')))
             ->when(isset($filter['reason']), fn ($q) => $q->whereIn('reason', explode(',', $filter['reason'])))
+            ->when(isset($filter['reference_type']), fn ($q) => $q->where('reference_type', $filter['reference_type']))
             ->when(isset($filter['created_at']['gte']), fn ($q) => $q->where('created_at', '>=', Carbon::parse($filter['created_at']['gte'])))
             ->when(isset($filter['created_at']['lte']), fn ($q) => $q->where('created_at', '<=', Carbon::parse($filter['created_at']['lte'])))
             ->orderByDesc('created_at')->orderByDesc('id')
@@ -230,9 +235,10 @@ class InventoryController
     }
 
     /** @return array<string, mixed> */
-    private function item(string $variantId): array
+    private function item(Store $store, string $variantId): array
     {
-        return InventoryPresenter::item($this->variants([$variantId])[$variantId], $this->costs());
+        return InventoryPresenter::item($this->variants([$variantId])[$variantId], $this->costs())
+            + ['incoming' => PurchaseHistory::incoming($store, [$variantId])[$variantId] ?? 0];
     }
 
     private function costs(): bool

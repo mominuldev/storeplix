@@ -24,7 +24,7 @@ class ListAuditLogsRequest extends FormRequest
             'filter.actor_id' => ['sometimes', 'string', 'ulid'],
             // P8-QA-1: lets the dashboard list "Store Plix support" actions (platform_user) on their own.
             'filter.actor_type' => ['sometimes', 'string', Rule::in(['user', 'system', 'platform_user', 'api_key', 'automation'])],
-            'filter.subject_type' => ['sometimes', 'string', Rule::in(['store', 'store_settings', 'staff_member', 'staff_invitation', 'media', 'subscription', 'user', 'store_theme', 'store_page', 'store_navigation', 'product', 'category', 'customer', 'data_import', 'data_export', 'role'])],
+            'filter.subject_type' => ['sometimes', 'string', Rule::in(['store', 'store_settings', 'staff_member', 'staff_invitation', 'media', 'subscription', 'user', 'store_theme', 'store_page', 'store_navigation', 'product', 'category', 'customer', 'data_import', 'data_export', 'role', 'supplier', 'purchase_order', 'supplier_payment'])],
             'filter.subject_id' => ['sometimes', 'string', 'ulid'],
             'filter.created_at' => ['sometimes', 'array:gte,lte'],
             'filter.created_at.gte' => ['sometimes', 'date'],
