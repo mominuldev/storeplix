@@ -148,6 +148,9 @@ None (P88-7).
 P88-4 rule. `RiskTier::forCustomer` (own-shop counters, SQL form `RiskTier::sql($tier, $settings)` for audiences);
 `RiskTier::forCheck` (the order's own-shop record). Thresholds from the store's `fraud_guard_settings` or the defaults (60, 75, 3)
 when absent. `CustomerRisk` becomes a thin deprecated alias to `RiskTier` for one release, then is removed in 8.8b.
+**Amended by PHASE-8-8B P88B-17 (Phase 8.8b):** the PHP `App\Domain\Customers\CustomerRisk` alias is removed; every
+caller uses `RiskTier`. The `packages/types` `CustomerRisk` interface is the §6.5 response shape (`tier`, `rate`,
+`delivered`, `total`), not the alias, and stays.
 
 ## 4. Data (owner API; migrations prefix `2026_12_05_`, forward-only; RLS in each create migration; tables added to `RlsTables::TENANT` (docblock count "76 after Phase 8.8a") and `database/sql/rls-emergency-off.sql`)
 

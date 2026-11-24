@@ -1,8 +1,26 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.16.0
+  version: 1.17.0
   description: |
+    1.17.0 (2026-11-24, Phase 8.8b, PHASE-8-8B-CONTRACT.md, ADR 0023). Suppliers and purchase orders. New tag purchasing
+    (purchasing.manage, a new grantable sensitive permission after inventory.adjust, requires costs.view; owner and
+    admin; writes need the new purchasing plan feature on Starter and Growth → 402 feature_not_in_plan, reads allowed;
+    limiter purchasing-write 60/min per user): GET|POST /stores/{store}/suppliers, GET .../suppliers/summary,
+    GET|PATCH|DELETE .../suppliers/{supplier} (409 supplier_in_use), POST .../{supplier}/archive|unarchive,
+    GET|POST .../suppliers/{supplier}/payments, DELETE .../supplier-payments/{payment}, GET|POST .../purchase-orders,
+    GET .../purchase-orders/summary, POST .../purchase-orders/quick (Idempotency-Key), GET|PATCH|DELETE
+    .../purchase-orders/{purchase_order}, POST .../{purchase_order}/send|mark-ordered|close|cancel, POST
+    .../{purchase_order}/receipts (Idempotency-Key; 422 over_receive), GET .../{purchase_order}/pdf (application/pdf),
+    GET .../purchasing/reorder-suggestions, POST .../purchasing/invoices (multipart, private). Listing, viewing and
+    receiving purchase orders also work with inventory.adjust alone; every money and cost field is then null.
+    **Changed meaning**: receiving stock writes the weighted-average landed cost to the variant cost (P88B-5), so
+    variant/inventory cost and the cost snapshot of future orders move; past orders are unchanged. **Changed shapes**:
+    InventoryItem gains incoming (integer); StockMovement.reference.type is import | order | return | purchase_order;
+    movements list gains filter[reference_type]; DataImportType gains suppliers (import only; needs data.import +
+    purchasing.manage) and ImportField gains the supplier columns. PermissionKey gains purchasing.manage; FeatureKey
+    gains purchasing. New error codes over_receive, variant_not_tracked (422), supplier_in_use (409); reused
+    invalid_state_transition, revision_conflict, feature_not_in_plan. Purchases never enter expenses or Profit & loss.
     1.16.0 (2026-11-24, Phase 8.8a, PHASE-8-8-CONTRACT.md, ADR 0022). Fake-order guard from this shop's own orders,
     shipments and returns only (no courier lookups, no cross-shop data). New tag fraud-guard (fraud.manage, a new
     grantable sensitive permission; writes and the number check need the fake_order_guard plan feature → 402
@@ -181,6 +199,8 @@ tags:
   description: 'Phase 8.7: expenses ledger, receipts, monthly repeat and CSV export (PHASE-8-7 §8)'
 - name: fraud-guard
   description: 'Phase 8.8a: fake-order guard settings, blocklist, number check and decision log (PHASE-8-8 §8)'
+- name: purchasing
+  description: 'Phase 8.8b: suppliers, purchase orders, receiving, supplier payments and reorder suggestions (PHASE-8-8B §8)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -3179,6 +3199,16 @@ paths:
           type: string
           format: date-time
       - in: query
+        name: filter[reference_type]
+        schema:
+          type: string
+          enum:
+          - import
+          - order
+          - return
+          - purchase_order
+        description: Phase 8.8b — one reference type
+      - in: query
         name: page
         schema:
           type: integer
@@ -3305,7 +3335,7 @@ paths:
       description: Owner/admin only (`BulkData`). CSV only, ≤ 10 MB, ≤ 5 000 rows, ≤ 50 columns. Archives/binaries/non-UTF-8
         → 422 `unsupported_file`. 1.11.1 (PHASE-8-3 SEC-M2) — `data.import` plus the keys of what the file writes, else
         403 `forbidden`. `type=products` needs `products.edit` and `inventory.adjust`; `type=customers` needs
-        `customers.edit`.
+        `customers.edit`; `type=suppliers` (1.17.0) needs `purchasing.manage` and the purchasing plan feature (402).
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -15568,11 +15598,1308 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/suppliers:
+    get:
+      tags:
+      - purchasing
+      summary: List suppliers
+      operationId: listSuppliers
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). `q` matches name, phone or city; filter[archived]=1
+        lists archived suppliers (default active only); sort name (default), -owed_amount, -last_order_on; 50 per page.
+        Derived numbers per §4.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 120
+      - in: query
+        name: filter[archived]
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - name
+          - -owed_amount
+          - -last_order_on
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supplier'
+                  meta:
+                    $ref: '#/components/schemas/SupplierListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - purchasing
+      summary: Create a supplier
+      operationId: createSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. 422
+        when an active supplier has the same name (case-insensitive). Audited purchasing.supplier_created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/suppliers/summary:
+    get:
+      tags:
+      - purchasing
+      summary: Supplier KPI tiles
+      operationId: getSupplierSummary
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). §6.1. Bought this month = received value by
+        receipt date (store tz); no comparison line (Q211).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupplierSummary'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/suppliers/{supplier}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierPath'
+    get:
+      tags:
+      - purchasing
+      summary: Get a supplier
+      operationId: getSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Adds the last 5 purchase orders.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupplierDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - purchasing
+      summary: Update a supplier
+      operationId: updateSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Partial.
+        Audited purchasing.supplier_updated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSupplierInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - purchasing
+      summary: Delete a supplier
+      operationId: deleteSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Only
+        when it has no purchase orders and no payments (else 409 supplier_in_use — archive instead). Audited purchasing.supplier_deleted.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`supplier_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/suppliers/{supplier}/archive:
+    parameters:
+    - $ref: '#/components/parameters/SupplierPath'
+    post:
+      tags:
+      - purchasing
+      summary: Archive a supplier
+      operationId: archiveSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Sets
+        archived_at (hidden from pickers; history kept). Audited purchasing.supplier_archived.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/suppliers/{supplier}/unarchive:
+    parameters:
+    - $ref: '#/components/parameters/SupplierPath'
+    post:
+      tags:
+      - purchasing
+      summary: Unarchive a supplier
+      operationId: unarchiveSupplier
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. 422
+        when an active supplier now has the same name. Audited purchasing.supplier_unarchived.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/suppliers/{supplier}/payments:
+    parameters:
+    - $ref: '#/components/parameters/SupplierPath'
+    get:
+      tags:
+      - purchasing
+      summary: List a supplier's payments
+      operationId: listSupplierPayments
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Newest first (paid_on desc), 50 per page.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupplierPayment'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - purchasing
+      summary: Record a supplier payment
+      operationId: recordSupplierPayment
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. A record
+        only (no payout). purchase_order_id must be one of this supplier's non-cancelled POs (422); it updates that PO's
+        paid_amount and payment_status (P88B-8). currency, when sent, must equal the store currency. Never written to expenses
+        (P88B-10). Audited purchasing.payment_recorded.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierPaymentInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupplierPayment'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/supplier-payments/{payment}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierPaymentPath'
+    delete:
+      tags:
+      - purchasing
+      summary: Delete a supplier payment
+      operationId: deleteSupplierPayment
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Hard
+        delete; audited purchasing.payment_deleted with a snapshot. Recomputes the PO paid_amount / payment_status.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders:
+    get:
+      tags:
+      - purchasing
+      summary: List purchase orders
+      operationId: listPurchaseOrders
+      description: Needs purchasing.manage or inventory.adjust (P88B-11); for an inventory.adjust-only actor every money
+        and cost field is null. Newest first. filter[status] comma list of PurchaseOrderStatus; filter[supplier_id]; `q`
+        matches the PO number or supplier name. meta.counts per status (ignoring filter[status]).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of PurchaseOrderStatus
+      - in: query
+        name: filter[supplier_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 120
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseOrder'
+                  meta:
+                    $ref: '#/components/schemas/PurchaseOrderListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - purchasing
+      summary: Create a draft purchase order
+      operationId: createPurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Assigns
+        the next per-store PO-{n} number (P88B-3). Unit cost defaults to the last unit cost from this supplier, else the
+        variant cost, else 0 (§5.1). Totals recomputed server-side; discount ≤ subtotal + shipping; ≤ 200 lines; one line
+        per variant; the variant must track inventory (422 variant_not_tracked). Audited purchasing.purchase_order_created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseOrderInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/summary:
+    get:
+      tags:
+      - purchasing
+      summary: Purchase order KPI tiles
+      operationId: getPurchaseOrderSummary
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). §6.2.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderSummary'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/purchase-orders/quick:
+    post:
+      tags:
+      - purchasing
+      summary: Quick purchase (record and receive at once)
+      operationId: quickPurchase
+      description: 'Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. P88B-13:
+        one transaction creates a PO, marks it ordered, records one receipt for every line (received = quantity − damaged;
+        stock in through the inventory ledger; weighted-average cost) and optionally a payment. Audited purchasing.quick_received.
+        Same Idempotency-Key + body replays the first response.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickPurchaseInput'
+      responses:
+        '201':
+          description: Created (status received)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    get:
+      tags:
+      - purchasing
+      summary: Get a purchase order
+      operationId: getPurchaseOrder
+      description: Needs purchasing.manage or inventory.adjust (P88B-11); for an inventory.adjust-only actor every money
+        and cost field is null. Lines, receipts, payments (empty for adjust-only) and history events.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - purchasing
+      summary: Update a purchase order
+      operationId: updatePurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. draft
+        and ordered only (else 409 invalid_state_transition). `revision` required (409 revision_conflict). `lines` replaces
+        the set, matched by variant_id; a line with received or damaged units cannot be removed or drop below received +
+        damaged (422). supplier_id only in draft. Transport/discount changes affect later receipts only (Q205). Audited
+        purchasing.purchase_order_updated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePurchaseOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - purchasing
+      summary: Delete a draft purchase order
+      operationId: deletePurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. draft
+        only (409 invalid_state_transition); the number is never reused. Audited purchasing.purchase_order_deleted.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/send:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    post:
+      tags:
+      - purchasing
+      summary: Send to supplier
+      operationId: sendPurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. Records
+        sent_at + sent_via (whatsapp | pdf | manual) and moves draft → ordered; an ordered PO may be re-sent (sent_at updated).
+        No message is sent by the server (the WhatsApp link is built client-side, P88B-14). Audited purchasing.purchase_order_sent.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendPurchaseOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/mark-ordered:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    post:
+      tags:
+      - purchasing
+      summary: Mark as ordered
+      operationId: markPurchaseOrderOrdered
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. draft
+        → ordered without sending. Audited purchasing.purchase_order_marked_ordered.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                revision:
+                  type: integer
+                  description: Optional; when sent and stale → 409 revision_conflict
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/close:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    post:
+      tags:
+      - purchasing
+      summary: Close (finish early)
+      operationId: closePurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. ordered
+        / partially_received → closed; remaining quantities stop counting as incoming. Audited purchasing.purchase_order_closed.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                revision:
+                  type: integer
+                  description: Optional; when sent and stale → 409 revision_conflict
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    post:
+      tags:
+      - purchasing
+      summary: Cancel a purchase order
+      operationId: cancelPurchaseOrder
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). Needs the purchasing plan feature (402 feature_not_in_plan;
+        reads stay allowed). Limiter purchasing-write 60/min per user. Impersonation → 403 impersonation_read_only. draft
+        or ordered with nothing received (else 409 invalid_state_transition). Linked payments stay (they become supplier
+        credit). Audited purchasing.purchase_order_cancelled.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                revision:
+                  type: integer
+                  description: Optional; when sent and stale → 409 revision_conflict
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/receipts:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    post:
+      tags:
+      - purchasing
+      summary: Receive stock
+      operationId: receivePurchaseOrder
+      description: 'Needs purchasing.manage or inventory.adjust (P88B-11); for an inventory.adjust-only actor every money
+        and cost field is null. Sent costs are ignored for adjust-only actors. Needs the purchasing plan feature (402).
+        ordered / partially_received only (409 invalid_state_transition). Per line received + damaged ≤ left (422 over_receive,
+        details per line); at least one quantity > 0. One transaction: PO row lock → InventoryService adjust (reason received,
+        reference purchase_order) → weighted-average landed cost per variant (P88B-5/6) → receipt rows → status (received
+        when every line has 0 left) → audit purchasing.receipt_recorded. Damaged units are recorded, never stocked. Same
+        Idempotency-Key + body replays the first response.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceivePurchaseOrderInput'
+      responses:
+        '201':
+          description: Receipt recorded; the updated purchase order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrderDetail'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/purchase-orders/{purchase_order}/pdf:
+    parameters:
+    - $ref: '#/components/parameters/PurchaseOrderPath'
+    get:
+      tags:
+      - purchasing
+      summary: Purchase order PDF
+      operationId: purchaseOrderPdf
+      description: Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). A4, rendered on demand with the document driver;
+        inline, filename PO-0012.pdf. Store name/address, supplier, number/dates, lines, transport, discount, total, notes.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/purchasing/reorder-suggestions:
+    get:
+      tags:
+      - purchasing
+      summary: Reorder suggestions
+      operationId: listReorderSuggestions
+      description: 'Needs purchasing.manage (PHASE-8-8B P88B-11; staff → 403). §7, computed on request: tracked variants
+        of active products with units shipped in the last 30 days; suggested when days_left ≤ lead + 7 (lead = last supplier
+        lead_time_days, else 7). Grouped by last supplier (null = no supplier yet), items sorted by days_left, ≤ 50 items.
+        Empty when nothing shipped in 30 days.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReorderSuggestionGroup'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/purchasing/invoices:
+    post:
+      tags:
+      - purchasing
+      summary: Upload a supplier invoice
+      operationId: uploadPurchaseInvoice
+      description: Needs purchasing.manage or inventory.adjust (P88B-11). Needs the purchasing plan feature (402). JPG,
+        PNG, WebP or PDF ≤ 5 MB, type sniffed from bytes; images re-encoded (status processing → ready). Media purpose purchase_invoice
+        on the private disk; never served or listed by /media. Attach with invoice_media_id on a receipt or quick purchase
+        (same tenant + store only); unattached uploads are deleted after 24 h. Limiter purchasing-write.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PurchaseInvoice'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (purchasing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
     BlockedNumberPath:
       in: path
       name: entry
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    SupplierPath:
+      in: path
+      name: supplier
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    PurchaseOrderPath:
+      in: path
+      name: purchase_order
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    SupplierPaymentPath:
+      in: path
+      name: payment
       required: true
       schema:
         $ref: '#/components/schemas/Ulid'
@@ -17146,7 +18473,8 @@ components:
       description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable. Phase 8.4
         adds developers.manage (owner and admin; grantable to custom roles). Phase 8.7 adds expenses.manage (owner and
         admin; grantable; sensitive). Phase 8.8a adds fraud.manage (group orders, after orders.refund; owner and admin;
-        grantable; sensitive; requires orders.view).
+        grantable; sensitive; requires orders.view). Phase 8.8b adds purchasing.manage (group products, after
+        inventory.adjust; owner and admin; grantable; sensitive; requires costs.view).
       enum:
       - orders.view
       - orders.process
@@ -17157,6 +18485,7 @@ components:
       - products.edit
       - products.delete
       - inventory.adjust
+      - purchasing.manage
       - customers.view
       - customers.edit
       - customers.delete
@@ -17945,6 +19274,7 @@ components:
       - pos
       - profit_reports
       - api_webhooks
+      - purchasing
     LimitKey:
       type: string
       enum:
@@ -18116,6 +19446,7 @@ components:
           - pos
           - profit_reports
           - api_webhooks
+          - purchasing
           properties:
             custom_domain:
               type: boolean
@@ -18136,6 +19467,8 @@ components:
             profit_reports:
               type: boolean
             api_webhooks:
+              type: boolean
+            purchasing:
               type: boolean
         limits:
           type: object
@@ -19715,6 +21048,7 @@ components:
       - price_amount
       - cost_amount
       - updated_at
+      - incoming
       properties:
         variant_id:
           $ref: '#/components/schemas/Ulid'
@@ -19778,6 +21112,11 @@ components:
         updated_at:
           type: string
           format: date-time
+        incoming:
+          type: integer
+          minimum: 0
+          description: Phase 8.8b — units still expected on open purchase orders (ordered / partially_received; Σ
+            ordered − received − damaged); 0 when none.
     InventorySummary:
       type: object
       required:
@@ -19935,6 +21274,10 @@ components:
                 type: string
                 enum:
                 - import
+                - order
+                - return
+                - purchase_order
+                description: purchase_order since 8.8b (reason received; note "PO-0012 · {supplier name}")
               id:
                 $ref: '#/components/schemas/Ulid'
           - type: 'null'
@@ -20212,9 +21555,13 @@ components:
                 type: integer
     DataImportType:
       type: string
+      description: suppliers (Phase 8.8b) is import-only (no export); needs data.import + purchasing.manage and the
+        purchasing plan feature. Supplier columns name, contact_name, phone, city, supplies, payment_terms_days,
+        lead_time_days, pays_by_method, pays_by_account, notes; match by phone, else by exact name (case-insensitive).
       enum:
       - products
       - customers
+      - suppliers
     ImportField:
       type: string
       enum:
@@ -20247,6 +21594,14 @@ components:
       - channel
       - accepts_marketing
       - note
+      - contact_name
+      - city
+      - supplies
+      - payment_terms_days
+      - lead_time_days
+      - pays_by_method
+      - pays_by_account
+      - notes
     ImportOptions:
       type: object
       required:
@@ -31537,3 +32892,1392 @@ components:
         resend_after_seconds:
           type: integer
           minimum: 0
+    PurchaseOrderStatus:
+      type: string
+      description: P88B-2 state machine. Open = ordered + partially_received.
+      enum:
+      - draft
+      - ordered
+      - partially_received
+      - received
+      - closed
+      - cancelled
+    PurchasePaymentStatus:
+      type: string
+      description: 'P88B-8: payments linked to the PO vs its total.'
+      enum:
+      - unpaid
+      - partially_paid
+      - paid
+      - overpaid
+    SupplierPaymentMethod:
+      type: string
+      enum:
+      - cash
+      - bkash
+      - nagad
+      - bank
+      - card
+      - other
+    PurchaseOrderSentVia:
+      type: string
+      enum:
+      - whatsapp
+      - pdf
+      - manual
+    Supplier:
+      type: object
+      required:
+      - id
+      - name
+      - contact_name
+      - phone
+      - city
+      - supplies
+      - payment_terms_days
+      - advance_percent
+      - lead_time_days
+      - pays_by_method
+      - pays_by_account
+      - notes
+      - archived_at
+      - products_count
+      - open_pos_count
+      - past_orders_count
+      - currency
+      - owed_amount
+      - overdue_amount
+      - overdue_since
+      - last_order_on
+      - active_this_month
+      - created_by
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 120
+        contact_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        phone:
+          type:
+          - string
+          - 'null'
+          description: Normalised 8801XXXXXXXXX
+        city:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        supplies:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+          description: What they supply
+        payment_terms_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        advance_percent:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        lead_time_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        pays_by_method:
+          oneOf:
+          - $ref: '#/components/schemas/SupplierPaymentMethod'
+          - type: 'null'
+        pays_by_account:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        archived_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        products_count:
+          type: integer
+        open_pos_count:
+          type: integer
+          description: ordered + partially_received
+        past_orders_count:
+          type: integer
+          description: non-draft, non-cancelled
+        currency:
+          type: string
+        owed_amount:
+          type: integer
+          description: 'Q209: Σ received value of non-cancelled POs − Σ payments; negative = credit'
+        overdue_amount:
+          type: integer
+          description: Σ balance of overdue POs (P88B-9)
+        overdue_since:
+          type:
+          - string
+          - 'null'
+          format: date
+        last_order_on:
+          type:
+          - string
+          - 'null'
+          format: date
+        active_this_month:
+          type: boolean
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      description: Phase 8.8b supplier (list row); derived numbers computed per request (§4).
+    SupplierDetail:
+      allOf:
+      - $ref: '#/components/schemas/Supplier'
+      - type: object
+        required:
+        - recent_purchase_orders
+        properties:
+          recent_purchase_orders:
+            type: array
+            maxItems: 5
+            items:
+              $ref: '#/components/schemas/PurchaseOrder'
+            description: Last 5, newest first
+    SupplierInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        contact_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        phone:
+          type:
+          - string
+          - 'null'
+          description: BD mobile (017…, +88017…, 88017…); stored normalised
+        city:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        supplies:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+          description: What they supply
+        payment_terms_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        advance_percent:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        lead_time_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        pays_by_method:
+          oneOf:
+          - $ref: '#/components/schemas/SupplierPaymentMethod'
+          - type: 'null'
+        pays_by_account:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    UpdateSupplierInput:
+      type: object
+      required: []
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        contact_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        phone:
+          type:
+          - string
+          - 'null'
+          description: BD mobile (017…, +88017…, 88017…); stored normalised
+        city:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        supplies:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+          description: What they supply
+        payment_terms_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        advance_percent:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        lead_time_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 180
+        pays_by_method:
+          oneOf:
+          - $ref: '#/components/schemas/SupplierPaymentMethod'
+          - type: 'null'
+        pays_by_account:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+      description: Partial SupplierInput
+    SupplierListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - active
+            - archived
+            properties:
+              active:
+                type: integer
+              archived:
+                type: integer
+    SupplierSummary:
+      type: object
+      required:
+      - currency
+      - suppliers_count
+      - active_this_month
+      - owed_amount
+      - owed_suppliers_count
+      - overdue_count
+      - pos_on_the_way
+      - arriving_this_week
+      - bought_this_month_amount
+      properties:
+        currency:
+          type: string
+        suppliers_count:
+          type: integer
+        active_this_month:
+          type: integer
+        owed_amount:
+          type: integer
+        owed_suppliers_count:
+          type: integer
+        overdue_count:
+          type: integer
+        pos_on_the_way:
+          type: integer
+          description: ordered + partially_received
+        arriving_this_week:
+          type: integer
+          description: open POs expected within 7 days
+        bought_this_month_amount:
+          type: integer
+          description: received value by receipt date this month
+    PurchaseOrderSupplierRef:
+      type: object
+      required:
+      - id
+      - name
+      - phone
+      - city
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        phone:
+          type:
+          - string
+          - 'null'
+        city:
+          type:
+          - string
+          - 'null'
+    PurchaseOrder:
+      type: object
+      required:
+      - id
+      - number
+      - status
+      - payment_status
+      - supplier
+      - lines_count
+      - preview_items
+      - units_ordered
+      - units_received
+      - units_damaged
+      - units_left
+      - expected_on
+      - is_late
+      - days_late
+      - ordered_at
+      - sent_at
+      - sent_via
+      - closed_at
+      - cancelled_at
+      - due_on
+      - is_overdue
+      - currency
+      - subtotal_amount
+      - shipping_amount
+      - discount_amount
+      - total_amount
+      - received_value_amount
+      - paid_amount
+      - balance_amount
+      - revision
+      - created_by
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+          example: PO-0012
+        status:
+          $ref: '#/components/schemas/PurchaseOrderStatus'
+        payment_status:
+          oneOf:
+          - $ref: '#/components/schemas/PurchasePaymentStatus'
+          - type: 'null'
+          description: null for adjust-only actors
+        supplier:
+          $ref: '#/components/schemas/PurchaseOrderSupplierRef'
+        lines_count:
+          type: integer
+        preview_items:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required:
+            - product_name
+            - image
+            properties:
+              product_name:
+                type: string
+              image:
+                oneOf:
+                - $ref: '#/components/schemas/MediaRef'
+                - type: 'null'
+        units_ordered:
+          type: integer
+        units_received:
+          type: integer
+        units_damaged:
+          type: integer
+        units_left:
+          type: integer
+          description: Σ ordered − received − damaged; 0 once received/closed/cancelled
+        expected_on:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_late:
+          type: boolean
+          description: expected_on < today (store tz) and status ordered / partially_received
+        days_late:
+          type:
+          - integer
+          - 'null'
+        ordered_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        sent_via:
+          oneOf:
+          - $ref: '#/components/schemas/PurchaseOrderSentVia'
+          - type: 'null'
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        due_on:
+          type:
+          - string
+          - 'null'
+          format: date
+          description: 'P88B-9: first receipt date + supplier payment_terms_days (null terms → due on receipt)'
+        is_overdue:
+          type: boolean
+        currency:
+          type: string
+        subtotal_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        shipping_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        discount_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        total_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        received_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        paid_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        balance_amount:
+          type:
+          - integer
+          - 'null'
+          description: received value − paid (negative = advance); null for adjust-only actors
+        revision:
+          type: integer
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      description: List item. Money fields null for inventory.adjust-only actors.
+    PurchaseOrderSupplier:
+      allOf:
+      - $ref: '#/components/schemas/PurchaseOrderSupplierRef'
+      - type: object
+        required:
+        - contact_name
+        - lead_time_days
+        - payment_terms_days
+        - advance_percent
+        - pays_by_method
+        - pays_by_account
+        - past_orders_count
+        - archived_at
+        - owed_amount
+        properties:
+          contact_name:
+            type:
+            - string
+            - 'null'
+          lead_time_days:
+            type:
+            - integer
+            - 'null'
+          payment_terms_days:
+            type:
+            - integer
+            - 'null'
+          advance_percent:
+            type:
+            - integer
+            - 'null'
+          pays_by_method:
+            oneOf:
+            - $ref: '#/components/schemas/SupplierPaymentMethod'
+            - type: 'null'
+          pays_by_account:
+            type:
+            - string
+            - 'null'
+          past_orders_count:
+            type: integer
+          archived_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          owed_amount:
+            type:
+            - integer
+            - 'null'
+            description: Minor units; null without purchasing.manage (adjust-only receivers)
+    PurchaseOrderLine:
+      type: object
+      required:
+      - id
+      - variant_id
+      - product
+      - variant_title
+      - option_values
+      - sku
+      - unit_cost_amount
+      - quantity_ordered
+      - quantity_received
+      - quantity_damaged
+      - quantity_left
+      - line_total_amount
+      - landed_unit_cost_amount
+      - in_stock
+      - last_bought_unit_cost_amount
+      - position
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type: object
+          required:
+          - id
+          - name
+          - image
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            image:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+        variant_title:
+          type: string
+        option_values:
+          type: array
+          items:
+            type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        quantity_ordered:
+          type: integer
+        quantity_received:
+          type: integer
+        quantity_damaged:
+          type: integer
+        quantity_left:
+          type: integer
+          minimum: 0
+          description: ordered − received − damaged (Q213)
+        line_total_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        landed_unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+          description: From the current transport/discount (§5.4); null for adjust-only
+        in_stock:
+          type: integer
+          description: Current on hand
+        last_bought_unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+          description: '"Last bought at": last PO unit cost from any supplier (other POs)'
+        position:
+          type: integer
+    PurchaseReceiptLine:
+      type: object
+      required:
+      - item_id
+      - variant_id
+      - quantity_received
+      - quantity_damaged
+      - landed_unit_cost_amount
+      - cost_before_amount
+      - cost_after_amount
+      - on_hand_before
+      properties:
+        item_id:
+          $ref: '#/components/schemas/Ulid'
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        quantity_received:
+          type: integer
+        quantity_damaged:
+          type: integer
+        landed_unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        cost_before_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        cost_after_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+        on_hand_before:
+          type: integer
+    PurchaseInvoiceAttachment:
+      type: object
+      required:
+      - id
+      - mime
+      - size_bytes
+      - status
+      - url
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        mime:
+          $ref: '#/components/schemas/ExpenseReceiptMime'
+        size_bytes:
+          type: integer
+        status:
+          $ref: '#/components/schemas/MediaStatus'
+        url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          description: Signed 5-minute link; null while processing or in an impersonation session
+    PurchaseReceipt:
+      type: object
+      required:
+      - id
+      - received_at
+      - received_by
+      - supplier_invoice_ref
+      - invoice
+      - note
+      - units_received
+      - units_damaged
+      - value_amount
+      - lines
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        received_at:
+          type: string
+          format: date-time
+        received_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        supplier_invoice_ref:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        invoice:
+          oneOf:
+          - $ref: '#/components/schemas/PurchaseInvoiceAttachment'
+          - type: 'null'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        units_received:
+          type: integer
+        units_damaged:
+          type: integer
+        value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Σ received × landed unit cost (damaged excluded)
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseReceiptLine'
+    SupplierPayment:
+      type: object
+      required:
+      - id
+      - supplier
+      - purchase_order
+      - amount
+      - currency
+      - method
+      - paid_on
+      - reference
+      - note
+      - created_by
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        supplier:
+          type: object
+          required:
+          - id
+          - name
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+        purchase_order:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - number
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+          - type: 'null'
+        amount:
+          type: integer
+        currency:
+          type: string
+        method:
+          $ref: '#/components/schemas/SupplierPaymentMethod'
+        paid_on:
+          type: string
+          format: date
+        reference:
+          type:
+          - string
+          - 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    PurchaseOrderEvent:
+      type: object
+      required:
+      - type
+      - actor
+      - created_at
+      - sent_via
+      - units
+      - damaged
+      - amount
+      properties:
+        type:
+          type: string
+          enum:
+          - created
+          - updated
+          - sent
+          - marked_ordered
+          - received
+          - quick_received
+          - payment_recorded
+          - payment_deleted
+          - closed
+          - cancelled
+        actor:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        sent_via:
+          oneOf:
+          - $ref: '#/components/schemas/PurchaseOrderSentVia'
+          - type: 'null'
+        units:
+          type:
+          - integer
+          - 'null'
+        damaged:
+          type:
+          - integer
+          - 'null'
+        amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without purchasing.manage (adjust-only receivers)
+      description: History row (no "Approved by", P88B-7).
+    PurchaseOrderDetail:
+      allOf:
+      - $ref: '#/components/schemas/PurchaseOrder'
+      - type: object
+        required:
+        - supplier
+        - notes
+        - lines
+        - receipts
+        - payments
+        - events
+        properties:
+          supplier:
+            $ref: '#/components/schemas/PurchaseOrderSupplier'
+          notes:
+            type:
+            - string
+            - 'null'
+            maxLength: 1000
+          lines:
+            type: array
+            items:
+              $ref: '#/components/schemas/PurchaseOrderLine'
+          receipts:
+            type: array
+            items:
+              $ref: '#/components/schemas/PurchaseReceipt'
+            description: Newest first
+          payments:
+            type: array
+            items:
+              $ref: '#/components/schemas/SupplierPayment'
+            description: Newest first; empty for adjust-only actors
+          events:
+            type: array
+            items:
+              $ref: '#/components/schemas/PurchaseOrderEvent'
+            description: Oldest first
+      description: supplier is the extended PurchaseOrderSupplier block.
+    PurchaseOrderListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - draft
+            - ordered
+            - partially_received
+            - received
+            - closed
+            - cancelled
+            properties:
+              all:
+                type: integer
+              draft:
+                type: integer
+              ordered:
+                type: integer
+              partially_received:
+                type: integer
+              received:
+                type: integer
+              closed:
+                type: integer
+              cancelled:
+                type: integer
+    PurchaseOrderSummary:
+      type: object
+      required:
+      - currency
+      - open_count
+      - open_total_amount
+      - units_coming
+      - suppliers_coming
+      - owed_amount
+      - payments_due_this_week
+      - late_count
+      - first_late
+      properties:
+        currency:
+          type: string
+        open_count:
+          type: integer
+        open_total_amount:
+          type: integer
+        units_coming:
+          type: integer
+        suppliers_coming:
+          type: integer
+        owed_amount:
+          type: integer
+        payments_due_this_week:
+          type: integer
+          description: POs with due_on in the next 7 days and a balance > 0
+        late_count:
+          type: integer
+        first_late:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - number
+            - days_late
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+              days_late:
+                type: integer
+          - type: 'null'
+    CreatePurchaseOrderInput:
+      type: object
+      required:
+      - supplier_id
+      - lines
+      properties:
+        supplier_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required:
+            - variant_id
+            - quantity
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              unit_cost_amount:
+                type: integer
+                minimum: 0
+                maximum: 1000000000
+                description: Omitted on create → last unit cost from this supplier, else the variant cost, else 0
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 100000
+        expected_on:
+          type:
+          - string
+          - 'null'
+          format: date
+          description: today … 1 year ahead
+        shipping_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: '"Transport"'
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: '"Supplier discount"; ≤ subtotal + shipping'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+    UpdatePurchaseOrderInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        supplier_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required:
+            - variant_id
+            - quantity
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              unit_cost_amount:
+                type: integer
+                minimum: 0
+                maximum: 1000000000
+                description: Omitted on create → last unit cost from this supplier, else the variant cost, else 0
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 100000
+        expected_on:
+          type:
+          - string
+          - 'null'
+          format: date
+          description: today … 1 year ahead
+        shipping_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: '"Transport"'
+        discount_amount:
+          type: integer
+          minimum: 0
+          description: '"Supplier discount"; ≤ subtotal + shipping'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+      description: Partial; lines replaces the whole set (matched by variant_id).
+    SendPurchaseOrderInput:
+      type: object
+      required:
+      - sent_via
+      properties:
+        sent_via:
+          $ref: '#/components/schemas/PurchaseOrderSentVia'
+        revision:
+          type: integer
+    ReceivePurchaseOrderInput:
+      type: object
+      required:
+      - lines
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required:
+            - item_id
+            - received
+            - damaged
+            properties:
+              item_id:
+                $ref: '#/components/schemas/Ulid'
+              received:
+                type: integer
+                minimum: 0
+              damaged:
+                type: integer
+                minimum: 0
+        supplier_invoice_ref:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        invoice_media_id:
+          type:
+          - string
+          - 'null'
+          description: ULID from POST …/purchasing/invoices
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    SupplierPaymentInput:
+      type: object
+      required:
+      - amount
+      - method
+      - paid_on
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 10000000000
+        method:
+          $ref: '#/components/schemas/SupplierPaymentMethod'
+        paid_on:
+          type: string
+          format: date
+          description: 2020-01-01 … today (store tz)
+        purchase_order_id:
+          type:
+          - string
+          - 'null'
+          description: ULID of one of this supplier's POs
+        reference:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        currency:
+          type: string
+          description: Optional; must equal the store currency
+    QuickPurchaseInput:
+      type: object
+      required:
+      - supplier_id
+      - lines
+      properties:
+        supplier_id:
+          $ref: '#/components/schemas/Ulid'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required:
+            - variant_id
+            - unit_cost_amount
+            - quantity
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              unit_cost_amount:
+                type: integer
+                minimum: 0
+                maximum: 1000000000
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 100000
+                description: Pieces delivered (= ordered)
+              damaged:
+                type: integer
+                minimum: 0
+                description: ≤ quantity; received = quantity − damaged
+        shipping_amount:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+        discount_amount:
+          type: integer
+          minimum: 0
+        payment:
+          oneOf:
+          - type: object
+            required:
+            - amount
+            - method
+            - paid_on
+            properties:
+              amount:
+                type: integer
+                minimum: 1
+                maximum: 10000000000
+              method:
+                $ref: '#/components/schemas/SupplierPaymentMethod'
+              paid_on:
+                type: string
+                format: date
+                description: 2020-01-01 … today (store tz)
+              reference:
+                type:
+                - string
+                - 'null'
+                maxLength: 60
+              note:
+                type:
+                - string
+                - 'null'
+                maxLength: 200
+              currency:
+                type: string
+                description: Optional; must equal the store currency
+          - type: 'null'
+        supplier_invoice_ref:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        invoice_media_id:
+          type:
+          - string
+          - 'null'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+    PurchaseInvoice:
+      type: object
+      required:
+      - id
+      - mime
+      - size_bytes
+      - status
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        mime:
+          $ref: '#/components/schemas/ExpenseReceiptMime'
+        size_bytes:
+          type: integer
+        status:
+          $ref: '#/components/schemas/MediaStatus'
+        created_at:
+          type: string
+          format: date-time
+    ReorderSuggestionItem:
+      type: object
+      required:
+      - variant_id
+      - product
+      - variant_title
+      - sku
+      - available
+      - incoming
+      - sold_30d
+      - days_left
+      - suggested_quantity
+      - last_unit_cost_amount
+      properties:
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type: object
+          required:
+          - id
+          - name
+          - image
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            image:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+        variant_title:
+          type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        available:
+          type: integer
+          description: on_hand − committed
+        incoming:
+          type: integer
+        sold_30d:
+          type: integer
+          description: Units shipped in the last 30 days
+        days_left:
+          type: integer
+          description: floor((available + incoming) ÷ daily); ≤ 0 → "Out of stock"
+        suggested_quantity:
+          type: integer
+          minimum: 1
+        last_unit_cost_amount:
+          type:
+          - integer
+          - 'null'
+    ReorderSuggestionGroup:
+      type: object
+      required:
+      - supplier
+      - items
+      properties:
+        supplier:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - lead_time_days
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              lead_time_days:
+                type:
+                - integer
+                - 'null'
+          - type: 'null'
+          description: Last supplier of the variants; null = "No supplier yet"
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReorderSuggestionItem'

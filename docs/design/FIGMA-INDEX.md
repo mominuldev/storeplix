@@ -95,8 +95,8 @@ Each desktop frame = Sidebar + Main (1440 wide).
 | Import products (CSV) | `60:10175` (Main `60:10177`); Column map row `63:16638`; Import preview row `63:16857` | Also used for customer import |
 | Product reviews / Barcode labels | `60:10572` / `147:32835` (label `147:32805`) | Deferred |
 | Local components · Products | `60:10969` | |
-| Inventory (stock levels) | `11:589` (Main `11:743`) | Stock levels + Stock movements tabs only |
-| Purchase orders / New PO / Receive / Transfers / Stock count / Suppliers | `35:5619` / `35:6210` / `36:6607` / `153:34425` / `153:35246` / `153:35999` | Deferred (Phase 8) |
+| Inventory (stock levels) | `11:589` (Main `11:743`) | Stock levels + Stock movements tabs; **Purchase orders + Suppliers tabs, INCOMING column and reorder card from Phase 8.8b** (below) |
+| Purchase orders / New PO / Receive / Transfers / Stock count / Suppliers | `35:5619` / `35:6210` / `36:6607` / `153:34425` / `153:35246` / `153:35999` | Purchase orders, New PO, Receive, Suppliers → **Phase 8.8b** (below); Transfers, Stock count → Deferred (8.8c+) |
 | Customers list | `63:14972` (Main `63:14974`); Customer/Row `61:12494`; Avatar `61:12493` | |
 | Customer detail | `64:16382` (Main `64:16384`) | Contact, tags, notes only |
 | Customer segments / Blocked | `65:16718` / `66:17034` | Deferred |
@@ -302,3 +302,21 @@ decisions yet — new orders will appear here."). Free plan: plan note "Fake ord
 | Storefront checkout OTP + "COD not available" | — (composed, theme inputs/buttons) | Build: OTP inline under the phone field (6 boxes, "Verification code", "We sent a 6-digit code to {phone}.", "Resend code" / "Resend in 0:42", errors "That code isn't right. {n} tries left." / "Enter the code we sent."); COD disabled with "Cash on delivery isn't available for this number. Please pay online." and online preselected; daily-limit message (P88-11); bn strings in the storefront dictionary |
 | Storefront checkout privacy sentence | — (composed, under the cash-on-delivery note) | Build: one fixed sentence (Q189, P88-16); the privacy page itself is merchant-written and unchanged |
 | Nav | Orders children | Build: **Fake order guard** (`/orders/fraud-guard`) with `fraud.manage` |
+
+## Phase 8.8b — suppliers + purchase orders (page Inventory `26:2146`; PHASE-8-8B-CONTRACT §10)
+One stock pool: every location element ("Receive at", location selector, Warehouses tab, location text in footers) is
+**hidden**, as are approval (P88B-7), email sending and the "vs last month" line (Q211). Routes under Inventory (no new
+sidebar item): `/inventory/purchase-orders`, `/inventory/purchase-orders/new`, `/inventory/purchase-orders/:id`,
+`/inventory/suppliers`. No mobile frames: tables become cards below `md`, the receive table stacks per line, 375 px
+usable; states from `148:34032` (empty "No purchase orders yet — create one or record a quick purchase.", "No
+suppliers yet"). Free plan: upgrade note (`purchasing` on Starter and Growth). Status: **In progress** (8.8b build;
+contract accepted 2026-11-24).
+
+| Screen / element | Frame | 8.8b |
+|---|---|---|
+| Inventory additions | `11:589` | Build: INCOMING column (`incoming`), header button "Purchase order" (→ New PO), Reorder suggestion card (when suggestions exist), movement rows "Received · PO-0012" + supplier (from the movement note/reference). **Hidden**: "Transfer stock" button, location selector. Tabs: Stock levels · Stock movements · **Purchase orders** · **Suppliers** (Warehouses, Stock count hidden) |
+| Purchase orders `/inventory/purchase-orders` | `35:5619` | Build: KPI tiles Open orders / Units coming / Owed to suppliers / Late deliveries, status chips with counts, search, table (PO, supplier · items with ≤ 2 thumbnails, receiving bar, ordered, expected "· late", total, paid, status pill), Reorder suggestions card + "Create PO for n items", "+ New purchase order". **Composed**: "Quick purchase" secondary button + dialog (supplier, lines, transport, discount, payment). **Hidden**: header "Suppliers" button (the tab exists) |
+| New purchase order `/inventory/purchase-orders/new` | `35:6210` | Build: supplier card (name, contact, city, "Delivers in ~n days", "n past orders", "You owe ৳ x"), Expected by, Payment terms, items table ("Last bought at", IN STOCK, unit cost, quantity, line totals), "Add n suggested", Summary with editable Transport and Supplier discount, Advance now / Pay from / On delivery (suggested from `advance_percent`; "Record advance" records a payment), info note "Stock value goes up by ৳ x when received. Cost prices update automatically.", "Save draft", "Send to supplier" (WhatsApp, PDF). **Composed**: supplier picker dialog (Change), variant picker ("+ Add product"), remove-line control. **Hidden**: Receive at, approval warning, Email channel |
+| PO detail / Receive `/inventory/purchase-orders/:id` | `36:6607` | Build: header pill, Print (PDF), Record payment, progress card (received / receiving now / damaged), money summary Total / Paid / Due (hidden for `inventory.adjust`-only), Receive items table (RECEIVING NOW, DAMAGED), "Receive all remaining", footer "Adding n units to stock" / "Stock value + ৳ x · cost prices updated" / "n damaged, not added to stock", "Attach supplier invoice", "Receive n units", supplier card with Call (`tel:`) and WhatsApp (`wa.me`), payments card, history (no "Approved by"), documents (invoices + PO PDF). **Composed**: More menu (Mark as ordered, Edit, Close, Cancel, Delete draft). **Hidden**: location text |
+| Suppliers `/inventory/suppliers` | `153:35999` | Build: KPI tiles Suppliers / You owe / On the way / Bought this month, table (supplier, supplies · city, products, open POs, you owe — red when overdue, last order), detail panel (contact, owed banner with overdue, payment terms, pays by, lead time, recent POs with delivery/payment pills, Record payment, New PO), "Import" (CSV). **Composed**: "+ Add supplier" form dialog, selected-row highlight, search, archive in the panel menu. **Hidden**: "vs last month" line (Q211) |
+| Transfers / Stock count | `153:34425` / `153:35246` | **Deferred** (8.8c+) |

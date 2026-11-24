@@ -51,10 +51,10 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 | 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
 | 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `api_key_scope_missing` (+ `details.required_scope`, Phase 8.4), `invitation_email_mismatch`, `email_not_verified`, `impersonation_receipt_hidden` (Phase 8.7: receipt link in an impersonation session) | authenticated but not allowed |
 | 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found`, `unsubscribe_link_invalid` (Phase 8.5), `recovery_link_invalid` (Phase 8.6), `receipt_not_found` (Phase 8.7) | missing **or belongs to another tenant** |
-| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3), `suppression_customer_owned` (Phase 8.5), `automation_exists`, `automation_not_draft` (Phase 8.6), `receipt_processing` (Phase 8.7), `order_held`, `order_not_held`, `already_blocked` (Phase 8.8a); `currency_locked` is enforced from Phase 8.7 (store has an order or an expense, PHASE-8-7 P87-18) | state conflict |
+| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3), `suppression_customer_owned` (Phase 8.5), `automation_exists`, `automation_not_draft` (Phase 8.6), `receipt_processing` (Phase 8.7), `order_held`, `order_not_held`, `already_blocked` (Phase 8.8a), `supplier_in_use` (Phase 8.8b); `currency_locked` is enforced from Phase 8.7 (store has an order or an expense, PHASE-8-7 P87-18) | state conflict |
 | 413 | `payload_too_large` | body/upload over the endpoint limit |
 | 419 | `csrf_token_mismatch` | cookie-session write without a valid `X-XSRF-TOKEN` (Phase 4.7) |
-| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4), `campaign_quiet_hours`, `campaign_unknown_merge_field`, `campaign_too_long`, `campaign_coupon_inactive`, `campaign_no_recipients` (Phase 8.5), `automation_incomplete` (Phase 8.6), `export_too_large` (Phase 8.7, + `details.limit`), `cod_unavailable`, `order_limit_reached`, `otp_required`, `otp_invalid` (Phase 8.8a, + `details.attempts_left`) | validation / business rule |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4), `campaign_quiet_hours`, `campaign_unknown_merge_field`, `campaign_too_long`, `campaign_coupon_inactive`, `campaign_no_recipients` (Phase 8.5), `automation_incomplete` (Phase 8.6), `export_too_large` (Phase 8.7, + `details.limit`), `cod_unavailable`, `order_limit_reached`, `otp_required`, `otp_invalid` (Phase 8.8a, + `details.attempts_left`), `over_receive`, `variant_not_tracked` (Phase 8.8b) | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
 | 503 | `maintenance` | |
@@ -201,6 +201,19 @@ Reused: `feature_not_in_plan` (402, `details.feature = fake_order_guard`: settin
 `validation_failed` (settings ranges, `advance_below < hold_below`, phone, note), `impersonation_read_only`,
 `rate_limited`.
 
+**Phase 8.8b codes** (PHASE-8-8B-CONTRACT §8.4, suppliers + purchase orders):
+| HTTP | code | When |
+|---|---|---|
+| 409 | `supplier_in_use` | `DELETE …/suppliers/{supplier}` when it has purchase orders or payments (archive instead) |
+| 422 | `over_receive` | `POST …/purchase-orders/{po}/receipts` or quick purchase where a line's received + damaged > left (ordered − received − damaged); `details["lines.{i}.received"]` |
+| 422 | `variant_not_tracked` | a purchase-order line for a variant that does not track inventory (`details["lines.{i}.variant_id"]`) |
+Reused: `invalid_state_transition` (409: send/mark-ordered/close/cancel/delete/PATCH/receive in the wrong status),
+`revision_conflict` (409: stale `revision` on PATCH or a transition — the contract's "`revision_mismatch`" is this
+existing code), `feature_not_in_plan` (402, `details.feature = purchasing`: every purchasing write incl. receipts,
+quick purchase, payments, invoice upload and `type=suppliers` imports), `idempotency_key_required` (400),
+`idempotency_key_in_use` / `idempotency_key_mismatch` (409) on receipts and quick purchase, `validation_failed`,
+`impersonation_read_only`, `rate_limited`.
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
@@ -282,6 +295,7 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `expense-receipts.download` (Phase 8.7, signed `GET /expense-receipts/{media}/download`) | request IP | 60/min |
 | `fraud-check` (Phase 8.8a, `POST /stores/{store}/fraud-guard/check`) | tenant + user | 30/min |
 | `checkout-otp` (Phase 8.8a, `POST /storefront/checkout/otp`) | store + normalised phone; store + shopper IP | 5/hour per phone; 20/hour per IP (on top of `storefront`) |
+| `purchasing-write` (Phase 8.8b, every `POST`/`PATCH`/`DELETE` under `/stores/{store}/suppliers…`, `/supplier-payments/…`, `/purchase-orders…`, `/purchasing/invoices`) | tenant + user | 60/min |
 | Checkout OTP attempts (Phase 8.8a, not HTTP) | OTP row | 5 wrong codes → `otp_invalid` with `attempts_left: 0`, a new code is needed; resend after 60 s; code TTL 5 min |
 | Automation frequency cap (Phase 8.6, in the `automations` queue, not HTTP) | store + channel + address | ≤ 2 automation marketing messages per rolling 24 h across automations → step `skipped/frequency_cap` (campaign messages not counted) |
 | Campaign send rate (Phase 8.5, in the `campaigns` queue, not HTTP) | store; platform | SMS 10/s per store (`campaigns.sms_rate_per_second`) and 50/s platform-wide (`campaigns.platform_sms_rate_per_second`); email 20/s per store — over the limit the job is released, never dropped |
@@ -303,6 +317,9 @@ Phase 8.7 envelope exception: `GET /stores/{store}/expenses/export` answers `tex
 via `CsvCell`) like the import template and document downloads; its errors keep the JSON envelope. The signed receipt
 download `GET /expense-receipts/{media}/download` streams the file (tenant from the signature, as `documents.download`).
 
+Phase 8.8b envelope exception: `GET /stores/{store}/purchase-orders/{po}/pdf` answers `application/pdf` (inline,
+`PO-0012.pdf`) like the billing invoice PDF; its errors keep the JSON envelope.
+
 ## 9. Idempotency
 Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,
 `POST /stores/{store}/orders/{id}/refunds`, `POST /subscriptions/*/pay`, and accepted on all other POSTs.
@@ -321,6 +338,8 @@ different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 
   (`POST /storefront/payment-links/{token}/pay`), `payment-links.create`, `payment-gateways.test`
   (`…/test-payment`), `shipments.book` (`POST …/orders/{order}/shipments`), `returns.exchange`
   (`POST …/returns/{return}/exchange-order`). `PUT …/orders/{order}/items` uses `revision`, not a key.
+- **Phase 8.8b scopes:** `purchase-orders.receive` (`POST …/purchase-orders/{po}/receipts`) and `purchase-orders.quick`
+  (`POST …/purchase-orders/quick`); the dashboard creates one key per receive form / quick-purchase dialog session.
 - **Request hash:** sha256 of method + path, the canonical (key-sorted) JSON body and, for checkout, the sha256 of
   `X-Cart-Token`.
 - The key row is inserted as `processing` (`locked_until = now + 30 s`) in its own transaction **before** the business

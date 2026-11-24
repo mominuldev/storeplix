@@ -107,6 +107,7 @@ unchanged from earlier phases, the Staff page "Online now", "Actions today", "St
 | 6 | `products.edit` | products "Products & stock" | Edit products & prices · Products, categories, images | — | | operate |
 | 7 | `products.delete` | products | Delete products & categories | 6 | | manage_catalog |
 | 8 | `inventory.adjust` | products | Adjust stock · Receive and count stock | — | | operate |
+| 8a | `purchasing.manage` | products | **Phase 8.8b** (PHASE-8-8B §2.1): Suppliers & purchase orders · Suppliers, purchase orders, supplier payments and purchase prices; requires `costs.view` (#13); O ✓ A ✓ S ✗, grantable (catalogue 27 keys, 26 grantable) | 13 | ✓ | — |
 | 9 | `customers.view` | customers "Customers" | View customers · Names, phones, order history | — | | operate |
 | 10 | `customers.edit` | customers | Add & edit customers · Details and notes | 9 | | operate |
 | 11 | `customers.delete` | customers | Delete customers and others' notes | 10 | | manage_catalog |
@@ -172,6 +173,8 @@ fields need `costs.view`), `GET /media[/{media}]`, `GET /coupons[/{coupon}]`, `G
 | Catalog | `POST|PATCH /products[/{product}]`, `POST /products/{product}/duplicate`, `POST /products/bulk`, `POST|PATCH /categories[/{category}]`, `PUT /categories/order` | `products.edit` |
 | | `DELETE /products/{product}`, `DELETE /categories/{category}` | `products.delete` |
 | Inventory | `POST /inventory/adjustments`, `PATCH /inventory/{variant}` | `inventory.adjust` |
+| Purchasing (Phase 8.8b) | every `/suppliers*`, `/supplier-payments/*`, `/purchase-orders/summary`, PO create/PATCH/DELETE/send/mark-ordered/close/cancel, `/purchase-orders/quick`, `…/pdf`, `/purchasing/reorder-suggestions` (PHASE-8-8B §8.1) | `purchasing.manage` |
+| | `GET /purchase-orders`, `GET /purchase-orders/{po}`, `POST /purchase-orders/{po}/receipts`, `POST /purchasing/invoices` | `purchasing.manage\|inventory.adjust` (adjust-only: money/cost fields null, sent costs ignored, P88B-11) |
 | Customers | `GET /customers[/{customer}]` | `customers.view` |
 | | `POST|PATCH /customers[/{customer}]`, `POST /customers/{customer}/notes`, `DELETE …/notes/{note}` | `customers.edit` |
 | | `DELETE /customers/{customer}` | `customers.delete` |
@@ -205,7 +208,7 @@ returns, `/internal/*`, `/storefront/*`, `/admin/*`, other `/dev/*`.
 | `MediaPolicy::delete` logo/favicon | `settings.manage` |
 | `CustomerPresenter::canDeleteNote` / delete another author's note | author or `customers.delete` |
 | `ReportController::profit` | `costs.view` |
-| `ImportController` store / validate / run (SEC-M2, amended 2026-11-24) | products: `products.edit` + `inventory.adjust` (+ `costs.view` on run when any row sets `cost_price`); customers: `customers.edit` → 403 `forbidden` |
+| `ImportController` store / validate / run (SEC-M2, amended 2026-11-24) | products: `products.edit` + `inventory.adjust` (+ `costs.view` on run when any row sets `cost_price`); customers: `customers.edit`; suppliers (Phase 8.8b): `purchasing.manage` → 403 `forbidden` |
 | `ExportController::store` → `RunExport` (SEC-M1) | `data_exports.include_costs` = requester holds `costs.view`; false → product `cost_price` column empty (migration `000500`, default false) |
 | Cost fields (product, variant, inventory, order items, dashboard `stock_value_cost_amount`, order placement/edit previews) | `costs.view`, else null as today |
 | `OrderPresenter` `actions.refund`, payment `can_refund` | `orders.refund` |

@@ -108,6 +108,12 @@ Conventions in this file:
 | P4-27 | **Onboarding 05** creates products as `active` in the current store. They become public when the store goes live (Phase 5.13). The quick-add "Stock" field means **stock per size** when sizes are chosen; the label changes to "Stock per size" (Q26). "Save & continue" goes to `/` (step 06 Delivery is Phase 5). Figma has **no mobile frame** for step 05: `54:941` (listed as M5) is actually the mobile "You're live" screen. The mobile layout stacks the desktop `50:312` and hides the live phone preview below `lg`. | AC "Product created in active store". Records the Figma mismatch |
 | P4-28 | **Sidebar.** "Products" gets children like Orders has: All products `/products`, Categories `/products/categories`, Import `/products/import`. Inventory, Customers and Dashboard keep their single entries. | Figma 60:9778 and 60:10175 sit under the Products nav item. This reuses the existing child-nav pattern (no new style) |
 
+> **Amended by PHASE-8-8B (Phase 8.8b, P88B-5, ADR 0023):** `product_variants.cost_amount` is no longer only
+> hand-typed. Every purchase-order receipt writes the weighted-average landed cost to the variant (inside the receipt
+> transaction, under the inventory row lock); a manual cost edit still overrides. Consequences: stock value at cost and
+> the cost snapshot of **future** orders change; past order snapshots (P5-31) and past Profit & loss do not. Cost stays
+> private (P4-5): `inventory.adjust`-only receivers never see it, though their receipts still update it.
+
 ### New OPEN-QUESTIONS (appended to OPEN-QUESTIONS.md)
 - **Q21** Should staff see cost price and profit? Default: no (owner/admin only).
 - **Q22** Customer PII for staff. Default: staff see phone and email, but can't export, import or delete customers.
