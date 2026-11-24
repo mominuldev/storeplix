@@ -271,7 +271,7 @@ location; quick purchase takes `location_id`. Receive screen and PDF show "Recei
 | POST | `/stock-transfers` | `inventory.adjust` | B · plan; 201 |
 | PATCH / DELETE | `/stock-transfers/{transfer}` | `inventory.adjust` | B · draft only; plan on PATCH |
 | POST | `/stock-transfers/{transfer}/send` · `/receive` · `/cancel` | `inventory.adjust` | B · send plan-checked; idempotent |
-| GET | `/stock-counts`, `/stock-counts/{count}` | base | B |
+| GET | `/stock-counts`, `/stock-counts/{count}` (header + summary only), `/stock-counts/{count}/lines` (paged 100; `filter[state]`, `q`; `meta.counts` per state + `all`) | base | B · `/lines` added 2026-11-25 (split from the detail so a 5,000-line count is never one payload) |
 | POST | `/stock-counts` | `inventory.adjust` | B · 201 |
 | POST | `/stock-counts/{count}/scan` · `/finish` · `/cancel` | `inventory.adjust` | B |
 | PUT | `/stock-counts/{count}/lines/{line}` | `inventory.adjust` | B |
@@ -279,10 +279,17 @@ location; quick purchase takes `location_id`. Receive screen and PDF show "Recei
 Shapes: `Location`, `LocationType`, `InventoryItem.locations[]`, `InventoryLevel` (+ `location_id`, `total_on_hand`,
 `other_locations_on_hand`), `StockMovement.location`, `StockMovementReason` (+3), reference union (+2), `StockTransfer`,
 `StockTransferDetail`, `StockTransferLine`, `StockTransferStatus`, `StockTransferSummary`, `StockCount`,
-`StockCountDetail`, `StockCountLine`, `StockCountStatus`, `StockCountSummary`.
+`StockCountDetail`, `StockCountLine`, `StockCountStatus`, `StockCountSummary` (part B as built in `packages/types`,
+2026-11-25: also `StockVariantRef` on lines, `StockTransferEvent` on `StockTransferDetail` — the body of every transfer
+write — `StockCountLineState`, `StockCountLineResult` `{line, summary, count}` as the body of scan and line PUT,
+`StockCountLine.on_hand`, `StockCount.currency`, list/line metas with `counts` per status/state + `all`, status filters
+as comma lists, and `error.details` shapes `InsufficientStockDetails`, `CountInProgressDetails`, `CountTooLargeDetails`,
+`CountLineNotFoundDetails`; `revision` on scan/line PUT/finish/cancel is the count's own revision, optional, stale →
+409; `location_archived` (422) on transfers and counts; `Idempotency-Key` required on finish too).
 Errors: `location_in_use` (409), `location_name_taken` (422), `location_locked` (422), `location_archived` (422),
 `insufficient_stock` (422, existing), `count_in_progress` (409), `count_too_large` (422), `count_line_not_found` (404),
-`invalid_state_transition`, `revision_mismatch`, `feature_not_in_plan` (existing). Limiter `stock-write` 120/min per
+`invalid_state_transition`, `revision_mismatch` (on the wire the existing `revision_conflict`, as in 8.8b; corrected
+2026-11-25), `feature_not_in_plan` (existing). Limiter `stock-write` 120/min per
 user (scan is frequent).
 
 ## 10. Merchant dashboard (owner WEB) — Figma file `2W1wMKN79hhcr1czQS63oN`

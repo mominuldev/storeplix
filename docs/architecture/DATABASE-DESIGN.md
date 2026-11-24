@@ -1105,7 +1105,7 @@ it, P88C-4). `locations` is store-scoped `[S]`, has RLS forced in its create mig
 `RlsTables::TENANT` (**83 after Phase 8.8c part A**) and `database/sql/rls-emergency-off.sql`. "FK3" = composite FK
 `(tenant_id, store_id, x_id) → x(tenant_id, store_id, id)`. Plan feature `multi_warehouse` (Growth) gates a 2nd+
 non-archived location; permission `settings.manage` for location writes (no new key, P88C-14). Transfers and counts
-(part B, `2026_12_08_*`) are not in this section.
+(part B, `2026_12_08_*`) are at the end of this section (§5.10 part B).
 
 ### locations [S] (`000100`)
 id PK · tenant_id · store_id · name varchar(60) · type varchar(10) `CHECK IN ('warehouse','shop')` · address
@@ -1145,6 +1145,64 @@ onboarding) creates the same row for every new store.
 - `audit_logs` action catalogue gains `location.created`, `location.updated`, `location.archived`,
   `location.unarchived`, `location.made_default` (`packages/types` `LOCATION_AUDIT_ACTIONS`).
 
+### Part B: stock transfers and stock counts (PHASE-8-8C-CONTRACT §3.2, §7–§8, ADR 0024 "Part B", migrations `2026_12_08_*`)
+Replaces the transfers / stock-count part of the §6 sketch. All four tables are store-scoped `[S]`, have RLS forced in
+their create migration and are listed in `RlsTables::TENANT` (**87 after Phase 8.8c**) and
+`database/sql/rls-emergency-off.sql`. Stock moves only through `InventoryService` (P4-12): transfers write
+`transfer_out` / `transfer_in` ledger rows (reference `stock_transfer`), counts write `count` rows (reference
+`stock_count`). Permission `inventory.adjust` for every write (no new key, P88C-14); plan feature `multi_warehouse` for
+creating, editing and sending transfers (receive / cancel of an existing transfer and every count stay allowed, P88C-13).
+
+#### stock_transfers [S] (`000100`)
+id PK · tenant_id · store_id · sequence int · number varchar(12) (`TR-{n}`, 3-digit padded `TR-021`, `StoreCounter`
+kind `stock_transfers`, START 1) **U(tenant_id, store_id, number)** · from_location_id char(26) FK3(locations)
+RESTRICT · to_location_id char(26) FK3(locations) RESTRICT · `CHECK (from_location_id <> to_location_id)` · status
+varchar(12) `CHECK IN ('draft','in_transit','received','cancelled')` · note varchar(500) null · sent_at · received_at ·
+cancelled_at (timestamptz null) · sent_by / received_by / cancelled_by / created_by FK users SET NULL null ·
+items_count int · units_sent int · units_received int · units_short int (all default 0; maintained by the service) ·
+revision int · timestamps. U(tenant_id, store_id, id); IX(tenant_id, store_id, status, created_at DESC);
+IX(tenant_id, store_id, from_location_id), IX(tenant_id, store_id, to_location_id) (list `filter[location_id]` = either
+side; `location_in_use` open-transfer check). Draft rows may be hard-deleted (the number is never reused); any other
+status is kept forever.
+
+#### stock_transfer_items [S] (`000100`)
+id PK · tenant_id · store_id · stock_transfer_id FK3 → stock_transfers CASCADE · variant_id FK3 → product_variants
+RESTRICT · quantity int `CHECK 1–100000` · quantity_received int null (set once at receive) · position smallint ·
+`CHECK (quantity_received IS NULL OR quantity_received BETWEEN 0 AND quantity)`. **U(stock_transfer_id, variant_id)**.
+≤ 200 lines per transfer (app rule). Short = `quantity − quantity_received`; it has no ledger row (the units already
+left the source on send) and is never returned to stock.
+
+#### stock_counts [S] (`000200`)
+id PK · tenant_id · store_id · location_id FK3(locations) RESTRICT · name varchar(80) (default "Count {d M} ·
+{location}") · category_id char(26) null FK3(categories) **ON DELETE SET NULL (category_id)** on Postgres · status
+varchar(12) `CHECK IN ('in_progress','completed','cancelled')` · zero_uncounted boolean null (set at finish) ·
+lines_count int · counted_count int · started_by FK users SET NULL null · started_at timestamptz · finished_by FK users
+SET NULL null · finished_at · cancelled_at (timestamptz null) · revision int · timestamps. U(tenant_id, store_id, id);
+IX(tenant_id, store_id, created_at DESC); partial **U(store_id, location_id) WHERE status = 'in_progress'** (one open
+count per location; the losing racer gets 409 `count_in_progress`).
+
+#### stock_count_items [S] (`000200`)
+id PK · tenant_id · store_id · stock_count_id FK3 → stock_counts CASCADE · variant_id FK3 → product_variants RESTRICT ·
+counted int null `CHECK 0–1000000` · expected int null (the location's `on_hand` read when the line was last counted,
+P88C-11) · counted_at timestamptz null · counted_by FK users SET NULL null · applied_delta int null (written at finish).
+**U(stock_count_id, variant_id)**; IX(tenant_id, store_id, stock_count_id, counted_at). Lines are created at start for
+every tracked variant in scope (≤ 5,000, else 422 `count_too_large`). Scan matches SKU, then barcode, case-insensitive,
+only among this count's lines (literal match, no `LIKE` wildcards).
+
+#### Changes to existing tables and catalogues (part B)
+- **store_counters**: kind `stock_transfers` (`StoreCounter::TRANSFERS`).
+- **inventory_movements**: no schema change (part A widened the reason CHECK). Send writes `transfer_out` at the source
+  (note "TR-021 → {to}"); receive writes `transfer_in` at the destination for each line with received > 0; cancel of an
+  in-transit transfer writes `transfer_in` at the source for the sent units (note "Cancelled"); finish of a count writes
+  one `count` row per line with a non-zero delta. All carry `reference_type` `stock_transfer` / `stock_count`.
+- Lock order (§3.3): transfer row (or count row) `FOR UPDATE` first, then stock rows in `(variant_id, location_id)`
+  order.
+- **Delta-at-count** (P88C-11): finish applies `counted − expected` per counted line (not "set to counted"), so sales and
+  receipts after a line was counted are kept; uncounted lines keep stock or, with `zero_uncounted`, get `−on_hand` read
+  under the finish lock.
+- `audit_logs` action catalogue gains `stock_transfer.created|updated|sent|received|cancelled|deleted` and
+  `stock_count.started|finished|cancelled` (`packages/types`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1158,7 +1216,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing (26:2146 Inventory) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments` — **specified in 8.8b (§5.9, PHASE-8-8B §3, ADR 0023)** | 8.8b |
-| Locations / transfers / stock count (26:2146 Inventory) | `locations`, `inventories.location_id` (U(tenant_id, store_id, variant_id, location_id)), `inventory_movements.location_id`, `order_items.location_id`, `purchase_orders`/`purchase_receipts.location_id` — **specified in 8.8c part A (§5.10, PHASE-8-8C §3.1, ADR 0024)**; `stock_transfers`, `stock_transfer_items`, `stock_counts`, `stock_count_items` — **8.8c part B** (PHASE-8-8C §3.2) | 8.8c |
+| Locations / transfers / stock count (26:2146 Inventory) | `locations`, `inventories.location_id` (U(tenant_id, store_id, variant_id, location_id)), `inventory_movements.location_id`, `order_items.location_id`, `purchase_orders`/`purchase_receipts.location_id` — **specified in 8.8c part A (§5.10, PHASE-8-8C §3.1, ADR 0024)**; `stock_transfers`, `stock_transfer_items`, `stock_counts`, `stock_count_items` — **specified in 8.8c part B (§5.10 part B, PHASE-8-8C §3.2)** | 8.8c |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `fraud_guard_settings`, `blocked_phones`, `order_risk_checks`, `fraud_guard_events`, `checkout_otps`, `orders.guard_hold` (no `customers.risk_flags`, no courier provider rows) — **specified in 8.8a (§5.8, PHASE-8-8 §4, ADR 0022)** | 8.8a |
 | Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |

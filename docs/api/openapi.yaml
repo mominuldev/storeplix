@@ -1,8 +1,41 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.18.0
+  version: 1.19.0
   description: |
+    1.19.0 (2026-11-25, Phase 8.8c part B, PHASE-8-8C-CONTRACT.md §7–§9, ADR 0024 "Part B"). Stock transfers and stock
+    counts (tag inventory; reads perm base; every write needs inventory.adjust, limiter stock-write 120/min per user,
+    impersonation → 403 impersonation_read_only). Transfers (P88C-9/10): GET|POST /stores/{store}/stock-transfers
+    (list: filter[status] comma list, filter[location_id] = either side, q = number, meta.counts per status; POST 201
+    draft with the next TR-{n}, `send: true` = create and send in one call, multi_warehouse plan feature → 402
+    feature_not_in_plan), GET .../stock-transfers/summary (KPI tiles), GET|PATCH|DELETE .../stock-transfers/{transfer}
+    (PATCH / DELETE draft only; PATCH plan-checked, revision required), POST .../{transfer}/send (Idempotency-Key
+    required; plan-checked; stock leaves the source as transfer_out; each line ≤ the source's available = on_hand −
+    committed, else 422 insufficient_stock with details.lines: InsufficientStockDetails), POST .../{transfer}/receive
+    (Idempotency-Key required; once; 0 ≤ received ≤ sent per line; received units arrive at the destination as
+    transfer_in, the rest is short and written off), POST .../{transfer}/cancel (draft: no stock change; in_transit: the
+    sent units return to the source as transfer_in). Receive and cancel need no plan. Counts (P88C-11/12, every plan): GET|POST
+    /stores/{store}/stock-counts (POST 201; one in_progress count per location → 409 count_in_progress with
+    details.count_id; > 5000 lines → 422 count_too_large with details.lines / details.max), GET .../stock-counts/{count}
+    (header + summary), GET .../{count}/lines (100 per page, filter[state] = not_counted | differences | matched, q,
+    meta.counts per state), POST .../{count}/scan {code} (+1; SKU then barcode, literal, within the count; no match →
+    404 count_line_not_found with details.code), PUT .../{count}/lines/{line} {counted} (null = un-count; optional
+    count revision), POST .../{count}/finish {zero_uncounted} (Idempotency-Key required; applies counted − expected per
+    counted line, idempotent on a completed count), POST .../{count}/cancel. Every *_value_amount on counts is null
+    without costs.view. New schemas StockVariantRef, StockTransfer, StockTransferStatus, StockTransferLine,
+    StockTransferEvent, StockTransferEventType, StockTransferDetail, StockTransferListMeta, StockTransferSummary,
+    StockTransferLineInput, CreateStockTransferInput, UpdateStockTransferInput, StockTransferTransitionInput,
+    ReceiveStockTransferLineInput, ReceiveStockTransferInput, InsufficientStockDetails, StockCount, StockCountStatus,
+    StockCountLineState, StockCountSummary, StockCountDetail, StockCountLine, StockCountLineListMeta,
+    StockCountListMeta, StockCountLineResult, StartStockCountInput, ScanStockCountInput, SetStockCountLineInput,
+    FinishStockCountInput, StockCountTransitionInput, CountInProgressDetails, CountTooLargeDetails,
+    CountLineNotFoundDetails; parameters StockTransferPath, StockCountPath, StockCountLinePath. StockMovementReason
+    transfer_out / transfer_in / count and reference types stock_transfer / stock_count are now written. 409
+    location_in_use reasons open_transfers (draft or in_transit, either side) and open_counts (in_progress) are now
+    returned. New error codes count_in_progress (409), count_too_large (422), count_line_not_found (404); reused
+    invalid_state_transition, revision_conflict, insufficient_stock, location_archived, variant_not_tracked,
+    feature_not_in_plan, idempotency_key_*. AuditAction gains stock_transfer.created|updated|sent|received|cancelled|deleted
+    and stock_count.started|finished|cancelled.
     1.18.0 (2026-11-24, Phase 8.8c part A, PHASE-8-8C-CONTRACT.md, ADR 0024). Locations and per-location stock. Stock
     is one row per variant per location; every store has exactly one default location (= the **online location**:
     storefront, carts, checkout and every new order sell from it); existing stock was backfilled to a default "Main
@@ -3224,8 +3257,8 @@ paths:
       summary: Archive a location
       operationId: archiveLocation
       description: Phase 8.8c (P88C-17). Needs settings.manage. No plan check. Allowed only when the location is not the
-        default, every stock row there has on_hand = 0 and committed = 0 and no open purchase order receives there (part B
-        adds open transfers and counts); else 409 location_in_use with details.reasons (LocationInUseReason[]). Archived
+        default, every stock row there has on_hand = 0 and committed = 0, no open purchase order receives there, no draft or
+        in-transit transfer starts or ends there and no count is in progress there (1.19.0); else 409 location_in_use with details.reasons (LocationInUseReason[]). Archived
         locations keep their ledger rows; there is no hard delete. Audited location.archived.
       security:
       - sessionCookie: []
@@ -3646,6 +3679,988 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/stock-transfers:
+    get:
+      tags:
+      - inventory
+      summary: List stock transfers
+      operationId: listStockTransfers
+      description: Phase 8.8c part B (PHASE-8-8C §7). Any role (perm base). Newest first, 25 per page. filter[status] comma
+        list of StockTransferStatus; filter[location_id] matches either side (from or to); `q` matches the number (e.g. TR-021
+        or 21). meta.counts per status (ignoring filter[status]). Readable on every plan (after a downgrade existing transfers
+        stay listed).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of StockTransferStatus
+      - in: query
+        name: filter[location_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: A location of this store (else 422); matches from_location or to_location
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 40
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockTransfer'
+                  meta:
+                    $ref: '#/components/schemas/StockTransferListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - inventory
+      summary: Create a stock transfer (draft, or create and send)
+      operationId: createStockTransfer
+      description: 'Phase 8.8c part B (P88C-9/10). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. Needs the multi_warehouse plan feature (402 feature_not_in_plan, details.feature = multi_warehouse).
+        Assigns the next per-store TR-{n} number (3-digit padded, never reused). from ≠ to; both active locations of this store
+        (archived → 422 location_archived); 1–200 lines, one per variant, tracked variants only (422 variant_not_tracked), quantity
+        1–100000. With `send: true` the transfer is created and sent in one transaction (the send rules of POST …/send apply,
+        incl. 422 insufficient_stock); pass an Idempotency-Key (same key + body replays the first response). Audited stock_transfer.created
+        (and stock_transfer.sent).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 64
+          pattern: ^[A-Za-z0-9_-]{8,64}$
+        description: 'Recommended with send: true (create-and-send); malformed → 400 idempotency_key_required'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockTransferInput'
+      responses:
+        '201':
+          description: 'Created (status draft, or in_transit with send: true)'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (multi_warehouse)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_in_use`, `idempotency_key_mismatch` (send: true with a key)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `location_archived`, `variant_not_tracked` or `insufficient_stock` (send: true;
+            details.lines)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/InsufficientStockDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-transfers/summary:
+    get:
+      tags:
+      - inventory
+      summary: Stock transfer KPI tiles
+      operationId: getStockTransferSummary
+      description: Phase 8.8c part B (§7). Any role. Drafts, In transit (count, units, last sent), Received this month (store
+        timezone calendar month), Locations (non-archived count + names).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferSummary'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/stock-transfers/{transfer}:
+    parameters:
+    - $ref: '#/components/parameters/StockTransferPath'
+    get:
+      tags:
+      - inventory
+      summary: Get a stock transfer
+      operationId: getStockTransfer
+      description: Phase 8.8c part B. Any role. Lines (with the source location's current on hand / available / threshold for
+        the panel's "{From} stock a → b") and events (oldest first).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - inventory
+      summary: Update a draft transfer
+      operationId: updateStockTransfer
+      description: Phase 8.8c part B. Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. Needs the multi_warehouse plan feature (402 feature_not_in_plan, details.feature = multi_warehouse).
+        draft only (else 409 invalid_state_transition). `revision` required (stale → 409 revision_conflict). `lines` replaces
+        the whole set. Same validation as create. Audited stock_transfer.updated.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockTransferInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (multi_warehouse)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `location_archived` or `variant_not_tracked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - inventory
+      summary: Delete a draft transfer
+      operationId: deleteStockTransfer
+      description: Phase 8.8c part B. Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. No plan check. draft only (else 409 invalid_state_transition); the number is never reused.
+        Audited stock_transfer.deleted.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-transfers/{transfer}/send:
+    parameters:
+    - $ref: '#/components/parameters/StockTransferPath'
+    post:
+      tags:
+      - inventory
+      summary: Send a transfer (stock leaves the source)
+      operationId: sendStockTransfer
+      description: 'Phase 8.8c part B (P88C-9/10). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. Needs the multi_warehouse plan feature (402 feature_not_in_plan, details.feature = multi_warehouse).
+        draft → in_transit. One transaction: transfer row FOR UPDATE, then source stock rows in (variant_id, location_id) order;
+        from ≠ to, both active, tracked variants only; every line ≤ the source''s available (on_hand − committed) read under
+        the lock, else 422 insufficient_stock with details.lines (every short line). One InventoryService call writes transfer_out
+        at the source (reference stock_transfer, note "TR-021 → {to}"). Same Idempotency-Key + body replays the first response.
+        Audited stock_transfer.sent.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTransferTransitionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (multi_warehouse)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`insufficient_stock` (details.lines), `location_archived`, `variant_not_tracked` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/InsufficientStockDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-transfers/{transfer}/receive:
+    parameters:
+    - $ref: '#/components/parameters/StockTransferPath'
+    post:
+      tags:
+      - inventory
+      summary: Receive a transfer (stock arrives at the destination)
+      operationId: receiveStockTransfer
+      description: Phase 8.8c part B (P88C-9). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. No plan check (an in-transit transfer can be received after a downgrade). in_transit
+        → received, once per transfer. One entry per line, 0 ≤ received ≤ quantity (422 validation_failed otherwise; every line
+        must be listed). transfer_in at the destination for each line with received > 0; the rest is short — recorded on the
+        line and the transfer (units_short), written off, never returned, no ledger row. Same Idempotency-Key + body replays
+        the first response. Audited stock_transfer.received (with short units).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiveStockTransferInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed` (received > sent, unknown item_id, missing line)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-transfers/{transfer}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/StockTransferPath'
+    post:
+      tags:
+      - inventory
+      summary: Cancel a transfer
+      operationId: cancelStockTransfer
+      description: 'Phase 8.8c part B (P88C-9). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. No plan check. From draft (no stock change) or in_transit (the sent units go back to
+        the **source** exactly once: transfer_in, note "Cancelled"). Received or cancelled → 409 invalid_state_transition. Audited
+        stock_transfer.cancelled.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTransferTransitionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockTransferDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-counts:
+    get:
+      tags:
+      - inventory
+      summary: List stock counts
+      operationId: listStockCounts
+      description: Phase 8.8c part B (PHASE-8-8C §8). Any role. Latest first, 25 per page. filter[status] comma list of StockCountStatus;
+        filter[location_id]. meta.counts per status (ignoring filter[status]). net_value_amount null without costs.view.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of StockCountStatus
+      - in: query
+        name: filter[location_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: A location of this store (else 422)
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockCount'
+                  meta:
+                    $ref: '#/components/schemas/StockCountListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - inventory
+      summary: Start a stock count
+      operationId: startStockCount
+      description: Phase 8.8c part B (P88C-11). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. No plan gate (every plan). An active location of this store (archived → 422 location_archived),
+        optional category of this store. Creates one line per tracked variant in scope with counted = null (≤ 5000, else 422
+        count_too_large). One in_progress count per location (partial unique index; 409 count_in_progress with details.count_id,
+        also for the loser of a concurrent start). Default name "Count {d M} · {location}". Audited stock_count.started.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartStockCountInput'
+      responses:
+        '201':
+          description: Created (status in_progress)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`count_in_progress` (details.count_id)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/CountInProgressDetails'
+        '422':
+          description: '`count_too_large` (details.lines, details.max), `location_archived` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/CountTooLargeDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-counts/{count}:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    get:
+      tags:
+      - inventory
+      summary: Get a stock count
+      operationId: getStockCount
+      description: Phase 8.8c part B (§8). Any role. Header, progress and the "If you finish now" summary (every *_value_amount
+        null without costs.view). Lines come from GET …/lines.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/stock-counts/{count}/lines:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    get:
+      tags:
+      - inventory
+      summary: List count lines
+      operationId: listStockCountLines
+      description: Phase 8.8c part B (§8). Any role. 100 per page (per_page ≤ 100), ordered by product name then variant. filter[state]
+        = not_counted | differences | matched (omitted = all); `q` matches product name, SKU or barcode (literal, case-insensitive).
+        meta.counts per state. value_amount null without costs.view.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[state]
+        schema:
+          $ref: '#/components/schemas/StockCountLineState'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 120
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockCountLine'
+                  meta:
+                    $ref: '#/components/schemas/StockCountLineListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/stock-counts/{count}/scan:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    post:
+      tags:
+      - inventory
+      summary: Scan or type a SKU / barcode (+1)
+      operationId: scanStockCount
+      description: Phase 8.8c part B (P88C-11). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. in_progress only (409 invalid_state_transition). `code` (1–64 chars, trimmed) matches
+        SKU, then barcode, case-insensitive and literal (`%` and `_` are not wildcards), only among this count's lines; counted
+        += 1 (null → 1) and expected = the location's on_hand now, counted_at / counted_by set. No match → 404 count_line_not_found
+        with details.code. Bumps the count revision.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanStockCountInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountLineResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          description: '`not_found` (count) or `count_line_not_found` (details.code)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/CountLineNotFoundDetails'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-counts/{count}/lines/{line}:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    - $ref: '#/components/parameters/StockCountLinePath'
+    put:
+      tags:
+      - inventory
+      summary: Set a line's counted quantity
+      operationId: setStockCountLine
+      description: Phase 8.8c part B (P88C-11). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. in_progress only (409 invalid_state_transition). counted 0–1000000 sets the line and
+        stores expected = the location's on_hand now; null un-counts it (counted, expected, counted_at, counted_by cleared).
+        Optional `revision` = the count's revision (stale → 409 revision_conflict). Bumps the count revision.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetStockCountLineInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountLineResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-counts/{count}/finish:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    post:
+      tags:
+      - inventory
+      summary: Finish & adjust stock
+      operationId: finishStockCount
+      description: 'Phase 8.8c part B (P88C-11). Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. in_progress → completed. One transaction: count row FOR UPDATE, then the location''s
+        stock rows in (variant_id, location_id) order; one InventoryService applyCount (reason count, reference stock_count)
+        with delta = counted − expected per counted line (not "set to counted", so sales and receipts after a line was counted
+        are kept); uncounted lines keep stock, or with zero_uncounted get −on_hand read under the lock; zero deltas skipped;
+        applied_delta stored per line. Idempotent: same Idempotency-Key + body replays the first response, and a finish of an
+        already completed count returns it unchanged (no new ledger rows). Audited stock_count.finished (deltas, the uncounted
+        rule, value when costs.view).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinishStockCountInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountDetail'
+        '400':
+          description: '`tenant_required` or `idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` (cancelled), `revision_conflict`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/stock-counts/{count}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/StockCountPath'
+    post:
+      tags:
+      - inventory
+      summary: Cancel a stock count
+      operationId: cancelStockCount
+      description: Phase 8.8c part B. Needs inventory.adjust (P88C-14). Limiter stock-write 120/min per user. Impersonation
+        → 403 impersonation_read_only. in_progress → cancelled; no stock change; frees the location for a new count. Completed
+        or cancelled → 409 invalid_state_transition. Audited stock_count.cancelled.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockCountTransitionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockCountDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`, `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /stores/{store}/imports/template:
     get:
       tags:
@@ -17579,6 +18594,27 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: Phase 8.8c — locations.id of this store, else 404 `not_found`.
+    StockTransferPath:
+      in: path
+      name: transfer
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8c part B — stock_transfers.id of this store, else 404 `not_found`.
+    StockCountPath:
+      in: path
+      name: count
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8c part B — stock_counts.id of this store, else 404 `not_found`.
+    StockCountLinePath:
+      in: path
+      name: line
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8c part B — stock_count_items.id of this count, else 404 `not_found`.
     CustomerPath:
       in: path
       name: customer
@@ -21702,7 +22738,755 @@ components:
       - open_purchase_orders
       - open_transfers
       - open_counts
-      description: Phase 8.8c — error.details.reasons[] of 409 location_in_use (open_transfers, open_counts from part B)
+      description: Phase 8.8c — error.details.reasons[] of 409 location_in_use (open_transfers = a draft or in_transit transfer
+        from or to it, open_counts = an in_progress count there; both returned since 1.19.0)
+    StockVariantRef:
+      type: object
+      description: Phase 8.8c part B — compact variant on transfer and count lines (id = variant id)
+      required:
+      - id
+      - product
+      - title
+      - option_values
+      - sku
+      - barcode
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type: object
+          required:
+          - id
+          - name
+          - image
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            image:
+              oneOf:
+              - $ref: '#/components/schemas/MediaRef'
+              - type: 'null'
+        title:
+          type: string
+          description: '"Default" for single-variant products'
+        option_values:
+          type: array
+          items:
+            type: string
+        sku:
+          type:
+          - string
+          - 'null'
+        barcode:
+          type:
+          - string
+          - 'null'
+    StockTransferStatus:
+      type: string
+      enum:
+      - draft
+      - in_transit
+      - received
+      - cancelled
+      description: Phase 8.8c part B. Open (blocks archiving either location) = draft, in_transit
+    StockTransfer:
+      type: object
+      description: Phase 8.8c part B (P88C-9) — list item; "Received · n short" pill when status = received and units_short >
+        0
+      required:
+      - id
+      - number
+      - status
+      - from_location
+      - to_location
+      - note
+      - items_count
+      - units_sent
+      - units_received
+      - units_short
+      - created_by
+      - sent_at
+      - received_at
+      - cancelled_at
+      - created_at
+      - updated_at
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+          maxLength: 12
+          description: TR-{n}, 3-digit padded (TR-021)
+        status:
+          $ref: '#/components/schemas/StockTransferStatus'
+        from_location:
+          $ref: '#/components/schemas/LocationRef'
+        to_location:
+          $ref: '#/components/schemas/LocationRef'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        items_count:
+          type: integer
+        units_sent:
+          type: integer
+          description: Σ line quantity (leaves the source on send)
+        units_received:
+          type:
+          - integer
+          - 'null'
+          description: Σ received; null until received
+        units_short:
+          type: integer
+          description: Σ (quantity − received), written off; 0 until received
+        created_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        received_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    StockTransferLine:
+      type: object
+      required:
+      - id
+      - variant
+      - quantity
+      - quantity_received
+      - source_on_hand
+      - source_available
+      - source_low_stock_threshold
+      - position
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        variant:
+          $ref: '#/components/schemas/StockVariantRef'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        quantity_received:
+          type:
+          - integer
+          - 'null'
+          description: null until received
+        source_on_hand:
+          type: integer
+          description: Current on hand at the source location
+        source_available:
+          type: integer
+          description: on_hand − committed at the source
+        source_low_stock_threshold:
+          type:
+          - integer
+          - 'null'
+          description: Source row threshold (null = store default / none)
+        position:
+          type: integer
+    StockTransferEventType:
+      type: string
+      enum:
+      - created
+      - sent
+      - received
+      - cancelled
+    StockTransferEvent:
+      type: object
+      required:
+      - type
+      - actor
+      - created_at
+      properties:
+        type:
+          $ref: '#/components/schemas/StockTransferEventType'
+        actor:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    StockTransferDetail:
+      allOf:
+      - $ref: '#/components/schemas/StockTransfer'
+      - type: object
+        required:
+        - lines
+        - events
+        properties:
+          lines:
+            type: array
+            items:
+              $ref: '#/components/schemas/StockTransferLine'
+          events:
+            type: array
+            items:
+              $ref: '#/components/schemas/StockTransferEvent'
+            description: Oldest first
+      description: Body of get, create (201), PATCH, send, receive and cancel
+    StockTransferListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - draft
+            - in_transit
+            - received
+            - cancelled
+            properties:
+              all:
+                type: integer
+              draft:
+                type: integer
+              in_transit:
+                type: integer
+              received:
+                type: integer
+              cancelled:
+                type: integer
+    StockTransferSummary:
+      type: object
+      description: Phase 8.8c part B (§7) — KPI tiles; "this month" = store timezone calendar month
+      required:
+      - drafts_count
+      - in_transit_count
+      - in_transit_units
+      - last_sent_at
+      - received_this_month_count
+      - received_this_month_units
+      - locations
+      properties:
+        drafts_count:
+          type: integer
+        in_transit_count:
+          type: integer
+        in_transit_units:
+          type: integer
+        last_sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        received_this_month_count:
+          type: integer
+        received_this_month_units:
+          type: integer
+        locations:
+          type: object
+          description: Non-archived locations
+          required:
+          - count
+          - names
+          properties:
+            count:
+              type: integer
+            names:
+              type: array
+              items:
+                type: string
+    StockTransferLineInput:
+      type: object
+      required:
+      - variant_id
+      - quantity
+      properties:
+        variant_id:
+          $ref: '#/components/schemas/Ulid'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100000
+    CreateStockTransferInput:
+      type: object
+      required:
+      - from_location_id
+      - to_location_id
+      - lines
+      properties:
+        from_location_id:
+          $ref: '#/components/schemas/Ulid'
+        to_location_id:
+          $ref: '#/components/schemas/Ulid'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/StockTransferLineInput'
+          description: One line per variant; tracked variants only
+        send:
+          type: boolean
+          default: false
+          description: true = create and send in one call
+    UpdateStockTransferInput:
+      type: object
+      description: Partial CreateStockTransferInput (no send) + revision
+      required:
+      - revision
+      properties:
+        from_location_id:
+          $ref: '#/components/schemas/Ulid'
+        to_location_id:
+          $ref: '#/components/schemas/Ulid'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/StockTransferLineInput'
+          description: Replaces the whole set
+        revision:
+          type: integer
+          description: Required; stale → 409 revision_conflict
+    StockTransferTransitionInput:
+      type: object
+      required: []
+      properties:
+        revision:
+          type: integer
+          description: Optional; when sent and stale → 409 revision_conflict
+    ReceiveStockTransferLineInput:
+      type: object
+      required:
+      - item_id
+      - received
+      properties:
+        item_id:
+          $ref: '#/components/schemas/Ulid'
+        received:
+          type: integer
+          minimum: 0
+          description: ≤ the line quantity
+    ReceiveStockTransferInput:
+      type: object
+      required:
+      - lines
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/ReceiveStockTransferLineInput'
+          description: One entry per transfer line ("Receive all" = received = quantity for each)
+        revision:
+          type: integer
+          description: Optional; when sent and stale → 409 revision_conflict
+    InsufficientStockDetails:
+      type: object
+      description: 'error.details of 422 insufficient_stock on transfer send: every line over the source''s available'
+      required:
+      - lines
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+            - variant_id
+            - requested
+            - available
+            properties:
+              variant_id:
+                $ref: '#/components/schemas/Ulid'
+              requested:
+                type: integer
+              available:
+                type: integer
+    StockCountStatus:
+      type: string
+      enum:
+      - in_progress
+      - completed
+      - cancelled
+      description: Phase 8.8c part B
+    StockCountLineState:
+      type: string
+      enum:
+      - not_counted
+      - differences
+      - matched
+      description: Line filter chips (All = omitted)
+    StockCount:
+      type: object
+      description: Phase 8.8c part B (P88C-11) — list item and detail header
+      required:
+      - id
+      - name
+      - location
+      - category
+      - status
+      - lines_count
+      - counted_count
+      - currency
+      - net_value_amount
+      - zero_uncounted
+      - started_by
+      - started_at
+      - finished_by
+      - finished_at
+      - cancelled_at
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 80
+        location:
+          $ref: '#/components/schemas/LocationRef'
+        category:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/StockCountStatus'
+        lines_count:
+          type: integer
+        counted_count:
+          type: integer
+          description: progress = counted_count / lines_count
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        net_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Σ difference × cost (negative = stock loss); null without costs.view
+        zero_uncounted:
+          type:
+          - boolean
+          - 'null'
+          description: Set at finish; null before
+        started_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        started_at:
+          type: string
+          format: date-time
+        finished_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+    StockCountSummary:
+      type: object
+      description: Phase 8.8c part B (P88C-12) — "If you finish now"; units from counted lines (difference = counted − expected);
+        every *_value_amount = difference × variant cost_amount
+      required:
+      - short_units
+      - short_value_amount
+      - extra_units
+      - extra_value_amount
+      - not_counted
+      - matched
+      - differences
+      - net_value_amount
+      properties:
+        short_units:
+          type: integer
+        short_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without costs.view
+        extra_units:
+          type: integer
+        extra_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Minor units; null without costs.view
+        not_counted:
+          type: integer
+        matched:
+          type: integer
+        differences:
+          type: integer
+        net_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: extra − short value (negative = net stock loss); null without costs.view
+    StockCountDetail:
+      allOf:
+      - $ref: '#/components/schemas/StockCount'
+      - type: object
+        required:
+        - summary
+        properties:
+          summary:
+            $ref: '#/components/schemas/StockCountSummary'
+      description: Body of get, start (201), finish and cancel; lines via GET …/lines
+    StockCountLine:
+      type: object
+      required:
+      - id
+      - variant
+      - counted
+      - expected
+      - difference
+      - on_hand
+      - value_amount
+      - counted_at
+      - counted_by
+      - applied_delta
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        variant:
+          $ref: '#/components/schemas/StockVariantRef'
+        counted:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+          description: null = not counted
+        expected:
+          type:
+          - integer
+          - 'null'
+          description: The location's on_hand stored when the line was (last) counted; null while not counted
+        difference:
+          type:
+          - integer
+          - 'null'
+          description: counted − expected; null while not counted
+        on_hand:
+          type: integer
+          description: Current on hand at the count's location
+        value_amount:
+          type:
+          - integer
+          - 'null'
+          description: difference × cost; null while not counted or without costs.view
+        counted_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        counted_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        applied_delta:
+          type:
+          - integer
+          - 'null'
+          description: Delta applied at finish; null before
+    StockCountLineListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - not_counted
+            - differences
+            - matched
+            properties:
+              all:
+                type: integer
+              not_counted:
+                type: integer
+              differences:
+                type: integer
+              matched:
+                type: integer
+    StockCountListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - in_progress
+            - completed
+            - cancelled
+            properties:
+              all:
+                type: integer
+              in_progress:
+                type: integer
+              completed:
+                type: integer
+              cancelled:
+                type: integer
+    StartStockCountInput:
+      type: object
+      required:
+      - location_id
+      properties:
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+          description: Default "Count {d M} · {location}"
+        category_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    ScanStockCountInput:
+      type: object
+      required:
+      - code
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: SKU or barcode; literal match
+    SetStockCountLineInput:
+      type: object
+      required:
+      - counted
+      properties:
+        counted:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 1000000
+          description: null = un-count
+        revision:
+          type: integer
+          description: Optional; the count's revision; stale → 409 revision_conflict
+    StockCountLineResult:
+      type: object
+      description: Body of scan and set-line
+      required:
+      - line
+      - summary
+      - count
+      properties:
+        line:
+          $ref: '#/components/schemas/StockCountLine'
+        summary:
+          $ref: '#/components/schemas/StockCountSummary'
+        count:
+          $ref: '#/components/schemas/StockCount'
+    FinishStockCountInput:
+      type: object
+      required:
+      - zero_uncounted
+      properties:
+        zero_uncounted:
+          type: boolean
+          description: '"Set uncounted items to 0"'
+        revision:
+          type: integer
+          description: Optional; when sent and stale → 409 revision_conflict
+    StockCountTransitionInput:
+      type: object
+      required: []
+      properties:
+        revision:
+          type: integer
+          description: Optional; when sent and stale → 409 revision_conflict
+    CountInProgressDetails:
+      type: object
+      description: 'error.details of 409 count_in_progress: the location''s open count'
+      required:
+      - count_id
+      properties:
+        count_id:
+          $ref: '#/components/schemas/Ulid'
+    CountTooLargeDetails:
+      type: object
+      description: error.details of 422 count_too_large
+      required:
+      - lines
+      - max
+      properties:
+        lines:
+          type: integer
+        max:
+          type: integer
+          const: 5000
+    CountLineNotFoundDetails:
+      type: object
+      description: 'error.details of 404 count_line_not_found: the code as sent'
+      required:
+      - code
+      properties:
+        code:
+          type: string
     StockMovementReason:
       type: string
       enum:
