@@ -5,6 +5,7 @@ import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontConfig, S
 import { parseCommerce } from './commerce-schemas';
 import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
+import { buildCommerceRequest } from './commerce-request';
 import { normalizeHost } from './host';
 import { previewClientIp } from './preview-client-ip';
 import { parseRedirectHost } from './primary-host';
@@ -206,4 +207,47 @@ export async function getStorefrontPageIndex(host: string): Promise<Array<{ slug
     console.error('[storefront] page index unavailable:', (err as Error).message);
     return [];
   }
+}
+
+// ---------- Phase 8.5 unsubscribe (PHASE-8-5 §4.2 / §8.6; WEB owns these two functions) ----------
+
+const UnsubscribeStatusSchema = z.object({
+  channel: z.enum(['sms', 'email']),
+  masked_address: z.string().max(254),
+  status: z.enum(['subscribed', 'unsubscribed']),
+  is_test: z.boolean().catch(false),
+  store_name: z.string().max(200),
+});
+export type UnsubscribeView = z.infer<typeof UnsubscribeStatusSchema>;
+
+/** `found` (validated), `invalid` (404 `unsubscribe_link_invalid`, also for malformed codes), or `error` (429/5xx/network). */
+export type UnsubscribeResult = { status: 'found'; data: UnsubscribeView } | { status: 'invalid' } | { status: 'error'; code: number };
+
+const UNSUBSCRIBE_CODE = /^[A-Za-z0-9]{10}$/;
+
+async function unsubscribeCall(host: string, code: string, clientIp: string | null, body?: { action: 'unsubscribe' | 'resubscribe'; one_click?: boolean }): Promise<UnsubscribeResult> {
+  if (!UNSUBSCRIBE_CODE.test(code)) return { status: 'invalid' };
+  const { url, init } = buildCommerceRequest(`/storefront/unsubscribe/${code}`, host, { cache: { kind: 'no-store' }, method: body ? 'POST' : 'GET', body, clientIp }, { apiUrl: serverEnv.apiUrl, apiKey: requireApiKey() });
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (err) {
+    // Never log the code: path prefix and message only.
+    console.error(`[storefront] unsubscribe ${body ? 'POST' : 'GET'} failed: ${(err as Error).message}`);
+    return { status: 'error', code: 0 };
+  }
+  if (res.status === 404) return { status: 'invalid' };
+  if (!res.ok) return { status: 'error', code: res.status };
+  const parsed = z.object({ data: UnsubscribeStatusSchema }).safeParse(await res.json().catch(() => null));
+  return parsed.success ? { status: 'found', data: parsed.data.data } : { status: 'error', code: 502 };
+}
+
+/** GET /storefront/unsubscribe/{code}: never changes state (link scanners, SMS previewers; S116). */
+export function getUnsubscribeStatus(host: string, code: string, clientIp: string | null): Promise<UnsubscribeResult> {
+  return unsubscribeCall(host, code, clientIp);
+}
+
+/** POST /storefront/unsubscribe/{code}: idempotent; a test code answers `is_test: true` and changes nothing. */
+export function postUnsubscribe(host: string, code: string, action: 'unsubscribe' | 'resubscribe', clientIp: string | null, oneClick = false): Promise<UnsubscribeResult> {
+  return unsubscribeCall(host, code, clientIp, oneClick ? { action, one_click: true } : { action });
 }

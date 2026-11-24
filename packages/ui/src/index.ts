@@ -21,6 +21,8 @@ export { SegmentedControl } from './components/SegmentedControl';
 export type { SegmentedControlProps, SegmentedOption } from './components/SegmentedControl';
 export { Chip } from './components/Chip';
 export type { ChipProps } from './components/Chip';
+export { ChoiceCard } from './components/ChoiceCard';
+export type { ChoiceCardProps } from './components/ChoiceCard';
 export { Step, ProgressBar } from './components/Step';
 export type { StepProps, StepState } from './components/Step';
 export { Toggle } from './components/Toggle';

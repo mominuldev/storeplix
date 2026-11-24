@@ -73,16 +73,16 @@ export function routeRequest(request: NextRequest): NextResponse {
   setFramingHeaders(res, sanitizePreviewToken(request.cookies.get(PREVIEW_COOKIE)?.value) !== null);
   if (isPrivateCommercePath(request.nextUrl.pathname)) res.headers.set('Cache-Control', 'private, no-store');
   // Payment-link pages carry the link token in the path: never send it as a Referer (gateway, CDN).
-  if (/^\/pay(?:\/|$)/.test(request.nextUrl.pathname)) res.headers.set('Referrer-Policy', 'no-referrer');
+  if (/^\/(?:pay|u)(?:\/|$)/.test(request.nextUrl.pathname)) res.headers.set('Referrer-Policy', 'no-referrer');
   return res;
 }
 
 /**
  * Cart, checkout (incl. payment-result), thank-you, tracking, discount links (PHASE-5-CONTRACT §5)
- * and payment-link pages (PHASE-5B-CONTRACT §11) are per shopper.
+ * payment-link pages (PHASE-5B-CONTRACT §11) and the unsubscribe page `/u/{code}` (PHASE-8-5 §8.6) are per shopper.
  */
 export function isPrivateCommercePath(pathname: string): boolean {
-  return /^\/(?:cart|checkout|track|discount|pay)(?:\/|$)/.test(pathname);
+  return /^\/(?:cart|checkout|track|discount|pay|u)(?:\/|$)/.test(pathname);
 }
 
 /** `frame-ancestors` for this response (exported for tests). */

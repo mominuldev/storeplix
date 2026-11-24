@@ -16,6 +16,7 @@ import { api } from '../lib/api';
 import { ConflictDialog, LoadingState, Panel } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { channelLabels, CustomerFormDialog } from './CustomerFormDialog';
+import { MarketingPanel } from './MarketingPanel';
 
 // Figma Customer detail 64:16382 (Main 64:16384). Contract §9.1: Contact, Tags, Notes, WhatsApp + Edit; O A can
 // delete. Phase 5a: stat tiles (this shop only), Orders table (GET /orders?filter[customer_id]=), "Create order".
@@ -180,6 +181,8 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
               </div>
             </dl>
           </Panel>
+
+          <MarketingPanel customer={customer} />
 
           <Panel title="Tags">
             <TagInput label="Customer tags" value={customer.tags} disabled={tags.isPending} onChange={(next) => tags.mutate(next)} placeholder="+ Add tag" variant="inline" />
