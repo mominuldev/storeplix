@@ -231,6 +231,18 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'roles'"; exit 1; }
           exit $status
 
+      # Phase 8.4 (PHASE-8-4-CONTRACT §10, §13.6): the `developer-api` group (API keys CRUD + non-delegation, external API
+      # scopes/isolation/rate limit, outbound webhooks: emission per event, HMAC signature vector, retry schedule with a
+      # frozen clock, auto-disable, prune, resend, SSRF refusals, fake-driver production guard) must exist and pass on sqlite.
+      - name: phase 8.4 group (developer-api)
+        run: |
+          mkdir -p build
+          php artisan test --group=developer-api --exclude-group perf --exclude-group race --log-junit build/developer-api.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/developer-api.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "developer-api tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'developer-api'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -354,6 +366,14 @@ jobs:
       # Phase 8.3 (§13.2): the permission-parity fixture must give identical codes on Postgres too.
       - name: phase 8.3 roles (postgres)
         run: php artisan test --group=roles --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.4 (§13.6): api_keys / webhook_* jsonb columns, the actor CHECK migration (000300) and the
+      # sp_api_key_owner() definer function exist on Postgres; developer-api must pass there too.
+      - name: phase 8.4 developer-api (postgres)
+        run: php artisan test --group=developer-api --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -712,6 +732,11 @@ jobs:
       # policy with the app role and RLS forced (RLS probes for both tables are also in the `rls` step above).
       - name: phase 8.3 roles (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" roles lenient --group=roles --exclude-group perf --exclude-group race'
+      # Phase 8.4 (PHASE-8-4-CONTRACT §10, S102, S110): key lookup through sp_api_key_owner() before tenant context,
+      # external API and deliveries isolated with the app role and RLS forced on the four new tables (their RLS probes
+      # are also in the `rls` step above); DeliverWebhook runs in the delivery's tenant.
+      - name: phase 8.4 developer-api (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" developer-api lenient --group=developer-api --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

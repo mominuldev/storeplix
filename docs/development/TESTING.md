@@ -23,6 +23,7 @@ shared-DB/shared-schema SaaS, so it has its own **required** CI gate.
 | **Phase 8.1 groups** | Pest groups `admin`, `impersonation` (security items also in `security`, RLS cases also in `rls`) | `apps/api/tests/Feature/Admin/**` | yes: `api` (sqlite, each group must be non-empty), `api-postgres`, `api-rls` (RLS on; admin reads on `pgsql_admin`) |
 | **Phase 8.2 group** | Pest group `analytics` (§3 definitions fixture to the paisa, GMV/restatement fixture, aggregate/backfill idempotency, `/admin/analytics/*` shapes; RLS cases also in `rls`, S83–S90 also in `security`, the aggregate and revenue p95 budgets in `perf`) | `apps/api/tests/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on, `pgsql_admin`); budgets in `api-perf` |
 | **Phase 8.3 group** | Pest group `roles` (`PermissionParityTest`: every merchant tenant route × owner/admin/staff against `tests/Fixtures/permission-parity.json`, recorded on pre-8.3 code; `RoutePermissionsTest` route ↔ §3 map; catalogue, per-key enforcement dataset, roles API, N1–N9, staff/invite `role_id`, `/auth/me` permissions, backfill migration (sqlite only); RLS member-read policy in `rls`, S91–S99 also in `security`) | `apps/api/tests/Feature/Staff/Roles/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
+| **Phase 8.4 group** | Pest group `developer-api` (API keys CRUD/validation/authz/isolation, `developers.manage`, scope non-delegation (S105), sha256-only storage + log scan (S100), identical 401s (S101); every `/api/v1/external` route: happy path, scope deny `api_key_scope_missing`, cross-tenant 404, one `scope:` per route (S103), merchant routes refuse keys / external refuse cookies (S104), 120/min per key (S111); webhooks: one emission test per §4.1 event, payload `2026-12-01`, signature vector (fixed secret/body/t → known hex) + rotation overlap (S108), retry schedule P84-9 with a frozen clock, auto-disable 72 h, prune 30 d, resend / resend-failed, SSRF refusals on save and send (S107), plan gating (S106), fake/allow-http refused in production (S112); RLS items also `rls`, security items also `security`) | `apps/api/tests/Feature/Developer/**` | yes: `api` (sqlite, must be non-empty), `api-postgres`, `api-rls` (RLS on) |
 | E2E smoke + flows | Playwright | `tests/e2e` | manual (`e2e.yml`) until stable |
 
 Rough ratio target: many unit tests, a solid layer of API feature tests (every endpoint has at least
@@ -43,6 +44,7 @@ cd apps/api && php artisan test --group=perf         # Phase 4: 5 000-row import
 # Phase 5b-4 documents against a real Gotenberg (needs poppler-utils: pdffonts, pdftotext, pdfinfo):
 #   docker compose up -d gotenberg   # or: docker run -p 127.0.0.1:53000:3000 -e GOTENBERG_API_BASIC_AUTH_USERNAME=u -e GOTENBERG_API_BASIC_AUTH_PASSWORD=p <image from docker-compose.yml> gotenberg --api-enable-basic-auth
 #   GOTENBERG_URL=http://127.0.0.1:53000 GOTENBERG_USERNAME=u GOTENBERG_PASSWORD=p php artisan test --group=documents
+cd apps/api && php artisan test --group=developer-api   # Phase 8.4: API keys, external API, outbound webhooks
 cd apps/api && vendor/bin/pint --test                # code style
 
 # JS workspace (root)
@@ -132,6 +134,11 @@ E2E_VISUAL=1 pnpm exec playwright test phase4.visual   # Figma visual-pass scree
 | `phase8-3.plan` | P83-8, N9, S98: Free shop → `/roles` system only, `custom_roles_enabled: false`, POST 402 `feature_not_in_plan` (`upgrade_plan: [growth]`); "+ Custom role" opens the upgrade dialog, `/staff/roles/new` shows the upgrade panel, invite modal lists 2 roles, matrix read-only. Growth → Free downgrade: the custom-role member keeps exactly `P(role)` (no escalation to Staff), create/edit/assign/invite → 402, delete without `reassign_to` → 409 `role_in_use`; UI read-only with the Growth note, delete with "Move people to" Staff → 204 and the member is Staff |
 | `phase8-3.editor` | P83-9/10, §7.2–7.3, S96: delete in use → 409 with member + invitation ids; `reassign_to` self/owner/foreign/unknown → 422; foreign `role_id` → 422; another tenant's role 404 on GET/PATCH/DELETE; role detail revision conflict → 409 toast, latest loaded, nothing overwritten; matrix stage/Discard, prerequisite auto-tick, conflict toast, clean save revision + 1; Duplicate role → "{name} copy" with the same toggles; delete with "Move people to" the copy moves the member **and** the open invitation, `role.deleted` audit meta; 21st custom role → 409 `role_limit_reached` |
 | `phase8-3.visual` | AC 5 / Q125: `/staff`, invite modal, `/staff/roles/:id`, `/staff/roles/new` at 1280, 390 and 375 px: no horizontal page overflow, no console errors, screenshots in `test-results/phase8-3-visual/{width}/`; member no-access page + mobile More at 390 px; **matrix checkbox reachable at 390/375 px** (fails until QA P83-QA-1 is fixed) |
+| `phase8-4.api-keys` | PHASE-8-4 §10 QA, §3, S100–S104: fresh Growth shop + one storefront order. UI "+ Create API key" (name, "Orders · read") → success step shows the `sp_live_…` key once with Copy + "I’ve stored it"; afterwards only `sp_live_••••<last4>` in the row and the list API (no `plain_key`). `GET /external/me` (key id, name, scopes, tenant, store) and orders list/detail with `Authorization: Bearer` (item keys identical to the merchant list); products and status change → 403 `api_key_scope_missing`; other tenant's store / unknown order → 404, `X-Tenant-Id` ignored; merchant route with the key → 401, external route with the session cookie → 401, malformed key 401. UI row menu Revoke → "Revoked" pill; key → 401 `invalid_api_key`, error body identical to a never-issued key; DELETE again 200 |
+| `phase8-4.webhooks` | §4, P84-8, S108, AC 1 (fake driver): UI "+ Add endpoint" (fake-sink URL, `order.created`, description) → storefront order → delivery `succeeded` (attempt 1, 200, `subject_label` = order number). The request recorded by the dev sink: `X-Storeplix-Event`, `X-Storeplix-Delivery` = delivery id, `User-Agent: Storeplix-Webhooks/1.0`, JSON payload (`id` = event id, `type`, `api_version 2026-12-01`, `store_id`, `data.object.id` = order id); `X-Storeplix-Signature` `t=…,v1=…` verified **in the spec** as hex HMAC-SHA256(secret, `"<t>.<raw body>"`) with the revealed secret, `t` within 5 min; tampered body, wrong secret, altered `t` fail. Detail redacts the signature. Rotate → `previous_expires_at` ≈ +24 h → test event (`ping`) carries two `v1=`, valid for the new and the previous secret. UI Recent deliveries "order.created · <number>" + 200 |
+| `phase8-4.retries` | §4.4, P84-9, AC 2: endpoint on `…/fail-503`; row menu "Send test event" (202) and a storefront order → both `retrying` (attempt 1, 503, `http_error`, next attempt +1 min ± 15 s); row "Failing since" + "% · failing"; API resend → 202 new delivery id, same event id (also in the sink body), same stored payload, original unchanged; delivery forced to `failed` by a test-only tinker write → UI "Resend failed (1)" → `{count: 1}` and a new delivery for the same event |
+| `phase8-4.access` | P84-6, P84-13, S105, S106, S109: staff → 403 on all 12 developer routes incl. the dev sink and secret reveal/rotate, no `developers.manage` in `/auth/me`; UI no-access state on `/integrations/developer`, no Developer banner on `/integrations` (the owner's banner links there). Free shop: reads 200, key/endpoint create 402 `feature_not_in_plan` (`upgrade_plan` growth); UI plan note "API keys and webhooks are part of the Growth plan." + See plans → `/settings/plan`, create buttons disabled. Growth → Free: external API 402, key and endpoint kept, writes 402, a new order creates no delivery |
+| `phase8-4.visual` | AC 5 / Q137: Developer page (2 keys, a healthy and a failing endpoint, deliveries) and the create-key modal at 1280, 390 and 375 px: four cards visible, no horizontal page overflow, no console errors; screenshots in `test-results/phase8-4-visual/{width}/` for the Figma review against `144:40726` |
 
 How they run:
 - **Against the running stack** (API :8000 with a queue worker, storefront `http://demo.localhost:3000`, merchant :5173,
@@ -253,6 +260,22 @@ How they run:
   listens to `visibilitychange` on `window`, so the spec dispatches a bubbling `visibilitychange`, not `focus`.
   ```bash
   cd tests/e2e && pnpm exec playwright test phase8-3.
+  ```
+- **Developer API + webhooks (Phase 8.4)** need the API with **`WEBHOOKS_OUT_FAKE=true`** (plus the earlier fake flags)
+  and a worker on the **`webhooks-out`** queue: `php artisan queue:work --queue=webhooks-out` locally (`composer dev`
+  doesn't listen on it); the e2e workflow starts one in the `api` container unless compose defines
+  `queue-webhooks-out`. The fake driver never sends HTTP: it records every request (URL, headers, raw body) in the dev
+  sink `GET /api/v1/dev/webhook-sink` (non-production, `developers.manage`) and answers by URL path suffix: `/fail-503`
+  → 503, `/timeout` → timeout, otherwise 200. Specs use unique `https://example.com/storeplix-e2e/<tag>[/fail-503]`
+  URLs and filter the sink by URL + `X-Storeplix-Delivery`. Signatures are verified receiver-side in the spec
+  (`support/developer.ts` `verifies()`, P84-8). Retries beyond attempt 1 are not waited for (≈ 20.6 h): the spec forces
+  one delivery to `failed` with a test-only tinker write to exercise "Resend failed". Every spec uses throwaway shops
+  (`devShop(label, plan)` = `setupShop` + `setPlan`). The dev DB needs the `2026_12_01_*` migrations (`php artisan migrate`).
+  ```bash
+  APP_ENV=local PAYMENTS_FAKE=true COURIERS_FAKE=true DOMAINS_FAKE=true BILLING_FAKE=true WEBHOOKS_OUT_FAKE=true \
+    php artisan serve --port=8000                       # + the 5b/7 env as above
+  php artisan queue:work --queue=webhooks-out           # second terminal (apps/api)
+  cd tests/e2e && pnpm exec playwright test phase8-4.
   ```
 - **Throwaway tenants / members** (Phase 4): `createTenant()` registers an `@e2e.storeplix.test` owner with a store
   (`activateStorefront()` makes it public on `{slug}.localhost` with a tinker DB write); `cleanup()` deletes the
