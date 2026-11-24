@@ -9,6 +9,8 @@ use App\Domain\Billing\FeatureGate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\Location;
+use App\Domain\Inventory\Models\StockCount;
+use App\Domain\Inventory\Models\StockTransfer;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shipping\Models\PickupLocation;
@@ -156,7 +158,7 @@ final class LocationService
     }
 
     /**
-     * P88C-17 reasons the location can't be archived (part A set).
+     * P88C-17 reasons the location can't be archived.
      *
      * @return list<string>
      */
@@ -178,6 +180,14 @@ final class LocationService
         if (PurchaseOrder::query()->where('store_id', $store->id)->where('location_id', $location->id)->whereIn('status', self::PO_STATUSES)->exists()) {
             $reasons[] = 'open_purchase_orders';
         }
+        // Part B: a draft or in-transit transfer from or to it, or a count in progress there.
+        if (StockTransfer::query()->where('store_id', $store->id)->whereIn('status', StockTransfer::OPEN)
+            ->where(fn ($q) => $q->where('from_location_id', $location->id)->orWhere('to_location_id', $location->id))->exists()) {
+            $reasons[] = 'open_transfers';
+        }
+        if (StockCount::query()->where('store_id', $store->id)->where('location_id', $location->id)->where('status', StockCount::IN_PROGRESS)->exists()) {
+            $reasons[] = 'open_counts';
+        }
 
         return $reasons;
     }
@@ -190,6 +200,8 @@ final class LocationService
             'has_stock' => 'it still has stock',
             'has_committed' => 'orders are holding stock there',
             'open_purchase_orders' => 'open purchase orders receive there',
+            'open_transfers' => 'a transfer from or to it is not finished',
+            'open_counts' => 'a stock count is in progress there',
         ];
 
         return 'This location can’t be archived: '.implode('; ', array_map(fn ($r) => $parts[$r] ?? $r, $reasons)).'.';

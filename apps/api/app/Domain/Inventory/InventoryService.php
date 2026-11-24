@@ -359,6 +359,133 @@ class InventoryService
         $this->insertMovements($movements);
     }
 
+    /**
+     * Transfer send (PHASE-8-8C §7, P88C-10): takes each line out of the source location in one go, ledger reason
+     * `transfer_out`. Every line must fit the source's AVAILABLE stock (on_hand − committed) under the row locks, so a
+     * transfer never takes stock already promised to an order; else 422 `insufficient_stock` with `details.lines`
+     * ({variant_id, requested, available}) and nothing changes. Runs inside the caller's transaction (the transfer row
+     * is locked first, §3.3).
+     *
+     * @param  list<array{variant_id: string, quantity: int}>  $lines  one per variant
+     * @return list<InventoryMovement>
+     */
+    public function transferOut(string $storeId, string $locationId, array $lines, string $transferId, ?string $note, ?string $actorId): array
+    {
+        $lines = array_map(fn (array $l) => ['variant_id' => $l['variant_id'], 'quantity' => (int) $l['quantity'], 'location_id' => $locationId], $lines);
+        $rows = $this->lockRows($storeId, $lines);
+        $short = [];
+        foreach ($this->sum($lines) as $key => $quantity) {
+            $row = $rows[$key] ?? null;
+            $available = $row === null ? 0 : max(0, $row->on_hand - $row->committed);
+            if ($quantity > $available) {
+                $short[] = ['variant_id' => explode('|', $key)[0], 'requested' => $quantity, 'available' => $available];
+            }
+        }
+        if ($short !== []) {
+            throw new ApiException(422, 'insufficient_stock', 'Not enough stock at the source location for some lines.', ['lines' => $short]);
+        }
+
+        $movements = [];
+        foreach ($this->sum($lines) as $key => $quantity) {
+            $row = $rows[$key];
+            $onHand = $row->on_hand - $quantity;
+            Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
+            WebhookEvents::stock($row, $row->on_hand, $onHand);
+            $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, -$quantity, $onHand, 'transfer_out', $note, 'stock_transfer', $transferId, $actorId);
+        }
+        $this->insertMovements($movements);
+
+        return $this->movementsOf($movements);
+    }
+
+    /**
+     * Transfer receive / cancel-in-transit (PHASE-8-8C §7, P88C-9): puts units in at a location (the destination, or
+     * the source again on cancel), ledger reason `transfer_in`. Missing rows are created (P88C-3). Lines with 0 are
+     * skipped. Runs inside the caller's transaction.
+     *
+     * @param  list<array{variant_id: string, quantity: int}>  $lines
+     * @return list<InventoryMovement>
+     */
+    public function transferIn(string $storeId, string $locationId, array $lines, string $transferId, ?string $note, ?string $actorId): array
+    {
+        $lines = array_values(array_filter(
+            array_map(fn (array $l) => ['variant_id' => $l['variant_id'], 'quantity' => (int) $l['quantity'], 'location_id' => $locationId], $lines),
+            fn (array $l) => $l['quantity'] > 0,
+        ));
+        if ($lines === []) {
+            return [];
+        }
+        $this->ensureRows($storeId, $lines);
+        $rows = $this->lockRows($storeId, $lines);
+        $movements = [];
+        foreach ($this->sum($lines) as $key => $quantity) {
+            $row = $rows[$key] ?? null;
+            if ($row === null) {
+                continue;
+            }
+            $onHand = $row->on_hand + $quantity;
+            Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
+            WebhookEvents::stock($row, $row->on_hand, $onHand);
+            $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, $quantity, $onHand, 'transfer_in', $note, 'stock_transfer', $transferId, $actorId);
+        }
+        $this->insertMovements($movements);
+
+        return $this->movementsOf($movements);
+    }
+
+    /**
+     * Stock count finish (PHASE-8-8C §8, P88C-11): ONE call that applies, at one location, either a `delta` (counted −
+     * expected-at-count) or `zero` (uncounted line with "Set uncounted items to 0": delta = −on_hand now) per line,
+     * reason `count`, reference the count. Rows locked in (variant_id, location_id) order. on_hand never goes below 0
+     * (a larger loss is clamped and the applied delta says so). Zero deltas write nothing. Runs inside the caller's
+     * transaction (the count row is locked first, §3.3).
+     *
+     * @param  list<array{variant_id: string, delta?: int, zero?: bool}>  $lines  one per variant
+     * @return array<string, int> applied delta per variant id (non-zero only)
+     */
+    public function applyCount(string $storeId, string $locationId, array $lines, string $countId, ?string $note, ?string $actorId): array
+    {
+        $lines = array_map(fn (array $l) => $l + ['location_id' => $locationId], $lines);
+        if ($lines === []) {
+            return [];
+        }
+        $this->ensureRows($storeId, array_values(array_filter($lines, fn (array $l) => (int) ($l['delta'] ?? 0) > 0)));
+        $rows = $this->lockRows($storeId, $lines);
+        usort($lines, fn (array $a, array $b) => strcmp($a['variant_id'], $b['variant_id']));
+
+        $applied = [];
+        $movements = [];
+        foreach ($lines as $line) {
+            $row = $rows[self::key($line['variant_id'], $locationId)] ?? null;
+            if ($row === null) {
+                continue; // nothing there and nothing to add
+            }
+            $old = $row->on_hand;
+            $new = ($line['zero'] ?? false) ? 0 : max(0, $old + (int) ($line['delta'] ?? 0));
+            if ($new === $old) {
+                continue;
+            }
+            Inventory::query()->whereKey($row->id)->update(['on_hand' => $new, 'updated_at' => now()]);
+            WebhookEvents::stock($row, $old, $new);
+            $movements[] = $this->movementRow($storeId, $row->variant_id, $locationId, $new - $old, $new, 'count', $note, 'stock_count', $countId, $actorId);
+            $applied[$row->variant_id] = $new - $old;
+        }
+        $this->insertMovements($movements);
+
+        return $applied;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows  movement rows just inserted
+     * @return list<InventoryMovement>
+     */
+    private function movementsOf(array $rows): array
+    {
+        $ids = array_column($rows, 'id');
+
+        return $ids === [] ? [] : InventoryMovement::query()->whereIn('id', $ids)->orderBy('id')->get()->all();
+    }
+
     /** "Only 3 left." / "This item is sold out." (P5 out_of_stock details). */
     public static function shortage(int $available): string
     {
