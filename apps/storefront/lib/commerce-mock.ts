@@ -312,6 +312,9 @@ export async function commerceMockFetch(url: string, init: RequestInit): Promise
     return qq ? json(200, { data: qq }) : err(422, 'validation_failed', 'Invalid.', { thana_code: ['Unknown area.'] });
   }
 
+  // PHASE-8-8 §7: the mock shop has no fake-order guard; a code is never needed.
+  if (path === '/storefront/checkout/otp' && method === 'POST') return json(200, { data: { required: false, expires_at: null, resend_after_seconds: 0 } });
+
   if (path === '/storefront/checkout' && method === 'POST') {
     const key = h.get('Idempotency-Key');
     if (!key) return err(400, 'idempotency_key_required', 'Idempotency-Key is required.');

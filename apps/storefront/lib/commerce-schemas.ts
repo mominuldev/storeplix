@@ -88,7 +88,8 @@ const ApiErrorSchema = z.object({
     code: z.string().min(1).max(64),
     message: z.string().max(500).catch(''),
     details: z
-      .record(z.string().max(120), z.array(z.string().max(500)).max(10))
+      // Scalars (e.g. 8.8a `otp_invalid` `details.attempts_left: 3`) are read as a one-item list.
+      .record(z.string().max(120), z.union([z.array(z.string().max(500)).max(10), z.string().max(500), z.number().finite()]))
       .optional()
       .catch(undefined),
   }),
@@ -100,7 +101,7 @@ export function parseApiError(body: unknown, status: number): ParsedApiError {
   if (!parsed.success) return { code: status === 0 ? 'network_error' : `http_${status}`, message: '', details: {} };
   const details: Record<string, string[]> = {};
   for (const [k, v] of Object.entries(parsed.data.error.details ?? {})) {
-    const msgs = v.flatMap((m) => {
+    const msgs = (Array.isArray(v) ? v : [String(v)]).flatMap((m) => {
       const t = cleanText(m, 500, 1);
       return t ? [t] : [];
     });

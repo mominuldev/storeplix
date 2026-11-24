@@ -13,6 +13,7 @@ import {
   getProduct,
   listProducts,
   postCheckout,
+  postCheckoutOtp,
   postTrack,
   putCartContact,
   putCoupon,
@@ -26,7 +27,8 @@ import { COUPON_CODE_RE, FLASH_COOKIE, PENDING_COUPON_COOKIE, commerceCookieOpti
 import { PAY_LINK_TOKEN_RE, type CartEnvelope } from '@/lib/commerce-schemas';
 import { isGateway, isPaymentMethod } from '@/lib/payments';
 import { errorMessage } from '@/lib/commerce-messages';
-import { IDEMPOTENCY_KEY_RE, mapDetailsToFields, normalizeBdPhone, toCheckoutInput, validateCheckoutForm, type FieldErrors } from '@/lib/checkout-form';
+import { IDEMPOTENCY_KEY_RE, PHONE_MESSAGE, mapDetailsToFields, normalizeBdPhone, toCheckoutInput, validateCheckoutForm, type FieldErrors } from '@/lib/checkout-form';
+import { GUARD_COPY, OTP_CODE_RE, attemptsLeft, type GuardErrorCode } from '@/lib/checkout-guard';
 import { catalogApiQuery, parseCatalogState } from '@/lib/catalog-query';
 import { toCardView, type ProductCardView } from '@/lib/products';
 import { isLocalDevHost } from '@/lib/seo';
@@ -196,10 +198,20 @@ export type CheckoutState = {
   fieldErrors: FieldErrors;
   /** Idempotency key for the next attempt: kept for retries, rotated once a request was decided. */
   idempotencyKey: string;
+  /**
+   * PHASE-8-8 §7: a fake-order guard refusal for this (normalized) phone. `otp_*` errors are shown under the code
+   * field (`otpError`, `message` stays null); `cod_unavailable` disables COD for that phone.
+   */
+  guard?: { code: GuardErrorCode; phone: string; attemptsLeft: number | null };
+  otpError?: string;
 };
 
 /** Codes after which the same key must not be reused (the API decided; the body will change). */
-const ROTATE_KEY = new Set(['checkout_changed', 'idempotency_key_mismatch', 'validation_failed', 'coupon_invalid', 'payment_method_unavailable', 'advance_required', 'store_not_live', 'idempotency_key_required']);
+const ROTATE_KEY = new Set([
+  'checkout_changed', 'idempotency_key_mismatch', 'validation_failed', 'coupon_invalid', 'payment_method_unavailable', 'advance_required', 'store_not_live', 'idempotency_key_required',
+  // PHASE-8-8 §7: the next attempt changes the body (a code, another method).
+  'otp_required', 'otp_invalid', 'cod_unavailable', 'order_limit_reached',
+]);
 
 export async function placeOrder(prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   const sentKey = String(formData.get('idempotency_key') ?? '');
@@ -220,8 +232,12 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
     return { status: 'error', message: 'Choose how you want to pay.', fieldErrors: {}, idempotencyKey: key };
   }
   const advanceGateway = isGateway(rawAdvance) ? rawAdvance : null;
+  const input = toCheckoutInput(form.data, expected.data, { method, advanceGateway });
+  // P88-13: the phone code only matters for COD; anything but 6 digits is not sent (the API answers otp_required).
+  const otpCode = String(formData.get('otp_code') ?? '').trim();
+  if (method === 'cod' && OTP_CODE_RE.test(otpCode)) input.otp_code = otpCode;
 
-  const r = await postCheckout(ctx.call, key, toCheckoutInput(form.data, expected.data, { method, advanceGateway }));
+  const r = await postCheckout(ctx.call, key, input);
   if (r.ok) {
     await setOrderCookie(ctx.store.host, r.data.confirmation_token);
     await clearCartCookie();
@@ -258,9 +274,49 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
     }
     case 'idempotency_key_in_use':
       return { status: 'error', message: "We're still placing your order. Wait a moment, then try again.", fieldErrors: {}, idempotencyKey: key };
+    // PHASE-8-8 §7 / §10.4 (P88-9, P88-11, P88-13).
+    case 'otp_required':
+    case 'otp_invalid': {
+      const left = r.code === 'otp_invalid' ? attemptsLeft(r.details) : null;
+      return {
+        status: 'error',
+        message: null,
+        fieldErrors: {},
+        idempotencyKey: nextKey,
+        guard: { code: r.code === 'otp_required' ? 'otp_required' : 'otp_invalid', phone: form.data.phone, attemptsLeft: left },
+        otpError: r.code === 'otp_required' ? GUARD_COPY.otpRequired.en : GUARD_COPY.otpInvalid(left).en,
+      };
+    }
+    case 'cod_unavailable':
+      return { status: 'error', message: GUARD_COPY.codUnavailable.en, fieldErrors: {}, idempotencyKey: nextKey, guard: { code: 'cod_unavailable', phone: form.data.phone, attemptsLeft: null } };
+    case 'order_limit_reached':
+      return { status: 'error', message: GUARD_COPY.orderLimitReached.en, fieldErrors: {}, idempotencyKey: nextKey, guard: { code: 'order_limit_reached', phone: form.data.phone, attemptsLeft: null } };
     default:
+      if (r.status === 429) return { status: 'error', message: errorMessage({ ...r, code: 'rate_limited' }), fieldErrors: {}, idempotencyKey: key };
       return { status: 'error', message: errorMessage(r), fieldErrors: {}, idempotencyKey: nextKey };
   }
+}
+
+// ---------- checkout phone code (PHASE-8-8 §7, P88-13) ----------
+export type CheckoutOtpResult =
+  | { ok: true; phone: string; required: boolean; resendAfterSeconds: number; expiresAt: string | null }
+  | { ok: false; phone: string | null; message: string };
+
+/**
+ * Asks the API whether this COD checkout needs a phone code; when it does, the API texts one. The answer is the same for
+ * blocked, known and new numbers (no oracle), so the form learns nothing else from it. No cart → nothing to check.
+ */
+export async function requestCheckoutOtp(input: { phone: string }): Promise<CheckoutOtpResult> {
+  const parsed = z.object({ phone: z.string().max(20) }).safeParse(input);
+  const phone = parsed.success ? normalizeBdPhone(parsed.data.phone) : null;
+  if (!phone) return { ok: false, phone: null, message: PHONE_MESSAGE };
+  const ctx = await getCommerceContext();
+  if (!ctx) return { ok: false, phone, message: NOT_OPEN };
+  if (!ctx.call.cartToken) return { ok: true, phone, required: false, resendAfterSeconds: 0, expiresAt: null };
+  const r = await postCheckoutOtp(ctx.call, phone);
+  if (r.ok) return { ok: true, phone, required: r.data.required, resendAfterSeconds: r.data.resend_after_seconds, expiresAt: r.data.expires_at };
+  if (r.status === 429) return { ok: false, phone, message: GUARD_COPY.otpTooMany.en };
+  return { ok: false, phone, message: errorMessage(r) };
 }
 
 // ---------- checkout contact (PHASE-8-6 P86-12, §10.6) ----------

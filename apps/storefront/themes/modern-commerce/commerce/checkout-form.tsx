@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import { CHECKOUT_CONTACT_NOTICE, type BdGeo, type GatewayProvider, type PaymentMethod, type ShippingQuote } from '@storeplix/types';
-import { placeOrder, saveCheckoutContact, type CheckoutState } from '@/app/actions/commerce';
+import { placeOrder, requestCheckoutOtp, saveCheckoutContact, type CheckoutState } from '@/app/actions/commerce';
 import { advanceRequired, GATEWAYS, METHOD_HINT, METHOD_LABEL } from '@/lib/payments';
-import { districtsOf, normalizeBdPhone, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
+import { districtsOf, formatBdPhone, normalizeBdPhone, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
+import { GUARD_COPY, OTP_CODE_RE, OTP_LENGTH, cleanOtpInput } from '@/lib/checkout-guard';
 import { formatMoney } from '@/lib/format';
 import { Icon } from '../components/icon';
 import { deliveryDays, Notice, PageTitle } from './ui';
@@ -94,13 +95,14 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
 
 const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: 'wallet', bkash: 'phone', sslcommerz: 'lock' };
 
-function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string }) {
+function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value, disabled = false }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string; disabled?: boolean }) {
   return (
     <label
-      className={`flex cursor-pointer items-center gap-3.5 rounded-sf-md p-4 ${checked ? 'border-2 border-brand bg-brand-soft' : 'border border-line bg-surface hover:border-ink'}`}
+      className={`flex items-center gap-3.5 rounded-sf-md p-4 ${disabled ? 'cursor-not-allowed border border-line bg-surface opacity-60' : checked ? 'cursor-pointer border-2 border-brand bg-brand-soft' : 'cursor-pointer border border-line bg-surface hover:border-ink'}`}
       data-sp-method={value}
+      data-sp-disabled={disabled || undefined}
     >
-      <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} className="sr-only" />
+      <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} disabled={disabled} className="sr-only" />
       <span aria-hidden className={`flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 ${checked ? 'border-brand bg-surface' : 'border-ink'}`}>
         {checked ? <span className="size-3 rounded-full bg-brand" /> : null}
       </span>
@@ -111,6 +113,102 @@ function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value }:
       </span>
       {aside ? <span className="type-label-m shrink-0 text-right text-ink">{aside}</span> : null}
     </label>
+  );
+}
+
+/** PHASE-8-8 §7: where the phone-code request for the current phone stands. */
+export type OtpRequest = { phone: string; status: 'sending' | 'sent' | 'not_needed' | 'error'; resendAt: number; message?: string };
+
+/**
+ * P88-13: the code field shows for a COD checkout once the API said a code was sent to this phone, or the checkout
+ * answered `otp_required` / `otp_invalid` for it. Online methods never need a code.
+ */
+export function otpVisible(method: PaymentMethod, phone: string | null, otp: OtpRequest | null, forcedFor: string | null): boolean {
+  if (method !== 'cod' || !phone) return false;
+  if (forcedFor === phone) return true;
+  return otp?.phone === phone && otp.status !== 'not_needed';
+}
+
+/** The code is checked locally only when the API said it was sent (or the checkout asked for it). */
+export function otpMissing(code: string, otp: OtpRequest | null, phone: string | null, forcedFor: string | null): boolean {
+  if (!phone) return false;
+  const expected = forcedFor === phone || (otp?.phone === phone && otp.status === 'sent');
+  return expected && !OTP_CODE_RE.test(code);
+}
+
+/** Checkout OTP step (composed, §10.4): six boxes over one `one-time-code` input, help line, resend with a timer. */
+export function OtpField({
+  phone,
+  value,
+  onChange,
+  error,
+  status,
+  statusMessage,
+  resendSeconds,
+  onResend,
+}: {
+  phone: string;
+  value: string;
+  onChange: (code: string) => void;
+  error: string | null;
+  status: OtpRequest['status'] | null;
+  statusMessage?: string;
+  resendSeconds: number;
+  onResend: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const help = status === 'sending' ? GUARD_COPY.otpSending.en : status === 'error' && statusMessage ? statusMessage : GUARD_COPY.otpHelp(formatBdPhone(phone)).en;
+  const describedBy = error ? 'otp_code-error otp_code-hint' : 'otp_code-hint';
+  return (
+    <div className="flex flex-col gap-2" data-sp-otp>
+      <label htmlFor="otp_code" className="type-label-s text-ink">
+        {GUARD_COPY.otpLabel.en}
+      </label>
+      <div className="relative w-fit max-w-full">
+        <div aria-hidden className="flex gap-2">
+          {Array.from({ length: OTP_LENGTH }, (_, i) => {
+            const active = focused && i === Math.min(value.length, OTP_LENGTH - 1);
+            return (
+              <span
+                key={i}
+                className={`type-h3 flex h-[52px] w-11 items-center justify-center rounded-sf-md bg-surface text-ink ${error ? 'border border-sale' : active ? 'border-2 border-brand' : 'border border-line'}`}
+              >
+                {value[i] ?? ''}
+              </span>
+            );
+          })}
+        </div>
+        <input
+          id="otp_code"
+          name="otp_code"
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]*"
+          maxLength={OTP_LENGTH}
+          value={value}
+          onChange={(e) => onChange(cleanOtpInput(e.target.value))}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
+          className="absolute inset-0 h-full w-full cursor-text opacity-0"
+        />
+      </div>
+      {error ? (
+        <p id="otp_code-error" className="type-body-s text-sale" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p id="otp_code-hint" className={`type-body-s ${status === 'error' && statusMessage ? 'text-sale' : 'text-ink-muted'}`} aria-live="polite">
+          {help}
+        </p>
+        <button type="button" onClick={onResend} disabled={status === 'sending' || resendSeconds > 0} className="type-label-s text-brand hover:underline disabled:cursor-not-allowed disabled:text-ink-muted disabled:no-underline" data-sp-otp-resend>
+          {resendSeconds > 0 ? GUARD_COPY.resendIn(resendSeconds).en : GUARD_COPY.resend.en}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -177,6 +275,59 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
   // Guards double submits between the click and React's pending state.
   const inFlight = useRef(false);
   const errors: FieldErrors = { ...state.fieldErrors, ...clientErrors };
+  // PHASE-8-8 §7: phone code (COD), and the phone COD was refused for (P88-9; neutral, only that phone).
+  const phone = useMemo(() => normalizeBdPhone(values.phone), [values.phone]);
+  const [otp, setOtp] = useState<OtpRequest | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpForcedFor, setOtpForcedFor] = useState<string | null>(null);
+  const [codBlockedFor, setCodBlockedFor] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const otpSeq = useRef(0);
+  const otpRef = useRef<OtpRequest | null>(null);
+  useEffect(() => {
+    otpRef.current = otp;
+  }, [otp]);
+  const sendOtp = useCallback((to: string) => {
+    const seq = ++otpSeq.current;
+    setOtp({ phone: to, status: 'sending', resendAt: 0 });
+    setNow(Date.now());
+    requestCheckoutOtp({ phone: to })
+      .then((r) => {
+        if (seq !== otpSeq.current) return;
+        setNow(Date.now());
+        if (r.ok) setOtp({ phone: to, status: r.required ? 'sent' : 'not_needed', resendAt: Date.now() + r.resendAfterSeconds * 1000 });
+        else setOtp({ phone: to, status: 'error', resendAt: 0, message: r.message });
+      })
+      .catch(() => {
+        if (seq === otpSeq.current) setOtp({ phone: to, status: 'error', resendAt: 0, message: 'We couldn’t reach the shop. Check your connection and try again.' });
+      });
+  }, []);
+  const codBlocked = Boolean(phone) && codBlockedFor === phone;
+  // P88-13: once COD is chosen and the phone is a full BD number, ask (debounced) whether a code is needed.
+  useEffect(() => {
+    if (method !== 'cod' || !phone || notLiveMessage || codBlockedFor === phone || otp?.phone === phone) return;
+    const t = setTimeout(() => {
+      setOtpCode('');
+      setOtpError(null);
+      sendOtp(phone);
+    }, 700);
+    return () => clearTimeout(t);
+  }, [method, phone, notLiveMessage, codBlockedFor, otp?.phone, sendOtp]);
+  // Resend timer ("Resend in 0:42").
+  const resendSeconds = otp && otp.resendAt > now ? Math.ceil((otp.resendAt - now) / 1000) : 0;
+  useEffect(() => {
+    if (!otp || otp.resendAt <= Date.now()) return;
+    const until = otp.resendAt;
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= until) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [otp]);
+  const showOtp = otpVisible(method, phone, otp, otpForcedFor);
+
   // P86-12: last contact sent to the cart (fire-and-forget; never awaited by submit).
   const contactSent = useRef<string | null>(null);
   const captureContact = () => {
@@ -235,6 +386,36 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
 
   const describedBy = (id: CheckoutField) => (errors[id] ? `${id}-error` : undefined);
 
+  /** PHASE-8-8 §7: react to a guard refusal (code field, COD off for that phone + online preselected). */
+  const applyGuard = (next: CheckoutState) => {
+    const g = next.guard;
+    if (!g) {
+      setOtpError(null);
+      return;
+    }
+    if (g.code === 'otp_required' || g.code === 'otp_invalid') {
+      setOtpForcedFor(g.phone);
+      setOtpError(next.otpError ?? GUARD_COPY.otpRequired.en);
+      if (g.code === 'otp_invalid' && g.attemptsLeft === 0) setOtpCode('');
+      const current = otpRef.current;
+      if (g.code === 'otp_required' && (current?.phone !== g.phone || current.status === 'not_needed')) sendOtp(g.phone);
+      requestAnimationFrame(() => document.getElementById('otp_code')?.focus());
+    } else if (g.code === 'cod_unavailable') {
+      setCodBlockedFor(g.phone);
+      setOtpError(null);
+      const online = paymentMethods.find((m) => m !== 'cod');
+      if (online) setMethod(online);
+      requestAnimationFrame(() => document.getElementById('step-4')?.scrollIntoView({ block: 'center' }));
+    }
+  };
+
+  const resendOtp = () => {
+    if (!phone) return;
+    setOtpCode('');
+    setOtpError(null);
+    sendOtp(phone);
+  };
+
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const v = validateCheckoutForm(values);
@@ -246,12 +427,18 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
     }
     setClientErrors({});
     if (total === null) return;
+    if (method === 'cod' && otpMissing(otpCode, otp, phone, otpForcedFor)) {
+      setOtpError(GUARD_COPY.otpRequired.en);
+      document.getElementById('otp_code')?.focus();
+      return;
+    }
     const fd = new FormData();
     for (const [k, val] of Object.entries(values)) fd.set(k, val);
     fd.set('idempotency_key', state.idempotencyKey);
     fd.set('expected_total_amount', String(total));
     fd.set('payment_method', method);
     if (advance && advanceGateway) fd.set('advance_gateway', advanceGateway);
+    if (method === 'cod' && showOtp && otpCode) fd.set('otp_code', otpCode);
     if (inFlight.current) return;
     inFlight.current = true;
     startTransition(async () => {
@@ -263,6 +450,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           router.replace(next.redirect);
           return;
         }
+        applyGuard(next);
         setState(next);
       } catch (e) {
         // Online payment: the action redirected to the gateway; Next is already navigating away.
@@ -283,7 +471,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
       <div className="flex min-w-0 flex-1 flex-col gap-5">
         <CheckoutHeading />
         {notLiveMessage ? <Notice tone="error">{notLiveMessage}</Notice> : null}
-        {state.message && state.status !== 'invalid' ? <Notice tone="error">{state.message}</Notice> : null}
+        {state.message && state.status !== 'invalid' && state.guard?.code !== 'cod_unavailable' ? <Notice tone="error">{state.message}</Notice> : null}
 
         <Step n={1} title="Contact">
           <div className="grid gap-3.5 md:grid-cols-2 md:gap-x-4 lg:gap-y-[18px]">
@@ -310,6 +498,21 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
               </p>
             </Field>
           </div>
+          {showOtp && phone ? (
+            <OtpField
+              phone={phone}
+              value={otpCode}
+              onChange={(code) => {
+                setOtpCode(code);
+                if (otpError) setOtpError(null);
+              }}
+              error={otpError}
+              status={otp?.phone === phone ? otp.status : null}
+              statusMessage={otp?.phone === phone ? otp.message : undefined}
+              resendSeconds={otp?.phone === phone ? resendSeconds : 0}
+              onResend={resendOtp}
+            />
+          ) : null}
           <Field id="email" label="Email (optional)" error={errors.email}>
             <input id="email" name="email" type="email" autoComplete="email" placeholder="For your receipt" value={values.email} onChange={set('email')} onBlur={captureContact} aria-invalid={Boolean(errors.email)} aria-describedby={describedBy('email')} className={`${inputCls} border-line`} />
           </Field>
@@ -412,6 +615,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                 name="payment_method"
                 value={m}
                 checked={method === m}
+                disabled={m === 'cod' && codBlocked}
                 onSelect={() => setMethod(m)}
                 icon={METHOD_ICON[m]}
                 title={METHOD_LABEL[m]}
@@ -426,6 +630,11 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
               />
             ))}
           </div>
+          {codBlocked ? (
+            <Notice tone="error">
+              <span data-sp-cod-unavailable>{GUARD_COPY.codUnavailable.en}</span>
+            </Notice>
+          ) : null}
           {advance && gateways.length > 0 ? (
             <fieldset className="flex flex-col gap-3 rounded-sf-xs bg-sunken p-4" data-sp-advance>
               <legend className="type-label-s float-left mb-3 w-full text-ink">Pay the delivery charge with</legend>
@@ -451,6 +660,11 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
               For some cash orders our team calls to confirm before dispatch — it only takes a minute.
             </p>
           )}
+          {!online ? (
+            <p className="type-body-s text-ink-muted" data-sp-guard-privacy>
+              {GUARD_COPY.privacy.en}
+            </p>
+          ) : null}
         </Step>
 
         <div className="flex flex-col gap-2">
@@ -523,7 +737,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
         ) : null}
         <button
           type="submit"
-          disabled={pending || leaving || state.status === 'redirect' || total === null || Boolean(notLiveMessage) || !geo || advanceBlocked}
+          disabled={pending || leaving || state.status === 'redirect' || total === null || Boolean(notLiveMessage) || !geo || advanceBlocked || (method === 'cod' && codBlocked)}
           className="type-label-m flex h-[52px] items-center justify-center gap-2 rounded-control bg-brand px-5 text-on-brand hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {leaving && goingTo
