@@ -56,6 +56,7 @@ export function po(o: Partial<PurchaseOrder> = {}): PurchaseOrder {
   return {
     id: 'PO12',
     number: 'PO-0012',
+    location: { id: 'LOC1', name: 'Main warehouse' },
     status: 'partially_received',
     payment_status: 'partially_paid',
     supplier: { id: 'SUP1', name: 'Tangail Weavers', phone: '8801711889900', city: 'Tangail' },

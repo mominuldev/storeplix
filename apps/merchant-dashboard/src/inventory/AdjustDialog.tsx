@@ -1,5 +1,5 @@
 import { isApiError } from '@storeplix/api-client';
-import type { InventoryItem, ManualStockReason } from '@storeplix/types';
+import type { InventoryItem, Location, ManualStockReason } from '@storeplix/types';
 import { DEFAULT_LOW_STOCK_THRESHOLD } from '@storeplix/types';
 import { Dialog, Input, SegmentedControl, Select } from '@storeplix/ui';
 import { useState } from 'react';
@@ -10,9 +10,12 @@ import { errorMessage } from '../catalog/states';
 import { Thumb } from '../catalog/ui';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
+import { stockAt } from './locations';
 
 // Inventory 11:743 "Adjust" (contract §9.1): reason select, + / − / set to, note; sends `expected_on_hand` so a
 // concurrent change returns 409 `stock_changed` instead of overwriting. Low-stock threshold is editable here.
+// PHASE-8-8C §10.1: with > 1 active location (`locations` passed) a Location select picks the stock row; the numbers,
+// `expected_on_hand`, `location_id` and the threshold apply to that row. Without it nothing changes (default location).
 
 export const reasonLabels: Record<ManualStockReason, string> = {
   received: 'Received new stock',
@@ -26,10 +29,28 @@ export const reasonLabels: Record<ManualStockReason, string> = {
 type Mode = 'add' | 'remove' | 'set';
 
 /** Mount with a `key` per item so every opening starts fresh. */
-export function AdjustDialog({ item, open, onClose, initialReason = 'correction' }: { item: InventoryItem; open: boolean; onClose: () => void; initialReason?: ManualStockReason }) {
+export function AdjustDialog({
+  item,
+  open,
+  onClose,
+  initialReason = 'correction',
+  locations = null,
+  initialLocationId = null,
+}: {
+  item: InventoryItem;
+  open: boolean;
+  onClose: () => void;
+  initialReason?: ManualStockReason;
+  /** Active locations when the store has more than one; null hides the select. */
+  locations?: Location[] | null;
+  initialLocationId?: string | null;
+}) {
   const { storeId } = useStoreScope();
   const invalidate = useInvalidate();
   const [base, setBase] = useState<InventoryItem>(item);
+  const [locationId, setLocationId] = useState<string | null>(() => (locations ? (locations.find((l) => l.id === initialLocationId) ?? locations.find((l) => l.is_default) ?? locations[0])?.id ?? null : null));
+  const location = locations?.find((l) => l.id === locationId) ?? null;
+  const onHand = location ? stockAt(base, location.id).on_hand : base.on_hand;
   const [reason, setReason] = useState<ManualStockReason>(initialReason);
   const [mode, setMode] = useState<Mode>(initialReason === 'received' || initialReason === 'returned' ? 'add' : initialReason === 'correction' ? 'set' : 'remove');
   const [qty, setQty] = useState('');
@@ -40,15 +61,15 @@ export function AdjustDialog({ item, open, onClose, initialReason = 'correction'
   const [saving, setSaving] = useState(false);
 
   const n = /^\d{1,7}$/.test(qty.trim()) ? Number(qty.trim()) : null;
-  const next = n === null ? null : mode === 'set' ? n : mode === 'add' ? base.on_hand + n : base.on_hand - n;
+  const next = n === null ? null : mode === 'set' ? n : mode === 'add' ? onHand + n : onHand - n;
   const thresholdValue = threshold.trim() === '' ? null : /^\d{1,6}$/.test(threshold.trim()) ? Number(threshold.trim()) : Number.NaN;
   const thresholdChanged = !Number.isNaN(thresholdValue) && thresholdValue !== base.low_stock_threshold;
-  const stockChanged = next !== null && next !== base.on_hand;
+  const stockChanged = next !== null && next !== onHand;
 
   const validate = (): string | null => {
     if (qty.trim() && n === null) return 'Enter a whole number.';
     if (mode !== 'set' && n === 0) return 'Enter a quantity above 0.';
-    if (next !== null && next < 0) return `Only ${formatCount(base.on_hand)} in stock.`;
+    if (next !== null && next < 0) return `Only ${formatCount(onHand)} in stock${location ? ` at ${location.name}` : ''}.`;
     if (stockChanged && reason === 'other' && !note.trim()) return 'Add a note for “Other”.';
     if (Number.isNaN(thresholdValue)) return 'Low-stock alert must be a whole number.';
     if (!stockChanged && !thresholdChanged) return 'Nothing to change yet.';
@@ -61,16 +82,24 @@ export function AdjustDialog({ item, open, onClose, initialReason = 'correction'
     if (problem || !storeId) return;
     setSaving(true);
     try {
-      if (thresholdChanged) await api.inventory.setThreshold(storeId, base.variant_id, thresholdValue);
+      if (thresholdChanged) await api.inventory.setThreshold(storeId, base.variant_id, thresholdValue, location?.id);
       if (stockChanged) {
         await api.inventory.adjust(storeId, {
           reason,
           note: note.trim() || null,
-          items: [{ variant_id: base.variant_id, mode: mode === 'set' ? 'set' : 'delta', quantity: mode === 'set' ? n! : mode === 'add' ? n! : -n!, expected_on_hand: base.on_hand }],
+          items: [
+            {
+              variant_id: base.variant_id,
+              mode: mode === 'set' ? 'set' : 'delta',
+              quantity: mode === 'set' ? n! : mode === 'add' ? n! : -n!,
+              expected_on_hand: onHand,
+              ...(location ? { location_id: location.id } : {}),
+            },
+          ],
         });
       }
       await invalidate.afterAdjustment();
-      toast(stockChanged ? `Stock for ${base.product.name} is now ${formatCount(next!)}.` : 'Low-stock alert saved.');
+      toast(stockChanged ? `Stock for ${base.product.name} is now ${formatCount(next!)}${location ? ` at ${location.name}` : ''}.` : 'Low-stock alert saved.');
       onClose();
     } catch (e) {
       if (isApiError(e) && e.code === 'stock_changed') {
@@ -110,14 +139,23 @@ export function AdjustDialog({ item, open, onClose, initialReason = 'correction'
             </span>
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-heading text-text-primary">{formatCount(base.on_hand)}</span>
-            <span className="text-caption text-text-muted">on hand</span>
+            <span className="text-heading text-text-primary">{formatCount(onHand)}</span>
+            <span className="text-caption text-text-muted">{location ? `on hand at ${location.name}` : 'on hand'}</span>
           </div>
         </div>
         {notice && (
           <p role="status" className="rounded-md bg-warning-bg px-3 py-2 text-body text-text-primary">
             {notice}
           </p>
+        )}
+        {locations && (
+          <Select label="Location" value={locationId ?? ''} onChange={(e) => setLocationId(e.target.value)}>
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </Select>
         )}
         <Select label="Reason" value={reason} onChange={(e) => setReason(e.target.value as ManualStockReason)}>
           {(Object.keys(reasonLabels) as ManualStockReason[]).map((r) => (

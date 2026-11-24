@@ -17,6 +17,7 @@ import { formatBdPhone } from '../lib/phone';
 import { LoadingState } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { useFeatures } from '../plan/useFeatures';
+import { useStockLocations } from '../inventory/locations';
 import { localToday } from '../reports/range';
 import { Card, PurchasingPlanNote, SupplierIcon, SupplierPickerDialog, VariantPickerDialog } from './components';
 import { RecordPaymentDialog, SupplierFormDialog } from './dialogs';
@@ -41,7 +42,7 @@ import { usePurchaseOrder, usePurchaseOrderMutations, useReorderSuggestions, use
 
 // PHASE-8-8B §10.3 New purchase order — Figma 35:6210 (also "Edit" of a draft/ordered PO, composed). Supplier card with
 // Change → supplier picker; Expected by; Payment terms (supplier terms, editable for the advance suggestion); "Receive at"
-// hidden (single stock pool); items with "Last bought at", IN STOCK, unit cost, quantity, line total, remove (composed);
+// 35:6644 (PHASE-8-8C §10.3: only with > 1 active location; locked once the PO has a receipt); items with "Last bought at", IN STOCK, unit cost, quantity, line total, remove (composed);
 // "+ Add product" (composed picker), "Add n suggested"; Summary with Transport + Supplier discount, advance suggestion
 // + "Record advance"; info note; approval warning hidden (P88B-7); "Save draft"; "Send to supplier" via WhatsApp / PDF
 // (Email hidden).
@@ -92,6 +93,10 @@ function PoForm({ po }: { po: PurchaseOrderDetail | null }) {
   const [supplier, setSupplier] = useState<SupplierCard | null>(po ? po.supplier : null);
   const shownSupplier = supplier ?? (preset.data && !preset.data.archived_at ? preset.data : null);
   const [saved, setSaved] = useState<PurchaseOrderDetail | null>(po);
+  const locs = useStockLocations();
+  const [receiveAt, setReceiveAt] = useState<string | null>(po?.location.id ?? null);
+  const receiveAtId = receiveAt ?? locs.defaultLocation?.id ?? null;
+  const receiveAtLocked = !!po && (po.units_received > 0 || po.units_damaged > 0);
   const [meta, setMeta] = useState<Record<string, LineMeta>>(() =>
     Object.fromEntries(
       (po?.lines ?? []).map((l) => [
@@ -170,6 +175,8 @@ function PoForm({ po }: { po: PurchaseOrderDetail | null }) {
       discount_amount: v.discount_amount ?? 0,
       notes: v.notes.trim() || null,
       lines: v.lines.map((l) => ({ variant_id: l.variant_id, unit_cost_amount: l.unit_cost_amount ?? 0, quantity: l.quantity ?? 0 })),
+      // One-location stores send no location (the API uses the default), exactly as before 8.8c.
+      ...(locs.multi && receiveAtId && !receiveAtLocked ? { location_id: receiveAtId } : {}),
     };
     const prev = lastSaved.current;
     const next = prev
@@ -342,6 +349,23 @@ function PoForm({ po }: { po: PurchaseOrderDetail | null }) {
                   );
                 })}
               </Select>
+              {locs.multi && (
+                <Select
+                  id="po-receive-at"
+                  label="Receive at"
+                  value={receiveAtId ?? ''}
+                  disabled={receiveAtLocked}
+                  onChange={(e) => setReceiveAt(e.target.value)}
+                  hint={receiveAtLocked ? 'Locked after the first delivery was received.' : 'Stock goes to this location when you receive it.'}
+                >
+                  {receiveAtLocked && po && !locs.active.some((l) => l.id === po.location.id) && <option value={po.location.id}>{po.location.name}</option>}
+                  {locs.active.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
           </Card>
 

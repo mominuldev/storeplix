@@ -21,6 +21,7 @@ export const productFieldLabels: Record<ProductImportField, string> = {
   compare_at_price: 'Compare-at price',
   cost_price: 'Cost per item',
   stock: 'Stock quantity',
+  location: 'Stock location',
   weight_kg: 'Weight (kg)',
   seo_title: 'SEO title',
   seo_description: 'SEO description',

@@ -190,7 +190,9 @@ describe('Purchase orders list (§10.2)', () => {
     const tabs = screen.getByRole('tablist', { name: 'Inventory' });
     expect(within(tabs).getByRole('tab', { name: 'Purchase orders' })).toHaveAttribute('aria-selected', 'true');
     expect(within(tabs).getByRole('tab', { name: 'Suppliers' })).toBeInTheDocument();
-    expect(within(tabs).queryByRole('tab', { name: /Warehouses|Stock count/ })).toBeNull();
+    expect(within(tabs).queryByRole('tab', { name: /Stock count/ })).toBeNull();
+    // PHASE-8-8C part A: Warehouses is now a tab (Stock count stays hidden until part B).
+    expect(within(tabs).getByRole('tab', { name: 'Warehouses' })).toBeInTheDocument();
     const kpis = await screen.findByRole('region', { name: 'Purchase order summary' });
     expect(within(kpis).getByText('৳ 2,48,600 in total')).toBeInTheDocument();
     expect(within(kpis).getByText('186')).toBeInTheDocument();
@@ -612,6 +614,7 @@ describe('Inventory additions (§10.1)', () => {
     product: { id: 'P1', name: 'Jamdani Three-Piece' },
     variant_title: 'M / Red',
     sku: null,
+    location: { id: 'LOC1', name: 'Main warehouse' },
     delta: 38,
     on_hand_after: 46,
     reason: 'received',
@@ -633,7 +636,7 @@ describe('Inventory additions (§10.1)', () => {
     expect(await screen.findByText('Received · PO-0012 · Jamdani Three-Piece')).toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Reorder suggestions' })).toBeInTheDocument();
     const tabs = screen.getByRole('tablist', { name: 'Inventory' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Stock levels', 'Stock movements', 'Purchase orders', 'Suppliers']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Stock levels', 'Stock movements', 'Purchase orders', 'Suppliers', 'Warehouses']);
   });
 
   it('Stock movements: PO reference links to the purchase order', async () => {

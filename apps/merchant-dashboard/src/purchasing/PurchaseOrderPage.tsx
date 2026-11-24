@@ -16,6 +16,7 @@ import { formatBdPhone } from '../lib/phone';
 import { LoadingState } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { useFeatures } from '../plan/useFeatures';
+import { receiveAtText, useStockLocations } from '../inventory/locations';
 import { Card, PoStatusBadge, PurchasingPlanNote, SupplierIcon } from './components';
 import { RecordPaymentDialog } from './dialogs';
 import {
@@ -77,6 +78,8 @@ function Detail({ po }: { po: PurchaseOrderDetail }) {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [printing, setPrinting] = useState(false);
   const tz = scope.store?.timezone;
+  // PHASE-8-8C §10.3: "receive at {location}" (36:6615) only with > 1 active location.
+  const receiveAt = receiveAtText(useStockLocations().multi, po.location);
 
   const now = receiveTotals(po.lines, draft);
   const progress = progressOf(po, now);
@@ -139,6 +142,7 @@ function Detail({ po }: { po: PurchaseOrderDetail }) {
     po.ordered_at ? `Ordered ${dayMonth(localDate(po.ordered_at, tz))}` : `Created ${dayMonth(localDate(po.created_at, tz))}`,
     po.expected_on ? `expected ${dayMonth(po.expected_on)}` : null,
     po.sent_at ? `sent ${po.sent_via === 'whatsapp' ? 'on WhatsApp' : po.sent_via === 'pdf' ? 'as PDF' : ''}`.trim() : null,
+    receiveAt ? `receive at ${receiveAt}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -318,7 +322,7 @@ function ReceiveCard({ po, draft, setDraft, canReceive }: { po: PurchaseOrderDet
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const totals = receiveTotals(po.lines, draft);
-  const footer = receiveFooter(totals);
+  const footer = receiveFooter(totals, receiveAtText(useStockLocations().multi, po.location));
   const errors = Object.fromEntries(po.lines.map((l) => [l.id, receiveLineError(l, draft[l.id])]));
   const invalid = Object.values(errors).some(Boolean);
   const open = po.lines.filter((l) => l.quantity_left > 0);

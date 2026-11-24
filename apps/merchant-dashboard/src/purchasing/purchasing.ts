@@ -175,9 +175,9 @@ export function receiveTotals(lines: Pick<PurchaseOrderLine, 'id' | 'landed_unit
   return { units, damaged, value };
 }
 
-/** Footer copy (36:6607, location text dropped). */
-export function receiveFooter(t: { units: number; damaged: number; value: number | null }): { title: string; detail: string } {
-  const title = `Adding ${plural(t.units, 'unit')} to stock`;
+/** Footer copy (36:6607). PHASE-8-8C §10.3: "Adding n units to {location}" (36:7118) when the store has > 1 location. */
+export function receiveFooter(t: { units: number; damaged: number; value: number | null }, locationName?: string | null): { title: string; detail: string } {
+  const title = `Adding ${plural(t.units, 'unit')} to ${locationName || 'stock'}`;
   const parts = [
     t.value !== null && t.units > 0 ? `Stock value + ${formatBdt(t.value)} · cost prices updated` : null,
     t.damaged > 0 ? `${formatCount(t.damaged)} damaged, not added to stock` : null,
