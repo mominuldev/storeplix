@@ -95,8 +95,8 @@ Each desktop frame = Sidebar + Main (1440 wide).
 | Import products (CSV) | `60:10175` (Main `60:10177`); Column map row `63:16638`; Import preview row `63:16857` | Also used for customer import |
 | Product reviews / Barcode labels | `60:10572` / `147:32835` (label `147:32805`) | Deferred |
 | Local components · Products | `60:10969` | |
-| Inventory (stock levels) | `11:589` (Main `11:743`) | Stock levels + Stock movements tabs; **Purchase orders + Suppliers tabs, INCOMING column and reorder card from Phase 8.8b** (below) |
-| Purchase orders / New PO / Receive / Transfers / Stock count / Suppliers | `35:5619` / `35:6210` / `36:6607` / `153:34425` / `153:35246` / `153:35999` | Purchase orders, New PO, Receive, Suppliers → **Phase 8.8b** (below); Transfers, Stock count → Deferred (8.8c+) |
+| Inventory (stock levels) | `11:589` (Main `11:743`) | Stock levels + Stock movements tabs; **Purchase orders + Suppliers tabs, INCOMING column and reorder card from Phase 8.8b**; **location selector `11:842` and Warehouses tab `11:808` from Phase 8.8c part A** (below) |
+| Purchase orders / New PO / Receive / Transfers / Stock count / Suppliers | `35:5619` / `35:6210` / `36:6607` / `153:34425` / `153:35246` / `153:35999` | Purchase orders, New PO, Receive, Suppliers → **Phase 8.8b** (below); Receive at → **Phase 8.8c part A**; Transfers, Stock count → **Phase 8.8c part B** (below) |
 | Customers list | `63:14972` (Main `63:14974`); Customer/Row `61:12494`; Avatar `61:12493` | |
 | Customer detail | `64:16382` (Main `64:16384`) | Contact, tags, notes only |
 | Customer segments / Blocked | `65:16718` / `66:17034` | Deferred |
@@ -319,4 +319,25 @@ contract accepted 2026-11-24).
 | New purchase order `/inventory/purchase-orders/new` | `35:6210` | Build: supplier card (name, contact, city, "Delivers in ~n days", "n past orders", "You owe ৳ x"), Expected by, Payment terms, items table ("Last bought at", IN STOCK, unit cost, quantity, line totals), "Add n suggested", Summary with editable Transport and Supplier discount, Advance now / Pay from / On delivery (suggested from `advance_percent`; "Record advance" records a payment), info note "Stock value goes up by ৳ x when received. Cost prices update automatically.", "Save draft", "Send to supplier" (WhatsApp, PDF). **Composed**: supplier picker dialog (Change), variant picker ("+ Add product"), remove-line control. **Hidden**: Receive at, approval warning, Email channel |
 | PO detail / Receive `/inventory/purchase-orders/:id` | `36:6607` | Build: header pill, Print (PDF), Record payment, progress card (received / receiving now / damaged), money summary Total / Paid / Due (hidden for `inventory.adjust`-only), Receive items table (RECEIVING NOW, DAMAGED), "Receive all remaining", footer "Adding n units to stock" / "Stock value + ৳ x · cost prices updated" / "n damaged, not added to stock", "Attach supplier invoice", "Receive n units", supplier card with Call (`tel:`) and WhatsApp (`wa.me`), payments card, history (no "Approved by"), documents (invoices + PO PDF). **Composed**: More menu (Mark as ordered, Edit, Close, Cancel, Delete draft). **Hidden**: location text |
 | Suppliers `/inventory/suppliers` | `153:35999` | Build: KPI tiles Suppliers / You owe / On the way / Bought this month, table (supplier, supplies · city, products, open POs, you owe — red when overdue, last order), detail panel (contact, owed banner with overdue, payment terms, pays by, lead time, recent POs with delivery/payment pills, Record payment, New PO), "Import" (CSV). **Composed**: "+ Add supplier" form dialog, selected-row highlight, search, archive in the panel menu. **Hidden**: "vs last month" line (Q211) |
-| Transfers / Stock count | `153:34425` / `153:35246` | **Deferred** (8.8c+) |
+| Transfers / Stock count | `153:34425` / `153:35246` | **Phase 8.8c part B** (see the 8.8c section) |
+
+## Phase 8.8c — locations, transfers, stock count (page Inventory `26:2146`; PHASE-8-8C-CONTRACT §10)
+Part A (locations + per-location stock) and part B (transfers + counts) ship as two PRs. With **one** location and no
+`multi_warehouse`, every location element is hidden except the Warehouses tab (shows the one location and an upgrade
+note) and, in part B, Stock count. Routes under Inventory (no new sidebar item): `/inventory/warehouses` (A),
+`/inventory/transfers`, `/inventory/transfers/:id`, `/inventory/counts`, `/inventory/counts/:id` (B). No mobile frames:
+tables become cards below `md`, 375 px usable; states from `148:34032` (empty "No other locations yet", "No transfers yet
+— move stock between your locations.", "No counts yet"). Hidden in both parts: transfer approval (Q218), warehouse
+access per role (Q119/Q226), "Lock online sales while counting" (Q222), "Record shortage as expense" (Q223), Pause (Q224),
+"Scanner ready" (Q225). Status: part A **In progress** (contract accepted 2026-11-24); part B **Planned**.
+
+| Screen / element | Frame | 8.8c |
+|---|---|---|
+| Inventory location selector | `11:589` (selector `11:842`) | **A — Build when > 1 location**: "All locations" first, then each location name; with a location selected the table shows ON HAND / HELD / AVAILABLE for it (`filter[location_id]`); with "All locations" a row expands to per-location numbers (`locations[]`, composed). Movement rows show the location. Adjust dialog gains a location select (> 1 location). "Transfer stock" `11:788` → **B** (new transfer) |
+| Warehouses tab `/inventory/warehouses` | `11:808` (tab only; **composed** — no Figma frame) | **A — Build**: cards/table with name + type tag + Default ("Online orders ship from here"), address, units on hand, stock value (`costs.view`), variants in stock; "+ Add location" dialog (name, type, address or "Use a pickup address", plan note); row menu Edit / Make default / Archive (with the `location_in_use` reasons); upgrade note on Free/Starter |
+| Product editor stock field | Products (8.4 editor) | **A — Build**: the stock field edits the default (online) location; below it "+ n at other locations" with a popover listing them (> 1 location) |
+| New PO "Receive at" | `35:6644` (in `35:6210`) | **A — Build when > 1 non-archived location**: location select (default location preselected; locked once the PO has a receipt) |
+| Receive subtitle / footer | `36:6615` / `36:7118` (in `36:6607`) | **A — Build when > 1 non-archived location**: "Receive at {location}" and "Adding n units to {location}"; PO PDF shows the location too |
+| Transfers `/inventory/transfers` | `153:34425` (side panel `153:35202`) | **B — Build** (PHASE-8-8C §10.4): KPI tiles Drafts (replaces "Waiting for approval") / In transit / Received this month / Locations, chips, table, pills incl. "Received · n short", side panel with Save draft / Send / Receive / Cancel transfer. **Hidden**: Reject, Approve & send, "needs approval" |
+| Stock count `/inventory/counts/:id` | `153:35246` | **B — Build** (PHASE-8-8C §10.5): counts list (composed), Start count dialog, SKU/barcode box (+1 per scan), chips, editable COUNTED, "If you finish now" and "When you finish" (only "Set uncounted items to 0"), Finish & adjust stock, Cancel count. **Hidden**: Pause, Scanner ready, Record shortage as expense, Lock online sales while counting |
+| Invite staff / role detail "Warehouse access" | `90:26879` / `90:26913` | **Stays hidden** (Q119 deferred to POS 8.8d, Q226) |

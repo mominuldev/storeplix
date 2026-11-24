@@ -19,7 +19,7 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2); Phase 8.4 adds webhook_endpoints, webhook_secrets, webhook_deliveries (§5.4). Tenant-scoped only: tenant_users, roles, role_permissions (8.3), api_keys (8.4), media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2); Phase 8.4 adds webhook_endpoints, webhook_secrets, webhook_deliveries (§5.4); later phases list theirs in §5.5–§5.10 (Phase 8.8c adds locations). Tenant-scoped only: tenant_users, roles, role_permissions (8.3), api_keys (8.4), media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
 | Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
@@ -53,7 +53,8 @@ erDiagram
   PRODUCTS ||--o{ PRODUCT_CATEGORIES : in
   CATEGORIES ||--o{ PRODUCT_CATEGORIES : groups
   CATEGORIES ||--o{ CATEGORIES : parent
-  PRODUCT_VARIANTS ||--|| INVENTORIES : stock
+  PRODUCT_VARIANTS ||--o{ INVENTORIES : "stock per location (8.8c)"
+  LOCATIONS ||--o{ INVENTORIES : holds
   INVENTORIES ||--o{ INVENTORY_MOVEMENTS : ledger
   STORES ||--o{ CUSTOMERS : has
   CUSTOMERS ||--o{ CUSTOMER_ADDRESSES : has
@@ -82,7 +83,7 @@ erDiagram
   TENANT_USERS { char26 id PK; char26 tenant_id FK; char26 user_id FK; string role }
   PRODUCTS { char26 id PK; char26 tenant_id FK; char26 store_id FK; string slug; string type; string status }
   PRODUCT_VARIANTS { char26 id PK; char26 tenant_id FK; char26 product_id FK; string sku; bigint price_amount }
-  INVENTORIES { char26 id PK; char26 tenant_id FK; char26 variant_id FK; int on_hand; int reserved }
+  INVENTORIES { char26 id PK; char26 tenant_id FK; char26 variant_id FK; char26 location_id FK; int on_hand; int committed }
   ORDERS { char26 id PK; char26 tenant_id FK; char26 store_id FK; string number; string status; bigint total_amount }
   PAYMENTS { char26 id PK; char26 tenant_id FK; char26 order_id FK; string provider; string status }
 ```
@@ -236,15 +237,25 @@ IX(tenant_id, product_id, position).
 tenant_id · product_id FK(t) CASCADE · category_id FK(t) CASCADE · position int. **PK(tenant_id, product_id, category_id)**.
 IX(tenant_id, category_id, position).
 
-### inventories (1:1 variant, single location until Phase 8 multi-location)
-id PK · tenant_id · variant_id FK(t) **U** · on_hand int · reserved int default 0 · low_stock_threshold int null · timestamps.
-CHECK(reserved >= 0). CHECK(on_hand >= 0 OR backorder allowed — enforced in app). Stock changes use
-`UPDATE ... SET reserved = reserved + :q WHERE id=:id AND on_hand - reserved >= :q` (atomic, no race).
+### inventories [S] (one row per variant **per location** since Phase 8.8c; §5.10)
+id PK · tenant_id · store_id · variant_id FK3(product_variants) CASCADE · location_id FK3(locations) **RESTRICT** (8.8c) ·
+on_hand int default 0 · committed int default 0 · low_stock_threshold int null · timestamps.
+CHECK(committed >= 0); CHECK(low_stock_threshold NULL OR 0–100000); CHECK(on_hand >= 0) (Postgres, added in 8.8c; the
+app already guaranteed it). Until 8.8c: **U(variant_id)**. From 8.8c: **U(tenant_id, store_id, variant_id,
+location_id)**, U(tenant_id, store_id, id), IX(tenant_id, store_id, location_id, on_hand). A missing row reads as 0 and
+is created lazily on the first positive delta at that location. Rows change only through `InventoryService` (P4-12):
+commit/release/ship/restock under `SELECT … FOR UPDATE` in `(variant_id, location_id)` order; "available" =
+`on_hand − committed`; committing stock writes no ledger row (P5-5).
 
-### inventory_movements (append-only ledger)
-id PK · tenant_id · variant_id FK(t) · delta int · reason `CHECK IN ('manual','order_reserved','order_released','order_fulfilled','return','import','adjustment','pos_sale','transfer')` ·
-reference_type varchar(32) null · reference_id char(26) null · actor_user_id null · note varchar(255) · created_at.
-IX(tenant_id, variant_id, created_at).
+### inventory_movements [S] (append-only ledger; no `updated_at`, model refuses update/delete)
+id PK · tenant_id · store_id · variant_id FK3 CASCADE · location_id FK3(locations) (8.8c, NOT NULL) · delta int
+CHECK(delta <> 0) · on_hand_after int · reason varchar(32) `CHECK IN ('initial','received','correction','damaged','lost',
+'returned','import','other','order_shipped','order_returned','transfer_out','transfer_in','count')` (the last three
+from 8.8c; Postgres only) · note varchar(255) null · reference_type varchar(32) null (no CHECK: `import`, `order`,
+`return`, `purchase_order` (8.8b), `stock_transfer`, `stock_count` (8.8c)) · reference_id char(26) null ·
+actor_user_id FK users null SET NULL (actor may also be an API key since 8.4, §5.4) · created_at.
+IX(tenant_id, store_id, variant_id, created_at), IX(tenant_id, store_id, created_at), IX(tenant_id, store_id,
+location_id, created_at) (8.8c).
 
 ### customers [S]
 id PK · tenant_id · store_id · name varchar(120) · email citext null · phone varchar(20) null · password varchar(255) null
@@ -1087,6 +1098,53 @@ IX(tenant_id, store_id, supplier_id, paid_on DESC). Never written to `expenses` 
 - `audit_logs` action catalogue gains the `purchasing.*` actions (PHASE-8-8B P88B-18; `packages/types`
   `PURCHASING_AUDIT_ACTIONS`).
 
+## 5.10 Phase 8.8c part A: locations and per-location stock (PHASE-8-8C-CONTRACT §3.1, ADR 0024, migrations `2026_12_07_*`)
+Replaces the locations part of the §6 sketch. Stock is now one `inventories` row per variant per location; one
+location per store is the **default** (= the **online location**: storefront, carts, checkout and every order sell from
+it, P88C-4). `locations` is store-scoped `[S]`, has RLS forced in its create migration and is listed in
+`RlsTables::TENANT` (**83 after Phase 8.8c part A**) and `database/sql/rls-emergency-off.sql`. "FK3" = composite FK
+`(tenant_id, store_id, x_id) → x(tenant_id, store_id, id)`. Plan feature `multi_warehouse` (Growth) gates a 2nd+
+non-archived location; permission `settings.manage` for location writes (no new key, P88C-14). Transfers and counts
+(part B, `2026_12_08_*`) are not in this section.
+
+### locations [S] (`000100`)
+id PK · tenant_id · store_id · name varchar(60) · type varchar(10) `CHECK IN ('warehouse','shop')` · address
+varchar(200) null · pickup_location_id char(26) null FK3(pickup_locations) **ON DELETE SET NULL (pickup_location_id)** on
+Postgres (sqlite: plain FK on id; same store also checked in the request; display + prefill only; shipping unchanged) · is_default boolean · position smallint · archived_at timestamptz null · created_by FK users SET NULL null ·
+timestamps. U(tenant_id, id), **U(tenant_id, store_id, id)**, IX(tenant_id, store_id, archived_at); `CHECK (type IN
+('warehouse','shop'))`, `CHECK (position >= 0)`; partial **U(store_id, lower(name)) WHERE archived_at IS NULL**; partial
+**U(store_id) WHERE is_default** (exactly one default per store, enforced with the backfill and store creation);
+`CHECK NOT (is_default AND archived_at IS NOT NULL)`. ≤ 10 non-archived per store (app rule). No hard delete once any
+stock row or ledger row points at it; archive only when every stock row there has `on_hand = 0` and `committed = 0`, no
+open PO receives there, no open transfer/count touches it (part B) and it is not the default (P88C-17).
+
+### Backfill (`000200`, data only)
+One location per existing store: name "Main warehouse", type `warehouse`, `is_default = true`, `position = 0`, address
+prefilled from (and linked to) the store's default pickup address when one exists. Store creation (`StoreService` /
+onboarding) creates the same row for every new store.
+
+### Changes to existing tables
+- **inventories** (`000300`): + `location_id char(26)` → backfilled to the store's default location (batched per store)
+  → NOT NULL + FK3(locations) **RESTRICT**; drop **U(variant_id)**; add **U(tenant_id, store_id, variant_id,
+  location_id)**, U(tenant_id, store_id, id), IX(tenant_id, store_id, location_id, on_hand); add `CHECK (on_hand >= 0)`
+  on Postgres after a pre-check that aborts the migration with a clear message if any row is negative. New rows at a
+  location copy the default row's `low_stock_threshold`.
+- **inventory_movements** (`000400`): + `location_id` (backfilled from the row's inventory, batched) NOT NULL FK3;
+  IX(tenant_id, store_id, location_id, created_at); reason CHECK widened with `transfer_out`, `transfer_in`, `count`;
+  `reference_type` values gain `stock_transfer`, `stock_count` (still no CHECK).
+- **order_items** (`000500`): + `location_id` null FK3 RESTRICT; backfilled to the default location for tracked lines;
+  every new tracked line stores the online location at commit; release / ship / restock (returns) use this stored
+  location, never the current online location (P88C-4, P88C-16). Untracked lines keep null.
+- **purchase_orders**, **purchase_receipts** (`000600`): + `location_id` NOT NULL FK3 (backfilled to the default). A PO's
+  location is editable until its first receipt (then 422 `location_locked`); each receipt stocks its location.
+- Models: `ProductVariant::inventory()` is a `HasOne` scoped to the online location (online readers keep their code);
+  new `inventories()` `HasMany`; `Inventory::scopeTotals()` for Σ readers. Reader classes (online / total / location)
+  are in PHASE-8-8C §5.3; no 1:1 `join('inventories')` outside the allow-list (static test, S185).
+- Lock order (amends P4-12): `(variant_id, location_id)` ascending; the weighted-average receive locks **all** rows of
+  the variant before reading total on hand (cost stays one per variant).
+- `audit_logs` action catalogue gains `location.created`, `location.updated`, `location.archived`,
+  `location.unarchived`, `location.made_default` (`packages/types` `LOCATION_AUDIT_ACTIONS`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1100,7 +1158,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing (26:2146 Inventory) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments` — **specified in 8.8b (§5.9, PHASE-8-8B §3, ADR 0023)** | 8.8b |
-| Locations / transfers / stock count (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `stock_transfers`, `stock_transfer_items`, stock counts | 8.8c+ |
+| Locations / transfers / stock count (26:2146 Inventory) | `locations`, `inventories.location_id` (U(tenant_id, store_id, variant_id, location_id)), `inventory_movements.location_id`, `order_items.location_id`, `purchase_orders`/`purchase_receipts.location_id` — **specified in 8.8c part A (§5.10, PHASE-8-8C §3.1, ADR 0024)**; `stock_transfers`, `stock_transfer_items`, `stock_counts`, `stock_count_items` — **8.8c part B** (PHASE-8-8C §3.2) | 8.8c |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `fraud_guard_settings`, `blocked_phones`, `order_risk_checks`, `fraud_guard_events`, `checkout_otps`, `orders.guard_hold` (no `customers.risk_flags`, no courier provider rows) — **specified in 8.8a (§5.8, PHASE-8-8 §4, ADR 0022)** | 8.8a |
 | Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |

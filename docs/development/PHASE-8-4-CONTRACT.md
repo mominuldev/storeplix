@@ -156,6 +156,11 @@ responses unless the creator held `costs.view` at creation (`api_keys.include_co
 | stock.low | a variant's `on_hand` crosses from `> low_stock_threshold` to `≤` it (once per crossing) | inventory row |
 | customer.created | new customer row | customer |
 
+> **Amended by PHASE-8-8C part A (Phase 8.8c, P88C-15, Q219):** an inventory row is now one variant at one location,
+> so `stock.low` fires **per location row** (subject = the row; the crossing is that row's `on_hand` against that row's
+> threshold). The payload object gains `location: {id, name}`; existing fields keep their meaning for that row. The 8.6
+> Low stock alert recipe fires the same way and its message gains "at {location}" when the store has > 1 location.
+
 Emission: domain code calls `WebhookEvents::emit(WebhookEventType, Model $subject)` (one line per emit point);
 it records nothing when the store has no active endpoint subscribed, or the plan lacks `api_webhooks`.
 

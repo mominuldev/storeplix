@@ -113,6 +113,14 @@ Conventions in this file:
 > transaction, under the inventory row lock); a manual cost edit still overrides. Consequences: stock value at cost and
 > the cost snapshot of **future** orders change; past order snapshots (P5-31) and past Profit & loss do not. Cost stays
 > private (P4-5): `inventory.adjust`-only receivers never see it, though their receipts still update it.
+>
+> **Amended by PHASE-8-8C part A (Phase 8.8c, P88C-3/4/6/8, ADR 0024):** `inventories` is one row per variant **per
+> location** (`location_id`, unique `(tenant_id, store_id, variant_id, location_id)`; a missing row reads as 0) and every
+> `inventory_movements` row carries its `location_id`. Storefront, carts, checkout and orders use the store's **online
+> location** (= default); totals (dashboard, inventory summary, export, reorder suggestions, weighted-average cost) are Σ
+> over non-archived locations. `GET …/inventory` gains `filter[location_id]` (omitted = all locations, with
+> `locations[]` per row); adjustments and the threshold PATCH accept an optional `location_id` (default location).
+> The lock order of P4-12 becomes `(variant_id, location_id)` ascending. A single-location store sees no change.
 
 ### New OPEN-QUESTIONS (appended to OPEN-QUESTIONS.md)
 - **Q21** Should staff see cost price and profit? Default: no (owner/admin only).

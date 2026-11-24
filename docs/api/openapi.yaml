@@ -1,8 +1,37 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.17.0
+  version: 1.18.0
   description: |
+    1.18.0 (2026-11-24, Phase 8.8c part A, PHASE-8-8C-CONTRACT.md, ADR 0024). Locations and per-location stock. Stock
+    is one row per variant per location; every store has exactly one default location (= the **online location**:
+    storefront, carts, checkout and every new order sell from it); existing stock was backfilled to a default "Main
+    warehouse". New paths (tag inventory; reads perm base, writes settings.manage; impersonation → 403
+    impersonation_read_only): GET|POST /stores/{store}/locations (GET unpaginated, filter[archived] omitted = all, 0 =
+    active, 1 = archived; POST 201, ≤ 10 active, a 2nd+ active location needs the multi_warehouse plan feature → 402
+    feature_not_in_plan), PATCH .../locations/{location}, POST .../{location}/archive (409 location_in_use with
+    details.reasons[]), POST .../{location}/unarchive (plan-checked), POST .../{location}/make-default (switches the
+    online location at once; open orders keep their lines' location). New schemas Location, LocationType, LocationRef,
+    LocationInput, UpdateLocationInput, LocationInUseReason, InventoryItemLocation. **Changed shapes**: GET
+    .../inventory gains filter[location_id] (omitted = "All locations": top-level numbers are totals over non-archived
+    locations and location_id is null; with a location: that row only) and every InventoryItem gains location_id and
+    locations[] (InventoryItemLocation); GET .../inventory/movements gains filter[location_id] and every StockMovement
+    gains location (LocationRef); StockMovementReason gains transfer_out, transfer_in, count and
+    StockMovement.reference.type (and filter[reference_type]) gains stock_transfer, stock_count (both written from
+    part B, 1.19.0); adjustment items and PATCH .../inventory/{variant} (threshold) accept an optional location_id
+    (omitted = default location); InventoryLevel (product variant inventory block) is the online location's row and
+    gains location_id, total_on_hand, other_locations_on_hand; PurchaseOrder and PurchaseReceipt gain location
+    (LocationRef, "Receive at"), CreatePurchaseOrderInput, UpdatePurchaseOrderInput and QuickPurchaseInput accept
+    location_id (omitted = default; changing it after the first receipt → 422 location_locked); PurchaseOrderLine.in_stock
+    is the variant's total on hand. External API: GET /external/stores/{store}/inventory gains filter[location_id] and
+    locations[]; without the filter top-level on_hand / committed / available keep meaning the **online location** (not
+    the total); external adjustments accept location_id. Webhook stock.low fires per location row and its
+    data.object gains location (LocationRef). **Changed meaning** (stores with > 1 location only): the storefront shows
+    only the online location's stock; dashboard units on hand, inventory summary and stock value are totals;
+    weighted-average cost counts stock at every location. New error codes location_in_use (409), location_name_taken,
+    location_locked, location_archived (422; any reference to an archived location, incl. make-default and
+    filter[location_id]); reused feature_not_in_plan (details.feature = multi_warehouse), insufficient_stock and
+    stock_changed (per location row). AuditAction gains location.created|updated|archived|unarchived|made_default.
     1.17.0 (2026-11-24, Phase 8.8b, PHASE-8-8B-CONTRACT.md, ADR 0023). Suppliers and purchase orders. New tag purchasing
     (purchasing.manage, a new grantable sensitive permission after inventory.adjust, requires costs.view; owner and
     admin; writes need the new purchasing plan feature on Starter and Growth → 402 feature_not_in_plan, reads allowed;
@@ -3037,13 +3066,316 @@ paths:
           $ref: '#/components/responses/TenantForbiddenOrRole'
         '404':
           $ref: '#/components/responses/NotFound'
+  /stores/{store}/locations:
+    get:
+      tags:
+      - inventory
+      summary: List locations
+      operationId: listLocations
+      description: Phase 8.8c (PHASE-8-8C §4). Any role (perm base). Not paginated (≤ 10 active). Sorted default first,
+        then position, then name. stock_value_amount is null without costs.view.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[archived]
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+        description: Omitted = every location (active and archived); 0 = active only; 1 = archived only
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+      - inventory
+      summary: Create a location
+      operationId: createLocation
+      description: Phase 8.8c. Needs settings.manage. When the store already has ≥ 1 non-archived location the
+        multi_warehouse plan feature is required (402 feature_not_in_plan, details.feature = multi_warehouse). At most 10
+        non-archived locations. Name unique among non-archived locations (case-insensitive, 422 location_name_taken).
+        pickup_location_id must be a pickup address of this store (prefills address; display only). Position is
+        server-assigned (last). Never default on create (use make-default). Audited location.created.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (multi_warehouse)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`location_name_taken`, `validation_failed` (incl. the 10-location cap and a pickup_location_id of another store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/locations/{location}:
+    parameters:
+    - $ref: '#/components/parameters/LocationPath'
+    patch:
+      tags:
+      - inventory
+      summary: Update a location
+      operationId: updateLocation
+      description: Phase 8.8c. Needs settings.manage. Partial update of name, type, address, pickup_location_id. No plan
+        check (editing is allowed after a downgrade). Audited location.updated.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`location_name_taken` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/locations/{location}/archive:
+    parameters:
+    - $ref: '#/components/parameters/LocationPath'
+    post:
+      tags:
+      - inventory
+      summary: Archive a location
+      operationId: archiveLocation
+      description: Phase 8.8c (P88C-17). Needs settings.manage. No plan check. Allowed only when the location is not the
+        default, every stock row there has on_hand = 0 and committed = 0 and no open purchase order receives there (part B
+        adds open transfers and counts); else 409 location_in_use with details.reasons (LocationInUseReason[]). Archived
+        locations keep their ledger rows; there is no hard delete. Audited location.archived.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`location_in_use` (details.reasons: LocationInUseReason[])'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          type: object
+                          properties:
+                            reasons:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/LocationInUseReason'
+  /stores/{store}/locations/{location}/unarchive:
+    parameters:
+    - $ref: '#/components/parameters/LocationPath'
+    post:
+      tags:
+      - inventory
+      summary: Unarchive a location
+      operationId: unarchiveLocation
+      description: Phase 8.8c. Needs settings.manage. Plan-checked like create (402 feature_not_in_plan when the store already has
+        ≥ 1 non-archived location and no multi_warehouse); the 10-location cap and name uniqueness apply (422). Audited
+        location.unarchived.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (multi_warehouse)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`location_name_taken` or `validation_failed` (10-location cap)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/locations/{location}/make-default:
+    parameters:
+    - $ref: '#/components/parameters/LocationPath'
+    post:
+      tags:
+      - inventory
+      summary: Make a location the default (online) location
+      operationId: makeDefaultLocation
+      description: Phase 8.8c (P88C-5). Needs settings.manage. No plan check. The location becomes the only default (= the online
+        location), so storefront availability, carts, checkout and new orders use it at once; open orders keep releasing,
+        shipping and restocking at their lines' stored location. An archived location → 422 location_archived. Idempotent
+        on the current default. Audited location.made_default.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`location_archived`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /stores/{store}/inventory:
     get:
       tags:
       - inventory
       summary: List stock levels
       operationId: listInventory
-      description: Any role. One row per variant. `stock_value_cost_amount` null for staff.
+      description: Any role. One row per variant. `stock_value_cost_amount` null for staff. Phase 8.8c — without
+        filter[location_id] ("All locations") on_hand / committed / available, status and the summary are totals over
+        non-archived locations, location_id is null and locations[] lists each location; with filter[location_id] they
+        are that location's row (missing row = 0), filter[stock] and sort use it, and incoming counts only open POs
+        receiving there. An archived location → 422 location_archived.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3068,6 +3400,11 @@ paths:
         name: filter[product_id]
         schema:
           $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[location_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: Phase 8.8c — one location of this store (else 422); omitted = All locations (totals)
       - in: query
         name: sort
         schema:
@@ -3120,6 +3457,10 @@ paths:
       summary: Adjust stock
       operationId: adjustStock
       description: Any role. All-or-nothing in one transaction with row locks; never negative; one ledger row per changed variant.
+        Phase 8.8c — each item may name a location_id (omitted = the default location); `set`, expected_on_hand and the
+        never-negative rule apply to that location's row (a missing row is created on a positive delta). Rows are locked
+        in (variant_id, location_id) order. A location of another store → 422 validation_failed; archived → 422
+        location_archived. Ledger rows carry the location.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3157,7 +3498,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
-          description: '`insufficient_stock` (result would be negative) or `validation_failed`'
+          description: '`insufficient_stock` (result would be negative), `location_archived` or `validation_failed`'
           content:
             application/json:
               schema:
@@ -3207,7 +3548,14 @@ paths:
           - order
           - return
           - purchase_order
-        description: Phase 8.8b — one reference type
+          - stock_transfer
+          - stock_count
+        description: Phase 8.8b — one reference type (stock_transfer, stock_count from Phase 8.8c part B)
+      - in: query
+        name: filter[location_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: Phase 8.8c — movements at one location of this store (else 422)
       - in: query
         name: page
         schema:
@@ -3252,7 +3600,8 @@ paths:
       - inventory
       summary: Set low-stock threshold
       operationId: updateInventoryItem
-      description: Any role.
+      description: Any role. Phase 8.8c — sets the threshold of one location's row (location_id omitted = the default
+        location); the response item is filtered to that location. Archived location → 422 location_archived.
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -3274,6 +3623,9 @@ paths:
                   - 'null'
                   minimum: 0
                   maximum: 100000
+                location_id:
+                  $ref: '#/components/schemas/Ulid'
+                  description: Phase 8.8c — omitted = the default location
       responses:
         '200':
           description: Item
@@ -12948,7 +13300,10 @@ paths:
       summary: List stock levels
       operationId: externalListInventory
       description: Scope `inventory:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
-        are omitted unless the key has include_costs.
+        are omitted unless the key has include_costs. Phase 8.8c — without filter[location_id] the top-level on_hand,
+        committed, available and status keep meaning the **online location** (what the storefront sells; unchanged for
+        integrations), not the total; locations[] carries every non-archived location's numbers. With filter[location_id]
+        the top-level numbers are that location's row.
       security:
       - ApiKeyAuth: []
       x-required-scope: inventory:read
@@ -12965,6 +13320,11 @@ paths:
           type: string
           format: date-time
         description: Only rows updated at or after this instant.
+      - in: query
+        name: filter[location_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        description: Phase 8.8c — one location of this store (else 422)
       - in: query
         name: page
         schema:
@@ -13020,7 +13380,7 @@ paths:
       summary: Adjust stock
       operationId: externalAdjustStock
       description: Scope `inventory:write`. Same rules as the merchant adjustment (reason required, never negative, one ledger
-        row per variant with actor api_key). Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        row per variant with actor api_key; Phase 8.8c optional location_id per item, omitted = default location). Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
         are omitted unless the key has include_costs.
       security:
       - ApiKeyAuth: []
@@ -17212,6 +17572,13 @@ components:
       schema:
         $ref: '#/components/schemas/Ulid'
       description: product_variants.id of this store, else 404 `not_found`.
+    LocationPath:
+      in: path
+      name: location
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: Phase 8.8c — locations.id of this store, else 404 `not_found`.
     CustomerPath:
       in: path
       name: customer
@@ -20464,6 +20831,10 @@ components:
       - low_stock_threshold
       - effective_threshold
       - status
+      - location_id
+      - total_on_hand
+      - other_locations_on_hand
+      description: Phase 8.8c — every number is the online (default) location's row; a missing row reads as 0.
       properties:
         on_hand:
           type: integer
@@ -20479,6 +20850,15 @@ components:
           type: integer
         status:
           $ref: '#/components/schemas/StockStatus'
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+          description: Phase 8.8c — the online location these numbers belong to
+        total_on_hand:
+          type: integer
+          description: Phase 8.8c — Σ on_hand over the variant's rows at non-archived locations
+        other_locations_on_hand:
+          type: integer
+          description: Phase 8.8c — total_on_hand − on_hand ("+ n at other locations")
     ProductVariant:
       type: object
       required:
@@ -21049,6 +21429,10 @@ components:
       - cost_amount
       - updated_at
       - incoming
+      - location_id
+      - locations
+      description: Phase 8.8c — without filter[location_id] the numbers are totals over non-archived locations (external
+        API — online location); with it, that location's row.
       properties:
         variant_id:
           $ref: '#/components/schemas/Ulid'
@@ -21117,6 +21501,37 @@ components:
           minimum: 0
           description: Phase 8.8b — units still expected on open purchase orders (ordered / partially_received; Σ
             ordered − received − damaged); 0 when none.
+        location_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+          description: Phase 8.8c — the filtered location; null without filter[location_id]
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryItemLocation'
+          description: Phase 8.8c — one entry per non-archived location (missing rows read as 0), default first then
+            position
+    InventoryItemLocation:
+      type: object
+      description: Phase 8.8c — one location's numbers for a variant
+      required:
+      - id
+      - name
+      - on_hand
+      - committed
+      - available
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        on_hand:
+          type: integer
+        committed:
+          type: integer
+        available:
+          type: integer
     InventorySummary:
       type: object
       required:
@@ -21159,6 +21574,135 @@ components:
         properties:
           summary:
             $ref: '#/components/schemas/InventorySummary'
+    LocationType:
+      type: string
+      enum:
+      - warehouse
+      - shop
+      description: Phase 8.8c
+    LocationRef:
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+    Location:
+      type: object
+      description: Phase 8.8c (PHASE-8-8C §4). is_default = the online location ("Online orders ship from here");
+        exactly one per store, never archived.
+      required:
+      - id
+      - name
+      - type
+      - address
+      - is_default
+      - position
+      - archived_at
+      - pickup_location
+      - units_on_hand
+      - stock_value_amount
+      - variants_count
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 60
+        type:
+          $ref: '#/components/schemas/LocationType'
+        address:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        is_default:
+          type: boolean
+        position:
+          type: integer
+        archived_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        pickup_location:
+          oneOf:
+          - $ref: '#/components/schemas/LocationRef'
+          - type: 'null'
+          description: Linked shipping pickup address (display + prefill only)
+        units_on_hand:
+          type: integer
+          description: Σ on_hand at this location
+        stock_value_amount:
+          type:
+          - integer
+          - 'null'
+          description: Σ on_hand × variant cost (minor units); null without costs.view
+        variants_count:
+          type: integer
+          description: Stock rows here with on_hand > 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LocationInput:
+      type: object
+      required:
+      - name
+      - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        type:
+          $ref: '#/components/schemas/LocationType'
+        address:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        pickup_location_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+          description: A pickup address of this store (else 422)
+    UpdateLocationInput:
+      type: object
+      description: Partial LocationInput
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        type:
+          $ref: '#/components/schemas/LocationType'
+        address:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        pickup_location_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    LocationInUseReason:
+      type: string
+      enum:
+      - is_default
+      - has_stock
+      - has_committed
+      - open_purchase_orders
+      - open_transfers
+      - open_counts
+      description: Phase 8.8c — error.details.reasons[] of 409 location_in_use (open_transfers, open_counts from part B)
     StockMovementReason:
       type: string
       enum:
@@ -21172,6 +21716,10 @@ components:
       - other
       - order_shipped
       - order_returned
+      - transfer_out
+      - transfer_in
+      - count
+      description: transfer_out, transfer_in, count since Phase 8.8c (written by part B transfers and counts)
     StockAdjustmentInput:
       type: object
       required:
@@ -21215,6 +21763,9 @@ components:
                 maximum: 1000000
               expected_on_hand:
                 type: integer
+              location_id:
+                $ref: '#/components/schemas/Ulid'
+                description: Phase 8.8c — omitted = the default location; set / expected_on_hand apply to that row
           minItems: 1
           maxItems: 100
     StockMovement:
@@ -21232,6 +21783,7 @@ components:
       - reference
       - actor
       - created_at
+      - location
       properties:
         id:
           $ref: '#/components/schemas/Ulid'
@@ -21277,7 +21829,10 @@ components:
                 - order
                 - return
                 - purchase_order
-                description: purchase_order since 8.8b (reason received; note "PO-0012 · {supplier name}")
+                - stock_transfer
+                - stock_count
+                description: purchase_order since 8.8b (reason received; note "PO-0012 · {supplier name}"); stock_transfer
+                  and stock_count since 8.8c part B
               id:
                 $ref: '#/components/schemas/Ulid'
           - type: 'null'
@@ -21295,6 +21850,9 @@ components:
         created_at:
           type: string
           format: date-time
+        location:
+          $ref: '#/components/schemas/LocationRef'
+          description: Phase 8.8c — the stock row's location (every ledger row has one)
     StockAdjustmentResult:
       type: object
       required:
@@ -21583,6 +22141,7 @@ components:
       - compare_at_price
       - cost_price
       - stock
+      - location
       - weight_kg
       - seo_title
       - seo_description
@@ -29949,7 +30508,8 @@ components:
               type: object
               additionalProperties: true
               description: 'The external-API resource of the subject at event time; `truncated: true` when trimmed to ids (> 256
-                KB)'
+                KB). stock.low (Phase 8.8c): fires per location row; the object is the InventoryItem with that location''s
+                numbers plus `location` (LocationRef).'
     WebhookDeliveryDetail:
       allOf:
       - $ref: '#/components/schemas/WebhookDelivery'
@@ -33272,6 +33832,7 @@ components:
       - status
       - payment_status
       - supplier
+      - location
       - lines_count
       - preview_items
       - units_ordered
@@ -33315,6 +33876,9 @@ components:
           description: null for adjust-only actors
         supplier:
           $ref: '#/components/schemas/PurchaseOrderSupplierRef'
+        location:
+          $ref: '#/components/schemas/LocationRef'
+          description: Phase 8.8c "Receive at" — where receipts stock (default location unless chosen; locked once received)
         lines_count:
           type: integer
         preview_items:
@@ -33562,7 +34126,7 @@ components:
           description: From the current transport/discount (§5.4); null for adjust-only
         in_stock:
           type: integer
-          description: Current on hand
+          description: Current on hand (Phase 8.8c — total over non-archived locations)
         last_bought_unit_cost_amount:
           type:
           - integer
@@ -33636,6 +34200,7 @@ components:
       - id
       - received_at
       - received_by
+      - location
       - supplier_invoice_ref
       - invoice
       - note
@@ -33653,6 +34218,9 @@ components:
           oneOf:
           - $ref: '#/components/schemas/UserRef'
           - type: 'null'
+        location:
+          $ref: '#/components/schemas/LocationRef'
+          description: Phase 8.8c — the location this receipt stocked (the PO's location at the time)
         supplier_invoice_ref:
           type:
           - string
@@ -33916,6 +34484,10 @@ components:
       properties:
         supplier_id:
           $ref: '#/components/schemas/Ulid'
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+          description: Phase 8.8c "Receive at" — omitted = the default location; must be an active location of this store
+            (archived → 422 location_archived)
         lines:
           type: array
           minItems: 1
@@ -33966,6 +34538,10 @@ components:
           type: integer
         supplier_id:
           $ref: '#/components/schemas/Ulid'
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+          description: Phase 8.8c "Receive at" — omitted = the default location; must be an active location of this store
+            (archived → 422 location_archived); changing it after the first receipt → 422 location_locked
         lines:
           type: array
           minItems: 1
@@ -34099,6 +34675,10 @@ components:
       properties:
         supplier_id:
           $ref: '#/components/schemas/Ulid'
+        location_id:
+          $ref: '#/components/schemas/Ulid'
+          description: Phase 8.8c "Receive at" — omitted = the default location; must be an active location of this store
+            (archived → 422 location_archived)
         lines:
           type: array
           minItems: 1

@@ -185,7 +185,8 @@ row first (FOR UPDATE), then stock rows. A count finish locks the count row, the
 CRUD + `archive` / `unarchive` / `make-default`; list sorted default first, then position, then name; each item carries
 `units_on_hand` (Σ on_hand there), `stock_value_amount` (`costs.view` only, Σ on_hand × variant cost), `variants_count`
 (rows with on_hand > 0), `is_default`, `pickup_location` summary. Name unique among active (422 `location_name_taken`);
-archive rules P88C-17; making an archived location default → 409.
+archive rules P88C-17; making an archived location default → 422 `location_archived` (as every other
+reference to an archived location: adjust, PO, filter; corrected 2026-11-24 from "409" to match §9 and the types).
 
 ## 5. Per-location stock (owner API, part A)
 
