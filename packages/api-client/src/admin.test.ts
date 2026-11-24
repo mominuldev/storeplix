@@ -264,3 +264,48 @@ describe('Phase 8.2 analytics', () => {
     expect(adminTenantQuery({ sort: '-last_active_at' }).sort).toBe('-last_active_at');
   });
 });
+
+describe('Amendment A1: switchable staff two-step sign-in', () => {
+  const settings = {
+    staff_two_factor_required: false, environment_default: false, source: 'setting',
+    updated_at: '2026-11-25T10:00:00Z', updated_by: { id: 'U1', name: 'Sadia' },
+  };
+
+  it('login narrows on step: signed_in carries the session, totp carries the login token', async () => {
+    const signedIn = { ...session, step: 'signed_in', environment: 'local', security: { staff_two_factor_required: false } };
+    const { client } = setup(json(200, { data: signedIn }));
+    const res = await client.admin.auth.login({ email: 'a@b.c', password: 'p' });
+    if (res.step !== 'signed_in') throw new Error('expected signed_in');
+    expect(res.user.id).toBe('U1');
+    expect(res.environment).toBe('local');
+    expect(res.security.staff_two_factor_required).toBe(false);
+
+    const second = setup(json(200, { data: { step: 'totp', login_token: 'L', expires_at: 'x' } }));
+    const step = await second.client.admin.auth.login({ email: 'a@b.c', password: 'p' });
+    expect(step.step === 'signed_in' ? null : step.login_token).toBe('L');
+  });
+
+  it('getSecurity reads /admin/settings/security without X-Tenant-Id', async () => {
+    const { client, call } = setup(json(200, { data: settings }));
+    const res = await client.admin.settings.getSecurity();
+    expect(call().method ?? 'GET').toBe('GET');
+    expect(call().url.pathname).toBe('/api/v1/admin/settings/security');
+    expect(call().headers['X-Tenant-Id']).toBeUndefined();
+    expect(res).toEqual(settings);
+  });
+
+  it('updateSecurity PATCHes only the switch and the current password', async () => {
+    const { client, call } = setup(json(200, { data: { ...settings, staff_two_factor_required: true } }));
+    const res = await client.admin.settings.updateSecurity({ staff_two_factor_required: true, current_password: 'secret', extra: 1 } as never);
+    expect(call().method).toBe('PATCH');
+    expect(call().url.pathname).toBe('/api/v1/admin/settings/security');
+    expect(call().body).toEqual({ staff_two_factor_required: true, current_password: 'secret' });
+    expect(call().headers['X-Tenant-Id']).toBeUndefined();
+    expect(res.staff_two_factor_required).toBe(true);
+  });
+
+  it('surfaces invalid_password', async () => {
+    const { client } = setup(json(422, { error: { code: 'invalid_password', message: 'Wrong password', details: { current_password: ['Wrong password'] } } }));
+    await expect(client.admin.settings.updateSecurity({ staff_two_factor_required: false, current_password: 'x' })).rejects.toMatchObject({ status: 422, code: 'invalid_password' });
+  });
+});
