@@ -1,8 +1,17 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.19.0
+  version: 1.20.0
   description: |
+    1.20.0 (2026-11-25, PHASE-8-1 amendment A1, PHASE-8-1-AMENDMENT-ADMIN-2FA.md, Q231). Switchable staff two-step
+    sign-in. POST /admin/auth/login now answers AdminLoginResult (oneOf on `step`): AdminLoginStep (`totp` | `enroll`,
+    login_token) while the platform setting `staff_two_factor_required` is on, or AdminLoginSignedIn (`step: signed_in` +
+    the AdminSession, session cookie set, audit admin.login meta.method = password) while it is off. AdminSession (me /
+    totp / enroll) gains `environment` (APP_ENV) and `security.staff_two_factor_required`. New routes GET|PATCH
+    /admin/settings/security (PlatformSecuritySettings; PATCH takes UpdatePlatformSecuritySettingsInput with
+    current_password, wrong password → 422 invalid_password, audit admin.settings_updated {key, from, to} with
+    meta.risk = high when switched off outside local; limiter admin-write). PlatformPermission gains manage_settings
+    (super_admin only). PlatformTeamMeta.security.totp_required is now the effective setting (no longer const true).
     1.19.0 (2026-11-25, Phase 8.8c part B, PHASE-8-8C-CONTRACT.md §7–§9, ADR 0024 "Part B"). Stock transfers and stock
     counts (tag inventory; reads perm base; every write needs inventory.adjust, limiter stock-write 120/min per user,
     impersonation → 403 impersonation_read_only). Transfers (P88C-9/10): GET|POST /stores/{store}/stock-transfers
@@ -10930,7 +10939,9 @@ paths:
       summary: Staff sign-in, step 1 (password)
       operationId: adminLogin
       description: PHASE-8-1 §3.1. No session yet. Wrong password, non-staff, disabled, locked or a domain outside ADMIN_EMAIL_DOMAINS
-        all answer the same 422. Limiter `admin-login`. CSRF required.
+        all answer the same 422. Limiter `admin-login`. CSRF required. Amendment A1 (1.20.0) — while the platform setting
+        `staff_two_factor_required` is off the password alone signs in (step `signed_in`, session cookie set, audit `admin.login`
+        with `meta.method` = `password`); while it is on the answer is `totp` / `enroll` as before.
       security: []
       requestBody:
         required: true
@@ -10940,7 +10951,7 @@ paths:
               $ref: '#/components/schemas/AdminLoginInput'
       responses:
         '200':
-          description: Next step
+          description: Next step, or signed in (amendment A1)
           content:
             application/json:
               schema:
@@ -10949,7 +10960,7 @@ paths:
                 - data
                 properties:
                   data:
-                    $ref: '#/components/schemas/AdminLoginStep'
+                    $ref: '#/components/schemas/AdminLoginResult'
         '422':
           $ref: '#/components/responses/ValidationFailed'
         '429':
@@ -12698,6 +12709,74 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/settings/security:
+    get:
+      tags:
+      - admin
+      summary: Platform security settings
+      operationId: getPlatformSecuritySettings
+      description: Amendment A1-4 (1.20.0). Platform permission `manage_settings` (super_admin only).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSecuritySettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - admin
+      summary: Switch staff two-step sign-in on or off
+      operationId: updatePlatformSecuritySettings
+      description: 'Amendment A1-4 (1.20.0). Platform permission `manage_settings` (super_admin only). Re-confirms the caller''s
+        password. Stores the value (source becomes `setting`) and busts the settings cache. Audit `admin.settings_updated`
+        `{key: staff_two_factor_required, from, to}`; switching it off outside APP_ENV=local adds `meta.risk: high`. Limiter
+        `admin-write`. CSRF required.'
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlatformSecuritySettingsInput'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSecuritySettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          description: '`invalid_password` (wrong current_password) | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
   /admin/team:
@@ -30026,6 +30105,8 @@ components:
       - suspend
       - manage_team
       - view_analytics
+      - manage_settings
+      description: manage_settings (1.20.0, amendment A1) = platform settings, super_admin only.
     AuditActorType:
       type: string
       description: 'automation (1.14.0) = a store automation; actor.id = automation id, actor.name = its name (P86-20)'
@@ -30106,6 +30187,71 @@ components:
         expires_at:
           type: string
           format: date-time
+    AdminLoginSignedIn:
+      description: Amendment A1 (1.20.0). Password-only sign-in while `staff_two_factor_required` is off; the AdminSession
+        plus `step`.
+      allOf:
+      - $ref: '#/components/schemas/AdminSession'
+      - type: object
+        required:
+        - step
+        properties:
+          step:
+            type: string
+            const: signed_in
+    AdminLoginResult:
+      description: POST /admin/auth/login answer (1.20.0); discriminate on `step`.
+      oneOf:
+      - $ref: '#/components/schemas/AdminLoginStep'
+      - $ref: '#/components/schemas/AdminLoginSignedIn'
+    PlatformSecuritySettings:
+      type: object
+      description: Amendment A1-4 (1.20.0).
+      required:
+      - staff_two_factor_required
+      - environment_default
+      - source
+      - updated_at
+      - updated_by
+      properties:
+        staff_two_factor_required:
+          type: boolean
+          description: Effective value — the stored setting, else environment_default.
+        environment_default:
+          type: boolean
+          description: ADMIN_TWO_FACTOR_REQUIRED; when unset, false only for APP_ENV=local.
+        source:
+          type: string
+          enum:
+          - setting
+          - default
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        updated_by:
+          oneOf:
+          - type: 'null'
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+    UpdatePlatformSecuritySettingsInput:
+      type: object
+      required:
+      - staff_two_factor_required
+      - current_password
+      properties:
+        staff_two_factor_required:
+          type: boolean
+        current_password:
+          type: string
     TotpEnrollment:
       type: object
       required:
@@ -30152,6 +30298,8 @@ components:
       - user
       - session_expires_at
       - idle_expires_at
+      - environment
+      - security
       properties:
         user:
           $ref: '#/components/schemas/PlatformUser'
@@ -30161,6 +30309,17 @@ components:
         idle_expires_at:
           type: string
           format: date-time
+        environment:
+          type: string
+          description: APP_ENV of the API (1.20.0, amendment A1-5), e.g. local, staging, production.
+        security:
+          type: object
+          description: Amendment A1-5 (1.20.0).
+          required:
+          - staff_two_factor_required
+          properties:
+            staff_two_factor_required:
+              type: boolean
     AdminOverview:
       type: object
       required:
@@ -31731,7 +31890,7 @@ components:
           properties:
             totp_required:
               type: boolean
-              const: true
+              description: Effective staff_two_factor_required (1.20.0, amendment A1; was const true).
             ip_allowlist_enabled:
               type: boolean
             session_idle_minutes:

@@ -132,6 +132,7 @@ the domains table.
 | `manage_domains` | domain re-check | ✓ | | ✓ | |
 | `suspend` | suspend / reactivate tenant, suspend / reinstate domain, revoke an impersonation | ✓ | | | |
 | `manage_team` | staff list (read: all roles), invite, change role, disable, reset 2FA | ✓ | | | |
+| `manage_settings` (**A1**) | platform settings: `GET|PATCH /admin/settings/security` | ✓ | | | |
 
 Staff list and the read-only matrix are readable by every role (`view_merchants`); writes need `manage_team`. A missing
 permission → 403 `forbidden`; the UI hides the action.
@@ -145,6 +146,13 @@ write is refused before the permission check.
 ## 3. Sign-in and sessions (owner API, WEB)
 
 ### 3.1 Admin sign-in flow
+> **Amended by A1** (`PHASE-8-1-AMENDMENT-ADMIN-2FA.md`, Q231): TOTP is required only while the platform setting
+> `staff_two_factor_required` is on (default on everywhere except `APP_ENV=local`; env `ADMIN_TWO_FACTOR_REQUIRED`).
+> While it is off, step 1 with a correct password signs in at once: **200** `{ step: "signed_in", ...AdminSession }`
+> (`AdminLoginSignedIn`), audit `admin.login` with `meta.method: "password"`; steps 2–4 are skipped. `AdminSession`
+> gains `environment` and `security.staff_two_factor_required`. Lock-out, IP allow-list, email domain and identical
+> failures are unchanged.
+
 1. `POST /admin/auth/login {email, password}` (CSRF as today). Wrong credentials, a non-staff user, a disabled or locked
    staff user, or an email outside `ADMIN_EMAIL_DOMAINS` → the **same** 422 `validation_failed` on `email`
    ("These credentials do not match our records.") and audit `admin.login_failed` (platform row, meta `email_hash`
@@ -281,6 +289,11 @@ Reused: `forbidden`, `not_found`, `validation_failed`, `invalid_state_transition
 `plan_unchanged`, `plan_unavailable`, `idempotency_key_*`, `rate_limited`, `tenant_suspended`.
 
 ### 6.1 Auth (admin)
+> **Amended by A1**: `POST /admin/auth/login` answers `AdminLoginResult` = `AdminLoginStep` | `AdminLoginSignedIn`
+> (`step: "signed_in"` + `AdminSession`). New `GET|PATCH /admin/settings/security` (`manage_settings`, super_admin only;
+> PATCH `{staff_two_factor_required, current_password}`, 422 `invalid_password`, audit `admin.settings_updated`).
+> openapi 1.20.0.
+
 | Method & path | Body | Success |
 |---|---|---|
 | `POST /admin/auth/login` | `{email, password}` | 200 `AdminLoginStep` |
@@ -412,11 +425,14 @@ openapi 1.9.0; `packages/api-client` gets an `admin` namespace.
 
 ## 9. Security checklist (Phase 8.1; numbering continues S53–S66; each has a test in §10)
 
+> **Amended by A1**: S67, S68 and S70 are unchanged and hold whether or not two-step sign-in is required (S70 also
+> covers the `signed_in` path: failures stay identical). S69's TOTP controls apply only while the setting is on.
+
 | # | Threat | Control | Test |
 |---|---|---|---|
 | S67 | **Merchant session on admin API** (T11) | `surface:admin` + active `platform_role` on every `/admin/*` | Merchant session (also for a user who has `platform_role`) → 403 on every admin route (route-list dataset) |
 | S68 | **Admin session on merchant API** | `surface:merchant,impersonation` on `tenant` routes | Admin session + valid `X-Tenant-Id` of the staff user's own shop → 403 |
-| S69 | **Password-only staff takeover** | TOTP mandatory, replay window, lockout, recovery codes hashed and single use | No session before TOTP; same code twice → 422; 5 failures → locked 15 min; used recovery code → 422 |
+| S69 | **Password-only staff takeover** (**amended by A1**: applies while `staff_two_factor_required` is on — always outside `local` unless a super admin switches it off, which is audited with `meta.risk: high`) | TOTP mandatory, replay window, lockout, recovery codes hashed and single use | No session before TOTP; same code twice → 422; 5 failures → locked 15 min; used recovery code → 422 |
 | S70 | **Staff enumeration** | Identical 422 for wrong password / non-staff / disabled / wrong domain; constant-time hash check (`CredentialVerifier`) | Four cases, identical bodies |
 | S71 | **Impersonation writes** | `ReadOnlyImpersonation` before routing to controllers; side-effect GET list | Dataset over every non-GET merchant route → 403 `impersonation_read_only`, DB unchanged; `GET /billing/payments/{id}` makes no provider call |
 | S72 | **Impersonation scope creep** | Tenant from the row only; any other `X-Tenant-Id` → 403; staff's own memberships hidden | Impersonating A with `X-Tenant-Id: B` (staff owns B) → 403 |
