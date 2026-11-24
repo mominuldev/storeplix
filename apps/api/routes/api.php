@@ -338,7 +338,14 @@ Route::prefix('v1')->group(function (): void {
         }
 
         Route::get('audit-logs', AuditLogController::class)->middleware('perm:audit.view')->name('audit-logs.index');
+
+        // Phase 8.4 (PHASE-8-4-CONTRACT §6.1): one file per owner agent.
+        require __DIR__.'/developer-keys.php';
+        require __DIR__.'/developer-webhooks.php';
     });
+
+    // Phase 8.4 (PHASE-8-4-CONTRACT §3): external API authenticated by API keys, never by a session.
+    require __DIR__.'/external.php';
 
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
