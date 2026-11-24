@@ -359,6 +359,9 @@ subject, contact (masked), outcome pill + reason, steps summary; row expands to 
 Unhide: **Automations** tab (count = automations `on`) → `/marketing/automations`; **Carts recovered** tile; **Cart recovery**
 chart series (`recovery_amount`); **Abandoned cart recovery** quick-create card → recovery page (creates the automation
 when missing). Still hidden: Return on spend, Best week yet, WhatsApp broadcast.
+KPI row stays at Figma's four slots: Revenue from marketing, Orders from campaigns, Carts recovered, Messages sent
+(composed, in the Return on spend slot). The 8.5 **Unsubscribes** tile is removed (PO, 2026-11-24); the API keeps
+`kpis.unsubscribes`.
 
 ### 10.6 Storefront (WEB owns the files in §14)
 - Checkout form (`themes/modern-commerce/commerce/checkout-form.tsx`): on blur of a valid phone (and later name/email
