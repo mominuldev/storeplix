@@ -129,7 +129,9 @@ class AttributionOverviewTest extends TestCase
         $this->assertEquals(50.0, $o['kpis']['campaign_orders_share_pct']);
         $this->assertSame(1, $o['kpis']['messages_sent']);
         $this->assertSame(1, $o['kpis']['unsubscribes']);
-        $this->assertSame(['coupons' => 2, 'campaigns' => 1], $o['counts']);
+        $this->assertSame(['coupons' => 2, 'campaigns' => 1, 'automations' => 0], $o['counts']); // PHASE-8-6 C14
+        $this->assertSame([0, 0], [$o['kpis']['carts_recovered'], $o['kpis']['recovered_revenue_amount']]);
+        $this->assertSame(0, array_sum(array_column($o['series'], 'recovery_amount')));
         $this->assertSame('BDT', $o['currency']);
         $this->assertCount(8, $o['series']);
         $this->assertSame($campaignOrder->total_amount + $couponOrder->total_amount, array_sum(array_column($o['series'], 'campaigns_amount')));

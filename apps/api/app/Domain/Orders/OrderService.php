@@ -2,6 +2,7 @@
 
 namespace App\Domain\Orders;
 
+use App\Domain\Automations\Engine\AutomationTriggers;
 use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Customers\Models\Customer;
@@ -278,6 +279,7 @@ class OrderService
             $o->save();
             OrderTimeline::record($o, 'status_changed', null, null, ['reason' => $reason], $from, Order::CANCELLED);
             WebhookEvents::orderStatus($o, Order::CANCELLED);
+            AutomationTriggers::unfinishedOrder($o, $reason); // PHASE-8-6 P86-13: payment_timeout → checkout.abandoned (after commit)
 
             return $o;
         });

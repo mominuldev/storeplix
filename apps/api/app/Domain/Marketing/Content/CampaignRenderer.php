@@ -16,35 +16,81 @@ use App\Domain\Shared\Http\ApiException;
  * Email (P85-19): subject + plain text; the HTML is a fixed platform template — logo + store name, paragraphs from
  * blank lines, `https?://` URLs auto-linked, everything else escaped (S123), footer = store contact line +
  * unsubscribe link. Merge fields P85-20: {name} {coupon} {shop_link} {product}; anything else → 422.
+ *
+ * PHASE-8-6 §8: automation messages may also use {order_no} and {cart_link} (per-recipe lists, `assertAllowedFields`)
+ * and are capped at 3 SMS parts (`assertMaxParts`, `max_parts` 3); campaigns keep their list and 5 parts.
  */
 final class CampaignRenderer
 {
     public const MERGE_FIELDS = ['{name}', '{coupon}', '{shop_link}', '{product}'];
+
+    /** PHASE-8-6 §8: every merge field an automation message can use (each recipe allows a subset). */
+    public const AUTOMATION_MERGE_FIELDS = ['{name}', '{coupon}', '{shop_link}', '{product}', '{cart_link}', '{order_no}'];
 
     /** Estimates: a 20-character sample name (§6.1) and a sample code. */
     public const SAMPLE_NAME = 'Abcdefghijklmnopqrst';
 
     public const SAMPLE_CODE = 'Xxxxxxxxxx';
 
-    /** @return list<string> unknown `{…}` fields in the text, in order of appearance */
-    public static function unknownFields(string $text): array
+    /**
+     * @param  list<string>|null  $allowed  null = the campaign list (P85-20)
+     * @return list<string> unknown `{…}` fields in the text, in order of appearance
+     */
+    public static function unknownFields(string $text, ?array $allowed = null): array
     {
         preg_match_all('/\{[^{}\s]{0,40}\}/u', $text, $m);
 
-        return array_values(array_unique(array_diff($m[0], self::MERGE_FIELDS)));
+        return array_values(array_unique(array_diff($m[0], $allowed ?? self::MERGE_FIELDS)));
     }
 
     /** @throws ApiException 422 campaign_unknown_merge_field */
     public static function assertKnownFields(string ...$texts): void
     {
+        self::assertAllowedFields(self::MERGE_FIELDS, ...$texts);
+    }
+
+    /**
+     * @param  list<string>  $allowed
+     *
+     * @throws ApiException 422 campaign_unknown_merge_field
+     */
+    public static function assertAllowedFields(array $allowed, string ...$texts): void
+    {
         $unknown = [];
         foreach ($texts as $text) {
-            $unknown = [...$unknown, ...self::unknownFields($text)];
+            $unknown = [...$unknown, ...self::unknownFields($text, $allowed)];
         }
         $unknown = array_values(array_unique($unknown));
         if ($unknown !== []) {
-            throw new ApiException(422, 'campaign_unknown_merge_field', 'Unknown merge field: '.implode(', ', $unknown).'. Use {name}, {coupon}, {shop_link} or {product}.', ['fields' => $unknown]);
+            $use = $allowed === [] ? 'This message has no merge fields.' : 'Use '.self::humanList($allowed).'.';
+
+            throw new ApiException(422, 'campaign_unknown_merge_field', 'Unknown merge field: '.implode(', ', $unknown).'. '.$use, ['fields' => $unknown]);
         }
+    }
+
+    /**
+     * PHASE-8-6 §8 `max_parts`: the SMS rendered with `$code` (and the spec's sample values) must fit `$maxParts` parts.
+     *
+     * @throws ApiException 422 campaign_too_long
+     */
+    public static function assertMaxParts(MessageSpec $spec, StoreBrand $store, int $maxParts, ?string $customerName = self::SAMPLE_NAME, string $code = self::SAMPLE_CODE): int
+    {
+        $parts = self::sms($spec, $store, $customerName, $code)['parts'];
+        if ($parts > $maxParts) {
+            throw new ApiException(422, 'campaign_too_long', "This SMS is {$parts} parts long; the maximum is {$maxParts} (the shop name and the opt-out link count too).", ['parts' => $parts, 'max_parts' => $maxParts]);
+        }
+
+        return $parts;
+    }
+
+    /** @param list<string> $items */
+    private static function humanList(array $items): string
+    {
+        if (count($items) <= 1) {
+            return implode('', $items);
+        }
+
+        return implode(', ', array_slice($items, 0, -1)).' or '.end($items);
     }
 
     public static function usesField(MessageSpec $spec, string $field): bool
@@ -122,15 +168,21 @@ HTML;
             $first = $spec->language === 'en' ? 'there' : 'গ্রাহক';
         }
         $link = ($email ? 'https://' : '').$store->host;
-        $product = $spec->productName !== null
-            ? SmsTemplates::clean($spec->productName, 60).' '.$link.'/products/'.$spec->productSlug
-            : '';
+        $product = match (true) {
+            $spec->productName === null => '',
+            // PHASE-8-6 §8: an automation may render the product name without its link (3-part SMS fallback).
+            $spec->productSlug === null => SmsTemplates::clean($spec->productName, $spec->productNameMax),
+            default => SmsTemplates::clean($spec->productName, $spec->productNameMax).' '.$link.'/products/'.$spec->productSlug,
+        };
 
         return strtr($text, [
             '{name}' => $first,
             '{coupon}' => (string) $spec->couponCode,
             '{shop_link}' => $link,
             '{product}' => $product,
+            // PHASE-8-6 §8 (automation messages only; campaigns reject these fields before rendering).
+            '{order_no}' => SmsTemplates::clean((string) $spec->orderNo, 24),
+            '{cart_link}' => (string) $spec->cartLink,
         ]);
     }
 

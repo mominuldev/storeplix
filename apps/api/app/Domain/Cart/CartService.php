@@ -221,6 +221,77 @@ class CartService
         }
     }
 
+    /**
+     * PHASE-8-6 P86-12: the checkout contact typed on the checkout page (phone normalized; name/email only when sent,
+     * null clears). Overwritten by later edits; counts as shopper activity.
+     *
+     * @param  array{phone: string, name?: string|null, email?: string|null}  $contact
+     */
+    public function saveContact(Cart $cart, array $contact): void
+    {
+        $cart->contact_phone = $contact['phone'];
+        if (array_key_exists('name', $contact)) {
+            $cart->contact_name = $contact['name'];
+        }
+        if (array_key_exists('email', $contact)) {
+            $cart->contact_email = $contact['email'];
+        }
+        $cart->contact_captured_at = now();
+        $this->touch($cart);
+    }
+
+    /**
+     * PHASE-8-6 P86-16 cart restore: a NEW cart (fresh token) with the given lines; the source cart is never touched or
+     * revealed. Lines that can't be bought are left out; `$issues` is true when any line was dropped or is short of
+     * stock (→ the shopper lands on /cart). The coupon is applied only when it is valid for the restored cart.
+     *
+     * @param  list<array{variant_id: string, quantity: int}>  $lines
+     * @param  array{phone: string|null, name: string|null, email: string|null}  $contact
+     * @return array{0: Cart, 1: string, 2: bool} the cart, its raw token, whether a line has an issue
+     */
+    public function restore(Store $store, array $lines, ?string $couponCode, array $contact, string $ip): array
+    {
+        return DB::transaction(function () use ($store, $lines, $couponCode, $contact, $ip) {
+            [$cart, $token] = $this->create($store, $ip);
+            $issues = false;
+            $loaded = LineLoader::load($store->id, array_map(fn ($l, $i) => ['key' => $i, 'variant_id' => strtolower($l['variant_id']), 'quantity' => min(Cart::MAX_QUANTITY, max(1, $l['quantity']))], $lines, array_keys($lines)), self::statuses(false))['lines'];
+            foreach (array_slice($loaded, 0, Cart::MAX_LINES) as $line) {
+                if (! $line['purchasable']) {
+                    $issues = true;
+
+                    continue;
+                }
+                if ($line['tracked'] && ! $line['backorder'] && $line['available'] < $line['quantity']) {
+                    $issues = true;
+                }
+                $item = new CartItem;
+                $item->store_id = $store->id;
+                $item->cart_id = $cart->id;
+                $item->variant_id = $line['variant_id'];
+                $item->quantity = $line['quantity'];
+                $item->save();
+            }
+            if (count($loaded) > Cart::MAX_LINES || ! CartItem::query()->where('cart_id', $cart->id)->exists()) {
+                $issues = true;
+            }
+            $cart->contact_phone = $contact['phone'];
+            $cart->contact_name = $contact['name'];
+            $cart->contact_email = $contact['email'];
+            $cart->contact_captured_at = $contact['phone'] !== null ? now() : null;
+            // The flow that sent the link already covers this shopper: the restored cart is never detected again.
+            $cart->recovery_detected_at = now();
+            if ($couponCode !== null && ($coupon = $this->coupons->find($store->id, $couponCode)) !== null) {
+                $priced = $this->price($store, $cart, false, $coupon);
+                if ($this->coupons->reason($coupon, $priced['subtotal'], $priced['eligible_subtotal']) === null) {
+                    $cart->coupon_code = $coupon->code;
+                }
+            }
+            $cart->save();
+
+            return [$cart, $token, $issues];
+        });
+    }
+
     private function touch(Cart $cart): void
     {
         $cart->last_activity_at = now();

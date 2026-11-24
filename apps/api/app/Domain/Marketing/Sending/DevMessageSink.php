@@ -18,7 +18,12 @@ final class DevMessageSink
         return (bool) config('campaigns.dev_sink') && ! app()->environment('production');
     }
 
-    /** @param array{channel: string, to: string, subject: string|null, text: string, unsubscribe_url: string, campaign_id: string|null, is_test: bool} $message */
+    /**
+     * PHASE-8-6 §8: automation messages are recorded too (`automation_id` set, `campaign_id` null); campaign messages
+     * carry `automation_id: null`.
+     *
+     * @param  array{channel: string, to: string, subject: string|null, text: string, unsubscribe_url: string, campaign_id: string|null, is_test: bool, automation_id?: string|null}  $message
+     */
     public static function record(string $storeId, array $message): void
     {
         if (! self::enabled()) {
@@ -27,7 +32,7 @@ final class DevMessageSink
         $cache = app(TenantCache::class);
         $key = self::key($storeId);
         $list = (array) $cache->get($key, []);
-        array_unshift($list, $message + ['created_at' => now()->toIso8601ZuluString()]);
+        array_unshift($list, $message + ['automation_id' => null, 'created_at' => now()->toIso8601ZuluString()]);
         $cache->put($key, array_slice($list, 0, (int) config('campaigns.dev_sink_size', 200)), now()->addDays(7));
     }
 

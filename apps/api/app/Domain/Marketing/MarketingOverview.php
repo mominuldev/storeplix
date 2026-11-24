@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Marketing;
 
+use App\Domain\Automations\Models\Automation;
 use App\Domain\Coupons\CouponPresenter;
 use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Marketing\Http\Resources\CampaignPresenter;
@@ -26,6 +27,10 @@ use Illuminate\Support\Facades\DB;
  *  - series: 8 ISO weeks (Monday, store timezone), oldest first; an order with a conversion counts as `campaigns`,
  *    else (coupon) as `coupons` — never in both;
  *  - active_coupons: top 4 coupons whose display status is `active`, by revenue; recent_campaigns: latest 5.
+ * PHASE-8-6 §9.2 (C14): revenue_amount also counts orders with an automation conversion (each order once);
+ * kpis.carts_recovered / recovered_revenue_amount = automation conversions in range (non-cancelled orders);
+ * series[].recovery_amount = orders with an automation conversion and no campaign conversion (never in two series);
+ * counts.automations = automations `on`.
  */
 final class MarketingOverview
 {
@@ -43,24 +48,30 @@ final class MarketingOverview
         $revenue = (int) self::marketingOrders($store, $from, $end)->sum('o.total_amount');
         $previous = (int) self::marketingOrders($store, $prevFrom, $from)->sum('o.total_amount');
         $campaignOrders = self::orders($store, $from, $end)->whereExists(self::conversion())->count();
+        $recovered = self::orders($store, $from, $end)->whereExists(self::recovery());
         $allOrders = self::orders($store, $from, $end)->count();
 
         $tz = (string) ($store->timezone ?: 'Asia/Dhaka');
         $week = Carbon::now($tz)->startOfWeek(CarbonInterface::MONDAY)->subWeeks(7);
         $seriesFrom = $week->copy()->utc();
         $rows = self::orders($store, $seriesFrom, $end)
-            ->where(fn (Builder $w) => $w->whereNotNull('o.coupon_id')->orWhereExists(self::conversion()))
-            ->selectRaw('o.placed_at, o.total_amount, case when exists (select 1 from campaign_conversions cc where cc.order_id = o.id) then 1 else 0 end as is_campaign')
+            ->where(fn (Builder $w) => $w->whereNotNull('o.coupon_id')->orWhereExists(self::conversion())->orWhereExists(self::recovery()))
+            ->selectRaw('o.placed_at, o.total_amount, case when exists (select 1 from campaign_conversions cc where cc.order_id = o.id) then 1 else 0 end as is_campaign, case when exists (select 1 from automation_conversions ac where ac.order_id = o.id) then 1 else 0 end as is_recovery')
             ->get();
         $series = [];
         for ($i = 0; $i < 8; $i++) {
-            $series[$week->format('Y-m-d')] = ['week_start' => $week->format('Y-m-d'), 'coupons_amount' => 0, 'campaigns_amount' => 0];
+            $series[$week->format('Y-m-d')] = ['week_start' => $week->format('Y-m-d'), 'coupons_amount' => 0, 'campaigns_amount' => 0, 'recovery_amount' => 0];
             $week->addWeek();
         }
         foreach ($rows as $row) {
             $key = Carbon::parse($row->placed_at, 'UTC')->setTimezone($tz)->startOfWeek(CarbonInterface::MONDAY)->format('Y-m-d');
             if (isset($series[$key])) {
-                $series[$key][(int) $row->is_campaign === 1 ? 'campaigns_amount' : 'coupons_amount'] += (int) $row->total_amount;
+                $bucket = match (true) {
+                    (int) $row->is_campaign === 1 => 'campaigns_amount',
+                    (int) $row->is_recovery === 1 => 'recovery_amount',
+                    default => 'coupons_amount',
+                };
+                $series[$key][$bucket] += (int) $row->total_amount;
             }
         }
 
@@ -89,6 +100,8 @@ final class MarketingOverview
                     ->where('sent_at', '>=', $from)->where('sent_at', '<=', $now)->count(),
                 'unsubscribes' => MarketingSuppression::query()->where('store_id', $store->id)->where('source', MarketingSuppression::LINK)
                     ->where('created_at', '>=', $from)->where('created_at', '<=', $now)->count(),
+                'carts_recovered' => (clone $recovered)->count(),
+                'recovered_revenue_amount' => (int) (clone $recovered)->sum('o.total_amount'),
             ],
             'series' => array_values($series),
             'active_coupons' => $active,
@@ -96,6 +109,7 @@ final class MarketingOverview
             'counts' => [
                 'coupons' => Coupon::query()->where('store_id', $store->id)->count(),
                 'campaigns' => Campaign::query()->where('store_id', $store->id)->count(),
+                'automations' => Automation::query()->where('store_id', $store->id)->where('status', Automation::ON)->count(),
             ],
             'currency' => $store->currency,
         ];
@@ -110,7 +124,12 @@ final class MarketingOverview
 
     private static function marketingOrders(Store $store, CarbonInterface $from, CarbonInterface $to): Builder
     {
-        return self::orders($store, $from, $to)->where(fn (Builder $w) => $w->whereNotNull('o.coupon_id')->orWhereExists(self::conversion()));
+        return self::orders($store, $from, $to)->where(fn (Builder $w) => $w->whereNotNull('o.coupon_id')->orWhereExists(self::conversion())->orWhereExists(self::recovery()));
+    }
+
+    private static function recovery(): \Closure
+    {
+        return fn (Builder $q) => $q->selectRaw('1')->from('automation_conversions as ac')->whereColumn('ac.order_id', 'o.id');
     }
 
     private static function conversion(): \Closure

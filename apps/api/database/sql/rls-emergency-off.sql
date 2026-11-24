@@ -732,6 +732,46 @@ BEGIN
   END IF;
 END
 $$;
+-- table: automations
+DO $$
+BEGIN
+  IF to_regclass('public.automations') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "automations";
+    ALTER TABLE "automations" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "automations" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: automation_runs
+DO $$
+BEGIN
+  IF to_regclass('public.automation_runs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "automation_runs";
+    ALTER TABLE "automation_runs" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "automation_runs" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: automation_run_steps
+DO $$
+BEGIN
+  IF to_regclass('public.automation_run_steps') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "automation_run_steps";
+    ALTER TABLE "automation_run_steps" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "automation_run_steps" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: automation_conversions
+DO $$
+BEGIN
+  IF to_regclass('public.automation_conversions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "automation_conversions";
+    ALTER TABLE "automation_conversions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "automation_conversions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

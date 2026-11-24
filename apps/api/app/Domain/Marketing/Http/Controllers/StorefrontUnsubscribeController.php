@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Marketing\Http\Controllers;
 
+use App\Domain\Automations\Models\AutomationRunStep;
 use App\Domain\Marketing\MarketingAddress;
 use App\Domain\Marketing\Models\Campaign;
 use App\Domain\Marketing\Models\CampaignRecipient;
@@ -25,6 +26,10 @@ use Illuminate\Support\Facades\DB;
  * 404 (S116). A test code (P85-26) answers `is_test: true` and never changes anything. Not audited (the suppression
  * row is the record). P85-QA-4 (PO): opt-out is per channel only — the link / one-click writes or removes ONLY that
  * channel's suppression and never touches `customers.accepts_marketing` (which would also block the other channel).
+ *
+ * PHASE-8-6 §8: a code is resolved from `campaign_recipients`, then `automation_run_steps` (a message step's code;
+ * suppression source `link`, `campaign_id` null), then test codes (`campaign.test_sent` / `automation.test_sent`).
+ * The response shape is unchanged.
  */
 class StorefrontUnsubscribeController
 {
@@ -45,18 +50,21 @@ class StorefrontUnsubscribeController
             'action' => ['required', 'string', 'in:unsubscribe,resubscribe'],
             'one_click' => ['sometimes', 'boolean'],
         ]);
-        if (! $target['is_test']) {
-            /** @var CampaignRecipient $recipient */
+        if (! $target['is_test'] && $target['address'] !== null) {
             $recipient = $target['recipient'];
-            DB::transaction(function () use ($store, $recipient, $input) {
+            $channel = $target['channel'];
+            $address = $target['address'];
+            DB::transaction(function () use ($store, $recipient, $channel, $address, $input) {
                 if ($input['action'] === 'unsubscribe') {
-                    Suppressions::add($store->id, $recipient->channel, $recipient->address, MarketingSuppression::LINK, $recipient->campaign_id);
-                    $first = CampaignRecipient::query()->whereKey($recipient->id)->whereNull('unsubscribed_at')->update(['unsubscribed_at' => now(), 'updated_at' => now()]);
-                    if ($first === 1) {
-                        Campaign::query()->whereKey($recipient->campaign_id)->increment('unsubscribed_count');
+                    Suppressions::add($store->id, $channel, $address, MarketingSuppression::LINK, $recipient?->campaign_id);
+                    if ($recipient !== null) {
+                        $first = CampaignRecipient::query()->whereKey($recipient->id)->whereNull('unsubscribed_at')->update(['unsubscribed_at' => now(), 'updated_at' => now()]);
+                        if ($first === 1) {
+                            Campaign::query()->whereKey($recipient->campaign_id)->increment('unsubscribed_count');
+                        }
                     }
                 } else {
-                    Suppressions::removeByCustomer($store->id, $recipient->channel, $recipient->address);
+                    Suppressions::removeByCustomer($store->id, $channel, $address);
                 }
             });
         }
@@ -64,28 +72,33 @@ class StorefrontUnsubscribeController
         return $this->status($store, $target);
     }
 
-    /** @return array{is_test: bool, channel: string, masked: string, recipient: CampaignRecipient|null} */
+    /** @return array{is_test: bool, channel: string, masked: string, address: string|null, recipient: CampaignRecipient|null} */
     private function resolve(Store $store, string $code): array
     {
         if (UnsubscribeCodes::valid($code)) {
-            $recipient = CampaignRecipient::query()->where('store_id', $store->id)
-                ->where('unsubscribe_code_hash', UnsubscribeCodes::hash($code))->first();
+            $hash = UnsubscribeCodes::hash($code);
+            $recipient = CampaignRecipient::query()->where('store_id', $store->id)->where('unsubscribe_code_hash', $hash)->first();
             if ($recipient !== null) {
-                return ['is_test' => false, 'channel' => $recipient->channel, 'masked' => MarketingAddress::mask($recipient->channel, $recipient->address), 'recipient' => $recipient];
+                return ['is_test' => false, 'channel' => $recipient->channel, 'masked' => MarketingAddress::mask($recipient->channel, $recipient->address), 'address' => $recipient->address, 'recipient' => $recipient];
+            }
+            $step = AutomationRunStep::query()->where('store_id', $store->id)->where('unsubscribe_code_hash', $hash)
+                ->whereNotNull('channel')->whereNotNull('address')->first(['channel', 'address']);
+            if ($step !== null) {
+                return ['is_test' => false, 'channel' => (string) $step->channel, 'masked' => MarketingAddress::mask((string) $step->channel, (string) $step->address), 'address' => (string) $step->address, 'recipient' => null];
             }
             if (($test = UnsubscribeCodes::test($code, $store->id)) !== null) {
-                return ['is_test' => true, 'channel' => $test['channel'], 'masked' => $test['to_masked'], 'recipient' => null];
+                return ['is_test' => true, 'channel' => $test['channel'], 'masked' => $test['to_masked'], 'address' => null, 'recipient' => null];
             }
         }
 
         throw new ApiException(404, 'unsubscribe_link_invalid', "This link isn't valid.");
     }
 
-    /** @param array{is_test: bool, channel: string, masked: string, recipient: CampaignRecipient|null} $target */
+    /** @param array{is_test: bool, channel: string, masked: string, address: string|null, recipient: CampaignRecipient|null} $target */
     private function status(Store $store, array $target): JsonResponse
     {
-        $unsubscribed = $target['recipient'] !== null
-            && Suppressions::exists($store->id, $target['channel'], $target['recipient']->address);
+        $unsubscribed = $target['address'] !== null
+            && Suppressions::exists($store->id, $target['channel'], $target['address']);
 
         return new JsonResponse(['data' => [
             'channel' => $target['channel'],

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Domain\Automations\AutomationsServiceProvider;
 use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Stores\Services\StorefrontContext;
@@ -19,7 +20,8 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // Phase 8.6: automations (commands + limiters) live in their domain provider.
+        $this->app->register(AutomationsServiceProvider::class);
     }
 
     public function boot(): void
@@ -128,6 +130,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=webhooks-out --tries=1 --timeout=40', 'queue-webhooks-out');
         // Phase 8.5: marketing campaigns (PHASE-8-5 §5.1, P85-12; tries=1: never resend a campaign message).
         DevCommands::artisan('queue:listen --queue=campaigns --tries=1 --timeout=250', 'queue-campaigns');
+        // Phase 8.6: automations (PHASE-8-6 P86-23; tries=1: never repeat an automation message).
+        DevCommands::artisan('queue:listen --queue=automations --tries=1 --timeout=250', 'queue-automations');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }
