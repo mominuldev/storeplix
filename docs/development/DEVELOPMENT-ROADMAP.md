@@ -214,7 +214,7 @@ with an opt-out link on every message (storefront `/u/{code}`, RFC 8058 one-clic
 new allowances `campaign_sms_per_month` / `campaign_emails_per_month`, 7-day attribution, Marketing overview
 `66:19179` and composer `70:19774`. Out: WhatsApp, SMS credit balance/top-up (Q84), abandoned cart + Automations (8.6).
 **8.6** contract: `docs/development/PHASE-8-6-CONTRACT.md` (accepted 2026-11-24; branch
-`feat/phase-8-6-automations`; openapi 1.14.0; ADR 0020; proposed defaults Q152–Q166): fixed recipe catalogue (Win back
+`feat/phase-8-6-automations`; openapi 1.14.0; ADR 0020; Q152–Q166 defaults accepted): fixed recipe catalogue (Win back
 unfinished orders, Thank-you message, Tag VIP buyers, Handle returns, Low stock alert), triggers from the 8.4 emit points,
 idempotent runs with a per-step run log, checkout phone capture + abandoned-checkout recovery (2 messages, cart-restore
 link, exit on order, attribution), messages under the 8.5 consent/suppression/quiet-hours rules and shared allowance,
