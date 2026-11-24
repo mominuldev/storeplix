@@ -1,6 +1,6 @@
 # Phase 8.6 contract: Automations + checkout recovery (binding for ARCH, API, WEB, QA)
 
-Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q152–Q166)**. Branch
+Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q152–Q166); QA gate PASS 2026-11-24 (`docs/reviews/phase-8-6-qa.md`)**. Branch
 `feat/phase-8-6-automations` (from `feat/phase-8-5-campaigns` @ fd69083, Phase 8.5 accepted; rebase onto `main` once
 8.5 and `chore/dev-ports` merge).
 Roadmap task **8.6** "Automations (Figma 140:30335)"; AC: **"Trigger → action runs logged"**.
@@ -141,7 +141,7 @@ default messages (bn + en). `settings` jsonb is validated by the recipe's schema
 |---|---|---|---|---|---|
 | `checkout_recovery` "Win back unfinished orders" · "Checkout left 30 min" → "Reminder SMS" | `checkout.abandoned` | `checkout:{phone}:{yyyy-mm-dd of first detection, store tz}` | skip risky (toggle) | 1 `send_message` (step 1), 2 `wait` "only if still no order", 3 `send_message` (step 2, optional coupon), exit | `delay_minutes` 30 (15–180); `step1.enabled` true; `wait_hours` 24 (6–48); `step2.enabled` true; `step2.coupon_id` null; `exit_days` 3 (1–7); `skip_risky` true; each message `{channel: sms|email, language, body, subject?}` (email only when the contact has an email) |
 | `thank_you` "Thank-you message" · "Delivered" → "Thank-you SMS" | `order.delivered` | `order:{id}` | order total above/below; payment method; order channel; customer has / doesn't have tag | 1 `wait` (optional), 2 `send_message` | `delay_hours` 0 (0–72); message |
-| `vip_tag` "Tag VIP buyers" · "5th delivery" → "Tag VIP + coupon" | `order.delivered` | `customer:{id}` (once per customer, ever while the automation exists) | customer delivered orders ≥ n (required, n default 5, 2–50); customer doesn't have tag (implicit) | 1 `add_tag`, 2 `send_message` (optional, `{coupon}` required when enabled) | `min_delivered` 5; `tag` "VIP" (1–40); `message.enabled` true; `coupon_id` (active coupon of the store, required if message enabled) |
+| `vip_tag` "Tag VIP buyers" · "5th delivery" → "Tag VIP + coupon" | `order.delivered` | `customer:{id}` for a run whose conditions pass (once per customer, ever while the automation exists); a run skipped on conditions uses `order:{id}`, so an early non-qualifying delivery never blocks the customer (amended after QA P86-QA-3) | customer delivered orders ≥ n (required, n default 5, 2–50); customer doesn't have tag (implicit) | 1 `add_tag`, 2 `send_message` (optional, `{coupon}` required when enabled) | `min_delivered` 5; `tag` "VIP" (1–40); `message.enabled` true; `coupon_id` (active coupon of the store, required if message enabled) |
 | `return_flag` "Handle returns" · "Parcel returned" → "Flag buyer" | `return.received` | `return:{id}` | — | 1 `add_tag` | `tag` "Returned" (1–40). Restock stays the merchant's per-line choice in Returns (P5B-65); the row says "Restock stays in Returns" |
 | `low_stock` "Low stock alert" · "Stock below threshold" → "Email the team" | `stock.low` | `inventory:{id}:{yyyy-mm-dd}` | — | 1 `notify_team` | none (threshold = the variant's effective low-stock threshold, P5-era inventory) |
 
@@ -381,6 +381,55 @@ automations sketch; carts columns), SECURITY T36 (S127–S140), API-CONVENTIONS 
 (storefront cart-contact + recover paths, `automation` actor), PHASE-7 §2.1 row, PHASE-8-3 §2.1 label, PHASE-8-5 notes
 (shared allowance, unsubscribe resolution), RUNBOOK (`queue-automations` worker `--timeout=250`, 4 scheduled
 commands), OPEN-QUESTIONS Q152–Q166, FIGMA-INDEX Automations rows → built/omissions, roadmap 8.6. **Types first.**
+
+### 11.1 Clarifications (ARCH, binding; mirrored in `packages/types` and openapi 1.14.0)
+- **C1 Settings shapes.** `Automation` is a union discriminated on `recipe`; `settings` narrows with it. Message =
+  `{channel: sms|email, language: bn|en, body, subject}` (`subject` null for SMS, 1–150 for email). Per recipe:
+  `checkout_recovery {delay_minutes, step1: {enabled, message}, wait_hours, step2: {enabled, coupon_id, message},
+  exit_days, skip_risky}`; `thank_you {delay_hours, message, conditions[]}`; `vip_tag {min_delivered, tag, message:
+  {enabled, channel, language, body, subject}, coupon_id}`; `return_flag {tag}`; `low_stock {}`. PATCH `settings`
+  **replaces** the whole object (no deep merge).
+- **C2 Conditions storage.** Only `thank_you` stores a free `settings.conditions` list (≤ 5, fields `order.total_amount`,
+  `order.payment_method`, `order.channel`, `customer.tag`). `vip_tag.min_delivered` *is* the
+  `customer.delivered_orders_count gte` condition and `checkout_recovery.skip_risky` *is* `customer.risk is_not risky`;
+  the server derives them (dry run and `outcome_detail` list them like any condition).
+- **C3** `GET /automations/{id}` returns `AutomationDetail` = `Automation` + `recipe_schema` (the "schema summary"; named
+  so because `recipe` is already the key) + `stats_7d` + `last_edited_by`. `recipe_schema = {trigger,
+  trigger_description, allowed_conditions, max_conditions, steps: [{kind, title, description, optional, message_step}],
+  merge_fields, sms_max_parts}`. Create, PATCH, enable and disable also return `AutomationDetail`.
+- **C4** `last_edited_by` (`{id, name}`|null) = actor of the latest `automation.created|updated` audit row (header
+  "last edited by").
+- **C5 Run outcome reasons.** `skipped`: `conditions_not_met`, `subject_missing`, `no_eligible_address` (first message
+  step skipped for `not_eligible`/`no_address`); `stopped`: `converted`, `window_ended`, `opted_out`, `automation_off`,
+  `plan`; `failed`: `error`. Step reasons: `not_eligible`, `no_address`, `opted_out`, `frequency_cap`, `allowance`,
+  `coupon_inactive`, `no_customer`, `already_tagged`, `tags_full`, `no_recipients`, `provider_error`,
+  `invalid_address`.
+- **C6 Stats.** `GET …/stats?days=14|30` (default 14): `days` drives `steps[]` and `daily[]`; `kpis` are always the last
+  30 days (§7) = `{carts_left_behind, carts_left_behind_amount, recovered, recovery_rate_pct, revenue_amount,
+  average_recovered_amount, messages_sent_month}`; response also carries `days` and `currency`. Percent/average fields
+  are null when the divisor is 0; same for `meta.kpis.runs_7d_succeeded_pct`.
+- **C7 Run-log query** follows API-CONVENTIONS: `filter[automation_id]`, `filter[recipe]`, `filter[status]` (csv),
+  `filter[since]` (ISO date-time), `cursor`; `meta` = cursor meta, 50 per page.
+- **C8 Dry run.** More than one subject id → 422. Response adds `subject {type, id, label}` (null when the store has no
+  matching subject; then `conditions`/`steps` are empty, still 200). Each step: `{index, action, would, reason|null,
+  rendered|null}`, `rendered = {channel, subject|null, text, parts}` for message steps only.
+- **C9 Run shape.** `contact` is null for runs without a person (low stock); `contact.masked_address` may be null.
+  `context` keys (all optional): `order_number, order_total_amount, cart_line_count, cart_total_amount,
+  first_product_name, first_product_image_url` (media id resolved to a URL at read time), `return_number,
+  product_name, variant_name, on_hand, currency`. No customer name in `context`; names only in `contact.name` (gated by
+  `customers.view`). Step `detail` keys (optional): `recipients`, `tag`, `coupon_code`, `message_step`; step
+  `masked_address`/`channel` null for non-message steps.
+- **C10 Storefront.** `PUT /storefront/cart/contact` takes the cart token in `X-Cart-Token` (as every cart route) plus
+  `X-Storefront-Client-Ip`; `POST /storefront/carts/recover` body `{code}`, no cart token, `X-Storefront-Client-Ip`
+  for the limiter. api-client: `storefront.saveCartContact`, `storefront.recoverCart`.
+- **C11 Merge fields per recipe.** `checkout_recovery`: `{name} {cart_link} {product} {coupon} {shop_link}`;
+  `thank_you`: `{name} {order_no} {product} {shop_link}`; `vip_tag`: `{name} {coupon} {shop_link}`. Others none.
+- **C12 Test message.** `step` defaults to 1; `2` only for `checkout_recovery`; recipes without a message step
+  (`return_flag`, `low_stock`) → 422 `validation_failed`. A disabled step can still be tested.
+- **C13** `meta.kpis.recovered_revenue_30d` keeps the contract name (minor units) although it lacks the `_amount`
+  suffix. Audit actor `automation`: `actor.id` = automation id, `actor.name` = automation name.
+- **C14** `MarketingOverview` additions are required (non-optional) fields; `DevSinkMessage.automation_id` is
+  `string|null` and always present.
 
 ## 12. Security checklist (S127–S140; each has a test)
 - **S127** opt-out wins for automations: suppression created after the run started → step `skipped/opted_out`, provider
