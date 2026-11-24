@@ -22,6 +22,8 @@ const limitsOf = (o: number | null, s: number | null, p: number | null, c: numbe
   courier_connections: c,
   sms_per_month: sms,
   custom_domains: d,
+  campaign_sms_per_month: o === 50 ? 0 : o === null ? 5000 : 1000,
+  campaign_emails_per_month: o === 50 ? 0 : o === null ? 20000 : 5000,
 });
 
 export const plans: Plan[] = [
@@ -136,6 +138,8 @@ export function features(o: Partial<FeatureAccess> = {}, limits: Partial<Feature
       courier_connections: { limit: 1, used: 0 },
       sms_per_month: { limit: 200, used: 3 },
       custom_domains: { limit: 0, used: 0 },
+      campaign_sms_per_month: { limit: 0, used: 0 },
+      campaign_emails_per_month: { limit: 0, used: 0 },
       ...limits,
     },
     grace_ends_at: null,

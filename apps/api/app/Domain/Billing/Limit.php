@@ -11,4 +11,6 @@ enum Limit: string
     case CourierConnections = 'courier_connections';
     case SmsPerMonth = 'sms_per_month';
     case CustomDomains = 'custom_domains';
+    case CampaignSmsPerMonth = 'campaign_sms_per_month'; // PHASE-8-5 P85-13: SMS parts
+    case CampaignEmailsPerMonth = 'campaign_emails_per_month'; // PHASE-8-5 P85-13
 }

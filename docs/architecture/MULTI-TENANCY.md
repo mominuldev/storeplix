@@ -244,6 +244,14 @@ DEFINER` function owned by `storeplix_owner` (`SET search_path = public, pg_temp
 returns null in production or without `COURIERS_FAKE`, and the route is not registered in production; it uses
 `withoutTenancy()` (allowlisted in `Domain/Tenancy`).
 
+**Storefront unsubscribe (Phase 8.5, PHASE-8-5 §4.2, ADR 0019) needs no definer function.** `GET|POST
+/storefront/unsubscribe/{code}` resolves the tenant and store from `X-Storefront-Host` like every storefront route
+(`sp_resolve_host`), then looks the code up by `sha256(code)` in `campaign_recipients` **inside** `TenantContext` on the
+normal RLS path, filtered by the host's `store_id`. A code issued by another store (or tenant) therefore never matches
+and answers the same 404 `unsubscribe_link_invalid` as an unknown or malformed one (S117). The suppression it writes is
+`BelongsToStore` for the host's store. The storefront page `/u/{code}` lives on the merchant's own host and bypasses the
+Coming-soon rewrite; a suspended store's host does not resolve (404).
+
 ### 9.5 Cross-tenant platform code (`withoutTenancy()` → `pgsql_admin`)
 - `Model::withoutTenancy()` removes the `TenantScope` **and**, with RLS on, moves the query onto `pgsql_admin`
   (`PlatformDb::reroute`). With RLS off it stays on the default connection, exactly as before 5b.
@@ -255,6 +263,10 @@ returns null in production or without `COURIERS_FAKE`, and the route is not regi
   pre-5b prunes) find work on `pgsql_admin`, then dispatch one tenant-aware job per tenant (or per account). Commands
   that write tenant rows (`shipping:provision-defaults`, `stores:ensure-content`) re-load the store on `pgsql` inside
   `TenantContext::run()`, so relation writes don't inherit the admin connection.
+- Phase 8.5: `campaigns:dispatch-due` (every minute), `campaigns:reap-stuck` (every 5 min) and
+  `campaigns:prune-recipients` (daily) find due campaigns / stuck recipients / old rows on `pgsql_admin`, then move
+  state by conditional UPDATE and dispatch `StartCampaign` / `SendCampaignBatch` as `TenantAware` jobs (queue
+  `campaigns`) inside `TenantContext::run()`. The attribution listener on order placed is queued and `TenantAware`.
 - Seeders run with `--database=pgsql_owner` (the owner bypasses RLS) and keep `TenantContext::run()` around tenant writes.
 - Super-admin `/admin/*` (not built yet) must use `pgsql_admin` and stay out of merchant request paths.
 

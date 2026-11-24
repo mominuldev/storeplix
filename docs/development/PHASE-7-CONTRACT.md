@@ -137,6 +137,8 @@ commands only); multi-currency plans (BDT only); tenant hard delete after expiry
 | `courier_connections` | limit | 1 / ∞ / ∞ | courier connect and reconnect of a disconnected account | 402 `details.courier_connections` | P5B-31 |
 | `sms_per_month` | limit | 200 / 2000 / ∞ | order SMS send job | SMS skipped + timeline note (no HTTP error) | P5-26 |
 | `custom_domains` | limit | 0 / 2 / 5 | domain add; **re-check of a `verification_failed`/`expired` row (Phase 7)** | 402 `details.custom_domains` | P6-7, P7 |
+| `campaign_sms_per_month` | limit | 0 / 1000 / 5000 (SMS **parts**) | campaign schedule, send now, test send (estimate); campaign start (exact count after the snapshot) | 402 `details.campaign_sms_per_month {limit, used, needed}`; at start → campaign `failed/limit`, nothing sent | P85-13/14 (amends this table, Phase 8.5) |
+| `campaign_emails_per_month` | limit | 0 / 5000 / 20000 | same as above for email campaigns | 402 `details.campaign_emails_per_month {limit, used, needed}`; at start → `failed/limit` | P85-13/14 (Phase 8.5) |
 | `custom_domain` | feature | – / ✓ / ✓ | domain add, make a custom domain primary, **re-check of a `verification_failed`/`expired` row (Phase 7)** | 402 `feature_not_in_plan` `details.feature` | P6-7, P7 |
 | `bulk_courier_booking` | feature | – / ✓ / ✓ | `POST /stores/{store}/shipments/bulk` | 402 `feature_not_in_plan` | P5B-31 |
 | `profit_reports` | feature | – / – / ✓ | `GET /stores/{store}/reports/profit` (§6) | 402 `feature_not_in_plan` | **P7** |

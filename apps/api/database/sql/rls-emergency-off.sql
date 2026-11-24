@@ -692,6 +692,46 @@ BEGIN
   END IF;
 END
 $$;
+-- table: campaigns
+DO $$
+BEGIN
+  IF to_regclass('public.campaigns') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "campaigns";
+    ALTER TABLE "campaigns" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "campaigns" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: campaign_recipients
+DO $$
+BEGIN
+  IF to_regclass('public.campaign_recipients') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "campaign_recipients";
+    ALTER TABLE "campaign_recipients" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "campaign_recipients" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: campaign_conversions
+DO $$
+BEGIN
+  IF to_regclass('public.campaign_conversions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "campaign_conversions";
+    ALTER TABLE "campaign_conversions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "campaign_conversions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: marketing_suppressions
+DO $$
+BEGIN
+  IF to_regclass('public.marketing_suppressions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "marketing_suppressions";
+    ALTER TABLE "marketing_suppressions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "marketing_suppressions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

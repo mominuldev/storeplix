@@ -4,6 +4,7 @@ namespace App\Domain\Customers\Http\Resources;
 
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Customers\Models\CustomerNote;
+use App\Domain\Marketing\Suppressions;
 use App\Domain\Shared\Http\UserRef;
 use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\TenantContext;
@@ -36,6 +37,8 @@ final class CustomerPresenter
             'created_at' => UserRef::iso($customer->created_at),
             'updated_at' => UserRef::iso($customer->updated_at),
             'created_by' => UserRef::of($customer->createdBy),
+            // PHASE-8-5 §4.1: computed per-channel marketing status (suppressions + eligibility P85-3).
+            'marketing' => Suppressions::customerMarketing($customer),
         ];
     }
 

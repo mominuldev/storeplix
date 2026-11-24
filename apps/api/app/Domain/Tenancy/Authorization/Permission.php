@@ -80,7 +80,7 @@ enum Permission: string
     public function sensitive(): bool
     {
         return in_array($this, [
-            self::OrdersRefund, self::CostsView, self::DataExport, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
+            self::OrdersRefund, self::CostsView, self::DataExport, self::MarketingManage, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
         ], true);
     }
 
@@ -108,7 +108,7 @@ enum Permission: string
             self::ReportsView => 'Reports, payouts & COD settlements',
             self::DataExport => 'Export customer phone numbers',
             self::DataImport => 'Import products & customers (CSV)',
-            self::MarketingManage => 'Create & edit coupons',
+            self::MarketingManage => 'Coupons & campaigns', // PHASE-8-5 §2.1 (sensitive)
             self::SettingsManage => 'Change shop settings',
             self::IntegrationsManage => 'Connect payments & couriers',
             self::DomainsManage => 'Manage domains',

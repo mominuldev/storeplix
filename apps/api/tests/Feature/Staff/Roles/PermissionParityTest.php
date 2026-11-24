@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -97,6 +98,26 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/webhook-deliveries/{delivery}/resend' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
         'POST api/v1/stores/{store}/webhook-deliveries/resend-failed' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
         'GET api/v1/dev/webhook-sink' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.5 (PHASE-8-5 §6.1): marketing.manage → O and A allowed, S 403; recipients also need customers.view;
+        // the opt-out toggle is customers.edit (staff has it). The dev sink is off in tests (404 past the perm check).
+        'GET api/v1/stores/{store}/marketing/overview' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/campaigns' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/audience-preview' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/estimate' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/campaigns/{campaign}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/campaigns/{campaign}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/campaigns/{campaign}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/test' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/schedule' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/send' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/unschedule' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/campaigns/{campaign}/duplicate' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/campaigns/{campaign}/recipients' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/customers/{customer}/marketing-opt-out' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/stores/{store}/customers/{customer}/marketing-opt-out/{channel}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/dev/stores/{store}/message-sink' => ['owner' => 404, 'admin' => 404, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -155,6 +176,24 @@ class PermissionParityTest extends TestCase
         }
         $this->assertSame([], $diff, 'Permission parity broken');
         $this->assertSame(array_keys($expected), array_keys($actual));
+    }
+
+    /** 12:00 Dhaka (06:00 UTC) of the next day: outside campaign quiet hours (P85-15). */
+    private static function campaignNoon(): Carbon
+    {
+        return Carbon::now('UTC')->addDay()->setTime(6, 0);
+    }
+
+    /** Runs a campaign case at a pinned daytime clock (sending is refused 21:00–09:00 Dhaka). */
+    private function atCampaignNoon(\Closure $fn): TestResponse
+    {
+        $previous = Carbon::getTestNow();
+        Carbon::setTestNow(self::campaignNoon());
+        try {
+            return $fn();
+        } finally {
+            Carbon::setTestNow($previous);
+        }
     }
 
     private static function errorCode(TestResponse $response): string
@@ -223,6 +262,13 @@ class PermissionParityTest extends TestCase
         $category = $this->req($h, 'POST', "{$base}/categories", ['name' => 'Panjabi'])->assertCreated()->json('data.id');
         $product = $this->inTenant($tenant, fn () => ProductVariant::query()->whereKey($variant)->value('product_id'));
         $customer = $this->req($h, 'POST', "{$base}/customers", ['name' => 'Karim Uddin', 'phone' => '01712345678'])->assertCreated()->json('data.id');
+        // Phase 8.5: an email campaign (draft) and a scheduled one; a customer with an email who may be messaged.
+        $this->req($h, 'POST', "{$base}/customers", ['name' => 'Nusrat Jahan', 'email' => 'nusrat@example.test', 'accepts_marketing' => true])->assertCreated();
+        $campaignBody = ['name' => 'Parity', 'channel' => 'email', 'language' => 'en', 'subject' => 'Hello', 'body' => 'Hi {name}',
+            'audience' => ['segment' => 'all', 'params' => [], 'exclude' => ['risky' => false, 'ordered_within_days' => null]]];
+        $campaign = $this->req($h, 'POST', "{$base}/campaigns", $campaignBody)->assertCreated()->json('data.id');
+        $scheduledCampaign = $this->req($h, 'POST', "{$base}/campaigns", $campaignBody)->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "{$base}/campaigns/{$scheduledCampaign}/schedule", ['scheduled_at' => self::campaignNoon()->addDay()->toIso8601ZuluString()], true)->assertOk();
         $this->req($h, 'POST', "{$base}/customers/{$customer}/notes", ['body' => 'VIP'])->assertSuccessful();
         $note = $this->inTenant($tenant, fn () => CustomerNote::query()->where('customer_id', $customer)->value('id'));
         $coupon = $this->req($h, 'POST', "{$base}/coupons", ['code' => 'PARITY', 'type' => 'fixed', 'amount' => 100])->assertCreated()->json('data.id');
@@ -271,6 +317,7 @@ class PermissionParityTest extends TestCase
             'return' => $return, 'link' => $link, 'document' => $document, 'domain' => $domain, 'page' => $page,
             'media' => $media, 'import' => $import, 'export' => $export, 'pickup' => $pickup, 'invoice' => $invoice,
             'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
+            'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -353,6 +400,27 @@ class PermissionParityTest extends TestCase
             'POST api/v1/stores/{store}/webhook-deliveries/{delivery}/resend' => $r('POST', "{$b}/webhook-deliveries/{$s['delivery']}/resend"),
             'POST api/v1/stores/{store}/webhook-deliveries/resend-failed' => $r('POST', "{$b}/webhook-deliveries/resend-failed"),
             'GET api/v1/dev/webhook-sink' => $r('GET', '/api/v1/dev/webhook-sink'),
+
+            // --- Phase 8.5 campaigns (sending needs daytime in Dhaka: the clock is pinned for those cases) ---
+            'GET api/v1/stores/{store}/marketing/overview' => $r('GET', "{$b}/marketing/overview?range=7d"),
+            'GET api/v1/stores/{store}/campaigns' => $r('GET', "{$b}/campaigns"),
+            'POST api/v1/stores/{store}/campaigns' => $r('POST', "{$b}/campaigns", ['name' => 'New', 'channel' => 'sms', 'language' => 'bn', 'body' => 'ঈদ মোবারক',
+                'audience' => ['segment' => 'all', 'params' => [], 'exclude' => ['risky' => false, 'ordered_within_days' => null]]]),
+            'POST api/v1/stores/{store}/campaigns/audience-preview' => $r('POST', "{$b}/campaigns/audience-preview", ['channel' => 'sms', 'audience' => ['segment' => 'all']]),
+            'POST api/v1/stores/{store}/campaigns/estimate' => $r('POST', "{$b}/campaigns/estimate", ['channel' => 'sms', 'language' => 'en', 'body' => 'Hi', 'audience' => ['segment' => 'all']]),
+            'GET api/v1/stores/{store}/campaigns/{campaign}' => $r('GET', "{$b}/campaigns/{$s['campaign']}"),
+            'PATCH api/v1/stores/{store}/campaigns/{campaign}' => $r('PATCH', "{$b}/campaigns/{$s['campaign']}", ['name' => 'Renamed', 'revision' => 1]),
+            'DELETE api/v1/stores/{store}/campaigns/{campaign}' => $r('DELETE', "{$b}/campaigns/{$s['campaign']}"),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/test' => $r('POST', "{$b}/campaigns/{$s['campaign']}/test"),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/schedule' => $r('POST', "{$b}/campaigns/{$s['campaign']}/schedule", ['scheduled_at' => self::campaignNoon()->addDays(2)->toIso8601ZuluString()], true),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/send' => fn (array $h) => $this->atCampaignNoon(fn () => $this->req($h, 'POST', "{$b}/campaigns/{$s['campaign']}/send", [], true)),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/unschedule' => $r('POST', "{$b}/campaigns/{$s['scheduled_campaign']}/unschedule"),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/cancel' => $r('POST', "{$b}/campaigns/{$s['campaign']}/cancel"),
+            'POST api/v1/stores/{store}/campaigns/{campaign}/duplicate' => $r('POST', "{$b}/campaigns/{$s['campaign']}/duplicate"),
+            'GET api/v1/stores/{store}/campaigns/{campaign}/recipients' => $r('GET', "{$b}/campaigns/{$s['campaign']}/recipients"),
+            'POST api/v1/stores/{store}/customers/{customer}/marketing-opt-out' => $r('POST', "{$b}/customers/{$s['customer']}/marketing-opt-out", ['channel' => 'sms']),
+            'DELETE api/v1/stores/{store}/customers/{customer}/marketing-opt-out/{channel}' => $r('DELETE', "{$b}/customers/{$s['customer']}/marketing-opt-out/sms"),
+            'GET api/v1/dev/stores/{store}/message-sink' => $r('GET', "/api/v1/dev/stores/{$s['store']->id}/message-sink"),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),

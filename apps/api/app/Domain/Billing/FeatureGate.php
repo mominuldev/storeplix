@@ -8,6 +8,7 @@ use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Couriers\Models\CourierAccount;
+use App\Domain\Marketing\CampaignAllowance;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Sms\Models\SmsMessage;
@@ -46,7 +47,7 @@ final class FeatureGate
      * Live usage. staff_seats (Phase 2); products = non-deleted products of every status (Phase 4, P4-21 / Q29);
      * orders_per_month = orders placed this calendar month in the store timezone, any status (P5-27);
      * sms_per_month = order SMS (purpose order_*, not failed) this month (P5-26); courier_connections = connected courier accounts (P5B-31);
-     * custom_domains = custom store_domains rows in any status (P6-7). Phase 7 (§2.1 d): every Limit case has a module;
+     * custom_domains = custom store_domains rows in any status (P6-7); campaign_* = CampaignAllowance (P85-13). Phase 7 (§2.1 d): every Limit case has a module;
      * an unknown key would return 0.
      */
     public static function usage(Tenant $tenant, Limit $limit): int
@@ -63,6 +64,9 @@ final class FeatureGate
             // Phase 6 (P6-7): custom domain rows of the (single) store in any status; platform rows don't count.
             Limit::CustomDomains => app(TenantContext::class)->run($tenant, fn () => StoreDomain::query()
                 ->where('type', StoreDomain::TYPE_CUSTOM)->count()),
+            // Phase 8.5 (P85-13, §2.2): campaign SMS parts / emails this month (recipients sent|sending|unknown + test sends).
+            Limit::CampaignSmsPerMonth => app(TenantContext::class)->run($tenant, fn () => CampaignAllowance::used('sms')),
+            Limit::CampaignEmailsPerMonth => app(TenantContext::class)->run($tenant, fn () => CampaignAllowance::used('email')),
             default => 0,
         };
     }

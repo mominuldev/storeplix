@@ -243,6 +243,19 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'developer-api'"; exit 1; }
           exit $status
 
+      # Phase 8.5 (PHASE-8-5-CONTRACT §10, §11, §14.4): the `campaigns` group (campaign CRUD/state machine, audience
+      # segments + P85-3 eligibility matrix, SMS parts against docs/api/sms-parts-vectors.json, renderer, send pipeline
+      # with the fake gateway + array mailer, quiet hours, at-most-once, attribution, overview, allowances, storefront
+      # unsubscribe, S113–S126) must exist and pass on sqlite.
+      - name: phase 8.5 group (campaigns)
+        run: |
+          mkdir -p build
+          php artisan test --group=campaigns --exclude-group perf --exclude-group race --log-junit build/campaigns.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/campaigns.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "campaigns tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'campaigns'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -374,6 +387,14 @@ jobs:
       # sp_api_key_owner() definer function exist on Postgres; developer-api must pass there too.
       - name: phase 8.4 developer-api (postgres)
         run: php artisan test --group=developer-api --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.5 (§7): campaigns / campaign_recipients / campaign_conversions / marketing_suppressions (jsonb audience,
+      # CHECKs, composite FKs) and the plans.limits backfill (000300) exist on Postgres; campaigns must pass there too.
+      - name: phase 8.5 campaigns (postgres)
+        run: php artisan test --group=campaigns --exclude-group perf --exclude-group race
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
@@ -737,6 +758,11 @@ jobs:
       # are also in the `rls` step above); DeliverWebhook runs in the delivery's tenant.
       - name: phase 8.4 developer-api (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" developer-api lenient --group=developer-api --exclude-group perf --exclude-group race'
+      # Phase 8.5 (PHASE-8-5-CONTRACT §4.2, §7, S117, S119): the four new tables are RLS-forced; storefront unsubscribe
+      # resolves the code inside the host's tenant (normal RLS path, no definer function); campaign jobs run in the
+      # campaign's tenant (their RLS probes are also in the `rls` step above).
+      - name: phase 8.5 campaigns (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" campaigns lenient --group=campaigns --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

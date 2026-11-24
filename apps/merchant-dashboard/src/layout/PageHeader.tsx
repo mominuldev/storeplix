@@ -10,7 +10,7 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
         {subtitle && <p className="text-body text-text-secondary">{subtitle}</p>}
       </div>
       {/* Phase 8.1: disabled in a read-only support session (useReadOnly). */}
-      {actions && <ReadOnlyActions className="flex shrink-0 items-center gap-3">{actions}</ReadOnlyActions>}
+      {actions && <ReadOnlyActions className="flex shrink-0 flex-wrap items-center gap-3">{actions}</ReadOnlyActions>}
     </div>
   );
 }

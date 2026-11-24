@@ -126,6 +126,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=billing --tries=3 --timeout=150', 'queue-billing');
         // Phase 8.4: outbound merchant webhooks (mirrors compose `queue-webhooks-out`, PHASE-8-4 §4.3).
         DevCommands::artisan('queue:listen --queue=webhooks-out --tries=1 --timeout=40', 'queue-webhooks-out');
+        // Phase 8.5: marketing campaigns (PHASE-8-5 §5.1, P85-12; tries=1: never resend a campaign message).
+        DevCommands::artisan('queue:listen --queue=campaigns --tries=1 --timeout=250', 'queue-campaigns');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }

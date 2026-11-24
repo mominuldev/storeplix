@@ -79,6 +79,20 @@ return [
             'transport' => 'array',
         ],
 
+        // PHASE-8-5 §5.4: marketing campaign email (platform sending domain, Q146). `log` locally, `array` in tests;
+        // production must use a real transport (CampaignsServiceProvider boot guard). SMTP settings fall back to MAIL_*.
+        'campaigns' => [
+            'transport' => env('CAMPAIGN_MAILER', 'log'),
+            'scheme' => env('CAMPAIGN_MAIL_SCHEME', env('MAIL_SCHEME')),
+            'host' => env('CAMPAIGN_MAIL_HOST', env('MAIL_HOST', '127.0.0.1')),
+            'port' => env('CAMPAIGN_MAIL_PORT', env('MAIL_PORT', 2525)),
+            'username' => env('CAMPAIGN_MAIL_USERNAME', env('MAIL_USERNAME')),
+            'password' => env('CAMPAIGN_MAIL_PASSWORD', env('MAIL_PASSWORD')),
+            'timeout' => null,
+            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'channel' => env('MAIL_LOG_CHANNEL'),
+        ],
+
         'failover' => [
             'transport' => 'failover',
             'mailers' => [

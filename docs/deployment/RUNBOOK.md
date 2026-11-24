@@ -25,6 +25,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 | `queue-domains` | `php artisan queue:work redis --queue=domains --tries=3 --timeout=90 --sleep=1` | 1 | Custom-domain DNS checks and Cloudflare custom-hostname calls (`CheckDomainJob`, `DeleteProviderHostnameJob`; §9). Without it a domain only moves on "Check now" |
 | `queue-webhooks` | `php artisan queue:work redis --queue=webhooks --tries=5 --backoff=10,60,300 --timeout=60 --sleep=1` | 1+ | SSLCommerz IPN verification, bKash notifications, courier webhook events (each re-queried with the provider before any effect) |
 | `queue-webhooks-out` | `php artisan queue:work redis --queue=webhooks-out --tries=1 --timeout=40 --sleep=1` | 1+ | Phase 8.4 outbound merchant webhooks (`DeliverWebhook`, one attempt each; retries are scheduled on the row by `webhooks:dispatch-due`). Without it deliveries stay `pending` forever |
+| `queue-campaigns` | `php artisan queue:work redis --queue=campaigns --tries=1 --timeout=250 --sleep=1` (needs `REDIS_QUEUE_RETRY_AFTER` > 250; the `config/queue.php` default is 90, so set 360) | 1+ | Phase 8.5 marketing campaigns (`StartCampaign` snapshot, `SendCampaignBatch` ≤ 100 recipients; provider calls never retried, P85-11). Throughput is capped by Redis limiters (10 SMS/s per store, 50/s platform, 20 emails/s per store), not by worker count. Without it campaigns stay `sending` with `queued` recipients |
 | `scheduler` | `php artisan schedule:work` (or cron `* * * * * php artisan schedule:run`) | **exactly 1** | §6. DB role `storeplix_admin` for discovery |
 | `gotenberg` | `gotenberg --api-enable-basic-auth --api-timeout=120s` | 1 per API node pool | Internal only (§5) |
 | migrate job | `php artisan migrate --force --database=pgsql_owner` | one-off per deploy | DB role `storeplix_owner` (§3) |
@@ -35,6 +36,7 @@ One API image, several process types. Every process gets the same app env (§4) 
   queues, tries, backoff, timeout and memory.
 - `composer dev` mirrors these workers locally but has no `webhooks` worker (it does run `webhooks-out`); the compose stack has all of them.
 - Phase 8.4: `WEBHOOKS_OUT_FAKE` and `WEBHOOKS_OUT_ALLOW_HTTP` must be `false`/unset outside local and CI (the API refuses to boot with either in production).
+- Phase 8.5: `CAMPAIGNS_DEV_SINK` must be `false`/unset in production, and `CAMPAIGN_MAILER` must be a real transport (not `log`/`array`) when `SMS_DRIVER=revesms` — the API refuses to boot otherwise (S125). Set `CAMPAIGN_MAIL_FROM` to an address on the platform sending domain (SPF/DKIM/DMARC aligned, Q146).
 
 ---
 
@@ -266,6 +268,9 @@ Redis cache.
 | `data:prune-imports` | daily | |
 | `carts:prune` | daily | |
 | `orders:expire-confirmation-tokens` | daily | |
+| `campaigns:dispatch-due` | every minute, no overlap | Phase 8.5: `scheduled → sending` by conditional UPDATE for due campaigns (≤ 3 sending per store), dispatches `StartCampaign` on `campaigns` |
+| `campaigns:reap-stuck` | every 5 min, no overlap | Phase 8.5: recipients `sending` > 15 min → `unknown` (never retried); completes campaigns with nothing left |
+| `campaigns:prune-recipients` | daily | Phase 8.5: delete `campaign_recipients` older than 13 months (campaign rows and counters kept) |
 | `analytics:aggregate` | hourly at :20 Asia/Dhaka, no overlap, one server, in-process | Phase 8.2 nightly analytics snapshot + 35-day restatement; later runs are the catch-up (§12) |
 
 Without the scheduler unpaid holds never expire, links never expire and a lost IPN is never reconciled. The `payments:*`,

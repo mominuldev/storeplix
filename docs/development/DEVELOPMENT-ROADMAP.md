@@ -207,13 +207,19 @@ sha256 at rest, 7 scopes, non-delegation, new permission `developers.manage`) fo
 ≈ 20.6 h, auto-disable after 72 h, SSRF-safe sender with fake driver), Developer page `144:40726`; Growth-gated
 (`api_webhooks`). Deferred from 8.4: test-mode keys (Q127), customer/shipment write scopes (Q128), Postman collection
 (Q134), super-admin views (Q136), OAuth apps, per-key IP allowlists.
+**8.5** contract: `docs/development/PHASE-8-5-CONTRACT.md` (accepted 2026-11-24; QA re-gate PASS; branch
+`feat/phase-8-5-campaigns`; openapi 1.13.0; ADR 0019; Q138–Q151 defaults accepted): store-scoped SMS + email campaigns
+(predefined segments, merge fields, test send, schedule/send now/cancel, quiet hours), per-channel address suppression
+with an opt-out link on every message (storefront `/u/{code}`, RFC 8058 one-click), opt-out re-checked at send time,
+new allowances `campaign_sms_per_month` / `campaign_emails_per_month`, 7-day attribution, Marketing overview
+`66:19179` and composer `70:19774`. Out: WhatsApp, SMS credit balance/top-up (Q84), abandoned cart + Automations (8.6).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
 | 8.2 | Platform analytics (GMV, MRR, churn): dashboard `15:123`, Revenue reports `39:12705`, merchant metrics | API/WEB | Nightly aggregates; PHASE-8-2 §14 |
 | 8.3 | Custom roles & permissions (89:26676): 23 code-defined keys, system + custom roles, Growth-gated, non-delegation | API/WEB | Granular permissions enforced; PHASE-8-3 §13 |
 | 8.4 | Developer API keys + outbound webhooks (144:40725): scoped `sp_live_` keys, `/external` API, signed webhooks with retries, Growth-gated | API/WEB | HMAC signatures; retries; PHASE-8-4 §13 |
-| 8.5 | Marketing campaigns SMS/email (61:12479) | API/WEB | Opt-out respected |
+| 8.5 | Marketing campaigns SMS/email (61:12479): segments, schedule, opt-out link + suppression checked at send time, allowances, attribution | API/WEB/SF | Opt-out respected; PHASE-8-5 §14 |
 | 8.6 | Automations (140:30335) | API/WEB | Trigger → action runs logged |
 | 8.7 | Expenses (144:41613) + profit report | API/WEB | — |
 | 8.8 | Inbox (141:48129), POS (26:2147, page 22:1736), multi-location/suppliers/POs/transfers, fake-order guard | API/WEB | Scoped after PO confirms (OPEN-QUESTIONS Q1) |

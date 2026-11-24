@@ -168,6 +168,7 @@ export function customer(overrides: Partial<CustomerDetail> = {}): CustomerDetai
     created_at: '2025-06-01T00:00:00Z',
     updated_at: '2025-06-01T00:00:00Z',
     created_by: null,
+    marketing: { sms: 'not_eligible', email: 'no_address', unsubscribed_sms_at: null, unsubscribed_email_at: null, unsubscribed_source: { sms: null, email: null } },
     notes: [],
     ...overrides,
   };

@@ -125,9 +125,28 @@ class RoutePermissionsTest extends TestCase
             'stores.products.destroy',
         ],
         'marketing.manage' => [
+            'dev.message-sink',
+            'stores.campaigns.audience-preview',
+            'stores.campaigns.cancel',
+            'stores.campaigns.destroy',
+            'stores.campaigns.duplicate',
+            'stores.campaigns.estimate',
+            'stores.campaigns.index',
+            'stores.campaigns.schedule',
+            'stores.campaigns.send',
+            'stores.campaigns.show',
+            'stores.campaigns.store',
+            'stores.campaigns.test',
+            'stores.campaigns.unschedule',
+            'stores.campaigns.update',
             'stores.coupons.destroy',
             'stores.coupons.store',
             'stores.coupons.update',
+            'stores.marketing.overview',
+        ],
+        // PHASE-8-5 §2.1: recipient lists need both keys (comma = all of).
+        'marketing.manage,customers.view' => [
+            'stores.campaigns.recipients',
         ],
         'integrations.manage' => [
             'stores.couriers.connect',
@@ -145,6 +164,8 @@ class RoutePermissionsTest extends TestCase
             'stores.customers.show',
         ],
         'customers.edit' => [
+            'stores.customers.marketing-opt-out.destroy',
+            'stores.customers.marketing-opt-out.store',
             'stores.customers.notes.destroy',
             'stores.customers.notes.store',
             'stores.customers.store',

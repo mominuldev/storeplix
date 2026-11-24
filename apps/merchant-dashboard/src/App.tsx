@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
+import { useAuth } from './auth/AuthProvider';
 import { GuestRoute, ProtectedRoute } from './auth/ProtectedRoute';
 import { AppShell } from './layout/AppShell';
 import { allRoutes } from './layout/nav';
@@ -61,6 +62,11 @@ const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
 const DeveloperPage = lazy(() => import('./developer/DeveloperPage'));
 const CouponsPage = lazy(() => import('./coupons/CouponsPage'));
 const CouponEditorPage = lazy(() => import('./coupons/CouponEditorPage'));
+// Phase 8.5 marketing campaigns (code-split).
+const MarketingOverviewPage = lazy(() => import('./campaigns/MarketingOverviewPage'));
+const CampaignsPage = lazy(() => import('./campaigns/CampaignsPage'));
+const CampaignComposerPage = lazy(() => import('./campaigns/CampaignComposerPage'));
+const CampaignDetailPage = lazy(() => import('./campaigns/CampaignDetailPage'));
 const ShippingPage = lazy(() => import('./settings/ShippingPage'));
 const PaymentsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.PaymentsSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.NotificationsSettingsPage })));
@@ -81,8 +87,14 @@ const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => 
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const reportRoutes = ['/reports'];
-const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/integrations'];
+const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
+
+/** `/marketing`: the overview for `marketing.manage` (PHASE-8-5 §8), Coupons for everyone else. */
+function MarketingIndex() {
+  const { activeTenant } = useAuth();
+  return can.manageMarketing(activeTenant) ? lazyEl(<MarketingOverviewPage />) : <Navigate to="/marketing/coupons" replace />;
+}
 
 /** `/reports` → Sales, keeping the range in the query string. */
 function ReportsIndex() {
@@ -204,7 +216,11 @@ export function AppRoutes() {
               <Route path="/orders/:orderId/edit" element={gated(can.processOrders, <OrderEditPage />)} />
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
               <Route path="/integrations/developer" element={gated(can.manageDevelopers, <DeveloperPage />)} />
-              <Route path="/marketing" element={<Navigate to="/marketing/coupons" replace />} />
+              <Route path="/marketing" element={<MarketingIndex />} />
+              <Route path="/marketing/campaigns" element={gated(can.manageMarketing, <CampaignsPage />)} />
+              <Route path="/marketing/campaigns/new" element={gated(can.manageMarketing, <CampaignComposerPage />)} />
+              <Route path="/marketing/campaigns/:campaignId/edit" element={gated(can.manageMarketing, <CampaignComposerPage />)} />
+              <Route path="/marketing/campaigns/:campaignId" element={gated(can.manageMarketing, <CampaignDetailPage />)} />
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/marketing/coupons/:couponId" element={lazyEl(<CouponEditorPage />)} />

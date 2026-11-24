@@ -7,6 +7,7 @@ use App\Domain\Couriers\CouriersServiceProvider;
 use App\Domain\Developer\Webhooks\WebhooksServiceProvider;
 use App\Domain\Documents\DocumentsServiceProvider;
 use App\Domain\Domains\DomainsServiceProvider;
+use App\Domain\Marketing\MarketingServiceProvider;
 use App\Domain\Orders\CommerceServiceProvider;
 use App\Domain\Payments\GatewaysServiceProvider;
 use App\Domain\Sms\SmsServiceProvider;
@@ -28,4 +29,5 @@ return [
     DomainsServiceProvider::class,
     AdminServiceProvider::class,
     WebhooksServiceProvider::class,
+    MarketingServiceProvider::class,
 ];

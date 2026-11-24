@@ -36,6 +36,14 @@
 # Billing (Phase 7): BILLING_FAKE=true (default here, DEV-ONLY) serves the fake platform gateway page
 # http://localhost:8000/api/v1/dev/fake-billing-gateway/{payment} and POST /api/v1/dev/billing/clock.
 #
+# `queue-campaigns` works `campaigns` (PHASE-8-5-CONTRACT §5.1: StartCampaign snapshot, SendCampaignBatch <= 100 recipients,
+# AttributeOrder; provider calls never retried). Without it campaigns stay `sending` with `queued` recipients. The scheduler
+# runs campaigns:dispatch-due (1 min), campaigns:reap-stuck (5 min) and campaigns:prune-recipients (daily).
+# Campaigns (Phase 8.5): SMS through SMS_DRIVER (log here), email through the `campaigns` mailer (CAMPAIGN_MAILER=log here;
+# set `smtp` to see them in Mailpit). CAMPAIGNS_DEV_SINK=true (DEV-ONLY) records rendered messages for
+# GET /api/v1/dev/stores/{store}/message-sink. The API refuses to boot with the sink, or a log/array campaign mailer
+# while SMS_DRIVER=revesms, in production (S125).
+#
 # Payments (5b-2): PAYMENTS_FAKE=true (default here, DEV-ONLY) serves the fake hosted page
 # http://localhost:8000/api/v1/dev/fake-gateway/{payment} (Pay / Fail / Cancel) instead of bKash/SSLCommerz.
 # Sandbox runs: PAYMENTS_FAKE=false, PUBLIC_API_URL=<https tunnel>, credentials entered in the dashboard.
@@ -148,6 +156,10 @@ x-api-env: &api-env
   # request in GET /api/v1/dev/webhook-sink; WEBHOOKS_OUT_ALLOW_HTTP allows http:// receivers. Both refused in production.
   WEBHOOKS_OUT_FAKE: ${WEBHOOKS_OUT_FAKE:-true}
   WEBHOOKS_OUT_ALLOW_HTTP: ${WEBHOOKS_OUT_ALLOW_HTTP:-false}
+  # Phase 8.5 campaigns (PHASE-8-5-CONTRACT §5.4). DEV-ONLY values; see the header comment.
+  CAMPAIGN_MAILER: ${CAMPAIGN_MAILER:-log}
+  CAMPAIGN_MAIL_FROM: ${CAMPAIGN_MAIL_FROM:-campaigns@storeplix.test}
+  CAMPAIGNS_DEV_SINK: ${CAMPAIGNS_DEV_SINK:-true}
   # Shared key of the Caddy `ask` endpoint GET /api/v1/internal/domains/allowed?domain=&key= (empty → always 401).
   DOMAINS_ASK_KEY: ${DOMAINS_ASK_KEY:-dev-domains-ask-key-change-me}
   # The CNAME target merchants point their hostname at (contract default customers.{PLATFORM_DOMAIN}). Set explicitly:
@@ -364,6 +376,23 @@ services:
   queue-webhooks-out:
     <<: *api-common
     command: ["php", "artisan", "queue:work", "redis", "--queue=webhooks-out", "--tries=1", "--timeout=40", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 8.5 marketing campaigns (PHASE-8-5-CONTRACT §5.1): StartCampaign and SendCampaignBatch ($timeout 240 each; 150 s send budget per batch)
+  # on their own worker, so a large send never delays order notifications. Throughput is capped by Redis limiters, not by
+  # worker count. --tries=1: provider calls are never retried (P85-11); AttributeOrder sets its own tries.
+  queue-campaigns:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=campaigns", "--tries=1", "--timeout=250", "--sleep=1"]
     depends_on:
       api:
         condition: service_healthy

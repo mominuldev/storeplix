@@ -113,7 +113,7 @@ unchanged from earlier phases, the Staff page "Online now", "Actions today", "St
 | 13 | `reports.view` | money | Reports, payouts & COD settlements · Sales and delivery reports | — | | operate (Q87) |
 | 14 | `data.export` | money | Export customer phone numbers · CSV export of products and customers (product `cost_price` only with `costs.view`, §3.2) | — | ✓ | bulk_data |
 | 15 | `data.import` | money | Import products & customers (CSV) · also needs the keys of what the file writes (§3.2) | — | | bulk_data |
-| 16 | `marketing.manage` | store "Store & settings" | Create & edit coupons | — | | manage_marketing |
+| 16 | `marketing.manage` | store "Store & settings" | Create & edit coupons → **"Coupons & campaigns"** and sensitive from Phase 8.5 (PHASE-8-5 P85-23, §2.1) | — | ✓ (8.5) | manage_marketing |
 | 17 | `settings.manage` | store | Change shop settings · Delivery charges, checkout, themes, pages, publish | — | | manage_settings |
 | 18 | `integrations.manage` | store | Connect payments & couriers · API keys and credentials | — | ✓ | manage_integrations |
 | 19 | `domains.manage` | store | Manage domains | — | | manage_domains |
