@@ -65,14 +65,14 @@ export function overview(o: Partial<MarketingOverview> = {}): MarketingOverview 
   const weeks = ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16', '2026-11-23'];
   return {
     range: '30d',
-    kpis: { revenue_amount: 38_420_000, revenue_change_pct: 22, campaign_orders: 236, campaign_orders_share_pct: 18, messages_sent: 1250, unsubscribes: 4 },
-    series: weeks.map((w, i) => ({ week_start: w, coupons_amount: 2_000_000 + i * 300_000, campaigns_amount: 900_000 + i * 200_000 })),
+    kpis: { revenue_amount: 38_420_000, revenue_change_pct: 22, campaign_orders: 236, campaign_orders_share_pct: 18, messages_sent: 1250, unsubscribes: 4, carts_recovered: 58, recovered_revenue_amount: 9_240_000 },
+    series: weeks.map((w, i) => ({ week_start: w, coupons_amount: 2_000_000 + i * 300_000, campaigns_amount: 900_000 + i * 200_000, recovery_amount: 400_000 + i * 100_000 })),
     active_coupons: [
       { id: 'CP1', code: 'EID25', type: 'percentage', percent_bps: 2500, amount: null, ends_at: null, used_count: 184, usage_limit: 500, revenue_amount: 24_680_000 },
       { id: 'CP2', code: 'FREEDEL', type: 'free_shipping', percent_bps: null, amount: null, ends_at: null, used_count: 96, usage_limit: null, revenue_amount: 11_230_000 },
     ],
     recent_campaigns: campaigns.map(listItem),
-    counts: { coupons: 8, campaigns: 14 },
+    counts: { coupons: 8, campaigns: 14, automations: 3 },
     currency: 'BDT',
     ...o,
   };

@@ -2,7 +2,7 @@ import type { CampaignChannel, CampaignLanguage } from '@storeplix/types';
 import { Badge, Chip, cn, formatCount, Input, Menu } from '@storeplix/ui';
 import { X } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
-import { insertAt, MAX_EMAIL_BODY, MAX_SMS_PARTS, MAX_SUBJECT, MERGE_FIELDS, partSegments, smsHint, type MergeField, type SmsSample } from './campaigns';
+import { insertAt, MAX_EMAIL_BODY, MAX_SMS_PARTS, MAX_SUBJECT, MERGE_FIELDS, partSegments, smsHint, type SmsSample } from './campaigns';
 import { CouponPicker, ProductPicker } from './Pickers';
 import { CAMPAIGN_TEMPLATES, type CampaignTemplate } from './templates';
 import { StepCard } from './ui';
@@ -13,22 +13,7 @@ import { StepCard } from './ui';
 // are shown greyed in the box (P85-6/18); counter "Unicode (Bangla) · n characters", "n SMS per person" pill (warning
 // when > 1), part bar and hint (money text removed). Email: Subject above the box, plain-text counter.
 
-export function MessageSection({
-  channel,
-  language,
-  body,
-  subject,
-  coupon,
-  product,
-  sms,
-  errors,
-  disabled,
-  onLanguage,
-  onBody,
-  onSubject,
-  onCoupon,
-  onProduct,
-}: {
+type MessageEditorProps = {
   channel: CampaignChannel;
   language: CampaignLanguage;
   body: string;
@@ -43,14 +28,56 @@ export function MessageSection({
   onSubject: (s: string) => void;
   onCoupon: (c: { id: string; code: string } | null) => void;
   onProduct: (p: { id: string; name: string; slug: string } | null) => void;
-}) {
+  /** SMS part cap incl. prefix/footer (campaigns 5; automations pass 3, P86-7). */
+  maxParts?: number;
+  /** Merge-tag buttons (default: the campaign tags). */
+  mergeFields?: readonly { field: string; label: string }[];
+  /** "Template: …" menu; null hides it (automations). */
+  templates?: readonly CampaignTemplate[] | null;
+  /** Coupon / product tags open pickers (campaigns); false = every tag is inserted as is (automations). */
+  pickers?: boolean;
+  /** Extra line under the counter (e.g. the automation sample note). */
+  note?: string;
+};
+
+/** Phase 8.5 composer's message box (3: Message) wrapped in its numbered card. */
+export function MessageSection(props: MessageEditorProps) {
+  return (
+    <StepCard step={3} title="Message">
+      <MessageEditor {...props} />
+    </StepCard>
+  );
+}
+
+/** The message editor itself (8.5; reused by Phase 8.6 automations with `maxParts=3`). */
+export function MessageEditor({
+  channel,
+  language,
+  body,
+  subject,
+  coupon,
+  product,
+  sms,
+  errors,
+  disabled,
+  onLanguage,
+  onBody,
+  onSubject,
+  onCoupon,
+  onProduct,
+  maxParts = MAX_SMS_PARTS,
+  mergeFields = MERGE_FIELDS,
+  templates = CAMPAIGN_TEMPLATES,
+  pickers = true,
+  note,
+}: MessageEditorProps) {
   const area = useRef<HTMLTextAreaElement>(null);
   const bodyId = useId();
   const [template, setTemplate] = useState<CampaignTemplate | null>(null);
   const [picker, setPicker] = useState<'coupon' | 'product' | null>(null);
   const bn = language === 'bn';
 
-  const insert = (field: MergeField) => {
+  const insert = (field: string) => {
     const el = area.current;
     const { text, caret } = insertAt(body, `{${field}}`, el?.selectionStart, el?.selectionEnd);
     onBody(text);
@@ -60,9 +87,9 @@ export function MessageSection({
     });
   };
 
-  const onTag = (field: MergeField) => {
-    if (field === 'coupon') setPicker('coupon');
-    else if (field === 'product') setPicker('product');
+  const onTag = (field: string) => {
+    if (pickers && field === 'coupon') setPicker('coupon');
+    else if (pickers && field === 'product') setPicker('product');
     else insert(field);
   };
 
@@ -74,7 +101,7 @@ export function MessageSection({
 
   const c = sms.count;
   return (
-    <StepCard step={3} title="Message">
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <Chip check={false} selected={bn} disabled={disabled} onClick={() => onLanguage('bn')} lang="bn" className="font-bangla">
           বাংলা
@@ -83,15 +110,17 @@ export function MessageSection({
           English
         </Chip>
         <span className="flex-1" />
+        {templates && templates.length > 0 && (
         <Menu
           label={`Template: ${template?.label ?? "choose"}`}
           align="end"
           disabled={disabled}
           triggerClassName="h-auto w-auto px-1 text-caption font-medium text-brand-600 hover:bg-transparent"
           trigger={<span>Template: {template?.label ?? 'choose'}</span>}
-          entries={CAMPAIGN_TEMPLATES.map((t) => ({ key: t.key, label: t.label, onSelect: () => applyTemplate(t) }))}
+          entries={templates.map((t) => ({ key: t.key, label: t.label, onSelect: () => applyTemplate(t) }))}
           className="w-[240px]"
         />
+        )}
       </div>
 
       {channel === 'email' && <Input label="Subject" value={subject} maxLength={MAX_SUBJECT} disabled={disabled} error={errors.subject} onChange={(e) => onSubject(e.target.value.replace(/[\r\n]/g, ' '))} className={cn(bn && 'font-bangla')} />}
@@ -120,7 +149,7 @@ export function MessageSection({
         />
         {channel === 'sms' && <p className={cn('text-caption text-text-muted', bn && 'font-bangla')}>{sms.footer}</p>}
         <div className="flex flex-wrap gap-2">
-          {MERGE_FIELDS.map((t) => (
+          {mergeFields.map((t) => (
             <button
               key={t.field}
               type="button"
@@ -153,7 +182,7 @@ export function MessageSection({
             <p className="flex-1 text-caption font-medium text-text-secondary">
               {c.encoding === 'ucs2' ? 'Unicode (Bangla)' : 'GSM (English)'} · {formatCount(c.units)} characters
             </p>
-            <Badge tone={c.parts > MAX_SMS_PARTS ? 'danger' : c.parts > 1 ? 'warning' : 'neutral'} dot data-testid="sms-parts">
+            <Badge tone={c.parts > maxParts ? 'danger' : c.parts > 1 ? 'warning' : 'neutral'} dot data-testid="sms-parts">
               {c.parts === 1 ? '1 SMS per person' : `${c.parts} SMS per person`}
             </Badge>
           </div>
@@ -163,6 +192,8 @@ export function MessageSection({
             ))}
           </div>
           <p className="text-caption text-text-muted">{smsHint(c)} The shop name and the opt-out link are included.</p>
+          {maxParts !== MAX_SMS_PARTS && <p className="text-caption text-text-muted">Up to {maxParts} SMS per message.</p>}
+          {note && <p className="text-caption text-text-muted">{note}</p>}
         </div>
       ) : (
         <p id={`${bodyId}-count`} className="text-caption text-text-muted">
@@ -170,6 +201,7 @@ export function MessageSection({
         </p>
       )}
 
+      {pickers && (
       <CouponPicker
         open={picker === 'coupon'}
         onClose={() => setPicker(null)}
@@ -179,16 +211,21 @@ export function MessageSection({
           if (!body.includes('{coupon}')) insert('coupon');
         }}
       />
-      <ProductPicker
-        open={picker === 'product'}
-        onClose={() => setPicker(null)}
-        onPick={(p) => {
-          onProduct(p);
-          setPicker(null);
-          if (!body.includes('{product}')) insert('product');
-        }}
-      />
-    </StepCard>
+      )}
+      {pickers && (
+        <>
+          <ProductPicker
+            open={picker === 'product'}
+            onClose={() => setPicker(null)}
+            onPick={(p) => {
+              onProduct(p);
+              setPicker(null);
+              if (!body.includes('{product}')) insert('product');
+            }}
+          />
+        </>
+      )}
+    </>
   );
 }
 

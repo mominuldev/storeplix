@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
-import type { BdGeo, GatewayProvider, PaymentMethod, ShippingQuote } from '@storeplix/types';
-import { placeOrder, type CheckoutState } from '@/app/actions/commerce';
+import { CHECKOUT_CONTACT_NOTICE, type BdGeo, type GatewayProvider, type PaymentMethod, type ShippingQuote } from '@storeplix/types';
+import { placeOrder, saveCheckoutContact, type CheckoutState } from '@/app/actions/commerce';
 import { advanceRequired, GATEWAYS, METHOD_HINT, METHOD_LABEL } from '@/lib/payments';
-import { districtsOf, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
+import { districtsOf, normalizeBdPhone, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
 import { formatMoney } from '@/lib/format';
 import { Icon } from '../components/icon';
 import { deliveryDays, Notice, PageTitle } from './ui';
@@ -36,6 +36,28 @@ interface Props {
 type Values = Record<'name' | 'phone' | 'email' | 'division_code' | 'district_code' | 'thana_code' | 'area' | 'address_line' | 'landmark' | 'label' | 'customer_note', string>;
 
 const EMPTY: Values = { name: '', phone: '', email: '', division_code: '', district_code: '', thana_code: '', area: '', address_line: '', landmark: '', label: 'home', customer_note: '' };
+
+/**
+ * PHASE-8-6 §10.6 notice under the phone field (Caption/12, muted). The storefront has no store-language setting yet, so
+ * the English line is shown (the Bangla line is ready for when it does — same fallback as the 8.5 `/u` page).
+ */
+export const CONTACT_NOTICE = CHECKOUT_CONTACT_NOTICE;
+
+export type ContactPayload = { phone: string; name?: string; email?: string };
+
+/**
+ * P86-12: what to save when a contact field loses focus, or null. Nothing until the phone is a valid BD mobile number;
+ * after that name/email blurs re-send. An unchanged payload (same as `lastSent`) is not sent again.
+ */
+export function contactToSave(values: { phone: string; name: string; email: string }, lastSent: string | null): { payload: ContactPayload; key: string } | null {
+  const phone = normalizeBdPhone(values.phone);
+  if (!phone) return null;
+  const name = values.name.trim();
+  const email = values.email.trim();
+  const payload: ContactPayload = { phone: values.phone.trim(), ...(name ? { name } : {}), ...(email ? { email } : {}) };
+  const key = `${phone}|${name}|${email.toLowerCase()}`;
+  return key === lastSent ? null : { payload, key };
+}
 
 const inputCls =
   'type-body-m h-[52px] w-full min-w-0 rounded-sf-md border bg-surface px-4 text-ink outline-none placeholder:text-ink-muted focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
@@ -155,6 +177,15 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
   // Guards double submits between the click and React's pending state.
   const inFlight = useRef(false);
   const errors: FieldErrors = { ...state.fieldErrors, ...clientErrors };
+  // P86-12: last contact sent to the cart (fire-and-forget; never awaited by submit).
+  const contactSent = useRef<string | null>(null);
+  const captureContact = () => {
+    const next = contactToSave(values, contactSent.current);
+    if (!next) return;
+    contactSent.current = next.key;
+    saveCheckoutContact(next.payload).catch(() => undefined);
+  };
+
   const c = summary.currency;
 
   const districts = useMemo(() => (geo && values.division_code ? districtsOf(geo, values.division_code) : []), [geo, values.division_code]);
@@ -257,7 +288,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
         <Step n={1} title="Contact">
           <div className="grid gap-3.5 md:grid-cols-2 md:gap-x-4 lg:gap-y-[18px]">
             <Field id="name" label="Full name" error={errors.name}>
-              <input id="name" name="name" autoComplete="name" value={values.name} onChange={set('name')} aria-invalid={Boolean(errors.name)} aria-describedby={describedBy('name')} className={`${inputCls} border-line`} />
+              <input id="name" name="name" autoComplete="name" value={values.name} onChange={set('name')} onBlur={captureContact} aria-invalid={Boolean(errors.name)} aria-describedby={describedBy('name')} className={`${inputCls} border-line`} />
             </Field>
             <Field id="phone" label="Mobile number" hint="Order updates by SMS" error={errors.phone}>
               <input
@@ -269,14 +300,18 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
                 placeholder="01XXXXXXXXX"
                 value={values.phone}
                 onChange={set('phone')}
+                onBlur={captureContact}
                 aria-invalid={Boolean(errors.phone)}
-                aria-describedby={describedBy('phone') ?? 'phone-hint'}
+                aria-describedby={`${describedBy('phone') ?? 'phone-hint'} phone-recovery-notice`}
                 className={`${inputCls} border-line`}
               />
+              <p id="phone-recovery-notice" data-sp-contact-notice className="order-last text-xs leading-[1.5] text-ink-muted">
+                {CONTACT_NOTICE.en}
+              </p>
             </Field>
           </div>
           <Field id="email" label="Email (optional)" error={errors.email}>
-            <input id="email" name="email" type="email" autoComplete="email" placeholder="For your receipt" value={values.email} onChange={set('email')} aria-invalid={Boolean(errors.email)} aria-describedby={describedBy('email')} className={`${inputCls} border-line`} />
+            <input id="email" name="email" type="email" autoComplete="email" placeholder="For your receipt" value={values.email} onChange={set('email')} onBlur={captureContact} aria-invalid={Boolean(errors.email)} aria-describedby={describedBy('email')} className={`${inputCls} border-line`} />
           </Field>
         </Step>
 

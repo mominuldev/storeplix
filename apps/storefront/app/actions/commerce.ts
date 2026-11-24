@@ -14,6 +14,7 @@ import {
   listProducts,
   postCheckout,
   postTrack,
+  putCartContact,
   putCoupon,
   removeCartItem,
   updateCartItem,
@@ -259,6 +260,37 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
       return { status: 'error', message: "We're still placing your order. Wait a moment, then try again.", fieldErrors: {}, idempotencyKey: key };
     default:
       return { status: 'error', message: errorMessage(r), fieldErrors: {}, idempotencyKey: nextKey };
+  }
+}
+
+// ---------- checkout contact (PHASE-8-6 P86-12, §10.6) ----------
+const ContactInput = z.object({
+  phone: z.string().max(20),
+  name: z.string().max(200).optional(),
+  email: z.string().max(254).optional(),
+});
+
+/**
+ * Saves the phone (and name/email once given) on the shopper's cart for checkout recovery. Fire-and-forget: it never
+ * throws and returns nothing the form waits on; an invalid phone, a missing cart, a preview or any API error is a no-op.
+ */
+export async function saveCheckoutContact(input: { phone: string; name?: string; email?: string }): Promise<void> {
+  try {
+    const parsed = ContactInput.safeParse(input);
+    if (!parsed.success) return;
+    const phone = normalizeBdPhone(parsed.data.phone);
+    if (!phone) return;
+    const name = parsed.data.name?.trim().slice(0, 80);
+    const email = parsed.data.email?.trim().toLowerCase();
+    const ctx = await getCommerceContext();
+    if (!ctx || ctx.store.mode === 'preview' || !ctx.call.cartToken) return;
+    await putCartContact(ctx.call, {
+      phone,
+      ...(name ? { name } : {}),
+      ...(email && z.email().safeParse(email).success ? { email } : {}),
+    });
+  } catch {
+    // Never surface: checkout must not be blocked or slowed by the contact capture.
   }
 }
 

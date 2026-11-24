@@ -1,6 +1,6 @@
 import type { MarketingOverview, MarketingRange } from '@storeplix/types';
 import { BarChart, ChartLegend, cn, formatBdtCompact, KpiTile, Skeleton, buttonVariants, type BarDatum } from '@storeplix/ui';
-import { BarChart3, CreditCard, Mail, MessageCircle, Send, ShoppingBag, UserMinus } from 'lucide-react';
+import { BarChart3, CreditCard, Mail, MessageCircle, Send, ShoppingBag, ShoppingCart } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatBdt, formatCount } from '../catalog/format';
@@ -14,11 +14,11 @@ import { allowanceOf, campaignsLocked } from './campaigns';
 import { useMarketingOverview } from './queries';
 import { CampaignPlanNote, CampaignsTable, MarketingTabs } from './ui';
 
-// Figma Marketing overview 66:19179 (Main 66:19181), PHASE-8-5 §8.1. Header + range dropdown + "+ Create coupon" /
-// "+ New campaign"; tabs Overview · Coupons · Campaigns (Automations hidden); KPI tiles Revenue from marketing, Orders
-// from campaigns, Messages sent (composed), Unsubscribes (composed) — Carts recovered / Return on spend hidden; weekly
-// stacked bars Coupons + Campaigns (Cart recovery series and "Best week yet" banner hidden); Active coupons card;
-// "Start something new" Discount coupon / SMS campaign / Email campaign (WhatsApp slot, PO) — Abandoned cart hidden;
+// Figma Marketing overview 66:19179 (Main 66:19181), PHASE-8-5 §8.1 as amended by PHASE-8-6 §10.5. Header + range
+// dropdown + "+ Create coupon" / "+ New campaign"; tabs Overview · Coupons · Campaigns · Automations (n on); KPI tiles
+// Revenue from marketing, Orders from campaigns, Carts recovered, Messages sent (composed in the hidden "Return on spend"
+// slot); weekly stacked bars Coupons + Campaigns + Cart recovery ("Best week yet" banner hidden); Active coupons card;
+// "Start something new" Discount coupon / SMS campaign / Email campaign (WhatsApp slot, PO) / Abandoned cart recovery;
 // Recent campaigns table. Below `lg` the chart and coupons cards stack (Q151).
 
 const RANGES: { value: MarketingRange; label: string; days: number }[] = [
@@ -100,10 +100,11 @@ export function MarketingOverviewPage() {
       )}
 
       <h2 className="text-heading text-text-primary">Start something new</h2>
-      <section aria-label="Start something new" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section aria-label="Start something new" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <QuickCard icon={<CreditCard />} tone="bg-brand-50 text-brand-600" title="Discount coupon" text="% off, ৳ off or free delivery with limits and dates." action="Create coupon" to="/marketing/coupons/new" />
         <QuickCard icon={<MessageCircle />} tone="bg-info-bg text-info" title="SMS campaign" text="Send a Bangla or English SMS to any segment." action="Write SMS" to="/marketing/campaigns/new?channel=sms" disabled={locked} />
         <QuickCard icon={<Mail />} tone="bg-success-bg text-success" title="Email campaign" text="Send an email with your logo to any segment." action="Write email" to="/marketing/campaigns/new?channel=email" disabled={locked} />
+        <QuickCard icon={<ShoppingCart />} tone="bg-accent-100 text-accent-500" title="Abandoned cart recovery" text="Auto-message buyers who left checkout. Runs 24/7." action="Set up flow" to="/marketing/automations/checkout-recovery" />
       </section>
 
       <RecentCampaigns data={data} pending={overview.isPending} error={overview.isError} tz={tz} locked={locked} />
@@ -141,8 +142,8 @@ function Kpis({ data, days, features }: { data: MarketingOverview; days: number;
     <section aria-label="Marketing summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile icon={<BarChart3 />} label="Revenue from marketing" value={formatBdt(k.revenue_amount)} hint={pctLabel(k.revenue_change_pct, days)} />
       <KpiTile icon={<ShoppingBag />} label="Orders from campaigns" value={formatCount(k.campaign_orders)} hint={`${k.campaign_orders_share_pct}% of all orders`} />
+      <KpiTile icon={<ShoppingCart />} label="Carts recovered" value={formatCount(k.carts_recovered)} hint={`${formatBdt(k.recovered_revenue_amount)} won back`} />
       <KpiTile icon={<Send />} label="Messages sent" value={formatCount(k.messages_sent)} hint={allowanceHint} />
-      <KpiTile icon={<UserMinus />} label="Unsubscribes" value={formatCount(k.unsubscribes)} hint={`in the last ${days} days`} />
     </section>
   );
 }
@@ -174,23 +175,25 @@ function Card({ title, subtitle, action, children, className }: { title: string;
 function RevenueChart({ data }: { data: MarketingOverview }) {
   const bars: BarDatum[] = data.series.map((w, i) => ({
     label: i === data.series.length - 1 ? 'This wk' : `W${isoWeek(w.week_start)}`,
-    value: w.coupons_amount + w.campaigns_amount,
+    value: w.coupons_amount + w.campaigns_amount + w.recovery_amount,
     segments: [
       { label: 'Coupons', value: w.coupons_amount, tone: 'brand-500' },
       { label: 'Campaigns', value: w.campaigns_amount, tone: 'accent' },
+      { label: 'Cart recovery', value: w.recovery_amount, tone: 'success' },
     ],
   }));
   return (
     <Card
       title="Revenue from marketing"
       subtitle="By source, last 8 weeks"
-      className="flex-1 gap-5"
+      className="relative flex-1 gap-5 overflow-hidden"
       action={
         <ChartLegend
           className="max-sm:hidden"
           items={[
             { label: 'Coupons', tone: 'brand-500' },
             { label: 'Campaigns', tone: 'accent' },
+            { label: 'Cart recovery', tone: 'success' },
           ]}
         />
       }
@@ -200,9 +203,10 @@ function RevenueChart({ data }: { data: MarketingOverview }) {
         items={[
           { label: 'Coupons', tone: 'brand-500' },
           { label: 'Campaigns', tone: 'accent' },
+          { label: 'Cart recovery', tone: 'success' },
         ]}
       />
-      <BarChart caption="Revenue from marketing by week" bars={bars} height={220} formatValue={(n) => formatBdt(n)} formatTick={(n) => formatBdtCompact(n, { tight: true })} series={['Coupons', 'Campaigns']} />
+      <BarChart caption="Revenue from marketing by week" bars={bars} height={220} formatValue={(n) => formatBdt(n)} formatTick={(n) => formatBdtCompact(n, { tight: true })} series={['Coupons', 'Campaigns', 'Cart recovery']} />
     </Card>
   );
 }

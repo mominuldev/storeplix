@@ -86,9 +86,9 @@ export const limitLabel: Record<LimitKey, string> = {
   courier_connections: 'Courier connections',
   sms_per_month: 'Order SMS this month',
   custom_domains: 'Custom domains',
-  // PHASE-8-5 §2.2: "Campaign SMS this month · N of M" (SMS counted in parts).
-  campaign_sms_per_month: 'Campaign SMS this month',
-  campaign_emails_per_month: 'Campaign emails this month',
+  // PHASE-8-5 §2.2 (SMS counted in parts); PHASE-8-6 P86-8: shared with automations → "Marketing SMS this month".
+  campaign_sms_per_month: 'Marketing SMS this month',
+  campaign_emails_per_month: 'Marketing emails this month',
 };
 
 const limitNoun: Record<LimitKey, string> = {
@@ -98,8 +98,8 @@ const limitNoun: Record<LimitKey, string> = {
   courier_connections: 'courier connections',
   sms_per_month: 'order SMS',
   custom_domains: 'custom domains',
-  campaign_sms_per_month: 'campaign SMS',
-  campaign_emails_per_month: 'campaign emails',
+  campaign_sms_per_month: 'marketing SMS',
+  campaign_emails_per_month: 'marketing emails',
 };
 
 export interface LimitWarning {
