@@ -49,12 +49,12 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 | 400 | `bad_request`, `tenant_required`, `idempotency_key_required` | malformed request / missing header |
 | 401 | `unauthenticated`, `invalid_storefront_key`, `invalid_api_key` (Phase 8.4) | missing/invalid token or key |
 | 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
-| 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `api_key_scope_missing` (+ `details.required_scope`, Phase 8.4), `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
-| 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found`, `unsubscribe_link_invalid` (Phase 8.5), `recovery_link_invalid` (Phase 8.6) | missing **or belongs to another tenant** |
-| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3), `suppression_customer_owned` (Phase 8.5), `automation_exists`, `automation_not_draft` (Phase 8.6) | state conflict |
+| 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `api_key_scope_missing` (+ `details.required_scope`, Phase 8.4), `invitation_email_mismatch`, `email_not_verified`, `impersonation_receipt_hidden` (Phase 8.7: receipt link in an impersonation session) | authenticated but not allowed |
+| 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found`, `unsubscribe_link_invalid` (Phase 8.5), `recovery_link_invalid` (Phase 8.6), `receipt_not_found` (Phase 8.7) | missing **or belongs to another tenant** |
+| 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3), `suppression_customer_owned` (Phase 8.5), `automation_exists`, `automation_not_draft` (Phase 8.6), `receipt_processing` (Phase 8.7); `currency_locked` is enforced from Phase 8.7 (store has an order or an expense, PHASE-8-7 P87-18) | state conflict |
 | 413 | `payload_too_large` | body/upload over the endpoint limit |
 | 419 | `csrf_token_mismatch` | cookie-session write without a valid `X-XSRF-TOKEN` (Phase 4.7) |
-| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4), `campaign_quiet_hours`, `campaign_unknown_merge_field`, `campaign_too_long`, `campaign_coupon_inactive`, `campaign_no_recipients` (Phase 8.5), `automation_incomplete` (Phase 8.6) | validation / business rule |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4), `campaign_quiet_hours`, `campaign_unknown_merge_field`, `campaign_too_long`, `campaign_coupon_inactive`, `campaign_no_recipients` (Phase 8.5), `automation_incomplete` (Phase 8.6), `export_too_large` (Phase 8.7, + `details.limit`) | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
 | 503 | `maintenance` | |
@@ -263,6 +263,9 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `storefront-cart-recover` (Phase 8.6, `POST /storefront/carts/recover`) | shopper IP | 20/min (on top of `storefront`) |
 | `automation-dry-run` (Phase 8.6, `POST /stores/{store}/automations/{automation}/dry-run`) | tenant + user | 30/min |
 | `automation-test` (Phase 8.6, `POST /stores/{store}/automations/{automation}/test-message`) | tenant + user | 5/hour |
+| `expenses-write` (Phase 8.7, `POST`/`PATCH`/`DELETE` `/stores/{store}/expenses…`) | tenant + user | 60/min |
+| `expense-receipts` (Phase 8.7, `POST /stores/{store}/expenses/receipts`) | tenant + user | 20/min |
+| `expense-receipts.download` (Phase 8.7, signed `GET /expense-receipts/{media}/download`) | request IP | 60/min |
 | Automation frequency cap (Phase 8.6, in the `automations` queue, not HTTP) | store + channel + address | ≤ 2 automation marketing messages per rolling 24 h across automations → step `skipped/frequency_cap` (campaign messages not counted) |
 | Campaign send rate (Phase 8.5, in the `campaigns` queue, not HTTP) | store; platform | SMS 10/s per store (`campaigns.sms_rate_per_second`) and 50/s platform-wide (`campaigns.platform_sms_rate_per_second`); email 20/s per store — over the limit the job is released, never dropped |
 | Inline `throttle:N,1` (5b) | Laravel default signature: **the user id** (public routes: domain + IP) | gateway connect, gateway test-payment, courier connect / test / webhook-secret, `shipments/bulk`: 20/min; `documents/preview`, courier `pickup-stores`: 30/min; courier `areas`: 120/min; signed `documents/{document}/download`, `dev/*`: 60/min |
@@ -278,6 +281,10 @@ limiters (`pay-link`, `webhooks`, `payment-returns`) live in the same provider; 
 middleware. **Caveat (as built):** inline `throttle:N,1` limiters without a prefix share one counter per user across
 every inline-throttled merchant route (each route compares that shared count with its own N), so e.g. 30 area lookups
 block `shipments/bulk` for the rest of the minute. Tracked as a code fix (named or prefixed limiters).
+
+Phase 8.7 envelope exception: `GET /stores/{store}/expenses/export` answers `text/csv` (attachment, formula-safe cells
+via `CsvCell`) like the import template and document downloads; its errors keep the JSON envelope. The signed receipt
+download `GET /expense-receipts/{media}/download` streams the file (tenant from the signature, as `documents.download`).
 
 ## 9. Idempotency
 Required `Idempotency-Key` (UUID/ULID, ≤ 64 chars) on: `POST /storefront/checkout`, `POST /storefront/orders/{id}/payments`,

@@ -140,9 +140,11 @@ with tenant data is forbidden (arch test in `Domain/`). Platform keys use `sp:` 
 
 ## 8. Storage paths
 `TenantStorage::path(string $area, string $filename)` → `tenants/{tenant_id}/{area}/{ulid}.{ext}`
-(areas: `products`, `branding`, `pages`, `imports`, `exports`, `invoices`). Original filenames never used
+(areas: `products`, `branding`, `pages`, `imports`, `exports`, `invoices`; media rows use
+`tenants/{tenant_id}/media/{media_id}/…`). Expense receipts (Phase 8.7) are media rows on the **private** disk. Original filenames never used
 in keys. Exports/imports/invoices are on a private bucket served by short-lived signed URLs (5 min) after a
-policy check; product/branding media are public via CDN. `media` table stores `tenant_id` + `path`;
+policy check; product/branding media are public via CDN; expense receipts are private and served by a 5-minute
+signed URL (PHASE-8-7 §5.3). `media` table stores `tenant_id` + `path`;
 access checks always go through the model, never by path.
 
 ## 9. Database-level defense (RLS) — as built (Phase 5b-1)
@@ -268,6 +270,18 @@ permissions: it can only perform the fixed recipe actions, and per-action effect
 `audit_logs`. Team notifications resolve recipients at send time from current `tenant_users` memberships whose resolved
 permission set holds the recipe's key (`inventory.adjust` for low stock), plus owners and admins.
 
+**Expense receipts (Phase 8.7, PHASE-8-7 §5, ADR 0021) need no definer function.** The signed
+`GET /expense-receipts/{media}/download` carries the tenant id in its signed parameters (like `documents.download` and
+`exports.download`); the controller runs `TenantContext::run(tenant)`, loads the `media` row on the normal RLS path,
+and serves it only when the purpose is `expense_receipt`, the row is `ready` and attached to an expense, the disk is
+the private disk and `TenantStorage::ownsPath($media->path)` holds. A link of tenant A with tenant B's media id finds
+nothing (404). Receipts are never served by the tenant-agnostic CDN and never by the generic `/media` routes
+(`MediaPurpose::libraryCases()`).
+
+**Store currency lock (Phase 8.7, P87-18).** `StoreSettingsUpdater` checks `EXISTS` on `orders` and `expenses` filtered
+by tenant **and** store inside the settings transaction (store row locked `FOR UPDATE`); expense create locks the same
+row `FOR SHARE` before reading `stores.currency`.
+
 ### 9.5 Cross-tenant platform code (`withoutTenancy()` → `pgsql_admin`)
 - `Model::withoutTenancy()` removes the `TenantScope` **and**, with RLS on, moves the query onto `pgsql_admin`
   (`PlatformDb::reroute`). With RLS off it stays on the default connection, exactly as before 5b.
@@ -290,6 +304,12 @@ permission set holds the recipe's key (`inventory.adjust` for low stock), plus o
   jobs) as `TenantAware` jobs on the `automations` queue inside `TenantContext::run()`. The trigger fan-out in
   `WebhookEvents::emit` and the `OrderService::systemCancel` hook run in the request's tenant context and only dispatch
   `TenantAware` jobs.
+- Phase 8.7: `expenses:repeat` (hourly) finds active `expense_recurrences` with `next_on ≤ UTC date + 1` on
+  `pgsql_admin`, then per store inside `TenantContext::run()` filters `next_on ≤ today in the store timezone` and
+  dispatches `GenerateRecurringExpenses` (`TenantAware`, queue `default`; idempotent by `UNIQUE(recurrence_id,
+  spent_on)`). `expenses:prune-receipts` (daily) finds unattached `expense_receipt` media older than 24 h on
+  `pgsql_admin`, then per tenant deletes the row first (`NOT EXISTS` on `expenses.receipt_media_id`, FK RESTRICT as
+  backstop) and the private object after commit when `ownsPath()` holds.
 - Seeders run with `--database=pgsql_owner` (the owner bypasses RLS) and keep `TenantContext::run()` around tenant writes.
 - Super-admin `/admin/*` (not built yet) must use `pgsql_admin` and stay out of merchant request paths.
 

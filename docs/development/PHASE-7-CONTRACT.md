@@ -435,6 +435,9 @@ returned later in the same range is no longer `delivered` and is excluded):
 - `delivery_cost_amount` = Σ `shipments.delivery_fee_amount` of the order's delivered shipment(s); `cod_fee_amount` =
   Σ `shipments.cod_charge_amount`. Manual shipments or null fees add 0 and count in `data_quality.shipments_without_fee`.
 - `gateway_fee_amount` = **null** ("not tracked", Q86); `ad_spend_amount` = **null** (Expenses, Phase 8.7).
+  **Amended by PHASE-8-7 §7 (2026-11-24):** `ad_spend_amount` = Σ expenses of category `ads` by `spent_on` (integer);
+  new `other_expenses_amount` and `profit_before_expenses_amount`; total cost, net profit, margin and per-order profit
+  are after expenses (changed fields listed in PHASE-8-7 §7.3). Appendix A types are superseded by `packages/types`.
 - `total_cost_amount` = Σ the non-null costs; `net_profit_amount` = revenue − total cost; `margin` = profit / revenue
   (null if revenue 0); `profit_per_order_amount` = `floor(profit / delivered_orders_count)`.
 - `per_order` = each summary amount ÷ `delivered_orders_count` (floored; null if 0).

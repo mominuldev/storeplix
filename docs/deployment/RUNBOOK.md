@@ -39,6 +39,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 - Phase 8.4: `WEBHOOKS_OUT_FAKE` and `WEBHOOKS_OUT_ALLOW_HTTP` must be `false`/unset outside local and CI (the API refuses to boot with either in production).
 - Phase 8.5: `CAMPAIGNS_DEV_SINK` must be `false`/unset in production, and `CAMPAIGN_MAILER` must be a real transport (not `log`/`array`) when `SMS_DRIVER=revesms` — the API refuses to boot otherwise (S125). Set `CAMPAIGN_MAIL_FROM` to an address on the platform sending domain (SPF/DKIM/DMARC aligned, Q146).
 - Phase 8.6: no new fake flag. The 8.5 boot guards cover automation messages too (`CAMPAIGNS_DEV_SINK` off and a real `CAMPAIGN_MAILER` in production, S140); `REDIS_QUEUE_RETRY_AFTER` must stay 360 for `queue-automations`. Team notifications (low stock) use the normal transactional mailer on `queue-notifications`.
+- Phase 8.7: no new process, queue or env var. Expense receipts use the existing private disk (`storeplix.private_disk`, same as exports/documents) — in production it must be a private bucket (never the public media/CDN bucket); image receipts are re-encoded by the existing media worker (`ProcessMedia`, queue `media`). Store currency is locked once a store has an order or expense (409 `currency_locked`); a merchant who genuinely needs a change is a support case (no ops command).
 
 ---
 
@@ -277,6 +278,8 @@ Redis cache.
 | `automations:resume-due` | every minute, no overlap | Phase 8.6: `waiting → running WHERE resume_at <= now()` by conditional UPDATE (waits, quiet hours until 09:00 store time), dispatches the next step |
 | `automations:reap-stuck` | every 5 min, no overlap | Phase 8.6: message steps `sending` > 15 min → `unknown` (never retried); the run continues with its next step |
 | `automations:prune-runs` | daily | Phase 8.6: delete `automation_runs` (+ steps) older than 90 days and `automation_conversions` older than 13 months |
+| `expenses:repeat` | hourly, no overlap | Phase 8.7: active `expense_recurrences` due today (store tz) → one copy of the series' latest occurrence per due date (`GenerateRecurringExpenses`, queue `default`, idempotent by `UNIQUE(recurrence_id, spent_on)`, catches up after an outage, max 12 per run) |
+| `expenses:prune-receipts` | daily 03:30 UTC | Phase 8.7: unattached `expense_receipt` media older than 24 h → row deleted (guarded by NOT EXISTS), private object deleted after commit |
 | `analytics:aggregate` | hourly at :20 Asia/Dhaka, no overlap, one server, in-process | Phase 8.2 nightly analytics snapshot + 35-day restatement; later runs are the catch-up (§12) |
 
 Without the scheduler unpaid holds never expire, links never expire and a lost IPN is never reconciled. The `payments:*`,
