@@ -43,14 +43,15 @@ export const mainNav: NavEntry[] = [
     to: '/orders',
     icon: ShoppingBag,
     requires: (m) => can.seeOrders(m) || can.seeShipments(m),
-    // 5b §10: Returns, Shipments (5b-3) and Invoices & labels (Figma sidebar order 39:10347). Unfinished orders and
-    // Fake order guard stay hidden.
+    // 5b §10: Returns, Shipments (5b-3) and Invoices & labels (Figma sidebar order 39:10347). PHASE-8-8 §10: Fake order
+    // guard (after Invoices & labels) with `fraud.manage`. Unfinished orders stays hidden.
     children: [
       { label: 'All orders', to: '/orders', requires: can.seeOrders },
       { label: 'Create order', to: '/orders/new', requires: can.viewOrders },
       { label: 'Returns', to: '/returns', requires: can.viewOrders },
       { label: 'Shipments', to: '/shipments', requires: can.seeShipments },
       { label: 'Invoices & labels', to: '/orders/print', requires: can.seeShipments },
+      { label: 'Fake order guard', to: '/orders/fraud-guard', requires: can.manageFraudGuard },
     ],
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },

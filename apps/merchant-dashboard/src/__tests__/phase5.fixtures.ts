@@ -27,7 +27,7 @@ export const commerce: StoreCommerceSettings = {
 
 export const settingsWithCommerce = (c: Partial<StoreCommerceSettings> = {}) => jsonResponse(200, { data: settingsFixture({ commerce: { ...commerce, ...c } }) });
 
-const customerSummary = { id: 'CU1', name: 'Nasrin Akter', phone: '8801712345678', email: null, orders_count: 3, delivered_orders_count: 2, returned_orders_count: 0, total_spent_amount: 354_000 };
+const customerSummary = { id: 'CU1', name: 'Nasrin Akter', phone: '8801712345678', email: null, orders_count: 3, delivered_orders_count: 2, returned_orders_count: 0, total_spent_amount: 354_000, risk: { tier: 'good' as const, rate: 100, delivered: 2, total: 2 } };
 
 export function orderSummary(o: Partial<OrderSummary> = {}): OrderSummary {
   return {
@@ -52,6 +52,7 @@ export function orderSummary(o: Partial<OrderSummary> = {}): OrderSummary {
     updated_at: new Date().toISOString(),
     shipment: null,
     return_status: 'none',
+    guard: null,
     ...o,
   };
 }

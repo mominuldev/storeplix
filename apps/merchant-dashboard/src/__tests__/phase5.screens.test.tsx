@@ -353,7 +353,8 @@ describe('Dashboard and customers', () => {
     const nav = await screen.findByRole('complementary', { name: 'Main navigation' }, SLOW);
     expect(within(nav).getByRole('link', { name: 'Create order' })).toBeInTheDocument();
     expect(within(nav).queryByText('Unfinished orders')).toBeNull();
-    expect(within(nav).queryByText('Fake order guard')).toBeNull();
+    // PHASE-8-8 §10: Fake order guard is real (shown with `fraud.manage`; owner has it).
+    expect(within(nav).getByRole('link', { name: 'Fake order guard' })).toHaveAttribute('href', '/orders/fraud-guard');
     // 5b-3/5b-4/5b-5: Returns, Shipments and Invoices & labels are real.
     expect(within(nav).getByRole('link', { name: 'Returns' })).toHaveAttribute('href', '/returns');
     expect(within(nav).getByRole('link', { name: 'Invoices & labels' })).toHaveAttribute('href', '/orders/print');

@@ -1,8 +1,10 @@
 import type { OrderEvent } from '@storeplix/types';
 import { orderStatusMeta, type TimelineEntry } from '@storeplix/ui';
-import { Ban, CheckCircle2, CreditCard, MessageSquare, Package, PencilLine, Printer, RotateCcw, ShoppingBag, Tag, Truck } from 'lucide-react';
+import type { GuardReason, RiskTier } from '@storeplix/types';
+import { Ban, CheckCircle2, CreditCard, MessageSquare, Package, PencilLine, Printer, RotateCcw, Shield, ShoppingBag, Tag, Truck } from 'lucide-react';
 import { formatBdt } from '../catalog/format';
 import { clock } from '../commerce/format';
+import { reasonText, tierLabel } from '../fraud/fraud';
 
 // Order detail 33:3676 Timeline: events newest first, with actor names.
 
@@ -52,9 +54,36 @@ export function eventToEntry(e: OrderEvent): TimelineEntry {
     }
     case 'return':
       return { ...base, icon: <RotateCcw />, tone: 'warning', title: e.body ?? 'Return updated', detail: typeof meta.return_number === 'string' ? meta.return_number : null };
+    case 'guard':
+      return guardEntry(e, base);
     case 'document':
       return { ...base, icon: <Printer />, tone: 'neutral', title: e.body ?? 'Printed', detail: actorName(e) };
     default:
       return { ...base, title: e.body ?? e.type };
   }
+}
+
+const TIERS: readonly string[] = ['good', 'careful', 'risky', 'new'];
+
+/**
+ * PHASE-8-8 §10.2 `guard` event ("Fraud check: Risky (58% delivered)"). `meta`: `decision`, `hold`, `tier`, `rate`,
+ * `reasons` (own-shop only — no courier names). A release (`decision` absent, `hold` null) reads "Hold released by …".
+ */
+function guardEntry(e: OrderEvent, base: { id: string; time: string }): TimelineEntry {
+  const meta = e.meta as Record<string, unknown>;
+  const tier = typeof meta.tier === 'string' && TIERS.includes(meta.tier) ? (meta.tier as RiskTier) : null;
+  const rate = typeof meta.rate === 'number' ? meta.rate : null;
+  const decision = typeof meta.decision === 'string' ? meta.decision : null;
+  const hold = typeof meta.hold === 'string' ? meta.hold : null;
+  const reasons = Array.isArray(meta.reasons) ? (meta.reasons as GuardReason[]).filter((r) => typeof r === 'string') : [];
+  if (meta.released === true || (decision === null && hold === null && e.actor.type === 'user')) {
+    return { ...base, icon: <Shield />, tone: 'neutral', title: `Hold released · ${actorName(e)}`, detail: e.body };
+  }
+  const title = tier ? `Fraud check: ${tierLabel(tier)}${rate !== null ? ` (${rate}% delivered)` : ''}` : 'Fraud check';
+  const action =
+    decision === 'hold' ? 'held for a call' : decision === 'advance' ? 'advance asked' : decision === 'none' ? 'passed' : decision === 'skipped' ? 'badge only' : null;
+  const why = reasons.map((r) => reasonText(r)).join(' · ');
+  const detail = e.body ?? ([`Your shop’s orders`, why || null, action].filter(Boolean).join(' · ') || null);
+  const tone = tier === 'risky' ? 'danger' : tier === 'careful' ? 'warning' : tier === 'good' ? 'success' : 'neutral';
+  return { ...base, icon: <Shield />, tone, title, detail };
 }

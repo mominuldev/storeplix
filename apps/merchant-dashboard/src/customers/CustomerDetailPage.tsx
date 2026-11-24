@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { CustomerDetail } from '@storeplix/types';
-import { Avatar, Badge, Button, buttonVariants, Dialog, KpiTile, OrderStatusBadge, TagInput } from '@storeplix/ui';
+import { Avatar, Badge, Button, buttonVariants, Dialog, KpiTile, OrderStatusBadge, RiskBadge, TagInput } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { CreditCard, Mail, MapPin, MessageCircle, Phone, RefreshCw, ShoppingCart, Trash2, Truck } from 'lucide-react';
 import { useState } from 'react';
@@ -17,10 +17,13 @@ import { ConflictDialog, LoadingState, Panel } from '../online-store/components/
 import { toast } from '../online-store/components/Toast';
 import { channelLabels, CustomerFormDialog } from './CustomerFormDialog';
 import { MarketingPanel } from './MarketingPanel';
+import { CustomerBlockCard } from '../fraud/CustomerBlockCard';
+import { can } from '../lib/permissions';
 
 // Figma Customer detail 64:16382 (Main 64:16384). Contract §9.1: Contact, Tags, Notes, WhatsApp + Edit; O A can
 // delete. Phase 5a: stat tiles (this shop only), Orders table (GET /orders?filter[customer_id]=), "Create order".
-// SMS, Block, Addresses, cross-shop delivery record (Q23), Risk and message composer are not built.
+// SMS, Addresses, cross-shop delivery record (Q23, 64:16955 hidden) and message composer are not built. PHASE-8-8 §10.3:
+// own-shop RiskBadge beside the name and the "Block this number" card 64:16887 (with `fraud.manage`).
 
 export function CustomerDetailPage() {
   const { customerId } = useParams();
@@ -93,7 +96,10 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
             </Link>{' '}
             / {customer.name}
           </nav>
-          <h1 className="truncate text-heading-24 text-text-primary">{customer.name}</h1>
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+            <h1 className="truncate text-heading-24 text-text-primary">{customer.name}</h1>
+            {customer.risk && <RiskBadge tier={customer.risk.tier} />}
+          </div>
           <p className="text-body text-text-secondary">{meta}</p>
           {customer.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -183,6 +189,8 @@ function CustomerView({ customer }: { customer: CustomerDetail }) {
           </Panel>
 
           <MarketingPanel customer={customer} />
+
+          {customer.phone && can.manageFraudGuard(scope.membership) && <CustomerBlockCard phone={customer.phone} />}
 
           <Panel title="Tags">
             <TagInput label="Customer tags" value={customer.tags} disabled={tags.isPending} onChange={(next) => tags.mutate(next)} placeholder="+ Add tag" variant="inline" />

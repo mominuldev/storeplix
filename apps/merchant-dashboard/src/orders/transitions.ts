@@ -33,7 +33,15 @@ function toastFor(status: OrderStatus): string {
   return status === 'confirmed' ? 'Confirmed.' : status === 'ready_to_ship' ? 'Marked packed.' : status === 'delivered' ? 'Delivered. Payment collected.' : 'Updated.';
 }
 
+export const HELD_MESSAGE = 'This order is held by the fake order guard. Release it first.';
+
 export function handleOrderError(e: unknown, reload: () => unknown) {
+  // PHASE-8-8 P88-2: confirm / pack / booking of a held order → 409 `order_held`.
+  if (isApiError(e) && e.code === 'order_held') {
+    void reload();
+    toast(HELD_MESSAGE, 'error');
+    return;
+  }
   if (isApiError(e) && e.status === 409 && (e.code === 'invalid_state_transition' || e.code === 'revision_conflict')) {
     void reload();
     toast(CHANGED_MESSAGE, 'error');

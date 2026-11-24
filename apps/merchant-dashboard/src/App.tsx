@@ -85,6 +85,10 @@ const RolePage = lazy(() => import('./staff/RolePage'));
 const ReportsPage = lazy(() => import('./reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 // Phase 8.7 expenses (code-split).
 const ExpensesPage = lazy(() => import('./expenses/ExpensesPage'));
+// Phase 8.8a fake-order guard (code-split).
+const FraudGuardPage = lazy(() => import('./fraud/FraudGuardPage'));
+const BlockedNumbersPage = lazy(() => import('./fraud/BlockedNumbersPage'));
+const DecisionLogPage = lazy(() => import('./fraud/DecisionLogPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -94,7 +98,7 @@ const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => 
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const reportRoutes = ['/reports'];
-const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
+const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/orders/fraud-guard', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 /** `/marketing`: the overview for `marketing.manage` (PHASE-8-5 §8), Coupons for everyone else. */
@@ -221,6 +225,9 @@ export function AppRoutes() {
               <Route path="/returns/:returnId?" element={gated(can.viewOrders, <ReturnsPage />)} />
               <Route path="/shipments" element={gated(can.seeShipments, <ShipmentsPage />)} />
               <Route path="/shipments/:shipmentId" element={gated(can.seeShipments, <ShipmentDetailPage />)} />
+              <Route path="/orders/fraud-guard" element={gated(can.manageFraudGuard, <FraudGuardPage />)} />
+              <Route path="/orders/fraud-guard/blocked" element={gated(can.manageFraudGuard, <BlockedNumbersPage />)} />
+              <Route path="/orders/fraud-guard/log" element={gated(can.manageFraudGuard, <DecisionLogPage />)} />
               <Route path="/orders/:orderId" element={gated(can.seeOrders, <OrderDetailPage />)} />
               <Route path="/orders/:orderId/edit" element={gated(can.processOrders, <OrderEditPage />)} />
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
