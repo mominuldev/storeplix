@@ -180,7 +180,8 @@ everywhere: Loading `148:35302`, Error `148:35336`, No results `148:35352`.
 | Onboarding 07 Get paid `/onboarding/payments` | `52:564` | **Built** (5b-2): "Collect delivery charge in advance" toggle, bKash / SSLCommerz Connect → `32:3770`, checkout preview | EPS card hidden |
 | Dashboard `/` | `10:600`; Needs you today `10:958`, Orders waiting `10:1115` | **Built** (5b): "Awaiting payment", "N unpaid online orders", "Book N parcels" (`to_book`), "N delivery problems" (`shipments.problems`) | Courier performance `10:1061`, Money flow `10:1085` (Phase 7.4) |
 | Mobile (page 2:5) | Orders `31:4886`, Order detail `32:309`, OrderCard `30:3171` | **Built**: cards stacked; Shipments / Returns / Edit items responsive at 390 px (no dedicated mobile frames) | — |
-| Deferred, unchanged | Unfinished orders `39:9461`, Fake order guard `39:11233`, Developer API keys/webhooks `144:40725` | **Deferred** (Phase 8) | |
+| Deferred, unchanged | Unfinished orders `39:9461`, Fake order guard `39:11233` | **Deferred** (Phase 8) | |
+| Developer API keys/webhooks | `144:40725` | Moved to Phase 8.4 (see below) | |
 
 ### Storefront (theme "Gallery")
 | Route | Frame(s) | Status |
@@ -224,3 +225,15 @@ The section has three 1440-wide desktop frames and **no** mobile frames (Q125); 
 | Staff `/staff` | `60:15363` (Main `60:15365`) | Build: Team table with role names, **Roles** card, editable **Roles & permissions** matrix (rows = permission keys by group). Not built: Online now, Actions today, Staff sign-in security, Add seats |
 | Invite staff modal | `90:26504` (modal `90:26879`) | Build role radio list (Manager, Staff, custom roles). Not built: phone/SMS invite (Q121), Warehouse access (Q119), "Permissions for this person" (Q120) |
 | Role detail / new role `/staff/roles/:id`, `/staff/roles/new` | `90:26913` (Main `90:26915`) | Build: role details, People with this role + Assign, permission cards with toggles, Sensitive block, Duplicate role, Save role, Unsaved changes bar; + Delete role (composed). Not built: Warehouse access (Q119), "Change price on an order" and "Delete orders" rows (Q115) |
+
+## Phase 8.4 — developer API keys & webhooks (page 2:4, section `144:40725`; PHASE-8-4-CONTRACT §7)
+One 1440-wide desktop frame and **no** mobile frames (Q137: cards stack below `lg`, tables scroll inside their card);
+states from `148:34032`. Figma prefixes `gs_live_` / `gs_test_` are the old brand: keys are `sp_live_` only (Q127).
+Status: **In progress** (8.4 build; defaults Q126–Q137 accepted 2026-11-24).
+
+| Screen | Frame | 8.4 |
+|---|---|---|
+| Developer `/integrations/developer` | `144:40726` | Build: header "Developer · API & webhooks" + "API docs" (hidden without `DEVELOPER_DOCS_URL`) + "+ Create API key"; plan note `144:41323` ("Growth plan" instead of Figma "Pro plan", Q126; trial variant); API keys card (name/created by, masked key, scope tags, last used, Rename/Revoke); Webhooks card (endpoint + last delivery or "Failing since", event tags, Success · 7 days pill, Edit / Send test event / Disable / Delete; "Events you can send" footer); Signing secret card (reveal, copy, rotate with 24 h overlap); Recent deliveries (last 5) + Log drawer with filters, detail and Resend, "Resend failed (n)"; Build with Storeplix card (API reference, Rate limits). Not built: test-mode keys (Q127), Postman collection row (Q134), docs links when no docs URL is configured |
+| Create API key modal (composed) | — (uses `144:40726` tags and form tokens) | Build: name, scope checkboxes grouped read/write (implied read auto-checked, non-grantable disabled with tooltip), Include costs (only with `costs.view`); success step shows the plain key once with Copy + "I've stored it" |
+| Add / edit endpoint modal (composed) | — | Build: URL, events checklist with Select all, description |
+| Integrations list banner | `32:5329` | Build: "Developer · API & webhooks" card linking to the page, hidden without `developers.manage` |

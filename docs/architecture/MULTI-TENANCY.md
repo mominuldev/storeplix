@@ -237,6 +237,7 @@ DEFINER` function owned by `storeplix_owner` (`SET search_path = public, pg_temp
 | `sp_store_slug_taken(p_slug text)` | `boolean` | `PreTenantLookup::storeSlugTaken` (global slug uniqueness, B5; a `23505` on `stores.slug` maps to 422) |
 | `sp_payment_owner(p_payment text)` | `(tenant_id, store_id)` | `IntegrationLookup::paymentOwner` (signed payment-return URL, B13) |
 | `sp_route_key_owner(p_provider text, p_key text)` | `(tenant_id, store_id, account_id)` from `payment_gateway_accounts` **or** `courier_accounts`; provider must match the key's account | `IntegrationLookup::routeKeyOwner` (webhooks `/webhooks/{provider}/{route_key}`, B12). Created in `000200` (gateways) and replaced in `000700` (gateways + couriers) |
+| `sp_api_key_owner(p_hash text)` | `(tenant_id, key_id)` for a **non-revoked** `api_keys` row whose `key_hash` (sha256 hex of the plain key) matches | `apikey` middleware (Phase 8.4 external API `/external/*`, PHASE-8-4 P84-3; ADR 0018). Created in `2026_12_01_000100`. The middleware checks the key format first (`^sp_live_[A-Za-z0-9]{40}$`), then sets `TenantContext` with role kind `api_key` (permission set = the key's scopes' backing permissions) and the RLS GUCs |
 
 `IntegrationLookup` validates the input shape first (ULID / 32 base62 characters) and returns `null` otherwise.
 `DevShipmentLookup::shipmentOwner` is a **testing-only** pre-tenant lookup for `POST /dev/shipments/{id}/advance`: it

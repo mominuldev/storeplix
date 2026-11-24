@@ -1,7 +1,6 @@
 # Phase 8.4 contract: Developer API keys + outbound webhooks (binding for API, WEB, QA)
 
-Status: **Draft for PO review, 2026-11-24** (proposed defaults Q126–Q137; the build starts on these defaults and
-any PO change amends this file). Branch `feat/phase-8-4-developer-api` (from `main` @ d60997c, Phase 8.3 merged).
+Status: **Accepted, 2026-11-24 (PO accepted the proposed defaults for Q126–Q137)**. Branch `feat/phase-8-4-developer-api` (from `main` @ d60997c, Phase 8.3 merged).
 Roadmap task **8.4** "Developer API keys + outbound webhooks (Figma 144:40725)"; AC: **"HMAC signatures; retries"**.
 Tasks 8.5–8.9 are **not** in this contract.
 
@@ -68,7 +67,7 @@ until now — amends PHASE-7 §2.1 row "api_webhooks: not enforced").
 | P84-13 | Plan downgrade: nothing deleted. Without `api_webhooks`: external API → 402 `feature_not_in_plan`; no new deliveries are created (events dropped, not queued); pending retries are marked `failed` with `error = plan`; management endpoints readable, writes → 402 | Phase 7 downgrade rule |
 | P84-14 | Limits: ≤ 10 active (non-revoked) keys per tenant, ≤ 5 endpoints per store → 422 `limit_reached` | Abuse bound |
 
-### 1.1 Product-owner questions (OPEN-QUESTIONS Q126–Q137; proposed defaults)
+### 1.1 Product-owner questions (OPEN-QUESTIONS Q126–Q137; defaults accepted by the PO 2026-11-24)
 
 | Q | Question | Proposed default |
 |---|---|---|
@@ -114,7 +113,7 @@ after tenant (other tenant's / store's ids → 404). **No** session, no CSRF, no
 `invalid_api_key`; sha256 → `sp_api_key_owner()`; unknown/revoked → 401 `invalid_api_key` (same body); tenant
 suspended → 403 `tenant_suspended`; plan lacks `api_webhooks` → 402 `feature_not_in_plan` (`upgrade_plan: growth`).
 Sets `TenantContext` with role kind `api_key`, permission set = scopes' backing permissions, `actor` = the key.
-`last_used_at` updated (throttled 1/min, no `updated_at` bump). Response header `X-Request-Id` as elsewhere.
+`last_used_at` updated (throttled 1/min, no `updated_at` bump). Successful responses carry `RateLimit-Limit`/`-Remaining`/`-Reset`.
 
 Rate limiter `external-api`: 120/min per key id (`RateLimit-*` + `Retry-After` on 429, code `rate_limited`).
 
@@ -185,7 +184,7 @@ per P84-9; `response_status`, `response_body_excerpt`, `error_code` (`timeout`, 
 `url_not_allowed`, `http_error`, `plan`, `endpoint_disabled`), `duration_ms`, `last_attempt_at`. Disabled or deleted
 endpoint → pending deliveries `failed` with `endpoint_disabled`. Resend creates a **new delivery row** with the stored
 payload unchanged (same event `id` in the body, new delivery id in `X-Storeplix-Delivery`); no audit row.
-"Resend failed (n)" = failed deliveries of the last 24 h for the store, max 100 per call.
+"Resend failed (n)" = failed deliveries of the last 24 h for the store that no later delivery of the same event to the same endpoint has superseded, max 100 per call.
 Scheduler: `webhooks:dispatch-due` every minute (safety net for retries), `webhooks:prune-deliveries` daily (30 d),
 `webhooks:auto-disable` hourly (P84-11).
 
@@ -254,9 +253,9 @@ Keys routes → `routes/developer-keys.php` (API-KEYS). Webhook routes → `rout
   `response_body_excerpt`.
 
 ### 6.3 Error codes (API-CONVENTIONS §3 gains them)
-`invalid_api_key` (401), `api_key_scope_missing` (403, `details.required_scope`), `scope_not_grantable` (422,
+`invalid_api_key` (401), `api_key_scope_missing` (403, `details.required_scope`: array of scope keys, any of which suffices), `scope_not_grantable` (422,
 `details.scopes`), `limit_reached` (422, exists? reuse if present else new), `webhook_url_not_allowed` (422),
-`feature_not_in_plan` (402, exists).
+`webhook_endpoint_disabled` (409, test event on a disabled endpoint), `feature_not_in_plan` (402, exists).
 
 ## 7. Merchant dashboard (owner WEB) — Figma file `2W1wMKN79hhcr1czQS63oN`, frame `144:40726`
 

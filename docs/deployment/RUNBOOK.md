@@ -24,6 +24,7 @@ One API image, several process types. Every process gets the same app env (§4) 
 | `queue-documents` | `php artisan queue:work redis --queue=documents --tries=2 --timeout=150 --sleep=1 --memory=512` | 1 per Gotenberg | Invoice/label rendering (`RenderDocument`: `$timeout` 120 s, `$tries` 2). Needs Gotenberg (§5) |
 | `queue-domains` | `php artisan queue:work redis --queue=domains --tries=3 --timeout=90 --sleep=1` | 1 | Custom-domain DNS checks and Cloudflare custom-hostname calls (`CheckDomainJob`, `DeleteProviderHostnameJob`; §9). Without it a domain only moves on "Check now" |
 | `queue-webhooks` | `php artisan queue:work redis --queue=webhooks --tries=5 --backoff=10,60,300 --timeout=60 --sleep=1` | 1+ | SSLCommerz IPN verification, bKash notifications, courier webhook events (each re-queried with the provider before any effect) |
+| `queue-webhooks-out` | `php artisan queue:work redis --queue=webhooks-out --tries=1 --timeout=40 --sleep=1` | 1+ | Phase 8.4 outbound merchant webhooks (`DeliverWebhook`, one attempt each; retries are scheduled on the row by `webhooks:dispatch-due`). Without it deliveries stay `pending` forever |
 | `scheduler` | `php artisan schedule:work` (or cron `* * * * * php artisan schedule:run`) | **exactly 1** | §6. DB role `storeplix_admin` for discovery |
 | `gotenberg` | `gotenberg --api-enable-basic-auth --api-timeout=120s` | 1 per API node pool | Internal only (§5) |
 | migrate job | `php artisan migrate --force --database=pgsql_owner` | one-off per deploy | DB role `storeplix_owner` (§3) |
@@ -32,7 +33,8 @@ One API image, several process types. Every process gets the same app env (§4) 
   running bulk job to a second worker.
 - ADR 0010 mentions Horizon. If Horizon replaces plain `queue:work`, keep one supervisor per row above with the same
   queues, tries, backoff, timeout and memory.
-- `composer dev` mirrors these workers locally but has no `webhooks` worker; the compose stack has all of them.
+- `composer dev` mirrors these workers locally but has no `webhooks` worker (it does run `webhooks-out`); the compose stack has all of them.
+- Phase 8.4: `WEBHOOKS_OUT_FAKE` and `WEBHOOKS_OUT_ALLOW_HTTP` must be `false`/unset outside local and CI (the API refuses to boot with either in production).
 
 ---
 

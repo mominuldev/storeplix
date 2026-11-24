@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.11.1
+  version: 1.12.0
   description: |
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
@@ -47,6 +47,18 @@ info:
     days). AdminTenantSummary gains last_active_at and metrics; GET /admin/tenants gains sort values -mrr, mrr, -gmv_30d,
     -orders_30d, -last_active_at, last_active_at and meta.metrics_as_of. PlatformPermission gains view_analytics. No new
     error codes. Testing-only POST /dev/analytics/aggregate is not part of this spec.
+    1.12.0 (2026-11-24, Phase 8.4, PHASE-8-4-CONTRACT.md, ADR 0018): additive only. Developer API keys and outbound
+    webhooks. New tags developers and external. Merchant (developers.manage; writes need the api_webhooks plan feature):
+    GET|POST /api-keys, PATCH|DELETE /api-keys/{key}, GET /api-scopes, GET /webhook-event-types,
+    GET|POST /stores/{store}/webhook-endpoints, PATCH|DELETE /stores/{store}/webhook-endpoints/{endpoint},
+    POST .../{endpoint}/test, GET /stores/{store}/webhook-secret, POST .../webhook-secret/reveal|rotate,
+    GET /stores/{store}/webhook-deliveries[/{delivery}], POST .../{delivery}/resend, POST .../webhook-deliveries/resend-failed.
+    External API under /external/* with the new ApiKeyAuth scheme (`Authorization: Bearer sp_live_…`, scope per route
+    in x-required-scope, limiter external-api 120/min per key): GET /external/me and orders, products, categories,
+    inventory, customers reads plus order status, product create/update and stock adjustment writes, with the same
+    response shapes as the merchant API. PermissionKey gains developers.manage; AuditActorType gains api_key. New error
+    codes invalid_api_key (401), api_key_scope_missing (403), scope_not_grantable, limit_reached, webhook_url_not_allowed
+    (422). Testing-only GET /dev/webhook-sink is not part of this spec.
     1.11.1 (2026-11-24, Phase 8.3 security fixes): DELETE /roles/{role} requires `revision` (stale → 409
     revision_conflict); imports also need the keys of what they write (products.edit + inventory.adjust, costs.view
     when a row sets cost; customers.edit) → 403 forbidden; product exports fill cost_price only for a requester with
@@ -105,6 +117,10 @@ tags:
   description: 'Phase 7: sales, profit and delivery reports (PHASE-7 §6.3–6.4)'
 - name: admin
   description: 'Phase 8.1: super admin for platform staff (PHASE-8-1 §6); session `surface: admin` only'
+- name: developers
+  description: 'Phase 8.4: API keys, webhook endpoints, signing secret and delivery log (PHASE-8-4 §6)'
+- name: external
+  description: 'Phase 8.4: external API for merchant integrations, authenticated by an API key (PHASE-8-4 §3)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -1703,7 +1719,8 @@ paths:
           - user
           - system
           - platform_user
-        description: Phase 8.1 (P8-QA-1). `platform_user` = Store Plix support actions (actor shown without id/name).
+          - api_key
+        description: Phase 8.1 (P8-QA-1). Phase 8.4 `api_key` = external API call (actor.id = key id). `platform_user` = Store Plix support actions (actor shown without id/name).
       - in: query
         name: filter[subject_type]
         schema:
@@ -11588,6 +11605,1485 @@ paths:
           description: Ended and signed out
         '401':
           $ref: '#/components/responses/Unauthenticated'
+  /api-keys:
+    get:
+      tags:
+      - developers
+      summary: List API keys
+      operationId: listApiKeys
+      description: Needs developers.manage (PHASE-8-4 §6.1). Active keys first (newest first), then keys revoked in the last
+        90 days. Never contains the plain key.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKey'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+    post:
+      tags:
+      - developers
+      summary: Create API key
+      operationId: createApiKey
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Scopes are normalized (implied reads added, de-duplicated). Every scope must be grantable by the actor (P84-5) → 422
+        `scope_not_grantable` (details.scopes). At most 10 active keys → 422 `limit_reached`. `plain_key` is returned only in
+        this response. Audited as api_key.created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyInput'
+      responses:
+        '201':
+          description: Created; store `plain_key` now, it is never shown again
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApiKeyCreated'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '422':
+          description: '`validation_failed` (unknown scope, name), `scope_not_grantable` (details.scopes) or `limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api-keys/{key}:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - in: path
+      name: key
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: api_keys.id; another tenant's → 404.
+    patch:
+      tags:
+      - developers
+      summary: Rename API key
+      operationId: renameApiKey
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Rename only (scopes are immutable; create a new key instead). Audited as api_key.renamed.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApiKeyInput'
+      responses:
+        '200':
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApiKey'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - developers
+      summary: Revoke API key
+      operationId: revokeApiKey
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Idempotent; the row is kept with status revoked and the key stops working at once (401 invalid_api_key). Audited as
+        api_key.revoked.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Revoked key
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApiKey'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api-scopes:
+    get:
+      tags:
+      - developers
+      summary: API scope catalogue
+      operationId: listApiScopes
+      description: Needs developers.manage (PHASE-8-4 §6.1). The 7 scopes in UI order with `grantable` evaluated for the signed-in
+        actor.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Scopes
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiScopeInfo'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /webhook-event-types:
+    get:
+      tags:
+      - developers
+      summary: Webhook event catalogue
+      operationId: listWebhookEventTypes
+      description: Needs developers.manage (PHASE-8-4 §6.1). The 10 subscribable events in UI order (`ping` is test-only and
+        not listed).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Event types
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookEventTypeInfo'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+  /stores/{store}/webhook-endpoints:
+    get:
+      tags:
+      - developers
+      summary: List webhook endpoints
+      operationId: listWebhookEndpoints
+      description: Needs developers.manage (PHASE-8-4 §6.1). Oldest first, each with 7-day success rate and last delivery.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookEndpoint'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - developers
+      summary: Add webhook endpoint
+      operationId: createWebhookEndpoint
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        URL must be https (no credentials, port 443 or 1024–65535) and resolve only to public addresses → 422 `webhook_url_not_allowed`.
+        At most 5 per store → 422 `limit_reached`. Creates the store signing secret lazily. Audited as webhook_endpoint.created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookEndpointInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookEndpoint'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed`, `webhook_url_not_allowed` or `limit_reached`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/webhook-endpoints/{endpoint}:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - $ref: '#/components/parameters/StorePath'
+    - in: path
+      name: endpoint
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: webhook_endpoints.id of this store; else 404.
+    patch:
+      tags:
+      - developers
+      summary: Update webhook endpoint
+      operationId: updateWebhookEndpoint
+      description: 'Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Partial. `is_active: false` disables (disabled_reason manual; pending deliveries fail with endpoint_disabled); `true`
+        re-enables and clears failing_since. Audited as webhook_endpoint.updated.'
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWebhookEndpointInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookEndpoint'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed` or `webhook_url_not_allowed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+      - developers
+      summary: Delete webhook endpoint
+      operationId: deleteWebhookEndpoint
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Hard delete; its deliveries are deleted with it. Audited as webhook_endpoint.deleted.
+      security:
+      - sessionCookie: []
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/webhook-endpoints/{endpoint}/test:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - $ref: '#/components/parameters/StorePath'
+    - in: path
+      name: endpoint
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: webhook_endpoints.id of this store; else 404.
+    post:
+      tags:
+      - developers
+      summary: Send test event
+      operationId: testWebhookEndpoint
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Queues a `ping` delivery (event type `ping`, data.object = {}) to this endpoint now; it follows the normal retry schedule.
+      security:
+      - sessionCookie: []
+      responses:
+        '202':
+          description: Queued delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookDelivery'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`webhook_endpoint_disabled`: the endpoint is disabled (manually or after 72 h of failures); enable it first'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/webhook-secret:
+    get:
+      tags:
+      - developers
+      summary: Signing secret (masked)
+      operationId: getWebhookSecret
+      description: Needs developers.manage (PHASE-8-4 §6.1). One secret per store; created on first read when missing.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Secret metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookSecret'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/webhook-secret/reveal:
+    post:
+      tags:
+      - developers
+      summary: Reveal signing secret
+      operationId: revealWebhookSecret
+      description: Needs developers.manage (PHASE-8-4 §6.1). Returns the current secret. Audited as webhook_secret.revealed;
+        throttled 10/min per user (429). Readable on every plan (it is not a write).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Secret
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookSecretRevealed'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/webhook-secret/rotate:
+    post:
+      tags:
+      - developers
+      summary: Rotate signing secret
+      operationId: rotateWebhookSecret
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Generates a new secret (returned once). The previous secret keeps signing (second `v1=`) until previous_expires_at (24
+        h). Audited as webhook_secret.rotated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: New secret
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookSecretRevealed'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/webhook-deliveries:
+    get:
+      tags:
+      - developers
+      summary: List webhook deliveries
+      operationId: listWebhookDeliveries
+      description: Needs developers.manage (PHASE-8-4 §6.1). Newest first; cursor pages of 25; without payload. Kept 30 days.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[endpoint_id]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/WebhookDeliveryStatus'
+      - in: query
+        name: filter[event_type]
+        schema:
+          $ref: '#/components/schemas/WebhookDeliveryEventType'
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookDelivery'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/webhook-deliveries/resend-failed:
+    post:
+      tags:
+      - developers
+      summary: Resend failed deliveries
+      operationId: resendFailedWebhookDeliveries
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        Creates a new delivery for each failed delivery of the last 24 h (max 100 per call). Not audited.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookResendFailedResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/webhook-deliveries/{delivery}:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - $ref: '#/components/parameters/StorePath'
+    - in: path
+      name: delivery
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: webhook_deliveries.id of this store; else 404.
+    get:
+      tags:
+      - developers
+      summary: Get webhook delivery
+      operationId: getWebhookDelivery
+      description: Needs developers.manage (PHASE-8-4 §6.1). With payload, request headers (signature redacted) and the first
+        1 KB of the response.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookDeliveryDetail'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /stores/{store}/webhook-deliveries/{delivery}/resend:
+    parameters:
+    - $ref: '#/components/parameters/TenantId'
+    - $ref: '#/components/parameters/StorePath'
+    - in: path
+      name: delivery
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: webhook_deliveries.id of this store; else 404.
+    post:
+      tags:
+      - developers
+      summary: Resend delivery
+      operationId: resendWebhookDelivery
+      description: Needs developers.manage (PHASE-8-4 §6.1). Writes need the api_webhooks plan feature (Growth) → 402 otherwise.
+        A new delivery row with the stored payload unchanged (same event id, new X-Storeplix-Delivery). Not audited.
+      security:
+      - sessionCookie: []
+      responses:
+        '202':
+          description: Queued delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookDelivery'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth): the plan lacks api_webhooks'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /external/me:
+    get:
+      tags:
+      - external
+      summary: Key identity
+      operationId: externalMe
+      description: Any valid key. Returns the key, its scopes, tenant and store. Use it to discover `{store}`.
+      security:
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Identity
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApiKeyIdentity'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/orders:
+    get:
+      tags:
+      - external
+      summary: List orders
+      operationId: externalListOrders
+      description: Scope `orders:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: orders:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of OrderStatus
+      - in: query
+        name: filter[updated_since]
+        schema:
+          type: string
+          format: date-time
+        description: Only rows updated at or after this instant.
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: '#/components/schemas/OrderListMeta'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/orders/{order}:
+    get:
+      tags:
+      - external
+      summary: Get order
+      operationId: externalGetOrder
+      description: Scope `orders:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: orders:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/OrderPath'
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/orders/{order}/status:
+    post:
+      tags:
+      - external
+      summary: Change order status
+      operationId: externalSetOrderStatus
+      description: 'Scope `orders:write`. Applies one transition the merchant order state machine allows (no refunds; cancelling
+        a paid order that needs a refund → 409). Recorded with actor api_key ("API: <key name>"). Same shape as the merchant
+        API (P84-4); another tenant''s or store''s id → 404. Costs are omitted unless the key has include_costs.'
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: orders:write
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/OrderPath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalOrderStatusInput'
+      responses:
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/products:
+    get:
+      tags:
+      - external
+      summary: List products
+      operationId: externalListProducts
+      description: Scope `products:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: products:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: filter[updated_since]
+        schema:
+          type: string
+          format: date-time
+        description: Only rows updated at or after this instant.
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Products
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductSummary'
+                  meta:
+                    $ref: '#/components/schemas/ProductListMeta'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - external
+      summary: Create product
+      operationId: externalCreateProduct
+      description: Scope `products:write`. Same validation as the merchant create; the plan product limit applies (402 plan_limit_reached).
+        Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: products:write
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/products/{product}:
+    get:
+      tags:
+      - external
+      summary: Get product
+      operationId: externalGetProduct
+      description: Scope `products:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: products:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ProductPath'
+      responses:
+        '200':
+          description: Product
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - external
+      summary: Update product
+      operationId: externalUpdateProduct
+      description: Scope `products:write`. Same validation as the merchant update (no delete). Same shape as the merchant API
+        (P84-4); another tenant's or store's id → 404. Costs are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: products:write
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/ProductPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/categories:
+    get:
+      tags:
+      - external
+      summary: List categories
+      operationId: externalListCategories
+      description: Scope `products:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: products:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/inventory:
+    get:
+      tags:
+      - external
+      summary: List stock levels
+      operationId: externalListInventory
+      description: Scope `inventory:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: inventory:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[sku]
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: filter[updated_since]
+        schema:
+          type: string
+          format: date-time
+        description: Only rows updated at or after this instant.
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Stock levels
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+                  meta:
+                    $ref: '#/components/schemas/InventoryListMeta'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/inventory/adjustments:
+    post:
+      tags:
+      - external
+      summary: Adjust stock
+      operationId: externalAdjustStock
+      description: Scope `inventory:write`. Same rules as the merchant adjustment (reason required, never negative, one ledger
+        row per variant with actor api_key). Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: inventory:write
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentInput'
+      responses:
+        '200':
+          description: Adjusted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StockAdjustmentResult'
+        '400':
+          description: '`idempotency_key_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`stock_changed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`insufficient_stock` or `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/customers:
+    get:
+      tags:
+      - external
+      summary: List customers
+      operationId: externalListCustomers
+      description: Scope `customers:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: customers:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+        description: Phone or email search
+      - in: query
+        name: filter[updated_since]
+        schema:
+          type: string
+          format: date-time
+        description: Only rows updated at or after this instant.
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Customers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  meta:
+                    $ref: '#/components/schemas/CustomerListMeta'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /external/stores/{store}/customers/{customer}:
+    get:
+      tags:
+      - external
+      summary: Get customer
+      operationId: externalGetCustomer
+      description: Scope `customers:read`. Same shape as the merchant API (P84-4); another tenant's or store's id → 404. Costs
+        are omitted unless the key has include_costs.
+      security:
+      - ApiKeyAuth: []
+      x-required-scope: customers:read
+      parameters:
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/CustomerPath'
+      responses:
+        '200':
+          description: Customer
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '402':
+          description: '`feature_not_in_plan` (details.upgrade_plan = growth)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: '`tenant_suspended`, or `api_key_scope_missing` (details.required_scope: array of scope keys)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
     AdminTenantPath:
@@ -11963,6 +13459,12 @@ components:
       in: header
       name: X-Storefront-Key
       description: Shared secret STOREFRONT_API_KEY (server-to-server only).
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sp_live_<40 base62>
+      description: 'Phase 8.4 developer API key (`Authorization: Bearer sp_live_…`), only for /external/*. 120 requests/min per
+        key (limiter external-api). Merchant routes never accept it.'
   responses:
     AdminForbidden:
       description: Not an admin session (`surface`), not active staff, IP not allowed, or the role lacks the platform permission
@@ -12067,6 +13569,12 @@ components:
             $ref: '#/components/schemas/AuthTokenResponse'
     InvalidOtp:
       description: Wrong, expired, consumed or over-attempted code, or unknown phone (code `invalid_otp`, no further detail)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InvalidApiKey:
+      description: Missing, malformed, unknown or revoked API key (code `invalid_api_key`; identical body in every case)
       content:
         application/json:
           schema:
@@ -13113,7 +14621,8 @@ components:
           type: boolean
     PermissionKey:
       type: string
-      description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable.
+      description: Code-defined permission (PHASE-8-3 §2.1). billing.manage is owner-only and never grantable. Phase 8.4
+        adds developers.manage (owner and admin; grantable to custom roles).
       enum:
       - orders.view
       - orders.process
@@ -13134,6 +14643,7 @@ components:
       - settings.manage
       - integrations.manage
       - domains.manage
+      - developers.manage
       - staff.manage
       - audit.view
       - billing.view
@@ -14193,6 +15703,7 @@ components:
                 - user
                 - system
                 - platform_user
+                - api_key
               id:
                 oneOf:
                 - $ref: '#/components/schemas/Ulid'
@@ -15897,6 +17408,13 @@ components:
         actor:
           oneOf:
           - $ref: '#/components/schemas/UserRef'
+          - type: object
+            description: Phase 8.4 — written through the external API with an API key.
+            required: [type, id, name]
+            properties:
+              type: {type: string, enum: [api_key]}
+              id: {$ref: '#/components/schemas/Ulid'}
+              name: {type: string, description: '"API: <key name>"'}
           - type: 'null'
         created_at:
           type: string
@@ -18535,10 +20053,17 @@ components:
               - user
               - customer
               - system
+              - api_key
+              description: Phase 8.4 `api_key` = written through the external API; then `user` is null and `id`/`name` are set.
             user:
               oneOf:
               - $ref: '#/components/schemas/UserRef'
               - type: 'null'
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+              description: 'Only for api_key: "API: <key name>"'
         body:
           type:
           - string
@@ -22230,6 +23755,7 @@ components:
       - user
       - system
       - platform_user
+      - api_key
     SuspensionReasonCode:
       type: string
       enum:
@@ -23994,3 +25520,544 @@ components:
           const: suspended
       description: 'Phase 8.1 (P8-12): the whole config for a suspended shop. The storefront renders the 503 "temporarily unavailable"
         page.'
+    ApiScope:
+      type: string
+      enum:
+      - orders:read
+      - orders:write
+      - products:read
+      - products:write
+      - inventory:read
+      - inventory:write
+      - customers:read
+      description: PHASE-8-4 §2.2, UI order. A write scope implies its read scope.
+    ApiScopeInfo:
+      type: object
+      required:
+      - key
+      - label
+      - group
+      - backing_permission
+      - implies
+      - grantable
+      properties:
+        key:
+          $ref: '#/components/schemas/ApiScope'
+        label:
+          type: string
+        group:
+          type: string
+          enum:
+          - orders
+          - products
+          - inventory
+          - customers
+        backing_permission:
+          oneOf:
+          - $ref: '#/components/schemas/PermissionKey'
+          - type: 'null'
+          description: null = base access (any member)
+        implies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        grantable:
+          type: boolean
+          description: The signed-in actor holds the backing permission (P84-5)
+    ApiKey:
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - last_four
+      - masked
+      - scopes
+      - include_costs
+      - status
+      - created_at
+      - created_by
+      - last_used_at
+      - revoked_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          maxLength: 60
+        prefix:
+          type: string
+          maxLength: 12
+          description: First 12 chars (`sp_live_` + 4)
+        last_four:
+          type: string
+          minLength: 4
+          maxLength: 4
+        masked:
+          type: string
+          examples:
+          - sp_live_••••7f2a
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        include_costs:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - active
+          - revoked
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+          - type: 'null'
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Updated at most once per minute
+        revoked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ApiKeyCreated:
+      allOf:
+      - $ref: '#/components/schemas/ApiKey'
+      - type: object
+        required:
+        - plain_key
+        properties:
+          plain_key:
+            type: string
+            pattern: ^sp_live_[A-Za-z0-9]{40}$
+            description: Shown once; only its sha256 is stored
+    CreateApiKeyInput:
+      type: object
+      required:
+      - name
+      - scopes
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        include_costs:
+          type: boolean
+          default: false
+          description: Requires costs.view
+    UpdateApiKeyInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+    ApiKeyIdentity:
+      type: object
+      required:
+      - id
+      - name
+      - scopes
+      - tenant_id
+      - store
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        tenant_id:
+          $ref: '#/components/schemas/Ulid'
+        store:
+          type: object
+          required:
+          - id
+          - name
+          - currency
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            currency:
+              type: string
+              minLength: 3
+              maxLength: 3
+    ExternalOrderStatusInput:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+          description: Target status; must be a transition the merchant state machine allows without a refund
+    WebhookEventType:
+      type: string
+      enum:
+      - order.created
+      - order.confirmed
+      - order.cancelled
+      - order.paid
+      - shipment.updated
+      - shipment.delivered
+      - return.received
+      - product.updated
+      - stock.low
+      - customer.created
+      description: PHASE-8-4 §4.1, UI order
+    WebhookDeliveryEventType:
+      type: string
+      enum:
+      - order.created
+      - order.confirmed
+      - order.cancelled
+      - order.paid
+      - shipment.updated
+      - shipment.delivered
+      - return.received
+      - product.updated
+      - stock.low
+      - customer.created
+      - ping
+      description: WebhookEventType plus `ping` (Send test event only)
+    WebhookEventTypeInfo:
+      type: object
+      required:
+      - key
+      - label
+      - description
+      properties:
+        key:
+          $ref: '#/components/schemas/WebhookEventType'
+        label:
+          type: string
+        description:
+          type: string
+    WebhookEndpoint:
+      type: object
+      required:
+      - id
+      - url
+      - description
+      - events
+      - is_active
+      - disabled_reason
+      - failing_since
+      - last_delivery_at
+      - last_status
+      - success_rate_7d
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+        is_active:
+          type: boolean
+        disabled_reason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - manual
+          - failing
+          - null
+        failing_since:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_delivery_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_status:
+          type:
+          - integer
+          - 'null'
+          description: HTTP status of the last attempt
+        success_rate_7d:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 100
+          description: Percent, one decimal; null without deliveries in 7 days
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateWebhookEndpointInput:
+      type: object
+      required:
+      - url
+      - events
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+    UpdateWebhookEndpointInput:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        is_active:
+          type: boolean
+    WebhookSecret:
+      type: object
+      required:
+      - last_four
+      - masked
+      - rotated_at
+      - previous_expires_at
+      properties:
+        last_four:
+          type: string
+          minLength: 4
+          maxLength: 4
+        masked:
+          type: string
+          examples:
+          - whsec_••••3kQ9
+        rotated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        previous_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: The previous secret also signs until then (24 h after rotation)
+    WebhookSecretRevealed:
+      allOf:
+      - $ref: '#/components/schemas/WebhookSecret'
+      - type: object
+        required:
+        - secret
+        properties:
+          secret:
+            type: string
+            pattern: ^whsec_[A-Za-z0-9]{32}$
+    WebhookDeliveryStatus:
+      type: string
+      enum:
+      - pending
+      - retrying
+      - succeeded
+      - failed
+    WebhookDeliveryErrorCode:
+      type: string
+      enum:
+      - timeout
+      - connection_failed
+      - url_not_allowed
+      - http_error
+      - plan
+      - endpoint_disabled
+    WebhookDelivery:
+      type: object
+      required:
+      - id
+      - endpoint_id
+      - event_id
+      - event_type
+      - subject_label
+      - status
+      - attempts
+      - next_attempt_at
+      - last_attempt_at
+      - response_status
+      - error_code
+      - duration_ms
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        endpoint_id:
+          $ref: '#/components/schemas/Ulid'
+        event_id:
+          $ref: '#/components/schemas/Ulid'
+        event_type:
+          $ref: '#/components/schemas/WebhookDeliveryEventType'
+        subject_label:
+          type:
+          - string
+          - 'null'
+          maxLength: 40
+          description: e.g. order number
+        status:
+          $ref: '#/components/schemas/WebhookDeliveryStatus'
+        attempts:
+          type: integer
+          minimum: 0
+          maximum: 7
+        next_attempt_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_attempt_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        response_status:
+          type:
+          - integer
+          - 'null'
+        error_code:
+          oneOf:
+          - $ref: '#/components/schemas/WebhookDeliveryErrorCode'
+          - type: 'null'
+        duration_ms:
+          type:
+          - integer
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+    WebhookPayload:
+      type: object
+      required:
+      - id
+      - type
+      - api_version
+      - created_at
+      - store_id
+      - data
+      description: PHASE-8-4 §4.2. Signed with X-Storeplix-Signature `t=<unix>,v1=<hex>`, v1 = HMAC-SHA256(secret, "<t>.<raw body>").
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+          description: Event id (same across resends)
+        type:
+          $ref: '#/components/schemas/WebhookDeliveryEventType'
+        api_version:
+          type: string
+          const: '2026-12-01'
+        created_at:
+          type: string
+          format: date-time
+        store_id:
+          $ref: '#/components/schemas/Ulid'
+        data:
+          type: object
+          required:
+          - object
+          properties:
+            object:
+              type: object
+              additionalProperties: true
+              description: 'The external-API resource of the subject at event time; `truncated: true` when trimmed to ids (> 256
+                KB)'
+    WebhookDeliveryDetail:
+      allOf:
+      - $ref: '#/components/schemas/WebhookDelivery'
+      - type: object
+        required:
+        - payload
+        - request_headers
+        - response_body_excerpt
+        properties:
+          payload:
+            $ref: '#/components/schemas/WebhookPayload'
+          request_headers:
+            type: object
+            additionalProperties:
+              type: string
+            description: X-Storeplix-Signature value redacted
+          response_body_excerpt:
+            type:
+            - string
+            - 'null'
+            maxLength: 1024
+    WebhookResendFailedResult:
+      type: object
+      required:
+      - count
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          maximum: 100
+    CursorMeta:
+      type: object
+      required:
+      - next_cursor
+      - prev_cursor
+      - per_page
+      properties:
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        prev_cursor:
+          type:
+          - string
+          - 'null'
+        per_page:
+          type: integer

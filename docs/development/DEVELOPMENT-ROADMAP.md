@@ -200,12 +200,19 @@ incidents (Q106, → 9.1), analytics export (Q109).
 openapi 1.11.0; ADR 0017; Q113–Q125 defaults accepted): granular permission catalogue, system + custom roles,
 `perm:` route enforcement with an O/A/S parity test, Staff & roles UI (`60:15365`, `90:26915`, `90:26879`). Deferred
 from 8.3: warehouse access per role (Q119), per-person overrides (Q120), invite by phone (Q121), ownership transfer (Q123).
+**8.4** contract: `docs/development/PHASE-8-4-CONTRACT.md` (accepted 2026-11-24; branch
+`feat/phase-8-4-developer-api`; openapi 1.12.0; ADR 0018; Q126–Q137 defaults accepted): tenant-level API keys (`sp_live_`,
+sha256 at rest, 7 scopes, non-delegation, new permission `developers.manage`) for an `/api/v1/external` namespace
+(120 req/min per key), store-scoped outbound webhooks (10 events, HMAC-SHA256 `X-Storeplix-Signature`, 7 attempts over
+≈ 20.6 h, auto-disable after 72 h, SSRF-safe sender with fake driver), Developer page `144:40726`; Growth-gated
+(`api_webhooks`). Deferred from 8.4: test-mode keys (Q127), customer/shipment write scopes (Q128), Postman collection
+(Q134), super-admin views (Q136), OAuth apps, per-key IP allowlists.
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
 | 8.2 | Platform analytics (GMV, MRR, churn): dashboard `15:123`, Revenue reports `39:12705`, merchant metrics | API/WEB | Nightly aggregates; PHASE-8-2 §14 |
 | 8.3 | Custom roles & permissions (89:26676): 23 code-defined keys, system + custom roles, Growth-gated, non-delegation | API/WEB | Granular permissions enforced; PHASE-8-3 §13 |
-| 8.4 | Developer API keys + outbound webhooks (144:40725) | API/WEB | HMAC signatures; retries |
+| 8.4 | Developer API keys + outbound webhooks (144:40725): scoped `sp_live_` keys, `/external` API, signed webhooks with retries, Growth-gated | API/WEB | HMAC signatures; retries; PHASE-8-4 §13 |
 | 8.5 | Marketing campaigns SMS/email (61:12479) | API/WEB | Opt-out respected |
 | 8.6 | Automations (140:30335) | API/WEB | Trigger → action runs logged |
 | 8.7 | Expenses (144:41613) + profit report | API/WEB | — |

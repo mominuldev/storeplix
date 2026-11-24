@@ -47,14 +47,14 @@ Error: `{ "error": { "code": "snake_case_code", "message": "Human readable, safe
 | HTTP | code | When |
 |---|---|---|
 | 400 | `bad_request`, `tenant_required`, `idempotency_key_required` | malformed request / missing header |
-| 401 | `unauthenticated`, `invalid_storefront_key` | missing/invalid token or key |
+| 401 | `unauthenticated`, `invalid_storefront_key`, `invalid_api_key` (Phase 8.4) | missing/invalid token or key |
 | 402 | `plan_limit_reached`, `feature_not_in_plan`, `subscription_inactive` | plan gate (FeatureGate) |
-| 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
+| 403 | `forbidden`, `tenant_forbidden` (not a member of `X-Tenant-Id`), `tenant_suspended`, `cannot_change_own_role`, `permission_not_held` (+ `details.permissions`, Phase 8.3 N1/N2/N5/N6), `cannot_edit_own_role` (Phase 8.3 N3), `api_key_scope_missing` (+ `details.required_scope`, Phase 8.4), `invitation_email_mismatch`, `email_not_verified` | authenticated but not allowed |
 | 404 | `not_found`, `store_not_found`, `invitation_invalid`, `cart_not_found` | missing **or belongs to another tenant** |
 | 409 | `conflict`, `revision_conflict`, `stock_changed`, `import_in_progress`, `category_has_children`, `category_limit_reached`, `store_limit_reached`, `last_owner`, `already_member`, `invitation_pending`, `invitation_not_pending`, `login_required`, `media_in_use`, `currency_locked`, `idempotency_key_in_use`, `idempotency_key_mismatch`, `invalid_state_transition`, `checkout_changed`, `store_not_live`, `launch_blocked`, `coupon_in_use`, `system_role_locked`, `role_in_use` (+ `details.members`, `details.invitations`), `role_limit_reached` (Phase 8.3) | state conflict |
 | 413 | `payload_too_large` | body/upload over the endpoint limit |
 | 419 | `csrf_token_mismatch` | cookie-session write without a valid `X-XSRF-TOKEN` (Phase 4.7) |
-| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid` | validation / business rule |
+| 422 | `validation_failed` (+ `details`), `out_of_stock`, `coupon_invalid`, `insufficient_stock`, `unsupported_file`, `too_many_rows`, `too_many_columns`, `empty_file`, `cart_empty`, `payment_method_unavailable`, `refund_exceeds_paid`, `scope_not_grantable`, `limit_reached`, `webhook_url_not_allowed` (Phase 8.4) | validation / business rule |
 | 429 | `rate_limited` | + `Retry-After` header |
 | 500 | `server_error` | generic message; correlate via `X-Request-Id` response header |
 | 503 | `maintenance` | |
@@ -147,6 +147,19 @@ Free). Reused: `provider_unavailable` (502 on initiate or invoice PDF), `feature
 Public billing callbacks: `GET|POST /billing/payments/return/{provider}/{payment}` (signed, 303 to the merchant app,
 limiter `payment-returns`) and `POST /billing/webhooks/sslcommerz` (always 200 `WebhookAck`, limiter `webhooks`).
 
+**Phase 8.4 codes** (PHASE-8-4-CONTRACT §6.3, developer API keys and outbound webhooks):
+| HTTP | code | When |
+|---|---|---|
+| 401 | `invalid_api_key` | `/external/*` without `Authorization: Bearer sp_live_…`, malformed, unknown or revoked key — one identical body for all (S101) |
+| 403 | `api_key_scope_missing` | the key lacks the route's scope (`details.required_scope`, an array, e.g. `["orders:write"]`) |
+| 422 | `scope_not_grantable` | `POST /api-keys` with a scope whose backing permission the actor doesn't hold (`details.scopes`) |
+| 422 | `limit_reached` | an 11th active API key per tenant or a 6th webhook endpoint per store (P84-14) |
+| 422 | `webhook_url_not_allowed` | endpoint URL not https, credentials in the URL, blocked port, or a host resolving to a private/loopback/link-local/CGNAT/metadata/multicast/ULA address |
+| 409 | `webhook_endpoint_disabled` | `POST …/webhook-endpoints/{endpoint}/test` on a disabled endpoint |
+Reused: `feature_not_in_plan` (402, `details.upgrade_plan: ["growth"]`: external API and developer writes without
+`api_webhooks`), `tenant_suspended` (403 on `/external/*`), `idempotency_key_required` (external order status and stock
+adjustment), `rate_limited`. Merchant routes answer an API key with 401 `unauthenticated` (they never accept one).
+
 ## 4. Pagination
 Offset pagination for dashboard lists: `?page=2&per_page=25` (`per_page` max 100, default 25).
 `meta`: `{ "current_page": 2, "per_page": 25, "total": 312, "last_page": 13 }` (= `PaginationMeta`).
@@ -186,6 +199,10 @@ the session and redirect to login. Store the token in `sessionStorage` until coo
 **Forgot password:** `POST /auth/forgot-password {email}` → always **202** `{data:{status:"sent"}}`, whether or not the
 email exists (no enumeration); `auth` rate limiter. Phase 1.1 is a stub (no email sent); real reset emails come in Phase 2.
 
+**API keys (Phase 8.4, ADR 0018):** only `/api/v1/external/*` accepts `Authorization: Bearer sp_live_<40 base62>`; no
+session, no CSRF, `X-Tenant-Id` ignored (the key fixes the tenant). Scope per route (PHASE-8-4 §2.2, §3); merchant
+routes never accept a key and external routes never accept a session.
+
 **Preview token (D2):** `POST /stores/{store}/preview-token` → 201 `{data:{token, url, expires_at}}`; 60-min signed token
 bound to the store; see STOREFRONT-ENGINE §4.1.
 
@@ -210,6 +227,8 @@ bound to the store; see STOREFRONT-ENGINE §4.1.
 | `domains` (Phase 6: `POST`/`DELETE` under `/stores/{store}/domains…`) | tenant + user | 30/min |
 | Domain re-check (`POST …/domains/{domain}/verify`, in code) | domain (tenant-prefixed cache key) | 6/min **and** 30/hour |
 | `domains-ask` (`GET /internal/domains/allowed`) | request IP | 1 200/min |
+| `external-api` (Phase 8.4, all `/external/*`) | API key id (tenant-prefixed) | 120/min per key; `RateLimit-*` headers, 429 `rate_limited` + `Retry-After` |
+| Webhook secret reveal (`POST /stores/{store}/webhook-secret/reveal`, Phase 8.4) | user | 10/min |
 | Inline `throttle:N,1` (5b) | Laravel default signature: **the user id** (public routes: domain + IP) | gateway connect, gateway test-payment, courier connect / test / webhook-secret, `shipments/bulk`: 20/min; `documents/preview`, courier `pickup-stores`: 30/min; courier `areas`: 120/min; signed `documents/{document}/download`, `dev/*`: 60/min |
 Auth routes (login, register, password reset, OTP send/verify) use per-route limiters; their exact values are
 maintained in `apps/api/README.md` (the table above is indicative). Responses include `X-RateLimit-Limit`,
@@ -258,6 +277,13 @@ different body → 409 `idempotency_key_mismatch`; concurrent in-flight → 409 
 API / source IP per provider before anything else; store in `webhook_events` (unique `provider,event_id`); respond 200
 fast; process in `webhooks` queue (tenant-aware); never trust payload amounts — re-query provider (ADR 0007).
 
+**Outbound** (Phase 8.4, PHASE-8-4 §4, ADR 0018): merchant-configured endpoints receive `POST` JSON events (payload
+version `2026-12-01`) with `X-Storeplix-Event`, `X-Storeplix-Delivery` (same across retries; receivers dedupe) and
+`X-Storeplix-Signature: t=<unix>,v1=<hex>`, `v1 = HMAC-SHA256(secret, "<t>.<raw body>")` (a second `v1=` with the
+previous secret for 24 h after a rotation). Any 2xx within 10 s is success; retries at +1 min, +5 min, +30 min, +2 h,
++6 h, +12 h, then `failed`; 72 h of failures auto-disables the endpoint. Sent from queue `webhooks-out` through the
+SSRF-safe `OutboundWebhookClient`.
+
 ### 10.1 Phase 5b inbound endpoints (as built)
 `{route_key}` is a random 32-char `[A-Za-z0-9]` key per integration account, shown on the Integrations page; it
 resolves tenant + store + account through a definer function. No tenant header. Bodies are `{ "data": { "received":
@@ -294,7 +320,8 @@ provider or not a charge → **404** HTML page. Redirect targets come only from 
 
 ### 10.3 Testing-only dev endpoints
 `POST /dev/payments/{payment}/expire-now`, `GET /dev/fake-gateway/{payment}` + `POST …/{pay|fail|cancel}` (signed),
-`POST /dev/shipments/{shipment}/advance`, and (Phase 6) `POST /dev/domains/{domain}/dns`, `…/provider`, `…/age`:
+`POST /dev/shipments/{shipment}/advance`, (Phase 6) `POST /dev/domains/{domain}/dns`, `…/provider`, `…/age`, and (Phase 8.4)
+`GET /dev/webhook-sink` (fake outbound sender sink, `WEBHOOKS_OUT_FAKE=true`, `perm:developers.manage`):
 registered **only outside production** (`APP_ENV != production`) and answer **404** unless `PAYMENTS_FAKE=true`
 (payments), `COURIERS_FAKE=true` (shipments) or `DOMAINS_FAKE=true` (domains; PHASE-6-CONTRACT §4.4). They exist for e2e and local
 work, are never linked from the apps, and are **not** part of `openapi.yaml`.

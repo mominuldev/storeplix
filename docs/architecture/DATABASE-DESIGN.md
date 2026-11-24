@@ -19,7 +19,7 @@ Contract already fixes Postgres on port 5432. MySQL is not supported; no MySQL-c
 | PK | `id char(26)` ULID, app-generated (`HasUlids`). Sortable by creation time. |
 | Tenant column | `tenant_id char(26) NOT NULL` on every tenant-owned table, FK → `tenants.id ON DELETE RESTRICT`. |
 | Tenant key for composite FKs | Every tenant-owned parent table has `UNIQUE (tenant_id, id)`. Children reference `(tenant_id, parent_id) → parent(tenant_id, id)`. This makes a cross-tenant reference **impossible** at DB level. |
-| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2). Tenant-scoped only: tenant_users, roles, role_permissions (8.3), media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
+| Store key (D1) | One store per tenant today, but **store-scoped** tables (marked `[S]` below) also have `store_id char(26) NOT NULL` with composite FK `(tenant_id, store_id) → stores(tenant_id, id)`, and expose `UNIQUE (tenant_id, store_id, id)`; their children reference `(tenant_id, store_id, parent_id) → parent(tenant_id, store_id, id)`, so a row can't point at another store's row. Business uniques are per store (e.g. `U(store_id, sku)`). Store-scoped: store_domains, store_settings, store_themes, store_pages, store_navigation, redirects, categories, products, product_variants, product_images, product_categories, inventories, inventory_movements, customers, customer_addresses, carts, cart_items, shipping_methods, coupons, orders, order_items, order_status_history, payments, payment_gateway_accounts, shipping_orders, idempotency_keys, store_counters; Phase 5a adds pickup_locations, shipping_zones, shipping_zone_areas, coupon_categories, coupon_products, order_events, shipments, coupon_redemptions (§5.1); Phase 5b adds payment_links, webhook_events, courier_accounts, shipment_events, courier_area_mappings, shipment_batches, return_requests, return_items, return_events, document_templates, documents (§5.2); Phase 8.4 adds webhook_endpoints, webhook_secrets, webhook_deliveries (§5.4). Tenant-scoped only: tenant_users, roles, role_permissions (8.3), api_keys (8.4), media, subscriptions, subscription_items, invoices, audit_logs (nullable `store_id` column for filtering, no FK requirement). |
 | Indexes | Lead with `tenant_id`. Every FK column is indexed (composite with `tenant_id`). On `[S]` tables every listed `IX(tenant_id, x…)` is implemented as `IX(tenant_id, store_id, x…)`. |
 | Timestamps | `created_at`, `updated_at timestamptz NOT NULL DEFAULT now()`. |
 | Soft deletes | `deleted_at timestamptz` only on: `products`, `product_variants`, `categories`, `customers`, `store_pages`, `stores`, `tenants`. Unique constraints on those are partial `WHERE deleted_at IS NULL`. Orders/payments are never deleted. |
@@ -794,13 +794,55 @@ IPN, B22/B23). Report indexes (`000700`, only if missing): orders `(tenant_id, s
 WHERE booked_at IS NOT NULL`; return_requests `(tenant_id, store_id, created_at)`. `store_domains.failure_code` gains
 `plan_limit`.
 
+## 5.4 Phase 8.4 developer tables (PHASE-8-4-CONTRACT §5, ADR 0018, migrations `2026_12_01_*`)
+All four tables have RLS forced in their create migration and are listed in `RlsTables::TENANT` and
+`database/sql/rls-emergency-off.sql`. Plan gate `api_webhooks` (Growth); on downgrade nothing is deleted (P84-13).
+
+### api_keys (tenant; `000100`)
+id PK · tenant_id · name varchar(60) · prefix varchar(12) (`sp_live_` + 4) · last_four char(4) · key_hash char(64)
+**U** (sha256 hex of the plain key; the plain key is never stored) · scopes jsonb `CHECK (jsonb_typeof(scopes) =
+'array')` (normalized `ApiScope` values, implied reads included) · include_costs boolean default false ·
+created_by_user_id FK users SET NULL null · last_used_at timestamptz null (written at most once a minute, no
+`updated_at` bump) · revoked_at timestamptz null · revoked_by_user_id FK users SET NULL null · timestamps.
+U(tenant_id, id). IX(tenant_id, revoked_at). At most 10 non-revoked rows per tenant (app rule, P84-14).
+Definer function **`sp_api_key_owner(p_hash text)`** → `(tenant_id, key_id)` for a non-revoked key only (pre-tenant
+lookup by the `apikey` middleware, MULTI-TENANCY §RLS definer functions).
+
+### webhook_endpoints [S] (`000200`)
+id PK · tenant_id · store_id · url varchar(2048) · description varchar(120) null · events jsonb (array of
+`WebhookEventType`) · is_active boolean default true · disabled_reason varchar(24) null `CHECK IN ('manual','failing')`
+· failing_since timestamptz null · last_delivery_at timestamptz null · last_status smallint null · timestamps.
+U(tenant_id, store_id, id). IX(tenant_id, store_id, is_active). At most 5 per store (app rule). Hard delete.
+
+### webhook_secrets [S] (`000200`)
+id PK · tenant_id · store_id **U** (one signing secret per store) · secret_encrypted text (IntegrationCredentials
+encrypter, never plaintext) · last_four char(4) · previous_secret_encrypted text null · previous_expires_at timestamptz
+null (rotation overlap, 24 h) · rotated_at timestamptz null · timestamps. Created lazily on the first endpoint or the
+first GET.
+
+### webhook_deliveries [S] (`000200`)
+id PK · tenant_id · store_id · endpoint_id FK (tenant_id, store_id, endpoint_id) → webhook_endpoints CASCADE ·
+event_id char(26) (same across resends) · event_type varchar(40) · subject_type varchar(24) · subject_id char(26) null
+· subject_label varchar(40) null (e.g. order number) · payload jsonb (the signed body, ≤ 256 KB) · status varchar(12)
+`CHECK IN ('pending','retrying','succeeded','failed')` · attempts smallint (≤ 7) · next_attempt_at, last_attempt_at
+timestamptz null · response_status smallint null · response_body_excerpt varchar(1024) null (control chars scrubbed) ·
+error_code varchar(32) null (`timeout`, `connection_failed`, `url_not_allowed`, `http_error`, `plan`,
+`endpoint_disabled`) · duration_ms int null · timestamps. IX(tenant_id, store_id, created_at DESC).
+IX(status, next_attempt_at) (`webhooks:dispatch-due` safety net; deliberately not tenant-led, a platform sweep on
+`pgsql_admin`). IX(endpoint_id, created_at). Pruned after 30 days (`webhooks:prune-deliveries`).
+
+### Changes to existing tables (`000300`)
+Actor CHECKs on `order_events`, `inventory_movements` (and any other actor-typed table an external route writes) gain
+`'api_key'` (`actor_id` = key id, shown as "API: <key name>"). `audit_logs.actor_type = 'api_key'` already exists.
+No row change for system roles: `developers.manage` is code-defined in `SystemRole` (owner, admin).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
 | Module (Figma section) | Tables | Phase |
 |---|---|---|
 | Staff & roles (89:26676) | `roles`, `role_permissions`, `tenant_users.role_id`, `staff_invitations.role_id` — **specified in 8.3 (§5 tenant_users, PHASE-8-3 §5)** | 8.3 |
-| Developer API keys & webhooks (144:40725) | `api_keys(tenant_id, name, prefix, key_hash, scopes text[], last_used_at, revoked_at)`; `webhook_endpoints(tenant_id, url, secret enc, events text[], is_active)`; `webhook_deliveries(endpoint_id, event, payload, status, attempts, next_retry_at, response_code)` | 8 |
+| Developer API keys & webhooks (144:40725) | `api_keys`, `webhook_endpoints`, `webhook_secrets`, `webhook_deliveries` — **specified in 8.4 (§5.4, PHASE-8-4 §5, ADR 0018)** | 8.4 |
 | Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns(tenant_id, channel sms/email, audience jsonb, status, scheduled_at)`; `campaign_recipients` | 5 / 8 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
