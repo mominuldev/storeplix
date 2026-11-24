@@ -181,6 +181,13 @@ class PermissionParityTest extends TestCase
         'GET api/v1/stores/{store}/purchase-orders/{purchase_order}/pdf' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'GET api/v1/stores/{store}/purchasing/reorder-suggestions' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/purchasing/invoices' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        // Phase 8.8c part A (PHASE-8-8C §2.1, §9): locations read for every member, writes settings.manage (S 403).
+        'GET api/v1/stores/{store}/locations' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/locations' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/locations/{location}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/locations/{location}/archive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/locations/{location}/unarchive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/locations/{location}/make-default' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -408,6 +415,10 @@ class PermissionParityTest extends TestCase
         $delivery = $this->req($h, 'POST', "{$base}/webhook-endpoints/{$endpoint}/test")->assertStatus(202)->json('data.id');
         $pickup = $this->req($h, 'POST', "{$base}/pickup-locations", ['name' => 'Warehouse 1', 'contact_name' => 'Rafi', 'phone' => '01711000008', 'district_code' => 'dhaka', 'thana_code' => 'dhaka-dhanmondi', 'address_line' => 'Road 1'])
             ->assertCreated()->json('data.id');
+        // Phase 8.8c: an empty second location and an archived third one (Growth has multi_warehouse).
+        $location = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Dhanmondi shop', 'type' => 'shop'])->assertCreated()->json('data.id');
+        $archivedLocation = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Old godown', 'type' => 'warehouse'])->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "{$base}/locations/{$archivedLocation}/archive")->assertOk();
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -423,6 +434,7 @@ class PermissionParityTest extends TestCase
             'expense' => $expense, 'blocked' => $blocked, 'held' => $held,
             'supplier' => $supplier, 'spare_supplier' => $spareSupplier, 'draft_po' => $draftPo, 'ordered_po' => $orderedPo,
             'ordered_item' => $orderedItem, 'supplier_payment' => $supplierPayment,
+            'location' => $location, 'archived_location' => $archivedLocation,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -578,6 +590,12 @@ class PermissionParityTest extends TestCase
             'GET api/v1/stores/{store}/suppliers/{supplier}/payments' => $r('GET', "{$b}/suppliers/{$s['supplier']}/payments"),
             'POST api/v1/stores/{store}/suppliers/{supplier}/payments' => $r('POST', "{$b}/suppliers/{$s['supplier']}/payments", ['amount' => 500, 'method' => 'bkash', 'paid_on' => now('Asia/Dhaka')->format('Y-m-d')]),
             'DELETE api/v1/stores/{store}/supplier-payments/{payment}' => $r('DELETE', "{$b}/supplier-payments/{$s['supplier_payment']}"),
+            'GET api/v1/stores/{store}/locations' => $r('GET', "{$b}/locations"),
+            'POST api/v1/stores/{store}/locations' => $r('POST', "{$b}/locations", ['name' => 'Chattogram hub', 'type' => 'warehouse']),
+            'PATCH api/v1/stores/{store}/locations/{location}' => $r('PATCH', "{$b}/locations/{$s['location']}", ['address' => 'Road 27, Dhanmondi']),
+            'POST api/v1/stores/{store}/locations/{location}/archive' => $r('POST', "{$b}/locations/{$s['location']}/archive"),
+            'POST api/v1/stores/{store}/locations/{location}/unarchive' => $r('POST', "{$b}/locations/{$s['archived_location']}/unarchive"),
+            'POST api/v1/stores/{store}/locations/{location}/make-default' => $r('POST', "{$b}/locations/{$s['location']}/make-default"),
             'GET api/v1/stores/{store}/purchase-orders' => $r('GET', "{$b}/purchase-orders"),
             'GET api/v1/stores/{store}/purchase-orders/summary' => $r('GET', "{$b}/purchase-orders/summary"),
             'POST api/v1/stores/{store}/purchase-orders' => $r('POST', "{$b}/purchase-orders", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'quantity' => 2]]]),

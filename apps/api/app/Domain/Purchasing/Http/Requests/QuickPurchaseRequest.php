@@ -21,6 +21,7 @@ class QuickPurchaseRequest extends PurchasingWriteRequest
             'lines.*.unit_cost_amount' => ['required', 'integer:strict', 'min:0', 'max:1000000000'],
             'lines.*.quantity' => ['required', 'integer:strict', 'min:1', 'max:100000'],
             'lines.*.damaged' => ['sometimes', 'integer:strict', 'min:0', 'max:100000'],
+            'location_id' => ['sometimes', 'nullable', 'string', 'size:26'], // PHASE-8-8C P88C-8 "Receive at"
             'shipping_amount' => ['sometimes', 'integer:strict', 'min:0', 'max:1000000000'],
             'discount_amount' => ['sometimes', 'integer:strict', 'min:0', 'max:1000000000'],
             'notes' => ['sometimes', ...self::text(1000)],

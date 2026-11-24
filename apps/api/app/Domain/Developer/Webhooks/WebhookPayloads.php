@@ -85,13 +85,17 @@ final class WebhookPayloads
     /** @return array{0: array<string, mixed>, 1: string|null}|null */
     private function inventory(string $id): ?array
     {
-        $inventory = Inventory::query()->find($id);
-        $variant = $inventory?->variant()->with(['product.images.media', 'inventory'])->first();
+        $inventory = Inventory::query()->with('location')->find($id);
+        $variant = $inventory?->variant()->with(['product.images.media', 'inventories'])->first();
         if ($variant === null || $variant->product === null) {
             return null;
         }
 
-        return [InventoryPresenter::item($variant, false), $variant->sku ?? $variant->product->name];
+        // PHASE-8-8C P88C-15: the numbers of that location's row, plus the location.
+        return [InventoryPresenter::item($variant, false, $inventory->location_id) + ['location' => [
+            'id' => $inventory->location_id,
+            'name' => (string) $inventory->location?->name,
+        ]], $variant->sku ?? $variant->product->name];
     }
 
     /** @return array{0: array<string, mixed>, 1: string|null}|null */

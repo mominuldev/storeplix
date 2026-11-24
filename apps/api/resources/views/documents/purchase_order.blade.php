@@ -29,6 +29,7 @@ td { border-bottom: 1px solid #ddd; }
   <div>
     <h1>Purchase order {{ $number }}</h1>
     <div class="muted">Date {{ $created }}@if ($expected) · Expected by {{ $expected }}@endif</div>
+    @if (! empty($receiveAt))<div class="muted">Receive at {{ $receiveAt }}</div>@endif
     <div><span class="status">{{ $status }}</span></div>
   </div>
   <div class="right">

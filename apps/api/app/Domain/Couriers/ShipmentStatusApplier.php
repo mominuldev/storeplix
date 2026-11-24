@@ -70,7 +70,7 @@ class ShipmentStatusApplier
         $lines = [];
         foreach (OrderItem::query()->where('order_id', $o->id)->orderBy('position')->get() as $i => $item) {
             if ($item->tracked && $item->variant_id !== null) {
-                $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'field' => "items.{$i}.quantity"];
+                $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'field' => "items.{$i}.quantity", 'location_id' => $item->location_id];
             }
         }
         $this->inventory->ship($o->store_id, $lines, $o->id, null);

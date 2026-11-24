@@ -189,6 +189,7 @@ class RunImport implements ShouldQueue
                             'cost_amount' => $row->values['variant']['cost_amount'],
                             'weight_grams' => $row->values['variant']['weight_grams'],
                             'initial_on_hand' => (int) ($row->values['variant']['stock'] ?? 0),
+                            'initial_location_id' => $row->values['variant']['location_id'] ?? null, // PHASE-8-8C CSV `location`
                             'position' => $i,
                         ], $rows, array_keys($rows)),
                         'images' => [],
@@ -224,6 +225,7 @@ class RunImport implements ShouldQueue
                 }
                 $variantFields = [];
                 $stock = [];
+                $stockLocations = [];
                 foreach ($rows as $row) {
                     $v = $row->values['variant'];
                     $variantFields[$row->values['target_variant_id']] = array_filter([
@@ -232,9 +234,12 @@ class RunImport implements ShouldQueue
                     ], fn ($x) => $x !== null);
                     if ($v['stock'] !== null) {
                         $stock[$row->values['target_variant_id']] = (int) $v['stock'];
+                        if (($v['location_id'] ?? null) !== null) {
+                            $stockLocations[$row->values['target_variant_id']] = (string) $v['location_id'];
+                        }
                     }
                 }
-                $product = $products->importUpdate($store, $product, $productFields, $categoryIds, $variantFields, $stock, $user, $reference);
+                $product = $products->importUpdate($store, $product, $productFields, $categoryIds, $variantFields, $stock, $user, $reference, $stockLocations);
                 $this->touchedActive = $this->touchedActive || $wasActive || $product->isActive();
                 $this->result($rows, $product->id);
             });

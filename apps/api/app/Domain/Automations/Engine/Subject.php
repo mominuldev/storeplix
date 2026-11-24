@@ -10,7 +10,9 @@ use App\Domain\Cart\Models\CartItem;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Inventory\Models\Inventory;
+use App\Domain\Inventory\Models\Location;
 use App\Domain\Marketing\MarketingAddress;
 use App\Domain\Marketing\Models\Campaign;
 use App\Domain\Orders\Models\Order;
@@ -201,6 +203,8 @@ final class Subject
                 'variant_name' => $variantName,
                 'on_hand' => (int) $row->on_hand,
                 'product_id' => $variant?->product_id,
+                // PHASE-8-8C P88C-15: "at {location}" when the store has more than one location.
+                'location_name' => Locations::activeCount($store->id) > 1 ? Location::query()->whereKey($row->location_id)->value('name') : null,
             ], fn ($v) => $v !== null),
         );
     }

@@ -190,6 +190,14 @@ Per line: `share = (shipping − discount) × line_value ÷ subtotal` (line_valu
 the inventory row lock **before** the adjust. Two lines of the same variant can't exist (unique). Cost written even for
 actors without `costs.view` (they never see it).
 
+> **Amended by PHASE-8-8C part A (Phase 8.8c, P88C-8, ADR 0024): "Receive at" is now built.** `purchase_orders` and
+> `purchase_receipts` carry `location_id` (backfilled to the default location). A PO receives at its location (default
+> location when not given; editable until the first receipt, then 422 `location_locked`); each receipt stocks that
+> location; quick purchase takes `location_id`. The weighted average uses the variant's **total** on hand across all
+> locations, with every stock row of the variant locked in `(variant_id, location_id)` order; cost stays one per
+> variant. New PO `35:6644`, Receive subtitle `36:6615` and footer `36:7118` show "Receive at {location}" when the store
+> has > 1 non-archived location (the "Receive at hidden" rule of §10.3 is lifted for those stores).
+
 ### 5.5 Quick purchase
 `POST …/purchase-orders/quick` `{supplier_id, lines: [{variant_id, unit_cost, quantity, damaged?}], shipping?, discount?,
 payment?: {amount, method, paid_on}, supplier_invoice_ref?, invoice_media_id?}` → PO `received` with one receipt (+

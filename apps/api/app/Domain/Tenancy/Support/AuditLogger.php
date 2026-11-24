@@ -14,6 +14,7 @@ use App\Domain\Developer\ApiKeys\CurrentApiKey;
 use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\SessionSurface;
+use App\Domain\Inventory\Models\Location;
 use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
@@ -67,6 +68,7 @@ class AuditLogger
         Supplier::class => 'supplier', // PHASE-8-8B P88B-18
         PurchaseOrder::class => 'purchase_order',
         SupplierPayment::class => 'supplier_payment',
+        Location::class => 'location', // PHASE-8-8C P88C-18
     ];
 
     public function __construct(

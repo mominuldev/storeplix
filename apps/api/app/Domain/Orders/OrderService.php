@@ -95,7 +95,7 @@ class OrderService
             $lines = [];
             foreach (OrderItem::query()->where('order_id', $o->id)->orderBy('position')->get() as $i => $item) {
                 if ($item->tracked && $item->variant_id !== null) {
-                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'field' => "items.{$i}.quantity"];
+                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'field' => "items.{$i}.quantity", 'location_id' => $item->location_id];
                 }
             }
             $this->inventory->ship($o->store_id, $lines, $o->id, $user?->getKey());
@@ -167,7 +167,7 @@ class OrderService
                 }
                 OrderItem::query()->whereKey($itemId)->update(['restocked_quantity' => $item->restocked_quantity + $quantity, 'updated_at' => now()]);
                 if ($item->tracked && $item->variant_id !== null) {
-                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity];
+                    $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity, 'location_id' => $item->location_id];
                 }
             }
             $this->inventory->restock($o->store_id, $lines, $o->id, $user?->getKey(), $note !== null ? mb_substr($note, 0, 255) : null);
@@ -226,7 +226,7 @@ class OrderService
                 $item = $items[$itemId];
                 OrderItem::query()->whereKey($itemId)->update(['restocked_quantity' => $item->restocked_quantity + $quantity, 'updated_at' => now()]);
                 if ($item->tracked && $item->variant_id !== null) {
-                    $ledger[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity];
+                    $ledger[] = ['variant_id' => $item->variant_id, 'quantity' => $quantity, 'location_id' => $item->location_id];
                 }
                 $meta[] = ['item_id' => $itemId, 'product_name' => $item->product_name, 'variant_title' => $item->variant_title, 'quantity' => $quantity];
             }
@@ -293,7 +293,7 @@ class OrderService
         $lines = [];
         foreach (OrderItem::query()->where('order_id', $o->id)->get() as $item) {
             if ($item->tracked && $item->variant_id !== null) {
-                $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity];
+                $lines[] = ['variant_id' => $item->variant_id, 'quantity' => $item->quantity, 'location_id' => $item->location_id];
             }
         }
         $this->inventory->release($o->store_id, $lines);

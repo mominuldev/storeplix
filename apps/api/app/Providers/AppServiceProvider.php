@@ -7,6 +7,7 @@ use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\FraudGuard\FraudGuardServiceProvider;
+use App\Domain\Inventory\InventoryServiceProvider;
 use App\Domain\Purchasing\PurchasingServiceProvider;
 use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -31,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->register(FraudGuardServiceProvider::class);
         // Phase 8.8b: purchasing (limiters).
         $this->app->register(PurchasingServiceProvider::class);
+        $this->app->register(InventoryServiceProvider::class); // Phase 8.8c `stock-write` limiter
     }
 
     public function boot(): void

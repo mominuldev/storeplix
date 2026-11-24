@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Models;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Inventory\Models\Location;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $tenant_id
  * @property string $store_id
+ * @property string $location_id PHASE-8-8C P88C-8 "Receive at"
  * @property string $supplier_id
  * @property int $sequence
  * @property string $number
@@ -165,5 +167,11 @@ class PurchaseOrder extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** PHASE-8-8C P88C-8: where receipts stock. */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
     }
 }

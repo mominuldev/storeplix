@@ -6,7 +6,7 @@ namespace App\Domain\Purchasing\Http\Resources;
 
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Identity\Models\User;
-use App\Domain\Inventory\Models\Inventory;
+use App\Domain\Inventory\Http\Resources\InventoryPresenter;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\Models\Media;
 use App\Domain\Purchasing\LandedCost;
@@ -91,7 +91,7 @@ final class PurchasingPresenter
      */
     public static function orders(Store $store, Collection $orders, bool $money): array
     {
-        $orders->loadMissing(['supplier', 'createdBy', 'items.variant.product.images.media']);
+        $orders->loadMissing(['supplier', 'createdBy', 'location', 'items.variant.product.images.media']);
 
         return $orders->map(fn (PurchaseOrder $po) => self::order($store, $po, $money))->values()->all();
     }
@@ -117,6 +117,7 @@ final class PurchasingPresenter
             'status' => $po->status,
             'payment_status' => $money ? $po->paymentStatus() : null,
             'supplier' => self::supplierRef($po->supplier),
+            'location' => self::locationRef($po), // PHASE-8-8C P88C-8 "Receive at"
             'lines_count' => $items->count(),
             'preview_items' => $preview,
             'units_ordered' => (int) $items->sum('quantity_ordered'),
@@ -151,7 +152,7 @@ final class PurchasingPresenter
     /** @return array<string, mixed> PurchaseOrderDetail */
     public static function detail(Store $store, PurchaseOrder $po, bool $money): array
     {
-        $po->load(['supplier', 'createdBy', 'items.variant.product.images.media', 'items.variant.inventory']);
+        $po->load(['supplier', 'createdBy', 'location', 'items.variant.product.images.media', 'items.variant.inventories.location']);
         $m = fn (?int $v) => $money ? $v : null;
         $items = $po->items;
         $landed = LandedCost::unitCosts(
@@ -166,8 +167,6 @@ final class PurchasingPresenter
             $variant = $i->variant;
             $product = $variant?->product;
             $cover = $product?->relationLoaded('images') ? $product->images->first() : null;
-            /** @var Inventory|null $inventory */
-            $inventory = $variant?->inventory;
 
             return [
                 'id' => $i->id,
@@ -183,13 +182,13 @@ final class PurchasingPresenter
                 'quantity_left' => $i->left(),
                 'line_total_amount' => $m($i->lineValue()),
                 'landed_unit_cost_amount' => $m($landed[$i->id] ?? null),
-                'in_stock' => (int) ($inventory?->on_hand ?? 0),
+                'in_stock' => $variant !== null ? InventoryPresenter::totalOnHand($variant) : 0, // PHASE-8-8C: total over locations
                 'last_bought_unit_cost_amount' => $m($lastBought[$i->variant_id]['unit_cost'] ?? null),
                 'position' => $i->position,
             ];
         })->values()->all();
 
-        $receipts = PurchaseReceipt::query()->where('purchase_order_id', $po->id)->with(['items', 'receivedBy', 'invoice'])
+        $receipts = PurchaseReceipt::query()->where('purchase_order_id', $po->id)->with(['items', 'receivedBy', 'invoice', 'location'])
             ->orderByDesc('received_at')->orderByDesc('id')->get();
         $payments = $money ? SupplierPayment::query()->where('purchase_order_id', $po->id)->with(['supplier', 'purchaseOrder', 'createdBy'])
             ->orderByDesc('paid_on')->orderByDesc('id')->get() : collect();
@@ -229,6 +228,7 @@ final class PurchasingPresenter
             'id' => $receipt->id,
             'received_at' => UserRef::iso($receipt->received_at),
             'received_by' => UserRef::of($receipt->receivedBy),
+            'location' => ['id' => $receipt->location_id, 'name' => (string) $receipt->location?->name],
             'supplier_invoice_ref' => $receipt->supplier_invoice_ref,
             'invoice' => $invoice === null ? null : [
                 'id' => $invoice->id,
@@ -275,6 +275,12 @@ final class PurchasingPresenter
     }
 
     /** @return array{id: string, name: string, phone: string|null, city: string|null} */
+    /** @return array{id: string, name: string} LocationRef */
+    private static function locationRef(PurchaseOrder $po): array
+    {
+        return ['id' => $po->location_id, 'name' => (string) $po->location?->name];
+    }
+
     private static function supplierRef(Supplier $supplier): array
     {
         return ['id' => $supplier->id, 'name' => $supplier->name, 'phone' => $supplier->phone, 'city' => $supplier->city];

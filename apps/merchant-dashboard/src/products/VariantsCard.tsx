@@ -2,7 +2,7 @@ import type { ProductOption } from '@storeplix/types';
 import { CATALOG_LIMITS } from '@storeplix/types';
 import { Button, cn, MoneyInput, Toggle } from '@storeplix/ui';
 import { Plus, Trash2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 import { formatCount } from '../catalog/format';
 import { CatalogPanel as Panel } from '../catalog/ui';
@@ -20,6 +20,8 @@ export interface VariantsCardProps {
   images: { media_id: string; url: string }[];
   onChange: (options: ProductOption[], variants: VariantRow[]) => void;
   onVariant: (index: number, patch: Partial<VariantRow>) => void;
+  /** PHASE-8-8C §10.3: under each stock cell ("+ n at other locations"). */
+  renderStockExtra?: (row: VariantRow, title: string) => ReactNode;
 }
 
 const stockInput = (v: number | null) => (v === null || Number.isNaN(v) ? '' : String(v));
@@ -29,7 +31,7 @@ const parseStock = (s: string): number | null => {
   return /^\d{1,7}$/.test(t) ? Number(t) : Number.NaN;
 };
 
-export function VariantsCard({ options, variants, errors, canViewCosts, images, onChange, onVariant }: VariantsCardProps) {
+export function VariantsCard({ options, variants, errors, canViewCosts, images, onChange, onVariant, renderStockExtra }: VariantsCardProps) {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [valueError, setValueError] = useState<Record<number, string | null>>({});
   const [gridError, setGridError] = useState<string | null>(null);
@@ -165,7 +167,14 @@ export function VariantsCard({ options, variants, errors, canViewCosts, images, 
                   {canViewCosts && (
                     <MoneyInput aria-label={`${title} cost`} containerClassName="md:w-28" fieldClassName="min-h-9" value={r.cost_amount} error={variantErr(i, 'cost_amount')} onChange={(v) => onVariant(i, { cost_amount: v })} />
                   )}
-                  <StockCell title={title} row={r} error={variantErr(i, 'stock')} onChange={(stock) => onVariant(i, { stock })} />
+                  {renderStockExtra ? (
+                    <div className="flex flex-col gap-1 md:w-20">
+                      <StockCell className="md:w-full" title={title} row={r} error={variantErr(i, 'stock')} onChange={(stock) => onVariant(i, { stock })} />
+                      {renderStockExtra(r, title)}
+                    </div>
+                  ) : (
+                    <StockCell title={title} row={r} error={variantErr(i, 'stock')} onChange={(stock) => onVariant(i, { stock })} />
+                  )}
                   <div className="flex flex-col gap-1 md:w-28">
                     <input
                       aria-label={`${title} SKU`}

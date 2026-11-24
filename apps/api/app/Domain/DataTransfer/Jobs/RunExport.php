@@ -12,6 +12,7 @@ use App\Domain\DataTransfer\Export\CsvWriter;
 use App\Domain\DataTransfer\Import\ImportColumns;
 use App\Domain\DataTransfer\Import\ImportValues;
 use App\Domain\DataTransfer\Models\DataExport;
+use App\Domain\Inventory\Http\Resources\InventoryPresenter;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\TenantStorage;
 use App\Domain\Stores\Models\Store;
@@ -98,7 +99,7 @@ class RunExport implements ShouldQueue
         };
 
         $count = 0;
-        foreach ($query->with(['variants.inventory', 'categories', 'images.media'])->lazyById(100, 'products.id', 'id') as $product) {
+        foreach ($query->with(['variants.inventory', 'variants.inventories.location', 'categories', 'images.media'])->lazyById(100, 'products.id', 'id') as $product) {
             /** @var Product $product */
             $options = $product->options ?? [];
             foreach ($product->variants as $i => $variant) {
@@ -123,7 +124,7 @@ class RunExport implements ShouldQueue
                     ImportValues::major($variant->price_amount),
                     ImportValues::major($variant->compare_at_amount),
                     $includeCosts ? ImportValues::major($variant->cost_amount) : '',
-                    (string) ($variant->inventory?->on_hand ?? 0),
+                    (string) InventoryPresenter::totalOnHand($variant), // PHASE-8-8C §5.3: TOTAL over non-archived locations
                     $variant->weight_grams === null ? '' : rtrim(rtrim(number_format($variant->weight_grams / 1000, 3, '.', ''), '0'), '.'),
                     $first ? ($product->seo_title ?? '') : '',
                     $first ? ($product->seo_description ?? '') : '',

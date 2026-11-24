@@ -19,6 +19,7 @@ use LogicException;
  * @property string $tenant_id
  * @property string $store_id
  * @property string $variant_id
+ * @property string $location_id
  * @property int $delta
  * @property int $on_hand_after
  * @property string $reason
@@ -36,7 +37,10 @@ class InventoryMovement extends Model
 
     public const UPDATED_AT = null;
 
-    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other', 'order_shipped', 'order_returned'];
+    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other', 'order_shipped', 'order_returned', 'transfer_out', 'transfer_in', 'count'];
+
+    /** Ledger reference types (no DB CHECK). PHASE-8-8C adds stock_transfer / stock_count (part B writes them). */
+    public const REFERENCE_TYPES = ['import', 'order', 'return', 'purchase_order', 'stock_transfer', 'stock_count'];
 
     public const MANUAL_REASONS = ['received', 'correction', 'damaged', 'lost', 'returned', 'other'];
 

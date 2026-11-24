@@ -902,6 +902,16 @@ BEGIN
   END IF;
 END
 $$;
+-- table: locations
+DO $$
+BEGIN
+  IF to_regclass('public.locations') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "locations";
+    ALTER TABLE "locations" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "locations" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

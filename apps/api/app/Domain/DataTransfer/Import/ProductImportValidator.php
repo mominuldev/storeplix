@@ -8,6 +8,7 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductCategory;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Catalog\Support\Slug;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Stores\Models\Store;
 
@@ -28,6 +29,11 @@ final class ProductImportValidator
 
     /** @var array<string, string> slug → category id */
     private array $slugs = [];
+
+    /** @var array<string, string> lower(name) → id of the store's active locations (PHASE-8-8C import `location`) */
+    private array $locations = [];
+
+    private string $defaultLocation = '';
 
     /**
      * @param  array<string, string|null>  $columnMap  header → field
@@ -135,6 +141,11 @@ final class ProductImportValidator
 
     private function preload(Store $store): void
     {
+        foreach (Locations::active($store->id) as $location) {
+            $this->locations[mb_strtolower($location->name)] = $location->id;
+        }
+        $this->defaultLocation = Locations::defaultId($store->id);
+
         foreach (ProductVariant::query()->where('store_id', $store->id)->whereNotNull('sku')
             ->whereIn('product_id', Product::query()->where('store_id', $store->id)->select('id'))
             ->get(['id', 'product_id', 'sku']) as $v) {
@@ -243,7 +254,14 @@ final class ProductImportValidator
         $row['option_values'] = $values;
 
         // Variant fields.
-        $variant = ['sku' => null, 'barcode' => null, 'price_amount' => null, 'compare_at_amount' => null, 'cost_amount' => null, 'weight_grams' => null, 'stock' => null];
+        $variant = ['sku' => null, 'barcode' => null, 'price_amount' => null, 'compare_at_amount' => null, 'cost_amount' => null, 'weight_grams' => null, 'stock' => null, 'location_id' => null];
+        $locationName = ImportValues::text($get('location'));
+        if ($locationName !== '') {
+            $variant['location_id'] = $this->locations[mb_strtolower($locationName)] ?? null;
+            if ($variant['location_id'] === null) {
+                $this->error($row, 'location', "No active location is called \"{$locationName}\".");
+            }
+        }
         $sku = ImportValues::text($get('sku'));
         if ($sku !== '') {
             if (preg_match(ProductVariant::SKU_PATTERN, $sku) === 1) {
@@ -474,7 +492,7 @@ final class ProductImportValidator
                 return true;
             }
         }
-        if ($v['stock'] !== null && $v['stock'] !== $current['on_hand']) {
+        if ($v['stock'] !== null && $v['stock'] !== ($current['on_hand_at'][$v['location_id'] ?? $this->defaultLocation] ?? 0)) {
             return true;
         }
         if ($first) {
@@ -519,7 +537,10 @@ final class ProductImportValidator
         $out = [];
         foreach (array_chunk($variantIds, 500) as $chunk) {
             $variants = ProductVariant::query()->whereIn('id', $chunk)->get();
-            $stock = Inventory::query()->whereIn('variant_id', $chunk)->pluck('on_hand', 'variant_id');
+            $stock = [];
+            foreach (Inventory::query()->whereIn('variant_id', $chunk)->get(['variant_id', 'location_id', 'on_hand']) as $inv) {
+                $stock[$inv->variant_id][$inv->location_id] = (int) $inv->on_hand;
+            }
             $products = Product::query()->whereIn('id', $variants->pluck('product_id')->unique())->get()->keyBy('id');
             $categories = ProductCategory::query()->whereIn('product_id', $products->keys())->get()->groupBy('product_id');
             foreach ($variants as $variant) {
@@ -530,7 +551,8 @@ final class ProductImportValidator
                     'cost_amount' => $variant->cost_amount,
                     'barcode' => $variant->barcode,
                     'weight_grams' => $variant->weight_grams,
-                    'on_hand' => (int) ($stock[$variant->id] ?? 0),
+                    'on_hand' => (int) ($stock[$variant->id][$this->defaultLocation] ?? 0),
+                    'on_hand_at' => $stock[$variant->id] ?? [],
                     'product' => [
                         'name' => $product->name,
                         'status' => $product->status,

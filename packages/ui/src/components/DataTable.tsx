@@ -1,5 +1,5 @@
 import { Check, Minus } from 'lucide-react';
-import { type CSSProperties, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import { Button } from './Button';
 
@@ -41,6 +41,8 @@ export interface DataTableProps<T> {
   columnGap?: 12 | 16;
   /** Header fill: `subtle` (Products 60:11450) or `canvas` (Orders 7:509). */
   headTone?: 'subtle' | 'canvas';
+  /** Extra content under a row (e.g. per-location numbers); `null` = nothing. Rendered as its own full-width row. */
+  renderExpanded?: (row: T) => ReactNode;
 }
 
 function Box({ checked, indeterminate, label, onChange }: { checked: boolean; indeterminate?: boolean; label: string; onChange: () => void }) {
@@ -91,6 +93,7 @@ export function DataTable<T>({
   className,
   columnGap = 12,
   headTone = 'subtle',
+  renderExpanded,
 }: DataTableProps<T>) {
   const gapClass = columnGap === 16 ? 'md:gap-4' : 'md:gap-3';
   const selectable = !!selected && !!onSelectedChange;
@@ -157,32 +160,41 @@ export function DataTable<T>({
             rows.map((row) => {
               const id = getRowId(row);
               const isOn = selectable && selected.includes(id);
+              const extra = renderExpanded?.(row) ?? null;
               return (
-                <div
-                  key={id}
-                  role="row"
-                  aria-selected={selectable ? isOn : undefined}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={cn(
-                    'relative flex flex-col gap-2 border-b border-border-default px-4 py-3 last:border-b-0 md:flex-row md:items-center',
-                    gapClass,
-                    isOn && 'bg-brand-50',
-                    onRowClick && 'cursor-pointer hover:bg-surface-subtle',
-                    rowClassName?.(row),
-                  )}
-                >
-                  {selectable && (
-                    <span role="cell" className="absolute top-3.5 right-4 md:static">
-                      <Box checked={isOn} label={`Select ${rowLabel?.(row) ?? id}`} onChange={() => toggle(id)} />
-                    </span>
-                  )}
-                  {columns.map((c) => (
-                    <div key={c.key} role="cell" style={widthStyle(c.width)} className={cellClass(c)}>
-                      {c.mobileLabel !== false && <span className="text-caption text-text-muted md:hidden">{c.mobileLabel ?? c.header}</span>}
-                      <div className={cn('min-w-0', c.mobileLabel === false ? 'flex-1' : cn('text-right', valueAlignClass[c.align ?? 'start']))}>{c.cell(row)}</div>
+                <Fragment key={id}>
+                  <div
+                    role="row"
+                    aria-selected={selectable ? isOn : undefined}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    className={cn(
+                      'relative flex flex-col gap-2 border-b border-border-default px-4 py-3 last:border-b-0 md:flex-row md:items-center',
+                      gapClass,
+                      isOn && 'bg-brand-50',
+                      onRowClick && 'cursor-pointer hover:bg-surface-subtle',
+                      rowClassName?.(row),
+                    )}
+                  >
+                    {selectable && (
+                      <span role="cell" className="absolute top-3.5 right-4 md:static">
+                        <Box checked={isOn} label={`Select ${rowLabel?.(row) ?? id}`} onChange={() => toggle(id)} />
+                      </span>
+                    )}
+                    {columns.map((c) => (
+                      <div key={c.key} role="cell" style={widthStyle(c.width)} className={cellClass(c)}>
+                        {c.mobileLabel !== false && <span className="text-caption text-text-muted md:hidden">{c.mobileLabel ?? c.header}</span>}
+                        <div className={cn('min-w-0', c.mobileLabel === false ? 'flex-1' : cn('text-right', valueAlignClass[c.align ?? 'start']))}>{c.cell(row)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {extra !== null && extra !== false && (
+                    <div role="row" className="border-b border-border-default bg-surface-subtle px-4 py-3 last:border-b-0">
+                      <div role="cell" className="min-w-0">
+                        {extra}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </Fragment>
               );
             })}
         </div>

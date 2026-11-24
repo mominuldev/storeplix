@@ -77,7 +77,7 @@ final class PurchaseHistory
      * @param  list<string>|null  $variantIds  null = every variant of the store
      * @return array<string, int>
      */
-    public static function incoming(Store $store, ?array $variantIds = null): array
+    public static function incoming(Store $store, ?array $variantIds = null, ?string $locationId = null): array
     {
         if ($variantIds === []) {
             return [];
@@ -88,6 +88,7 @@ final class PurchaseHistory
             ->where('i.tenant_id', $store->tenant_id)->where('i.store_id', $store->id)
             ->whereIn('po.status', PurchaseOrder::OPEN)
             ->when($variantIds !== null, fn ($q) => $q->whereIn('i.variant_id', $variantIds))
+            ->when($locationId !== null, fn ($q) => $q->where('po.location_id', $locationId)) // PHASE-8-8C §5.4
             ->groupBy('i.variant_id')
             ->selectRaw('i.variant_id, sum(CASE WHEN i.quantity_ordered - i.quantity_received - i.quantity_damaged > 0 THEN i.quantity_ordered - i.quantity_received - i.quantity_damaged ELSE 0 END) as incoming')
             ->pluck('incoming', 'variant_id')->map(fn ($v) => (int) $v)->all();

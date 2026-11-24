@@ -7,6 +7,7 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductImage;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Inventory\Http\Resources\InventoryPresenter;
+use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Shared\Http\UserRef;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +24,7 @@ final class ProductPresenter
     {
         $with = [
             'variants.inventory',
+            'variants.inventories.location', // PHASE-8-8C: totals over non-archived locations
             'images' => fn (Relation|Builder $q) => $q->orderBy('position'),
             'images.media',
             'categories' => fn (Relation|Builder $q) => $q->orderBy('product_categories.position'),
@@ -41,9 +43,10 @@ final class ProductPresenter
         $low = 0;
         $out = 0;
         foreach ($tracked as $v) {
-            $level = InventoryPresenter::level($v->inventory, true);
-            $low += $level['status'] === 'low_stock' ? 1 : 0;
-            $out += $level['status'] === 'out_of_stock' ? 1 : 0;
+            // PHASE-8-8C §5.3: the product list stock block is a TOTAL reader (Σ over non-archived locations).
+            $status = Inventory::status(true, InventoryPresenter::totalAvailable($v), $v->inventory?->effectiveThreshold() ?? Inventory::DEFAULT_LOW_STOCK_THRESHOLD);
+            $low += $status === 'low_stock' ? 1 : 0;
+            $out += $status === 'out_of_stock' ? 1 : 0;
         }
 
         return [
@@ -62,8 +65,8 @@ final class ProductPresenter
             'variants_count' => $variants->count(),
             'first_sku' => $variants->first(fn (ProductVariant $v) => $v->sku !== null)?->sku,
             'stock' => [
-                'on_hand' => (int) $variants->sum(fn (ProductVariant $v) => $v->inventory?->on_hand ?? 0),
-                'available' => (int) $variants->sum(fn (ProductVariant $v) => ($v->inventory?->on_hand ?? 0) - ($v->inventory?->committed ?? 0)),
+                'on_hand' => (int) $variants->sum(fn (ProductVariant $v) => InventoryPresenter::totalOnHand($v)),
+                'available' => (int) $variants->sum(fn (ProductVariant $v) => InventoryPresenter::totalAvailable($v)),
                 'low_variants' => $low,
                 'out_variants' => $out,
                 'tracked' => $tracked->isNotEmpty(),
@@ -118,7 +121,7 @@ final class ProductPresenter
             'track_inventory' => $variant->track_inventory,
             'allow_backorder' => $variant->allow_backorder,
             'image_media_id' => $variant->image_media_id,
-            'inventory' => InventoryPresenter::level($variant->inventory, $variant->track_inventory),
+            'inventory' => InventoryPresenter::variantLevel($variant), // online row + total (PHASE-8-8C §5.3)
             'updated_at' => UserRef::iso($variant->updated_at),
         ];
     }

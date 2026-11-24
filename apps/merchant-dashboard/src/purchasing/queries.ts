@@ -51,6 +51,8 @@ export function invalidateAfterReceipt(qc: QueryClient, s: Scope) {
     qc.invalidateQueries({ queryKey: keys.products(s) }),
     qc.invalidateQueries({ queryKey: [s.tenantId, s.storeId, 'product'] }),
     qc.invalidateQueries({ queryKey: keys.dashboard(s) }),
+    // PHASE-8-8C: units / value per location (Warehouses tab).
+    qc.invalidateQueries({ queryKey: [s.tenantId, s.storeId, 'locations'] }),
   ]);
 }
 

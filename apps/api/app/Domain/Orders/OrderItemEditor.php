@@ -9,7 +9,7 @@ use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
-use App\Domain\Inventory\Models\Inventory;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\MediaMaps;
 use App\Domain\Orders\Models\Order;
@@ -199,6 +199,7 @@ class OrderItemEditor
         }
         $errors = [];
         $seen = [];
+        $onlineLocation = null;
         $rows = []; // ['item' => ?OrderItem, 'variant_id' => ?string, 'quantity' => int, 'field' => string]
         // Validated nested arrays can come back with their keys out of order: keep the request's indexes (error paths).
         $requested = $input['items'];
@@ -314,6 +315,8 @@ class OrderItemEditor
                 'quantity' => $row['quantity'],
                 'old' => $old,
                 'tracked' => $tracked,
+                // PHASE-8-8C P88C-4: a kept line moves stock at its stored location; a new line at the online one.
+                'location_id' => $tracked ? ($item?->location_id ?? ($onlineLocation ??= Locations::defaultId($order->store_id))) : null,
                 'backorder' => $backorder,
                 'field' => $row['field'].'.quantity',
                 'change' => $change,
@@ -414,21 +417,20 @@ class OrderItemEditor
             }
             $delta = $line['quantity'] - $line['old'];
             if ($delta > 0) {
-                $commit[] = ['variant_id' => $line['variant_id'], 'quantity' => $delta, 'allow_backorder' => $line['backorder'], 'field' => $line['field']];
+                $commit[] = ['variant_id' => $line['variant_id'], 'quantity' => $delta, 'allow_backorder' => $line['backorder'], 'field' => $line['field'], 'location_id' => $line['location_id']];
             } elseif ($delta < 0) {
-                $release[] = ['variant_id' => $line['variant_id'], 'quantity' => -$delta];
+                $release[] = ['variant_id' => $line['variant_id'], 'quantity' => -$delta, 'location_id' => $line['location_id']];
             }
             if ($delta !== 0) {
-                $ids[] = $line['variant_id'];
+                $ids[] = ['variant_id' => $line['variant_id'], 'location_id' => $line['location_id']];
             }
         }
         if ($ids === []) {
             return;
         }
-        // All affected inventory rows in ONE sorted lock pass (§7), so commit + release can't deadlock a checkout.
-        $ids = array_values(array_unique($ids));
-        sort($ids, SORT_STRING);
-        Inventory::query()->where('store_id', $o->store_id)->whereIn('variant_id', $ids)->orderBy('variant_id')->lockForUpdate()->get(['id']);
+        // All affected inventory rows in ONE sorted lock pass (§7, PHASE-8-8C §3.3 (variant_id, location_id)), so
+        // commit + release can't deadlock a checkout.
+        $this->inventory->lockRows($o->store_id, $ids);
         $this->inventory->commit($o->store_id, $commit);
         $this->inventory->release($o->store_id, $release);
     }
@@ -482,6 +484,7 @@ class OrderItemEditor
                 $item->compare_at_amount = $line['compare_at_amount'];
                 $item->unit_cost_amount = $variant->cost_amount;
                 $item->tracked = $line['tracked'];
+                $item->location_id = $line['tracked'] ? $line['location_id'] : null;
                 $item->position = ++$position;
             }
             $item->quantity = $line['quantity'];

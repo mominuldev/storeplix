@@ -1,6 +1,6 @@
-import type { InventoryItem, InventoryListFilters, StockMovement, StockMovementReason } from '@storeplix/types';
+import type { InventoryItem, InventoryListFilters, Location, StockMovement, StockMovementReason } from '@storeplix/types';
 import { Button, buttonVariants, cn, DataTable, Dialog, Pagination, StockBadge, type DataTableColumn } from '@storeplix/ui';
-import { AlertTriangle, ArrowRight, Minus, Plus, RefreshCw, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ChevronDown, Minus, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { PageHeader } from '../layout/PageHeader';
@@ -13,11 +13,15 @@ import { ReorderCard } from '../purchasing/ReorderCard';
 import { movementPoRef } from '../purchasing/purchasing';
 import { AdjustDialog, reasonLabels } from './AdjustDialog';
 import { InventoryTabs } from './InventoryTabs';
+import { stockAt, useStockLocations } from './locations';
 
 // Figma Inventory 11:589 (Main 11:743). Contract §9.1: tabs Stock levels + Stock movements. PHASE-8-8B §10.1 adds the
 // Purchase orders + Suppliers tabs (own routes), the INCOMING column, the "Purchase order" header button, the reorder
-// suggestion card and "Received · PO-0012" movement rows. Transfer stock, Warehouses, Stock count, the location
-// selector and barcode scan stay hidden (8.8c+).
+// suggestion card and "Received · PO-0012" movement rows. PHASE-8-8C part A (§10.1): location selector 11:842 ("All
+// locations" + each, only with > 1 active location; with a location the table shows that row's numbers, with All
+// locations a row expands to per-location numbers — composed), Warehouses tab 11:808, adjust dialog location select,
+// movement rows and the latest-changes card show the location. Transfer stock 11:788, Stock count and barcode scan stay
+// hidden (part B / later). A one-location store renders exactly as before (no location UI).
 
 const movementReasonLabel: Record<StockMovementReason, string> = {
   initial: 'Opening stock',
@@ -30,6 +34,9 @@ const movementReasonLabel: Record<StockMovementReason, string> = {
   other: 'Adjusted',
   order_shipped: 'Order shipped',
   order_returned: 'Order returned',
+  transfer_out: 'Transfer out',
+  transfer_in: 'Transfer in',
+  count: 'Stock count',
 };
 
 function MovementIcon({ m }: { m: StockMovement }) {
@@ -48,7 +55,10 @@ export function InventoryPage() {
   const scope = useStoreScope();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'movements' ? 'movements' : 'levels';
+  const locs = useStockLocations();
   const [adjusting, setAdjusting] = useState<{ item: InventoryItem; reason: 'received' | 'correction' } | null>(null);
+  const paramLocation = params.get('location');
+  const locationId = locs.multi && paramLocation && locs.active.some((l) => l.id === paramLocation) ? paramLocation : null;
   const [receiving, setReceiving] = useState(false);
 
   const setTab = (t: 'levels' | 'movements') => {
@@ -76,11 +86,28 @@ export function InventoryPage() {
       />
       <InventoryTabs value={tab} onChange={(t) => setTab(t as 'levels' | 'movements')} />
       {tab === 'levels' ? (
-        <StockLevels canViewCosts={scope.canViewCosts} canManagePurchasing={scope.canManagePurchasing} onAdjust={scope.canAdjustInventory ? (item) => setAdjusting({ item, reason: 'correction' }) : undefined} onLedger={() => setTab('movements')} />
+        <StockLevels
+          canViewCosts={scope.canViewCosts}
+          canManagePurchasing={scope.canManagePurchasing}
+          locations={locs.multi ? locs.active : null}
+          locationId={locationId}
+          onAdjust={scope.canAdjustInventory ? (item) => setAdjusting({ item, reason: 'correction' }) : undefined}
+          onLedger={() => setTab('movements')}
+        />
       ) : (
-        <Movements />
+        <Movements locations={locs.multi ? locs.active : null} />
       )}
-      {adjusting && <AdjustDialog key={`${adjusting.item.variant_id}:${adjusting.reason}`} open item={adjusting.item} initialReason={adjusting.reason} onClose={() => setAdjusting(null)} />}
+      {adjusting && (
+        <AdjustDialog
+          key={`${adjusting.item.variant_id}:${adjusting.reason}`}
+          open
+          item={adjusting.item}
+          initialReason={adjusting.reason}
+          locations={locs.multi ? locs.active : null}
+          initialLocationId={locationId}
+          onClose={() => setAdjusting(null)}
+        />
+      )}
       <ReceivePicker
         open={receiving}
         onClose={() => setReceiving(false)}
@@ -93,7 +120,23 @@ export function InventoryPage() {
   );
 }
 
-function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: { canViewCosts: boolean; canManagePurchasing: boolean; onAdjust?: (i: InventoryItem) => void; onLedger: () => void }) {
+function StockLevels({
+  canViewCosts,
+  canManagePurchasing,
+  locations,
+  locationId,
+  onAdjust,
+  onLedger,
+}: {
+  canViewCosts: boolean;
+  canManagePurchasing: boolean;
+  /** Active locations when the store has more than one; null = no location UI. */
+  locations: Location[] | null;
+  /** Selected location (null = All locations). */
+  locationId: string | null;
+  onAdjust?: (i: InventoryItem) => void;
+  onLedger: () => void;
+}) {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const debounced = useDebounced(q);
@@ -101,9 +144,11 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
   const categoryId = params.get('category') ?? '';
   const page = Number(params.get('page') ?? '1') || 1;
   const categories = useCategories();
-  const filters: InventoryListFilters = { q: debounced || undefined, stock: stock.length ? stock : undefined, category_id: categoryId || undefined, page, per_page: 25 };
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const filters: InventoryListFilters = { q: debounced || undefined, stock: stock.length ? stock : undefined, category_id: categoryId || undefined, ...(locationId ? { location_id: locationId } : {}), page, per_page: 25 };
   const list = useInventory(filters);
-  const latest = useMovements({ per_page: 6 });
+  const latest = useMovements({ per_page: 6, ...(locationId ? { location_id: locationId } : {}) });
+  const expandable = !!locations && !locationId;
   const summary = list.data?.meta.summary;
   const meta = list.data?.meta;
 
@@ -146,6 +191,33 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
       cell: (i) => <span className={cn('text-body font-semibold', i.track_inventory && i.available <= 0 ? 'text-danger' : 'text-text-primary')}>{formatCount(i.available)}</span>,
     },
     { key: 'status', header: 'Status', width: 110, align: 'center', cell: (i) => <StockBadge status={i.status} /> },
+    ...(expandable
+      ? [
+          {
+            key: 'locations',
+            header: <span className="sr-only">Per location</span>,
+            mobileLabel: false as const,
+            width: 32,
+            align: 'center' as const,
+            cell: (i: InventoryItem) => {
+              const open = expanded.includes(i.variant_id);
+              const name = `${i.product.name}${i.title !== 'Default' ? ` ${i.title}` : ''}`;
+              return (
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-label={`${open ? 'Hide' : 'Show'} stock per location for ${name}`}
+                  onClick={() => setExpanded((ids) => (open ? ids.filter((x) => x !== i.variant_id) : [...ids, i.variant_id]))}
+                  className="flex h-8 items-center gap-1.5 rounded-md text-caption font-medium text-brand-600 outline-none hover:text-brand-700 focus-visible:shadow-focus md:size-8 md:justify-center"
+                >
+                  <span className="md:hidden">{open ? 'Hide locations' : 'By location'}</span>
+                  <ChevronDown aria-hidden className={cn('size-4 transition-transform', open && 'rotate-180')} />
+                </button>
+              );
+            },
+          },
+        ]
+      : []),
     {
       key: 'adjust',
       header: <span className="sr-only">Adjust</span>,
@@ -194,13 +266,23 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
         <StatTile label="Held for orders" value={formatCount(summary?.committed_units ?? 0)} hint="Starts with orders" />
         <StatTile label="Low or out of stock" value={`${formatCount(summary?.low_stock_variants ?? 0)} · ${formatCount(summary?.out_of_stock_variants ?? 0)}`} hint="low · out" />
       </section>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <div className="grid gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_340px] min-[1400px]:items-start">
         <DataTable
           className="min-w-0"
           label="Stock levels"
           toolbar={
             <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
               <SearchBox value={q} onChange={(v) => { setQ(v); set({ q: v }); }} placeholder="Product, SKU or barcode" label="Search stock" className="h-9 w-full sm:w-[230px] [&>svg]:size-4" />
+              {locations && (
+                <FilterSelect label="Location" value={locationId ?? ''} onChange={(e) => set({ location: e.target.value })}>
+                  <option value="">All locations</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </FilterSelect>
+              )}
               <FilterSelect label="Stock status" value={stock.join(',')} onChange={(e) => set({ stock: e.target.value })}>
                 <option value="">All stock</option>
                 <option value="low,out">Low or out</option>
@@ -223,6 +305,7 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
           columns={columns}
           rows={rows}
           getRowId={(i) => i.variant_id}
+          renderExpanded={expandable ? (i) => (expanded.includes(i.variant_id) ? <LocationBreakdown item={i} locations={locations} /> : null) : undefined}
           state={state}
           footer={meta && meta.total > 0 && <Pagination page={meta.current_page} perPage={meta.per_page} total={meta.total} lastPage={meta.last_page} noun="variants" onPage={(p) => set({ page: String(p) })} />}
         />
@@ -249,7 +332,7 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
                       {movementPoRef(m) ? `Received · ${movementPoRef(m)!.number}` : movementReasonLabel[m.reason]} · {m.product.name}
                     </span>
                     <span className="truncate text-caption text-text-muted">
-                      {[m.variant_title !== 'Default' ? m.variant_title : null, movementPoRef(m)?.supplier ?? null, m.actor?.name ? `By ${m.actor.name}` : null, shortDate(m.created_at)].filter(Boolean).join(' · ')}
+                      {[m.variant_title !== 'Default' ? m.variant_title : null, locations && !locationId ? m.location.name : null, movementPoRef(m)?.supplier ?? null, m.actor?.name ? `By ${m.actor.name}` : null, shortDate(m.created_at)].filter(Boolean).join(' · ')}
                     </span>
                   </span>
                   <span className={cn('text-body font-semibold', m.delta > 0 ? 'text-success' : 'text-danger')}>{deltaText(m.delta)}</span>
@@ -263,11 +346,40 @@ function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: 
   );
 }
 
+/** All-locations row expansion (composed): each active location's on hand / held / available for the variant. */
+function LocationBreakdown({ item, locations }: { item: InventoryItem; locations: Location[] | null }) {
+  const name = `${item.product.name}${item.title !== 'Default' ? ` ${item.title}` : ''}`;
+  const rows = (locations ?? []).map((l) => ({ id: l.id, name: l.name, isDefault: l.is_default, ...stockAt(item, l.id) }));
+  return (
+    <ul aria-label={`Stock per location for ${name}`} className="flex flex-col gap-1.5 md:pl-[52px]">
+      {rows.map((r) => (
+        <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-body">
+          <span className="min-w-0 flex-1 truncate font-medium text-text-primary">
+            {r.name}
+            {r.isDefault && <span className="ml-1.5 text-caption font-normal text-text-muted">· Online</span>}
+          </span>
+          <span className="text-text-secondary">
+            On hand <span className="font-medium text-text-primary">{formatCount(r.on_hand)}</span>
+          </span>
+          <span className="text-text-secondary">
+            Held <span className="font-medium text-text-primary">{formatCount(r.committed)}</span>
+          </span>
+          <span className="text-text-secondary">
+            Available <span className={cn('font-semibold', item.track_inventory && r.available <= 0 ? 'text-danger' : 'text-text-primary')}>{formatCount(r.available)}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const reasonOptions: StockMovementReason[] = ['received', 'correction', 'damaged', 'lost', 'returned', 'import', 'initial', 'other'];
 
-function Movements() {
+function Movements({ locations }: { locations: Location[] | null }) {
   const canOpenPo = useStoreScope().canReceiveStock;
   const [reason, setReason] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const locationId = locations && locations.some((l) => l.id === locationFilter) ? locationFilter : '';
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [productQ, setProductQ] = useState('');
@@ -277,6 +389,7 @@ function Movements() {
   const list = useMovements({
     reason: reason ? [reason as StockMovementReason] : undefined,
     product_id: productId || undefined,
+    ...(locationId ? { location_id: locationId } : {}),
     created_from: from ? `${from}T00:00:00` : undefined,
     created_to: to ? `${to}T23:59:59` : undefined,
     page,
@@ -316,6 +429,9 @@ function Movements() {
         );
       },
     },
+    ...(locations
+      ? [{ key: 'location', header: 'Location', width: 140, cell: (m: StockMovement) => <span className="truncate text-body text-text-secondary">{m.location.name}</span> }]
+      : []),
     { key: 'delta', header: 'Change', width: 80, align: 'end', cell: (m) => <span className={cn('text-body font-semibold', m.delta > 0 ? 'text-success' : 'text-danger')}>{deltaText(m.delta)}</span> },
     { key: 'after', header: 'On hand after', width: 110, align: 'end', cell: (m) => <span className="text-body text-text-primary">{formatCount(m.on_hand_after)}</span> },
     { key: 'by', header: 'By', width: 120, cell: (m) => <span className="truncate text-body text-text-secondary">{m.actor?.name ?? (m.reason === 'import' ? 'CSV import' : '—')}</span> },
@@ -323,7 +439,7 @@ function Movements() {
 
   const rows = list.data?.data ?? [];
   const meta = list.data?.meta;
-  const filtered = !!(reason || from || to || productId);
+  const filtered = !!(reason || from || to || productId || locationId);
   return (
     <DataTable
       label="Stock movements"
@@ -337,6 +453,16 @@ function Movements() {
               </option>
             ))}
           </FilterSelect>
+          {locations && (
+            <FilterSelect label="Location" value={locationId} onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}>
+              <option value="">All locations</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </FilterSelect>
+          )}
           <span className="flex items-center gap-1.5">
             <SearchBox value={productQ} onChange={setProductQ} placeholder="Find a product" label="Find a product" className="w-44" />
             <FilterSelect label="Product" value={productId} onChange={(e) => { setProductId(e.target.value); setPage(1); }}>
@@ -377,6 +503,7 @@ function Movements() {
                     setTo('');
                     setProductId('');
                     setProductQ('');
+                    setLocationFilter('');
                   }
                 : undefined
             }

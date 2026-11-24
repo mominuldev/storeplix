@@ -24,9 +24,9 @@ export function useProduct(id: string | undefined) {
   return useQuery({ queryKey: keys.product(s, id), queryFn: () => api.products.get(s.storeId!, id!), enabled: !!s.storeId && !!id, staleTime: 0 });
 }
 
-export function useInventory(filters: InventoryListFilters) {
+export function useInventory(filters: InventoryListFilters, enabled = true) {
   const s = useStoreScope();
-  return useQuery({ queryKey: keys.inventory(s, filters), queryFn: () => api.inventory.list(s.storeId!, filters), enabled: !!s.storeId, placeholderData: keepPreviousData });
+  return useQuery({ queryKey: keys.inventory(s, filters), queryFn: () => api.inventory.list(s.storeId!, filters), enabled: !!s.storeId && enabled, placeholderData: keepPreviousData });
 }
 
 export function useMovements(filters: StockMovementFilters, enabled = true) {
@@ -73,6 +73,8 @@ export function useInvalidate() {
           qc.invalidateQueries({ queryKey: [s.tenantId, s.storeId, 'product'] }),
           qc.invalidateQueries({ queryKey: keys.products(s) }),
           qc.invalidateQueries({ queryKey: keys.dashboard(s) }),
+          // PHASE-8-8C: units / value per location (Warehouses tab).
+          qc.invalidateQueries({ queryKey: [s.tenantId, s.storeId, 'locations'] }),
         ]),
       [qc, s],
     ),

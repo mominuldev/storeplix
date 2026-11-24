@@ -26,13 +26,14 @@ class LowStockMail extends Mailable
         public readonly ?string $variant,
         public readonly int $onHand,
         public readonly string $url,
+        public readonly ?string $location = null, // PHASE-8-8C P88C-15: named only when the store has > 1 location
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
             from: new Address('alerts@'.config('storeplix.platform_domain'), 'Store Plix'),
-            subject: self::oneLine('Low stock: '.$this->item().' — '.$this->onHand.' left'),
+            subject: self::oneLine('Low stock: '.$this->item().' — '.$this->onHand.' left'.($this->location !== null ? ' at '.$this->location : '')),
         );
     }
 
@@ -40,7 +41,7 @@ class LowStockMail extends Mailable
     {
         $e = fn (string $v) => htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
         $html = '<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1d1d1f">'
-            .'<p><strong>'.$e($this->item()).'</strong> is running low at '.$e($this->shop).': '.$this->onHand.' left.</p>'
+            .'<p><strong>'.$e($this->item()).'</strong> is running low at '.$e($this->shop).': '.$this->onHand.' left'.($this->location !== null ? ' at '.$e($this->location) : '').'.</p>'
             .'<p><a href="'.$e($this->url).'">Open the product in your dashboard</a></p>'
             .'<p style="color:#6e6e73;font-size:12px">Sent by your "Low stock alert" automation.</p></body></html>';
 

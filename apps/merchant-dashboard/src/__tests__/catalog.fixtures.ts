@@ -78,7 +78,7 @@ export function variant(overrides: Partial<Product['variants'][number]> = {}): P
     track_inventory: true,
     allow_backorder: false,
     image_media_id: null,
-    inventory: { on_hand: 14, committed: 0, available: 14, low_stock_threshold: null, effective_threshold: 5, status: 'in_stock' },
+    inventory: { on_hand: 14, committed: 0, available: 14, low_stock_threshold: null, effective_threshold: 5, status: 'in_stock', location_id: 'LOC1', total_on_hand: 14, other_locations_on_hand: 0 },
     updated_at: '2026-11-01T00:00:00Z',
     ...overrides,
   };
@@ -93,7 +93,7 @@ export function product(overrides: Partial<Product> = {}): Product {
       { name: 'Size', values: ['M', 'L'] },
       { name: 'Colour', values: ['Red'] },
     ],
-    variants: [variant(), variant({ id: 'V2', title: 'L / Red', option_values: ['L', 'Red'], sku: 'JT-RD-L', position: 1, inventory: { on_hand: 9, committed: 0, available: 9, low_stock_threshold: null, effective_threshold: 5, status: 'in_stock' } })],
+    variants: [variant(), variant({ id: 'V2', title: 'L / Red', option_values: ['L', 'Red'], sku: 'JT-RD-L', position: 1, inventory: { on_hand: 9, committed: 0, available: 9, low_stock_threshold: null, effective_threshold: 5, status: 'in_stock', location_id: 'LOC1', total_on_hand: 9, other_locations_on_hand: 0 } })],
     images: [],
     seo: { title: null, description: null },
     url_path: '/products/jamdani-three-piece',
@@ -123,6 +123,8 @@ export function inventoryItem(overrides: Partial<InventoryItem> = {}): Inventory
     cost_amount: 210000,
     updated_at: '2026-11-01T00:00:00Z',
     incoming: 0,
+    location_id: null,
+    locations: [{ id: 'LOC1', name: 'Main warehouse', on_hand: overrides.on_hand ?? 14, committed: overrides.committed ?? 0, available: overrides.available ?? 14 }],
     ...overrides,
   };
 }

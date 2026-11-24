@@ -314,6 +314,21 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'purchasing'"; exit 1; }
           exit $status
 
+      # Phase 8.8c part A (PHASE-8-8C-CONTRACT §12 S179–S186, §13, §16 AC 1–3, 6): the `locations` group (every §9 part-A
+      # route: happy, validation, authz, isolation; backfill migration test (S182); reader parity matrix + the static
+      # 1:1 `join('inventories'` guard (S185); online-location change matrix: cancel/ship/return after make-default hit
+      # the stored row (S184); weighted average across locations (S186); `multi_warehouse` gate + downgrade (S181);
+      # external inventory shape; `stock.low` per location) must exist and pass on sqlite. Concurrency (`race`) runs on
+      # Postgres only.
+      - name: phase 8.8c-A group (locations)
+        run: |
+          mkdir -p build
+          php artisan test --group=locations --exclude-group perf --exclude-group race --log-junit build/locations.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/locations.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "locations tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'locations'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -495,6 +510,22 @@ jobs:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
           CACHE_STORE: array
+      # Phase 8.8c-A (§3.1): locations (partial unique default, unique lower(name) among active, CHECK not default+archived,
+      # composite FKs), inventories re-keyed to (variant, location) with the Postgres-only CHECK on_hand >= 0 and its
+      # pre-check, movements/order_items/purchase_orders/purchase_receipts location columns + backfill exist on Postgres;
+      # locations must pass there too and must not be empty.
+      - name: phase 8.8c-A locations (postgres)
+        run: |
+          mkdir -p build
+          php artisan test --group=locations --exclude-group perf --exclude-group race --log-junit build/locations-pg.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/locations-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "locations tests executed (postgres): ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'locations' on Postgres"; exit 1; }
+          exit $status
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
   # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
@@ -617,7 +648,9 @@ jobs:
             test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
             test_concurrent_courier_connects_at_the_limit_give_one_success_and_one_402 \
             test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
-            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers; do
+            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers \
+            test_parallel_checkouts_sell_only_the_online_locations_stock \
+            test_parallel_location_writes_keep_the_cap_and_one_default; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -626,6 +659,29 @@ jobs:
               echo "::error::race test ${t} did not run on Postgres (tests=${ran}, skipped=${skipped})"
               fail=1
             fi
+          done
+          exit $fail
+      # Phase 8.8c-A (S183, §13): the `locations` ∩ `race` tests (LocationRaceTest: checkout sells only the online
+      # location's stock; parallel location writes keep the cap and one default) run in the list above. This guard
+      # DISCOVERS that intersection from the test files (a #[Group('race')] method or class in a file tagged
+      # #[Group('locations')]) and fails when it is empty or when a discovered test is missing from the race lists of
+      # api-perf and api-rls, so a new location race test can't silently not run.
+      - name: phase 8.8c-A race list complete (discovered)
+        run: |
+          names=$(grep -rlE "Group\('locations'\)" tests --include='*.php' | xargs -r awk '
+            FNR == 1 { pend = 0; classrace = 0 }
+            /^[[:space:]]*#\[Group\(.race.\)\]/ { pend = 1; next }
+            /^[[:space:]]*(#\[|\/\*\*|\*)/ { next }
+            /^[[:space:]]*((final|abstract|readonly)[[:space:]]+)*class[[:space:]]/ { classrace = pend; pend = 0; next }
+            /function[[:space:]]+test_/ { if (pend || classrace) { match($0, /test_[A-Za-z0-9_]+/); print substr($0, RSTART, RLENGTH) } pend = 0; next }
+            /^[[:space:]]*$/ { next }
+            { pend = 0 }' | sort -u)
+          [ -n "$names" ] || { echo "::error::no race tests in group 'locations' (S183 needs a Postgres oversell race on the online location)"; exit 1; }
+          fail=0
+          for t in $names; do
+            listed=$(grep -cw -- "${t}" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" || true)
+            echo "${t}: listed ${listed}x"
+            [ "${listed:-0}" -ge 2 ] || { echo "::error::locations race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
           done
           exit $fail
       # Phase 5a perf budget (§12): checkout p95 < 300 ms, 10-line cart, 50 sequential runs. Runs the
@@ -821,7 +877,9 @@ jobs:
             test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
             test_concurrent_courier_connects_at_the_limit_give_one_success_and_one_402 \
             test_concurrent_domain_adds_at_the_limit_give_one_201_and_one_402 \
-            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers; do
+            test_concurrent_invoice_issuing_gives_gapless_consecutive_numbers \
+            test_parallel_checkouts_sell_only_the_online_locations_stock \
+            test_parallel_location_writes_keep_the_cap_and_one_default; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
@@ -880,6 +938,11 @@ jobs:
       # (their RLS probes are also in the `rls` step above).
       - name: phase 8.8b purchasing (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" purchasing lenient --group=purchasing --exclude-group perf --exclude-group race'
+      # Phase 8.8c-A (PHASE-8-8C-CONTRACT §3.1, S179, S183): `locations` is RLS-forced; per-location stock rows, the
+      # backfill, order line locations, "Receive at" and make-default work inside the actor's tenant with the app role
+      # (the RLS probe for `locations` is also in the `rls` step above).
+      - name: phase 8.8c-A locations (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" locations lenient --group=locations --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

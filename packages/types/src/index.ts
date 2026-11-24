@@ -472,9 +472,19 @@ export type UpdateCategoryInput = Partial<CreateCategoryInput>;
 export interface ReorderCategoriesInput { items: { id: string; parent_id: string | null }[] }
 
 export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock' | 'untracked';
+/**
+ * Product editor / presenter `inventory` block. Since Phase 8.8c (P88C-6, §5.3) every number here is the **online
+ * location's** stock row (= the default location); a missing row reads as 0.
+ */
 export interface InventoryLevel {
   on_hand: number; committed: number; available: number;
   low_stock_threshold: number | null; effective_threshold: number; status: StockStatus;
+  /** Phase 8.8c: the online (default) location these numbers belong to. */
+  location_id: string;
+  /** Phase 8.8c: Σ on_hand over the variant's rows at non-archived locations. */
+  total_on_hand: number;
+  /** Phase 8.8c: `total_on_hand − on_hand` ("+ n at other locations" in the product editor). */
+  other_locations_on_hand: number;
 }
 export interface ProductVariant {
   id: string; title: string; option_values: string[];      // ordered like Product.options
@@ -537,7 +547,77 @@ export type ProductBulkAction = 'activate' | 'draft' | 'archive' | 'delete' | 's
 export interface ProductBulkInput { action: ProductBulkAction; ids: string[]; category_ids?: string[] }
 export interface ProductBulkResult { action: ProductBulkAction; updated: number }
 
+// ---------- Locations (Phase 8.8c part A, PHASE-8-8C-CONTRACT §3.1, §4; openapi 1.18.0) ----------
+export type LocationType = 'warehouse' | 'shop';
+export const LOCATION_TYPES: readonly LocationType[] = ['warehouse', 'shop'];
+export const LOCATION_TYPE_LABELS: Record<LocationType, string> = { warehouse: 'Warehouse', shop: 'Shop' };
+/** P88C-2 bounds (WEB Zod mirrors these). */
+export const LOCATION_NAME_MAX = 60;
+export const LOCATION_ADDRESS_MAX = 200;
+/** At most 10 non-archived locations per store. */
+export const LOCATIONS_MAX = 10;
+/** `{id, name}` summary used on movements, purchase orders, receipts and inventory rows. */
+export interface LocationRef { id: string; name: string }
+/**
+ * `GET …/locations` item (sorted default first, then `position`, then name). `is_default` = the online location
+ * ("Online orders ship from here", P88C-4). Exactly one default per store; a default is never archived.
+ */
+export interface Location {
+  id: string;
+  name: string;
+  type: LocationType;
+  address: string | null;
+  is_default: boolean;
+  position: number;
+  archived_at: string | null;
+  /** Optional link to a shipping pickup address (display + prefill only). */
+  pickup_location: LocationRef | null;
+  /** Σ on_hand at this location */
+  units_on_hand: number;
+  /** Σ on_hand × variant cost; null without `costs.view` */
+  stock_value_amount: number | null;
+  /** stock rows here with on_hand > 0 */
+  variants_count: number;
+  created_at: string;
+  updated_at: string;
+}
+/** POST …/locations (201; plan `multi_warehouse` for the 2nd+ active location) and PATCH (partial). `settings.manage`. */
+export interface LocationInput {
+  name: string;
+  type: LocationType;
+  address?: string | null;
+  pickup_location_id?: string | null;
+}
+export type UpdateLocationInput = Partial<LocationInput>;
+/**
+ * `GET …/locations` filter. `archived` omitted = every location (active and archived, so the Warehouses tab can offer
+ * Unarchive); `false` = active only; `true` = archived only. Not paginated (≤ 10 active).
+ */
+export interface LocationListFilters { archived?: boolean }
+/** P88C-17 reasons in `error.details.reasons` of 409 `location_in_use` (archive). Transfer/count reasons arrive in part B. */
+export type LocationInUseReason =
+  | 'is_default' | 'has_stock' | 'has_committed' | 'open_purchase_orders' | 'open_transfers' | 'open_counts';
+export const LOCATION_IN_USE_REASONS: readonly LocationInUseReason[] = [
+  'is_default', 'has_stock', 'has_committed', 'open_purchase_orders', 'open_transfers', 'open_counts',
+];
+/** §9 error codes added by 8.8c part A (`insufficient_stock`, `feature_not_in_plan` already exist). */
+export type LocationErrorCode = 'location_in_use' | 'location_name_taken' | 'location_locked' | 'location_archived';
+/** P88C-18 audit actions (part A). */
+export type LocationAuditAction =
+  | 'location.created' | 'location.updated' | 'location.archived' | 'location.unarchived' | 'location.made_default';
+export const LOCATION_AUDIT_ACTIONS: readonly LocationAuditAction[] = [
+  'location.created', 'location.updated', 'location.archived', 'location.unarchived', 'location.made_default',
+];
+
 // ---------- Inventory ----------
+/** Phase 8.8c: one location's numbers for a variant in `InventoryItem.locations`. */
+export interface InventoryItemLocation { id: string; name: string; on_hand: number; committed: number; available: number }
+/**
+ * Phase 8.8c (§5.4): without `filter[location_id]` ("All locations") the top-level numbers are **totals** over
+ * non-archived locations and `location_id` is null; with a filter they are that location's row only. Also the
+ * external API item (`GET /external/…/inventory`), where without a filter top-level `on_hand`/`available` keep meaning
+ * the **online location** (documented in openapi) and `locations[]` carries the per-location numbers.
+ */
 export interface InventoryItem {
   variant_id: string;
   product: { id: string; name: string; status: ProductStatus; image: MediaRef | null };
@@ -550,6 +630,10 @@ export interface InventoryItem {
    * Σ ordered − received − damaged). Always an integer (0 when none); visible to every inventory reader.
    */
   incoming: number;
+  /** Phase 8.8c: the filtered location, null for "All locations". */
+  location_id: string | null;
+  /** Phase 8.8c: one entry per non-archived location (missing rows read as 0), default first then position. */
+  locations: InventoryItemLocation[];
 }
 export interface InventorySummary {
   currency: string; stock_value_cost_amount: number | null; stock_value_price_amount: number;
@@ -560,11 +644,24 @@ export interface InventoryListMeta extends PaginationMeta { summary: InventorySu
 export interface InventoryListFilters {
   q?: string; stock?: ('in' | 'low' | 'out' | 'untracked')[];
   category_id?: string; product_id?: string;
+  /** Phase 8.8c `filter[location_id]`; omitted = All locations (totals). */
+  location_id?: string;
   sort?: 'name' | 'available' | '-available' | '-updated_at'; page?: number; per_page?: number;
 }
-export type StockMovementReason = 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other' | 'order_shipped' | 'order_returned';
-export type ManualStockReason = Exclude<StockMovementReason, 'initial' | 'import' | 'order_shipped' | 'order_returned'>;
-export interface StockAdjustmentItem { variant_id: string; mode: 'delta' | 'set'; quantity: number; expected_on_hand?: number }
+/** Phase 8.8c adds `transfer_out`, `transfer_in` (stock transfers, part B) and `count` (stock counts, part B). */
+export type StockMovementReason =
+  | 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other' | 'order_shipped'
+  | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count';
+export type ManualStockReason = Exclude<
+  StockMovementReason, 'initial' | 'import' | 'order_shipped' | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count'
+>;
+export interface StockAdjustmentItem {
+  variant_id: string; mode: 'delta' | 'set'; quantity: number; expected_on_hand?: number;
+  /** Phase 8.8c (P88C-7): omitted = the default location. `expected_on_hand` / `set` apply to that location's row. */
+  location_id?: string;
+}
+/** PATCH …/inventory/{variant} (threshold). Phase 8.8c: `location_id` omitted = the default location's row. */
+export interface InventoryThresholdInput { low_stock_threshold: number | null; location_id?: string }
 export interface StockAdjustmentInput { reason: ManualStockReason; note?: string | null; items: StockAdjustmentItem[] }
 export interface StockMovement {
   id: string; variant_id: string; product: { id: string; name: string };
@@ -576,13 +673,18 @@ export interface StockMovement {
   reference: { type: StockMovementReferenceType; id: string } | null;
   /** Phase 8.4: a movement made with an API key renders `{ type: 'api_key', id, name: "API: <key name>" }`. */
   actor: UserRef | { type: 'api_key'; id: string; name: string } | null; created_at: string;
+  /** Phase 8.8c: the stock row's location (every ledger row has one). */
+  location: LocationRef;
 }
-export type StockMovementReferenceType = 'import' | 'order' | 'return' | 'purchase_order';
+/** Phase 8.8c adds `stock_transfer` and `stock_count` (part B). */
+export type StockMovementReferenceType = 'import' | 'order' | 'return' | 'purchase_order' | 'stock_transfer' | 'stock_count';
 export interface StockAdjustmentResult { items: InventoryItem[]; movements: StockMovement[] }
 export interface StockMovementFilters {
   variant_id?: string; product_id?: string; reason?: StockMovementReason[];
   /** Phase 8.8b: `filter[reference_type]` (single value), e.g. `purchase_order`. */
   reference_type?: StockMovementReferenceType;
+  /** Phase 8.8c `filter[location_id]`. */
+  location_id?: string;
   created_from?: string; created_to?: string; page?: number; per_page?: number;
 }  // api-client maps to filter[...] / filter[created_at][gte|lte]
 
@@ -624,7 +726,7 @@ export type DataImportStatus = 'uploaded' | 'validating' | 'validated' | 'import
 export type ProductImportField =
   | 'handle' | 'name' | 'description' | 'status' | 'category' | 'tags'
   | 'option1_name' | 'option1_value' | 'option2_name' | 'option2_value' | 'option3_name' | 'option3_value'
-  | 'sku' | 'barcode' | 'price' | 'compare_at_price' | 'cost_price' | 'stock' | 'weight_kg'
+  | 'sku' | 'barcode' | 'price' | 'compare_at_price' | 'cost_price' | 'stock' | 'location' | 'weight_kg'
   | 'seo_title' | 'seo_description' | 'image_urls';
 export type CustomerImportField = 'name' | 'phone' | 'email' | 'district' | 'area' | 'channel' | 'tags' | 'accepts_marketing' | 'note';
 /** Phase 8.8b (P88B-15): match by phone, else by exact name (case-insensitive) among this store's suppliers. */
@@ -2790,6 +2892,8 @@ export interface PurchaseOrder {
   /** null for adjust-only actors */
   payment_status: PurchasePaymentStatus | null;
   supplier: PurchaseOrderSupplierRef;
+  /** Phase 8.8c (P88C-8) "Receive at": where receipts stock (default location unless chosen; locked once received). */
+  location: LocationRef;
   lines_count: number;
   preview_items: PurchaseOrderPreviewItem[];
   units_ordered: number;
@@ -2865,6 +2969,8 @@ export interface PurchaseReceipt {
   id: string;
   received_at: string;
   received_by: UserRef | null;
+  /** Phase 8.8c: the location this receipt stocked (the PO's location at the time). */
+  location: LocationRef;
   supplier_invoice_ref: string | null;
   invoice: PurchaseInvoiceAttachment | null;
   note: string | null;
@@ -2960,6 +3066,8 @@ export interface PurchaseOrderLineInput {
 export interface CreatePurchaseOrderInput {
   supplier_id: string;
   lines: PurchaseOrderLineInput[];
+  /** Phase 8.8c "Receive at": omitted = default location; must be active; changing it after a receipt → 422 `location_locked`. */
+  location_id?: string;
   expected_on?: string | null;
   shipping_amount?: number;
   discount_amount?: number;
@@ -2998,6 +3106,8 @@ export interface QuickPurchaseLineInput { variant_id: string; unit_cost_amount: 
 export interface QuickPurchaseInput {
   supplier_id: string;
   lines: QuickPurchaseLineInput[];
+  /** Phase 8.8c: omitted = default location. */
+  location_id?: string;
   shipping_amount?: number;
   discount_amount?: number;
   payment?: Omit<SupplierPaymentInput, 'purchase_order_id'> | null;

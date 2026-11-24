@@ -17,6 +17,7 @@ use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Marketing\Attribution;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
@@ -285,11 +286,13 @@ class OrderPlacementService
         $this->assertLines($loaded, $lines, $storefront);
         $plain = CartPricer::price($loaded['lines']);
 
-        // 3. Commit stock (inventories locked by variant_id).
+        // 3. Commit stock at the online location (PHASE-8-8C P88C-4; read once here, stored on the lines below), rows
+        // locked in (variant_id, location_id) order.
+        $onlineLocation = Locations::defaultId($store->id);
         $commit = [];
         foreach ($loaded['lines'] as $i => $line) {
             if ($line['tracked']) {
-                $commit[] = ['variant_id' => $line['variant_id'], 'quantity' => $line['quantity'], 'allow_backorder' => $line['backorder'], 'field' => $field($i, 'quantity')];
+                $commit[] = ['variant_id' => $line['variant_id'], 'quantity' => $line['quantity'], 'allow_backorder' => $line['backorder'], 'field' => $field($i, 'quantity'), 'location_id' => $onlineLocation];
             }
         }
         $this->inventory->commit($store->id, $commit);
@@ -429,6 +432,7 @@ class OrderPlacementService
             $item->discount_amount = $line['discount_amount'];
             $item->total_amount = $line['line_amount'] - $line['discount_amount'];
             $item->tracked = $in['tracked'];
+            $item->location_id = $in['tracked'] ? $onlineLocation : null;
             $item->position = $i;
             $item->save();
         }

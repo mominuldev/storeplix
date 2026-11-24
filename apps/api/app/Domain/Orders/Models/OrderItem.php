@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $total_amount
  * @property int $quantity
  * @property bool $tracked
+ * @property string|null $location_id stock location the line committed at (PHASE-8-8C P88C-4; null = untracked)
  * @property int $restocked_quantity
  * @property int $position
  */

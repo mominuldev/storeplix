@@ -7,6 +7,7 @@ use App\Domain\Catalog\Http\Resources\ProductPresenter;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Support\StockSql;
+use App\Domain\Inventory\InventorySql;
 use App\Domain\Media\MediaMaps;
 use App\Domain\Media\Models\Media;
 use App\Domain\Shared\Http\ApiException;
@@ -132,8 +133,8 @@ class StorefrontProductController
             $query->where('products.price_min_amount', '<=', (int) $input['price_max']);
         }
         if (($input['in_stock'] ?? '0') === '1') {
-            $query->whereExists(fn ($q) => $q->select(DB::raw(1))->from('product_variants')
-                ->leftJoin('inventories', 'inventories.variant_id', '=', 'product_variants.id')
+            // PHASE-8-8C §5.3: ONLINE reader (the online location's row only).
+            $query->whereExists(fn ($q) => InventorySql::joinOnline($q->select(DB::raw(1))->from('product_variants'))
                 ->whereColumn('product_variants.product_id', 'products.id')
                 ->whereNull('product_variants.deleted_at')->where('product_variants.is_enabled', true)
                 ->where(fn ($w) => $w->where('product_variants.track_inventory', false)->orWhere('product_variants.allow_backorder', true)

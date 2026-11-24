@@ -20,6 +20,7 @@ import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
 import { storeDomain } from '../stores/useTenantStore';
 import { productFormSchema } from './schema';
+import { OtherLocationsStock } from './OtherLocationsStock';
 import { StockCell, VariantsCard } from './VariantsCard';
 import { blankVariant, emptyProductForm, formToPayload, productToForm, serverPathToField, stockAdjustments, totalStock, type ProductFormValues, type VariantRow } from './variants';
 
@@ -85,6 +86,12 @@ function ProductEditor({ product }: { product: Product | null }) {
   const variants = values.variants;
   const isVariable = values.options.length > 0;
   const first = variants[0] ?? blankVariant();
+  // PHASE-8-8C §10.3: stock fields edit the default location; "+ n at other locations" when stock is elsewhere.
+  const elsewhere = new Map((product?.variants ?? []).filter((v) => v.inventory.other_locations_on_hand > 0).map((v) => [v.id, v.inventory]));
+  const stockElsewhere = (row: VariantRow, label: string) => {
+    const inv = row.id && product ? elsewhere.get(row.id) : undefined;
+    return inv && product ? <OtherLocationsStock productId={product.id} variantId={row.id!} defaultLocationId={inv.location_id} count={inv.other_locations_on_hand} label={label} /> : null;
+  };
 
   // Leave guard (same as the Phase 3 editors).
   useEffect(() => {
@@ -353,6 +360,7 @@ function ProductEditor({ product }: { product: Product | null }) {
                 <div className="flex flex-col gap-1.5">
                   <Label>Stock</Label>
                   <StockCell className="md:w-full" title="Product" row={first} error={errors.variants?.[0]?.stock?.message} onChange={(stock) => patchVariant(0, { stock })} />
+                  {stockElsewhere(first, 'Product')}
                 </div>
               </div>
             ) : (
@@ -377,6 +385,7 @@ function ProductEditor({ product }: { product: Product | null }) {
               setVariants(rows.length ? rows : [blankVariant({ ...first, id: undefined, option_values: [], stock: 0, loaded_on_hand: null })]);
             }}
             onVariant={patchVariant}
+            renderStockExtra={elsewhere.size > 0 ? stockElsewhere : undefined}
           />
 
           <Panel title="Shipping" description="Weight helps couriers (Steadfast, Pathao, RedX) price the parcel.">

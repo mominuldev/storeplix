@@ -6,6 +6,7 @@ namespace App\Domain\Purchasing;
 
 use App\Domain\Documents\Drivers\DocumentDriver;
 use App\Domain\Documents\Drivers\DocumentRenderFailed;
+use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrderItem;
 use App\Domain\Shared\Http\ApiException;
@@ -36,7 +37,7 @@ final class PurchaseOrderPdf
 
     public function html(Store $store, PurchaseOrder $po, bool $fonts = false): string
     {
-        $po->loadMissing(['supplier', 'items.variant.product']);
+        $po->loadMissing(['supplier', 'location', 'items.variant.product']);
         $tz = PurchaseHistory::tz($store);
         $settings = StoreSetting::query()->where('store_id', $store->id)->first();
         $address = array_filter((array) ($settings?->business_address ?? []), fn ($v) => is_string($v) && $v !== '');
@@ -70,6 +71,8 @@ final class PurchaseOrderPdf
             'discount' => $po->discount_amount > 0 ? $money($po->discount_amount) : null,
             'total' => $money($po->total_amount),
             'notes' => $po->notes,
+            // PHASE-8-8C §6: "Receive at {location}" only when the store has more than one active location.
+            'receiveAt' => Locations::activeCount($store->id) > 1 ? $po->location?->name : null,
         ])->render();
     }
 }

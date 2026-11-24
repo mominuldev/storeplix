@@ -33,10 +33,14 @@ export const MOVEMENTS = '/inventory?tab=movements';
 export const poPage = (id: string) => `${PO_LIST}/${id}`;
 export const mUrl = (path = '') => `${urls.merchant}${path}`;
 
-/** Figma items that must never render in 8.8b (§Out of scope, P88B-7, Q211, 10.1–10.4). */
+/**
+ * Figma items that must never render in 8.8b (§Out of scope, P88B-7, Q211, 10.1–10.4). Phase 8.8c-A amends this: the
+ * Inventory **Warehouses** tab now shows on every store (PHASE-8-8C §10, one location + upgrade note), so it left the
+ * list; "Receive at" stays hidden on these one-location shops (built only when > 1 location, §10.3); Transfer stock and
+ * Stock count arrive with part B.
+ */
 export const OMITTED = [
   /Receive at/i,
-  /Warehouses/i,
   /Transfer stock/i,
   /Stock count/i,
   /need owner approval/i,
@@ -352,9 +356,10 @@ export function receiveRow(page: Page, product: string | RegExp): Locator {
 export function receiveInputs(page: Page, product: string | RegExp): { now: Locator; damaged: Locator } {
   const row = receiveRow(page, product);
   const all = row.getByRole('spinbutton');
+  // The receive inputs are `inputMode="numeric"` text boxes ("Receiving now of {name}" / "Damaged of {name}").
   return {
-    now: row.getByRole('spinbutton', { name: /Receiving now/i }).or(all.nth(0)).first(),
-    damaged: row.getByRole('spinbutton', { name: /Damaged/i }).or(all.nth(1)).first(),
+    now: row.getByRole('textbox', { name: /Receiving now/i }).or(row.getByRole('spinbutton', { name: /Receiving now/i })).or(all.nth(0)).first(),
+    damaged: row.getByRole('textbox', { name: /Damaged/i }).or(row.getByRole('spinbutton', { name: /Damaged/i })).or(all.nth(1)).first(),
   };
 }
 

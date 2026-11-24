@@ -28,6 +28,11 @@ import type {
   DataImportType,
   InventoryItem,
   InventoryListFilters,
+  InventoryThresholdInput,
+  Location,
+  LocationInput,
+  LocationListFilters,
+  UpdateLocationInput,
   InventoryListMeta,
   Product,
   ProductBulkInput,
@@ -266,7 +271,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -901,13 +906,38 @@ export function createApiClient(options: ApiClientOptions) {
             products_count: 0,
           },
         }),
-      setThreshold: (storeId: string, variantId: string, lowStockThreshold: number | null) =>
-        request<InventoryItem>(`${store(storeId)}/inventory/${enc(variantId)}`, { method: 'PATCH', body: { low_stock_threshold: lowStockThreshold } }),
-      /** 409 `stock_changed`; 422 `insufficient_stock`. */
+      /** Phase 8.8c: `locationId` omitted = the default location's row (body then has no `location_id`). */
+      setThreshold: (storeId: string, variantId: string, lowStockThreshold: number | null, locationId?: string) => {
+        const body: InventoryThresholdInput = { low_stock_threshold: lowStockThreshold };
+        if (locationId) body.location_id = locationId;
+        return request<InventoryItem>(`${store(storeId)}/inventory/${enc(variantId)}`, { method: 'PATCH', body });
+      },
+      /** 409 `stock_changed`; 422 `insufficient_stock`. Phase 8.8c: optional `location_id` per item (default location). */
       adjust: (storeId: string, input: StockAdjustmentInput) =>
         request<StockAdjustmentResult>(`${store(storeId)}/inventory/adjustments`, { method: 'POST', body: input }),
       movements: (storeId: string, filters: StockMovementFilters = {}) =>
         listOf<StockMovement, PaginationMeta>(`${store(storeId)}/inventory/movements`, movementListQuery(filters), emptyPage()),
+    },
+
+    /**
+     * PHASE-8-8C §4 locations (warehouses / shops). Read: any member; writes: `settings.manage`. Create/unarchive of a
+     * 2nd+ active location → 402 `feature_not_in_plan` (`multi_warehouse`); duplicate active name → 422
+     * `location_name_taken`; archive → 409 `location_in_use` (`details.reasons`: `LocationInUseReason[]`); making an
+     * archived location default → `location_archived`.
+     */
+    locations: {
+      /** Default first, then position, then name. Not paginated. */
+      list: (storeId: string, filters: LocationListFilters = {}) =>
+        request<Location[]>(`${store(storeId)}/locations`, { query: locationListQuery(filters) }),
+      /** 201. */
+      create: (storeId: string, input: LocationInput) => request<Location>(`${store(storeId)}/locations`, { method: 'POST', body: input }),
+      update: (storeId: string, id: string, input: UpdateLocationInput) =>
+        request<Location>(`${store(storeId)}/locations/${enc(id)}`, { method: 'PATCH', body: input }),
+      archive: (storeId: string, id: string) => request<Location>(`${store(storeId)}/locations/${enc(id)}/archive`, { method: 'POST' }),
+      unarchive: (storeId: string, id: string) => request<Location>(`${store(storeId)}/locations/${enc(id)}/unarchive`, { method: 'POST' }),
+      /** P88C-5: becomes the online location; open orders keep their lines' location. Returns the new default. */
+      makeDefault: (storeId: string, id: string) =>
+        request<Location>(`${store(storeId)}/locations/${enc(id)}/make-default`, { method: 'POST' }),
     },
 
     /** Phase 4 §3.5. PATCH needs `revision`. */
