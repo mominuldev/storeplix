@@ -28,7 +28,7 @@ import {
 /**
  * PHASE-8-8B §13 QA visual + AC 5: Purchase orders `35:5619`, New PO `35:6210`, PO detail / Receive `36:6607` and
  * Suppliers `153:35999` at 1280, 390 and 375 px — no horizontal page overflow, no console errors, documented omissions
- * absent ("Receive at", Warehouses, Transfer stock, Stock count, approval note, "Approved by", "vs last month"), Figma
+ * absent ("Receive at", Transfer stock, Stock count, approval note, "Approved by", "vs last month"), Figma
  * KPI tiles present; the empty state ("No purchase orders yet …") on a second, empty shop. Screenshots →
  * test-results/phase8-8b-visual/<width>/ (git-ignored) for the Figma review.
  */
