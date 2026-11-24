@@ -1,8 +1,21 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.13.0
+  version: 1.14.0
   description: |
+    1.14.0 (2026-11-24, Phase 8.6, PHASE-8-6-CONTRACT.md, ADR 0020): additive only. Automations and checkout recovery.
+    New tag automations (marketing.manage; create/enable/PATCH of an `on` automation/test need the sms_automation plan
+    feature → 402 feature_not_in_plan): GET|POST /stores/{store}/automations, GET|PATCH|DELETE .../automations/{automation},
+    POST .../{automation}/enable|disable|dry-run|test-message, GET .../{automation}/stats,
+    GET /stores/{store}/automation-runs[/{run}] (masked addresses; contact names need customers.view). Storefront:
+    PUT /storefront/cart/contact (limiter storefront-cart-contact 10/min per shopper IP; the contact is never returned),
+    POST /storefront/carts/recover (limiter storefront-cart-recover 20/min). MarketingOverview gains kpis.carts_recovered,
+    kpis.recovered_revenue_amount, series[].recovery_amount, counts.automations (revenue_amount includes automation
+    conversions, each order once). AuditActorType gains automation. The storefront unsubscribe endpoints also resolve
+    automation message codes (shape unchanged). Automation messages count toward campaign_sms_per_month /
+    campaign_emails_per_month ("Marketing SMS" / "Marketing emails"). New error codes automation_exists,
+    automation_not_draft (409), automation_incomplete (422), recovery_link_invalid (404). The testing-only message sink
+    gains automation_id.
     Phase 1, 1.1 (D1–D4), Phase 2, Phase 3 (storefront engine), Phase 4 (catalog, inventory, customers, CSV, dashboard, cookie auth) and Phase 5a (storefront catalog, cart, COD checkout, orders, shipping zones, coupons, go-live; PHASE-5-CONTRACT.md) endpoints. Phase 5b (PHASE-5B-CONTRACT.md): payment gateways, online checkout, payment links, gateway refunds, payment returns and webhooks, couriers and shipments, documents, edit items, returns and exchanges. Binding sources: docs/development/AGENT-CONTRACTS.md,
     docs/development/PHASE-2-CONTRACT.md, PHASE-3-CONTRACT.md, PHASE-4-CONTRACT.md and PHASE-5-CONTRACT.md. Conventions: docs/api/API-CONVENTIONS.md. Types mirror packages/types/src/index.ts.
     1.5.1 (2026-11-22, QA 5a F-L6): documentation-only alignment with the built and accepted Phase 5a deviations
@@ -134,6 +147,8 @@ tags:
   description: 'Phase 8.4: external API for merchant integrations, authenticated by an API key (PHASE-8-4 §3)'
 - name: campaigns
   description: 'Phase 8.5: marketing overview, SMS/email campaigns and opt-out (PHASE-8-5 §4, §6)'
+- name: automations
+  description: 'Phase 8.6: recipe automations, run log and checkout recovery (PHASE-8-6 §9)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -13943,7 +13958,7 @@ paths:
       summary: Unsubscribe link status
       operationId: getStorefrontUnsubscribe
       description: 'Server-to-server (Next.js `/u/{code}`). Never changes state (P85-7). Lookup by sha256 within the host''s
-        store. Limiter storefront-unsubscribe 20/min per shopper IP. Response `Cache-Control: private, no-store`.'
+        store: campaign_recipients, then automation_run_steps (1.14.0), then test codes. Limiter storefront-unsubscribe 20/min per shopper IP. Response `Cache-Control: private, no-store`.'
       security:
       - storefrontKey: []
       parameters:
@@ -14027,6 +14042,544 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/automations:
+    get:
+      tags:
+      - automations
+      summary: List automations
+      operationId: listAutomations
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). All of the store's automations (≤ 5, one per recipe) plus the recipe catalogue (`meta.recipes`,
+        incl. `added`) and page KPIs (`meta.kpis`). `paused_reason = plan` when the plan lacks sms_automation.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: Automations
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Automation'
+                  meta:
+                    $ref: '#/components/schemas/AutomationListMeta'
+        '400': &id001
+          $ref: '#/components/responses/TenantRequired'
+        '401': &id002
+          $ref: '#/components/responses/Unauthenticated'
+        '403': &id003
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404': &id004
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - automations
+      summary: Create automation from a recipe
+      operationId: createAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). Creates the recipe's automation in `draft` with the recipe defaults (P86-1). Audited as automation.created.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAutomationInput'
+      responses:
+        '201':
+          description: Created
+          content: &id005
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutomationDetail'
+        '400': *id001
+        '401': *id002
+        '402': &id007
+          description: '`feature_not_in_plan` (details.feature = sms_automation; P86-17)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403': *id003
+        '404': *id004
+        '409':
+          description: '`automation_exists` (the store already has this recipe)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/automations/{automation}:
+    get:
+      tags:
+      - automations
+      summary: Get automation
+      operationId: getAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). Detail incl. `settings`, `recipe_schema`, `stats_7d` and `last_edited_by` (contract §11.1
+        C3–C4).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - &id006
+        $ref: '#/components/parameters/AutomationPath'
+      responses:
+        '200':
+          description: Automation
+          content: *id005
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+    patch:
+      tags:
+      - automations
+      summary: Update automation
+      operationId: updateAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). `settings` replaces the whole object and is validated by the recipe schema (unknown keys →
+        422). PATCH of an `on` automation needs sms_automation. Audited as automation.updated.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAutomationInput'
+      responses:
+        '200':
+          description: Updated
+          content: *id005
+        '400': *id001
+        '401': *id002
+        '402': *id007
+        '403': *id003
+        '404': *id004
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          description: '`validation_failed`, `campaign_unknown_merge_field`, `campaign_too_long` (> 3 SMS parts / > 3,000 email
+            chars), `campaign_coupon_inactive`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+      - automations
+      summary: Delete draft automation
+      operationId: deleteAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). Only a `draft` that never ran; otherwise 409. Audited as automation.deleted.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      responses:
+        '204':
+          description: Deleted
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409':
+          description: '`automation_not_draft`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/automations/{automation}/enable:
+    post:
+      tags:
+      - automations
+      summary: Turn automation on
+      operationId: enableAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). `draft|off → on`. Checks the settings are complete (e.g. a coupon for the VIP message). Audited
+        as automation.enabled.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      responses:
+        '200':
+          description: 'On'
+          content: *id005
+        '400': *id001
+        '401': *id002
+        '402': *id007
+        '403': *id003
+        '404': *id004
+        '422':
+          description: '`automation_incomplete` (details.fields = missing setting paths)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/automations/{automation}/disable:
+    post:
+      tags:
+      - automations
+      summary: Turn automation off
+      operationId: disableAutomation
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). `on → off`; waiting runs end `stopped/automation_off`. Audited as automation.disabled. Allowed
+        without sms_automation.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      responses:
+        '200':
+          description: 'Off'
+          content: *id005
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+  /stores/{store}/automations/{automation}/dry-run:
+    post:
+      tags:
+      - automations
+      summary: Test with an order (dry run)
+      operationId: dryRunAutomation
+      description: 'Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). P86-21: evaluates the automation against one subject (default = the latest matching subject)
+        and returns condition results and what each step would do. No writes, no provider calls, no allowance use. Limiter automation-dry-run
+        30/min per user. More than one id → 422.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationDryRunInput'
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutomationDryRun'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/automations/{automation}/test-message:
+    post:
+      tags:
+      - automations
+      summary: Send test message to me
+      operationId: sendAutomationTestMessage
+      description: 'Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). P86-22 (P85-26 rules): one step''s message to the actor''s verified phone / account email,
+        sample merge values, test unsubscribe code; counts toward the shared allowance; limiter automation-test 5/hour per user.
+        Audited as automation.test_sent. Recipes without a message step → 422.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationTestMessageInput'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CampaignTestResult'
+        '400': *id001
+        '401': *id002
+        '402':
+          description: '`feature_not_in_plan` (sms_automation) or `plan_limit_reached` (details.campaign_sms_per_month or details.campaign_emails_per_month
+            = {limit, used, needed})'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403': *id003
+        '404': *id004
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/automations/{automation}/stats:
+    get:
+      tags:
+      - automations
+      summary: Automation stats
+      operationId: getAutomationStats
+      description: 'Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). Recovery page: per message step sent / recovered / revenue and daily recoveries over `days`;
+        `kpis` always cover the last 30 days (contract §11.1 C6).'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - *id006
+      - in: query
+        name: days
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 14
+          - 30
+          default: 14
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutomationStats'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/automation-runs:
+    get:
+      tags:
+      - automations
+      summary: Run log
+      operationId: listAutomationRuns
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). Runs with their steps, newest first, cursor pages of 50. Addresses masked; `contact.name`
+        only with customers.view (else null, P86-18). Retained 90 days.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[automation_id]
+        required: false
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: filter[recipe]
+        required: false
+        schema:
+          $ref: '#/components/schemas/RecipeKey'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: Comma list of RunStatus
+      - in: query
+        name: filter[since]
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AutomationRun'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+  /stores/{store}/automation-runs/{run}:
+    get:
+      tags:
+      - automations
+      summary: Get run
+      operationId: getAutomationRun
+      description: Needs marketing.manage (PHASE-8-6 §2.1; staff → 403); impersonation sessions are read-only (writes → 403
+        impersonation_read_only). One run with its steps.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/AutomationRunPath'
+      responses:
+        '200':
+          description: Run
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutomationRun'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+  /storefront/cart/contact:
+    put:
+      tags:
+      - storefront
+      summary: Save checkout contact
+      operationId: storefrontSaveCartContact
+      description: PHASE-8-6 §7 / P86-12. Server-to-server, called on blur of a valid phone (then name/email). Stores the contact
+        on the cart (overwrites; deleted with the cart). The contact is never returned by any storefront endpoint. Limiter storefront-cart-contact
+        10/min per shopper IP. Draft / coming-soon stores → 404.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/CartToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartContactInput'
+      responses:
+        '204':
+          description: Saved
+        '401': &id001
+          description: Missing/invalid X-Storefront-Key (code `invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`cart_not_found` (no token, not active or no lines) or `store_not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/carts/recover:
+    post:
+      tags:
+      - storefront
+      summary: Restore cart from a recovery link
+      operationId: storefrontRecoverCart
+      description: 'P86-16. Server-to-server (Next.js `/r/{code}`). Looks the code up by sha256 within the host''s store, **clones**
+        the run''s cart into a new cart with a fresh token (the original cart and token are unchanged), re-prices lines and
+        applies the step coupon when active. `next` = `cart` when a line has an issue. Limiter storefront-cart-recover 20/min
+        per shopper IP. Response `Cache-Control: private, no-store`.'
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoverCartInput'
+      responses:
+        '201':
+          description: Cart created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RecoverCartResult'
+        '401': *id001
+        '404':
+          description: '`recovery_link_invalid` (unknown/malformed code, another store''s code, run not running|waiting|completed,
+            or window ended — identical body) or `store_not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
     AdminTenantPath:
@@ -14400,6 +14953,18 @@ components:
         type: string
         pattern: ^[A-Za-z0-9]{10}$
       description: 10 base62 chars from the message link; a malformed value answers the same 404 as an unknown one.
+    AutomationPath:
+      in: path
+      name: automation
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    AutomationRunPath:
+      in: path
+      name: run
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -24713,11 +25278,13 @@ components:
       - view_analytics
     AuditActorType:
       type: string
+      description: 'automation (1.14.0) = a store automation; actor.id = automation id, actor.name = its name (P86-20)'
       enum:
       - user
       - system
       - platform_user
       - api_key
+      - automation
     SuspensionReasonCode:
       type: string
       enum:
@@ -27752,6 +28319,8 @@ components:
           - campaign_orders_share_pct
           - messages_sent
           - unsubscribes
+          - carts_recovered
+          - recovered_revenue_amount
           properties:
             revenue_amount:
               type: integer
@@ -27773,6 +28342,13 @@ components:
             unsubscribes:
               type: integer
               minimum: 0
+            carts_recovered:
+              type: integer
+              minimum: 0
+              description: 1.14.0 — automation_conversions in range (non-cancelled orders, P86-15)
+            recovered_revenue_amount:
+              type: integer
+              description: 1.14.0 — revenue of those orders; also included in revenue_amount (each order once)
         series:
           type: array
           description: 8 ISO weeks, oldest first (store tz)
@@ -27782,6 +28358,7 @@ components:
             - week_start
             - coupons_amount
             - campaigns_amount
+            - recovery_amount
             properties:
               week_start:
                 type: string
@@ -27790,6 +28367,9 @@ components:
                 type: integer
               campaigns_amount:
                 type: integer
+              recovery_amount:
+                type: integer
+                description: 1.14.0 — automation-conversion revenue that week ("Cart recovery" series)
         active_coupons:
           type: array
           maxItems: 4
@@ -27844,6 +28424,7 @@ components:
           required:
           - coupons
           - campaigns
+          - automations
           properties:
             coupons:
               type: integer
@@ -27851,6 +28432,10 @@ components:
             campaigns:
               type: integer
               minimum: 0
+            automations:
+              type: integer
+              minimum: 0
+              description: 1.14.0 — automations with status `on`
         currency:
           type: string
     SuppressionSource:
@@ -27996,3 +28581,1032 @@ components:
           description: remembered schedule time; stored on a draft without effect until /schedule; on a scheduled campaign re-validated
         revision:
           type: integer
+    RecipeKey:
+      type: string
+      enum:
+      - checkout_recovery
+      - thank_you
+      - vip_tag
+      - return_flag
+      - low_stock
+      description: P86-2 fixed catalogue (UI order)
+    AutomationStatus:
+      type: string
+      enum:
+      - draft
+      - 'on'
+      - 'off'
+    AutomationTrigger:
+      type: string
+      enum:
+      - checkout.abandoned
+      - order.delivered
+      - return.received
+      - stock.low
+    AutomationMessage:
+      type: object
+      required:
+      - channel
+      - language
+      - body
+      - subject
+      additionalProperties: false
+      properties:
+        channel:
+          $ref: '#/components/schemas/MarketingChannel'
+        language:
+          $ref: '#/components/schemas/CampaignLanguage'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 3000
+          description: 'SMS: ≤ 3 parts incl. the shop prefix and opt-out footer (P86-7). Email: plain text ≤ 3,000 chars. Merge
+            fields per recipe (contract §11.1 C11); others → 422 campaign_unknown_merge_field.'
+        subject:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 150
+          description: required for email (no CR/LF); null for SMS
+    AutomationConditionField:
+      type: string
+      enum:
+      - order.total_amount
+      - order.payment_method
+      - order.channel
+      - customer.tag
+      - customer.delivered_orders_count
+      - customer.risk
+    AutomationCondition:
+      description: §5 fixed list; all must hold; ≤ 5.
+      oneOf:
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: order.total_amount
+          op:
+            type: string
+            enum:
+            - gt
+            - lt
+          value:
+            type: integer
+            minimum: 0
+            description: minor units
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: order.payment_method
+          op:
+            type: string
+            enum:
+            - is
+          value:
+            type: string
+            enum:
+            - cod
+            - online
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: order.channel
+          op:
+            type: string
+            enum:
+            - in
+          value:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items:
+              $ref: '#/components/schemas/OrderChannel'
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: customer.tag
+          op:
+            type: string
+            enum:
+            - has
+            - not_has
+          value:
+            type: string
+            minLength: 1
+            maxLength: 40
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: customer.delivered_orders_count
+          op:
+            type: string
+            enum:
+            - gte
+          value:
+            type: integer
+            minimum: 2
+            maximum: 50
+      - type: object
+        required:
+        - field
+        - op
+        - value
+        additionalProperties: false
+        properties:
+          field:
+            type: string
+            const: customer.risk
+          op:
+            type: string
+            enum:
+            - is_not
+          value:
+            type: string
+            const: risky
+    CheckoutRecoverySettings:
+      type: object
+      additionalProperties: false
+      required:
+      - delay_minutes
+      - step1
+      - wait_hours
+      - step2
+      - exit_days
+      - skip_risky
+      properties:
+        delay_minutes:
+          type: integer
+          minimum: 15
+          maximum: 180
+          default: 30
+        step1:
+          type: object
+          required:
+          - enabled
+          - message
+          additionalProperties: false
+          properties:
+            enabled:
+              type: boolean
+            message:
+              $ref: '#/components/schemas/AutomationMessage'
+        wait_hours:
+          type: integer
+          minimum: 6
+          maximum: 48
+          default: 24
+        step2:
+          type: object
+          required:
+          - enabled
+          - coupon_id
+          - message
+          additionalProperties: false
+          properties:
+            enabled:
+              type: boolean
+            coupon_id:
+              type:
+              - string
+              - 'null'
+            message:
+              $ref: '#/components/schemas/AutomationMessage'
+        exit_days:
+          type: integer
+          minimum: 1
+          maximum: 7
+          default: 3
+        skip_risky:
+          type: boolean
+          default: true
+          description: derived condition customer.risk is_not risky (§11.1 C2)
+    ThankYouSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - delay_hours
+      - message
+      - conditions
+      properties:
+        delay_hours:
+          type: integer
+          minimum: 0
+          maximum: 72
+          default: 0
+        message:
+          $ref: '#/components/schemas/AutomationMessage'
+        conditions:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/AutomationCondition'
+          description: fields order.total_amount, order.payment_method, order.channel, customer.tag
+    VipTagSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - min_delivered
+      - tag
+      - message
+      - coupon_id
+      properties:
+        min_delivered:
+          type: integer
+          minimum: 2
+          maximum: 50
+          default: 5
+        tag:
+          type: string
+          minLength: 1
+          maxLength: 40
+          default: VIP
+        message:
+          allOf:
+          - $ref: '#/components/schemas/AutomationMessage'
+          - type: object
+            required:
+            - enabled
+            properties:
+              enabled:
+                type: boolean
+          description: when enabled, body must use {coupon} and coupon_id is required to enable
+        coupon_id:
+          type:
+          - string
+          - 'null'
+    ReturnFlagSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - tag
+      properties:
+        tag:
+          type: string
+          minLength: 1
+          maxLength: 40
+          default: Returned
+    LowStockSettings:
+      type: object
+      additionalProperties: false
+      properties: {}
+      description: no parameters; threshold = the variant's effective low-stock threshold
+    AutomationSettings:
+      description: Shape depends on the automation's `recipe` (contract §11.1 C1).
+      oneOf:
+      - $ref: '#/components/schemas/CheckoutRecoverySettings'
+      - $ref: '#/components/schemas/ThankYouSettings'
+      - $ref: '#/components/schemas/VipTagSettings'
+      - $ref: '#/components/schemas/ReturnFlagSettings'
+      - $ref: '#/components/schemas/LowStockSettings'
+    RecipeCard:
+      type: object
+      required:
+      - recipe
+      - name
+      - description
+      - trigger_label
+      - action_label
+      - icon
+      - added
+      properties:
+        recipe:
+          $ref: '#/components/schemas/RecipeKey'
+        name:
+          type: string
+        description:
+          type: string
+        trigger_label:
+          type: string
+        action_label:
+          type: string
+        icon:
+          type: string
+          description: UI icon name
+        added:
+          type: boolean
+    Automation:
+      type: object
+      required:
+      - id
+      - recipe
+      - name
+      - status
+      - paused_reason
+      - settings
+      - trigger_label
+      - action_label
+      - runs_7d
+      - last_run_at
+      - created_at
+      - updated_at
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        recipe:
+          $ref: '#/components/schemas/RecipeKey'
+        name:
+          type: string
+          maxLength: 80
+        status:
+          $ref: '#/components/schemas/AutomationStatus'
+        paused_reason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - plan
+          - null
+          description: plan = the plan lacks sms_automation (P86-17)
+        settings:
+          $ref: '#/components/schemas/AutomationSettings'
+        trigger_label:
+          type: string
+          description: Figma tag text, e.g. "Checkout left 30 min"
+        action_label:
+          type: string
+          description: e.g. "Reminder SMS"
+        runs_7d: &id001
+          type: integer
+          minimum: 0
+        last_run_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    RecipeSchema:
+      type: object
+      required:
+      - trigger
+      - trigger_description
+      - allowed_conditions
+      - max_conditions
+      - steps
+      - merge_fields
+      - sms_max_parts
+      properties:
+        trigger:
+          $ref: '#/components/schemas/AutomationTrigger'
+        trigger_description:
+          type: string
+        allowed_conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutomationConditionField'
+        max_conditions:
+          type: integer
+        steps:
+          type: array
+          items:
+            type: object
+            required:
+            - kind
+            - title
+            - description
+            - optional
+            - message_step
+            properties:
+              kind:
+                type: string
+                enum:
+                - send_message
+                - add_tag
+                - notify_team
+                - wait
+              title:
+                type: string
+              description:
+                type: string
+              optional:
+                type: boolean
+              message_step:
+                type:
+                - integer
+                - 'null'
+                enum:
+                - 1
+                - 2
+                - null
+        merge_fields:
+          type: array
+          items:
+            type: string
+            enum:
+            - '{name}'
+            - '{shop_link}'
+            - '{coupon}'
+            - '{product}'
+            - '{cart_link}'
+            - '{order_no}'
+        sms_max_parts:
+          type: integer
+          const: 3
+    AutomationDetail:
+      allOf:
+      - $ref: '#/components/schemas/Automation'
+      - type: object
+        required:
+        - recipe_schema
+        - stats_7d
+        - last_edited_by
+        properties:
+          recipe_schema:
+            $ref: '#/components/schemas/RecipeSchema'
+          stats_7d:
+            type: object
+            required:
+            - runs
+            - completed
+            - skipped
+            - stopped
+            - failed
+            properties:
+              runs: *id001
+              completed: *id001
+              skipped: *id001
+              stopped: *id001
+              failed: *id001
+          last_edited_by:
+            oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+    AutomationListMeta:
+      type: object
+      required:
+      - recipes
+      - kpis
+      properties:
+        recipes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecipeCard'
+        kpis:
+          type: object
+          required:
+          - active
+          - drafts
+          - total
+          - runs_7d
+          - runs_7d_succeeded_pct
+          - messages_sent_month
+          - carts_recovered_30d
+          - recovered_revenue_30d
+          properties:
+            active: *id001
+            drafts: *id001
+            total: *id001
+            runs_7d: *id001
+            runs_7d_succeeded_pct:
+              type:
+              - number
+              - 'null'
+              description: completed ÷ non-skipped, one decimal
+            messages_sent_month: *id001
+            carts_recovered_30d: *id001
+            recovered_revenue_30d:
+              type: integer
+              description: minor units
+    CreateAutomationInput:
+      type: object
+      required:
+      - recipe
+      properties:
+        recipe:
+          $ref: '#/components/schemas/RecipeKey'
+    UpdateAutomationInput:
+      type: object
+      required:
+      - revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        settings:
+          $ref: '#/components/schemas/AutomationSettings'
+        revision:
+          type: integer
+    RunStatus:
+      type: string
+      enum:
+      - running
+      - waiting
+      - completed
+      - skipped
+      - stopped
+      - failed
+    RunOutcomeReason:
+      type: string
+      enum:
+      - conditions_not_met
+      - subject_missing
+      - no_eligible_address
+      - converted
+      - window_ended
+      - opted_out
+      - automation_off
+      - plan
+      - error
+    RunSubjectType:
+      type: string
+      enum:
+      - order
+      - cart
+      - return
+      - inventory
+    StepAction:
+      type: string
+      enum:
+      - send_message
+      - add_tag
+      - notify_team
+    StepStatus:
+      type: string
+      enum:
+      - sending
+      - done
+      - skipped
+      - failed
+      - unknown
+    StepReason:
+      type: string
+      enum:
+      - not_eligible
+      - no_address
+      - opted_out
+      - frequency_cap
+      - allowance
+      - coupon_inactive
+      - no_customer
+      - already_tagged
+      - tags_full
+      - no_recipients
+      - provider_error
+      - invalid_address
+    AutomationRunStep:
+      type: object
+      required:
+      - index
+      - action
+      - status
+      - reason
+      - channel
+      - masked_address
+      - parts
+      - detail
+      - executed_at
+      properties:
+        index: *id001
+        action:
+          $ref: '#/components/schemas/StepAction'
+        status:
+          $ref: '#/components/schemas/StepStatus'
+        reason:
+          oneOf:
+          - $ref: '#/components/schemas/StepReason'
+          - type: 'null'
+        channel:
+          oneOf:
+          - $ref: '#/components/schemas/MarketingChannel'
+          - type: 'null'
+        masked_address:
+          type:
+          - string
+          - 'null'
+        parts: *id001
+        detail:
+          oneOf:
+          - type: object
+            properties:
+              recipients: *id001
+              tag:
+                type: string
+              coupon_code:
+                type: string
+              message_step:
+                type: integer
+                enum:
+                - 1
+                - 2
+          - type: 'null'
+        executed_at:
+          type: string
+          format: date-time
+    AutomationRun:
+      type: object
+      required:
+      - id
+      - automation
+      - trigger
+      - status
+      - outcome_reason
+      - subject
+      - contact
+      - context
+      - steps
+      - started_at
+      - resume_at
+      - finished_at
+      - conversion
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        automation:
+          type: object
+          required:
+          - id
+          - recipe
+          - name
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            recipe:
+              $ref: '#/components/schemas/RecipeKey'
+            name:
+              type: string
+        trigger:
+          $ref: '#/components/schemas/AutomationTrigger'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        outcome_reason:
+          oneOf:
+          - $ref: '#/components/schemas/RunOutcomeReason'
+          - type: 'null'
+        outcome_detail:
+          description: Per-condition results when `outcome_reason` is `conditions_not_met` (PHASE-8-6 §6 step 3); otherwise
+            null.
+          oneOf:
+          - type: object
+            required:
+            - conditions
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - field
+                  - label
+                  - passed
+                  - detail
+                  properties:
+                    field:
+                      type: string
+                    label:
+                      type: string
+                    passed:
+                      type: boolean
+                    detail:
+                      type:
+                      - string
+                      - 'null'
+          - type: 'null'
+        subject: &id002
+          type: object
+          required:
+          - type
+          - id
+          - label
+          properties:
+            type:
+              $ref: '#/components/schemas/RunSubjectType'
+            id:
+              $ref: '#/components/schemas/Ulid'
+            label:
+              type: string
+              description: e.g. "GS-1048", "Cart · 2 items"
+        contact:
+          oneOf:
+          - type: object
+            required:
+            - masked_address
+            - name
+            properties:
+              masked_address:
+                type:
+                - string
+                - 'null'
+              name:
+                type:
+                - string
+                - 'null'
+                description: null without customers.view (P86-18)
+          - type: 'null'
+        context:
+          type: object
+          description: trigger-time snapshot (§11.1 C9); keys depend on the subject
+          properties:
+            order_number:
+              type: string
+            order_total_amount:
+              type: integer
+            cart_line_count: *id001
+            cart_total_amount:
+              type: integer
+            first_product_name:
+              type: string
+            first_product_image_url:
+              type:
+              - string
+              - 'null'
+              format: uri
+            return_number:
+              type: string
+            product_name:
+              type: string
+            variant_name:
+              type:
+              - string
+              - 'null'
+            on_hand:
+              type: integer
+            currency:
+              type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutomationRunStep'
+        started_at:
+          type: string
+          format: date-time
+        resume_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        conversion:
+          oneOf:
+          - type: object
+            required:
+            - order
+            properties:
+              order:
+                type: object
+                required:
+                - id
+                - number
+                - total_amount
+                properties:
+                  id:
+                    $ref: '#/components/schemas/Ulid'
+                  number:
+                    type: string
+                  total_amount:
+                    type: integer
+          - type: 'null'
+    AutomationDryRunInput:
+      type: object
+      description: At most one id, matching the recipe's subject; none = latest matching subject.
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Ulid'
+        cart_id:
+          $ref: '#/components/schemas/Ulid'
+        inventory_id:
+          $ref: '#/components/schemas/Ulid'
+        return_id:
+          $ref: '#/components/schemas/Ulid'
+    AutomationDryRun:
+      type: object
+      required:
+      - subject
+      - conditions
+      - steps
+      properties:
+        subject:
+          oneOf:
+          - *id002
+          - type: 'null'
+        conditions:
+          type: array
+          items:
+            type: object
+            required:
+            - label
+            - passed
+            - detail
+            properties:
+              label:
+                type: string
+              passed:
+                type: boolean
+              detail:
+                type:
+                - string
+                - 'null'
+        steps:
+          type: array
+          items:
+            type: object
+            required:
+            - index
+            - action
+            - would
+            - reason
+            - rendered
+            properties:
+              index: *id001
+              action:
+                $ref: '#/components/schemas/StepAction'
+              would:
+                type: string
+                enum:
+                - send
+                - skip
+                - tag
+                - notify
+              reason:
+                oneOf:
+                - $ref: '#/components/schemas/StepReason'
+                - type: 'null'
+              rendered:
+                oneOf:
+                - type: object
+                  required:
+                  - channel
+                  - subject
+                  - text
+                  - parts
+                  properties:
+                    channel:
+                      $ref: '#/components/schemas/MarketingChannel'
+                    subject:
+                      type:
+                      - string
+                      - 'null'
+                    text:
+                      type: string
+                    parts: *id001
+                - type: 'null'
+    AutomationTestMessageInput:
+      type: object
+      required:
+      - step
+      properties:
+        step:
+          type: integer
+          enum:
+          - 1
+          - 2
+          default: 1
+          description: 2 only for checkout_recovery
+    AutomationStats:
+      type: object
+      required:
+      - days
+      - steps
+      - daily
+      - kpis
+      - currency
+      properties:
+        days:
+          type: integer
+          enum:
+          - 14
+          - 30
+        steps:
+          type: array
+          items:
+            type: object
+            required:
+            - step
+            - sent
+            - recovered
+            - revenue_amount
+            properties:
+              step:
+                type: integer
+              sent: *id001
+              recovered: *id001
+              revenue_amount:
+                type: integer
+        daily:
+          type: array
+          items:
+            type: object
+            required:
+            - date
+            - recovered
+            - revenue_amount
+            properties:
+              date:
+                type: string
+                format: date
+              recovered: *id001
+              revenue_amount:
+                type: integer
+        kpis:
+          type: object
+          description: last 30 days
+          required:
+          - carts_left_behind
+          - carts_left_behind_amount
+          - recovered
+          - recovery_rate_pct
+          - revenue_amount
+          - average_recovered_amount
+          - messages_sent_month
+          properties:
+            carts_left_behind: *id001
+            carts_left_behind_amount:
+              type: integer
+            recovered: *id001
+            recovery_rate_pct:
+              type:
+              - number
+              - 'null'
+            revenue_amount:
+              type: integer
+            average_recovered_amount:
+              type:
+              - integer
+              - 'null'
+            messages_sent_month: *id001
+        currency:
+          type: string
+    CartContactInput:
+      type: object
+      required:
+      - phone
+      additionalProperties: false
+      properties:
+        phone:
+          type: string
+          maxLength: 20
+          description: valid BD mobile; stored as 8801XXXXXXXXX
+        name:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+          maxLength: 254
+    RecoverCartInput:
+      type: object
+      required:
+      - code
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Za-z0-9]{10}$
+    RecoverCartResult:
+      type: object
+      required:
+      - cart_token
+      - next
+      properties:
+        cart_token:
+          type: string
+          description: new cart; set as sp_cart
+        next:
+          type: string
+          enum:
+          - checkout
+          - cart

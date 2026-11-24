@@ -64,3 +64,11 @@ Schedule::command('webhooks:auto-disable')->hourly()->withoutOverlapping();
 Schedule::command('campaigns:dispatch-due')->everyMinute()->withoutOverlapping();
 Schedule::command('campaigns:reap-stuck')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('campaigns:prune-recipients')->dailyAt('04:30')->timezone('Asia/Dhaka')->withoutOverlapping();
+
+// Phase 8.6 (PHASE-8-6 P86-23): detect abandoned checkouts every 5 minutes, resume due waiting runs every minute, mark
+// stuck sends `unknown` every 5 minutes, prune runs (90 d) and conversions (13 months) daily. Discovery on the platform
+// connection, work per tenant.
+Schedule::command('automations:detect-abandoned')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('automations:resume-due')->everyMinute()->withoutOverlapping();
+Schedule::command('automations:reap-stuck')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('automations:prune-runs')->dailyAt('04:40')->timezone('Asia/Dhaka')->withoutOverlapping();

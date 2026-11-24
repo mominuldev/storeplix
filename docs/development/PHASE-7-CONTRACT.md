@@ -143,7 +143,8 @@ commands only); multi-currency plans (BDT only); tenant hard delete after expiry
 | `bulk_courier_booking` | feature | – / ✓ / ✓ | `POST /stores/{store}/shipments/bulk` | 402 `feature_not_in_plan` | P5B-31 |
 | `profit_reports` | feature | – / – / ✓ | `GET /stores/{store}/reports/profit` (§6) | 402 `feature_not_in_plan` | **P7** |
 | `all_couriers` | feature | – / ✓ / ✓ | **no separate check**: expressed by `courier_connections` (Free = 1 courier). Kept as a display key | — | — |
-| `fake_order_guard`, `sms_automation`, `custom_roles`, `multi_warehouse`, `pos`, `api_webhooks` | feature | as seeded | **not enforced: no module yet** (Phase 8). When a module lands, its contract adds the gate and a matrix row | — | — |
+| `sms_automation` | feature | – / ✓ / ✓ | automation create, enable, PATCH of an `on` automation, trigger time (no run), step time (waiting runs → `stopped/plan`), automation test message | 402 `feature_not_in_plan` `details.feature`; downgrade pauses automations without deleting them | P86-17 (amends this table, Phase 8.6) |
+| `fake_order_guard`, `custom_roles`, `multi_warehouse`, `pos`, `api_webhooks` | feature | as seeded | **not enforced: no module yet** (Phase 8). When a module lands, its contract adds the gate and a matrix row | — | — |
 
 Phase 7 enforcement changes in code: (a) `profit_reports` gate; (b) domain re-check from `verification_failed`/
 `expired` needs the feature and room in `custom_domains` (counting the row itself: `assertWithin(adding: 0)`), so a

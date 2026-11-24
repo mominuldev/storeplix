@@ -31,6 +31,7 @@ final class FeatureGate
 {
     public const CACHE_KEY = 'billing:plan';
 
+    /** PHASE-8-6 P86-17: `sms_automation` is enforced (automations create/enable/PATCH-on/test, trigger and step time). */
     public static function allows(Tenant $tenant, Feature $feature): bool
     {
         return in_array($feature->value, self::plan($tenant)['features'], true);

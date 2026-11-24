@@ -213,6 +213,13 @@ sha256 at rest, 7 scopes, non-delegation, new permission `developers.manage`) fo
 with an opt-out link on every message (storefront `/u/{code}`, RFC 8058 one-click), opt-out re-checked at send time,
 new allowances `campaign_sms_per_month` / `campaign_emails_per_month`, 7-day attribution, Marketing overview
 `66:19179` and composer `70:19774`. Out: WhatsApp, SMS credit balance/top-up (Q84), abandoned cart + Automations (8.6).
+**8.6** contract: `docs/development/PHASE-8-6-CONTRACT.md` (accepted 2026-11-24; QA gate PASS; branch
+`feat/phase-8-6-automations`; openapi 1.14.0; ADR 0020; Q152–Q166 defaults accepted): fixed recipe catalogue (Win back
+unfinished orders, Thank-you message, Tag VIP buyers, Handle returns, Low stock alert), triggers from the 8.4 emit points,
+idempotent runs with a per-step run log, checkout phone capture + abandoned-checkout recovery (2 messages, cart-restore
+link, exit on order, attribution), messages under the 8.5 consent/suppression/quiet-hours rules and shared allowance,
+`sms_automation` enforced; Automations `140:30336`, editor `141:30622`, Abandoned cart recovery `71:20614`. Out: WhatsApp,
+risky-order holds and courier success rate (8.8), auto-book courier (Q62), COD payout close (Q49), reviews.
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
@@ -220,7 +227,7 @@ new allowances `campaign_sms_per_month` / `campaign_emails_per_month`, 7-day att
 | 8.3 | Custom roles & permissions (89:26676): 23 code-defined keys, system + custom roles, Growth-gated, non-delegation | API/WEB | Granular permissions enforced; PHASE-8-3 §13 |
 | 8.4 | Developer API keys + outbound webhooks (144:40725): scoped `sp_live_` keys, `/external` API, signed webhooks with retries, Growth-gated | API/WEB | HMAC signatures; retries; PHASE-8-4 §13 |
 | 8.5 | Marketing campaigns SMS/email (61:12479): segments, schedule, opt-out link + suppression checked at send time, allowances, attribution | API/WEB/SF | Opt-out respected; PHASE-8-5 §14 |
-| 8.6 | Automations (140:30335) | API/WEB | Trigger → action runs logged |
+| 8.6 | Automations (140:30335) + abandoned cart recovery (71:20614): 5 recipes, run log, checkout recovery | API/WEB/SF | Trigger → action runs logged; PHASE-8-6 §16 |
 | 8.7 | Expenses (144:41613) + profit report | API/WEB | — |
 | 8.8 | Inbox (141:48129), POS (26:2147, page 22:1736), multi-location/suppliers/POs/transfers, fake-order guard | API/WEB | Scoped after PO confirms (OPEN-QUESTIONS Q1) |
 | 8.9 | Help center (71:21271), Payments/tracking/messaging/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |

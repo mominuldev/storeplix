@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Developer\Webhooks;
 
+use App\Domain\Automations\Engine\AutomationTriggers;
 use App\Domain\Billing\Feature;
 use App\Domain\Billing\FeatureGate;
 use App\Domain\Developer\Webhooks\Models\WebhookEndpoint;
@@ -37,7 +38,8 @@ final class WebhookEvents
             $subjectId = (string) $subject->getKey();
             $at = now();
             DB::afterCommit(function () use ($context, $tenantId, $type, $storeId, $subjectType, $subjectId, $at) {
-                $work = fn () => self::record($type, $storeId, $subjectType, $subjectId, $at);
+                // PHASE-8-6 P86-3: automation fan-out first, independent of endpoints and of `api_webhooks` (never throws).
+                $work = fn () => [AutomationTriggers::handle($type, $storeId, $subjectType, $subjectId, $at), self::record($type, $storeId, $subjectType, $subjectId, $at)];
                 try {
                     $context->id() === $tenantId ? $work() : $context->run($tenantId, $work);
                 } catch (Throwable $e) {

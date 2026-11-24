@@ -67,6 +67,11 @@ const MarketingOverviewPage = lazy(() => import('./campaigns/MarketingOverviewPa
 const CampaignsPage = lazy(() => import('./campaigns/CampaignsPage'));
 const CampaignComposerPage = lazy(() => import('./campaigns/CampaignComposerPage'));
 const CampaignDetailPage = lazy(() => import('./campaigns/CampaignDetailPage'));
+// Phase 8.6 automations + checkout recovery (code-split).
+const AutomationsPage = lazy(() => import('./automations/AutomationsPage'));
+const AutomationEditorPage = lazy(() => import('./automations/AutomationEditorPage'));
+const CheckoutRecoveryPage = lazy(() => import('./automations/CheckoutRecoveryPage'));
+const AutomationRunsPage = lazy(() => import('./automations/AutomationRunsPage'));
 const ShippingPage = lazy(() => import('./settings/ShippingPage'));
 const PaymentsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.PaymentsSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./settings/CommerceSettingsPages').then((m) => ({ default: m.NotificationsSettingsPage })));
@@ -87,7 +92,7 @@ const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => 
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const reportRoutes = ['/reports'];
-const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/integrations'];
+const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 /** `/marketing`: the overview for `marketing.manage` (PHASE-8-5 §8), Coupons for everyone else. */
@@ -221,6 +226,10 @@ export function AppRoutes() {
               <Route path="/marketing/campaigns/new" element={gated(can.manageMarketing, <CampaignComposerPage />)} />
               <Route path="/marketing/campaigns/:campaignId/edit" element={gated(can.manageMarketing, <CampaignComposerPage />)} />
               <Route path="/marketing/campaigns/:campaignId" element={gated(can.manageMarketing, <CampaignDetailPage />)} />
+              <Route path="/marketing/automations" element={gated(can.manageMarketing, <AutomationsPage />)} />
+              <Route path="/marketing/automations/runs" element={gated(can.manageMarketing, <AutomationRunsPage />)} />
+              <Route path="/marketing/automations/checkout-recovery" element={gated(can.manageMarketing, <CheckoutRecoveryPage />)} />
+              <Route path="/marketing/automations/:automationId" element={gated(can.manageMarketing, <AutomationEditorPage />)} />
               <Route path="/marketing/coupons" element={lazyEl(<CouponsPage />)} />
               <Route path="/marketing/coupons/new" element={lazyEl(<CouponEditorPage />)} />
               <Route path="/marketing/coupons/:couponId" element={lazyEl(<CouponEditorPage />)} />

@@ -49,6 +49,8 @@
 # `queue-campaigns` works `campaigns` (PHASE-8-5-CONTRACT §5.1: StartCampaign snapshot, SendCampaignBatch <= 100 recipients,
 # AttributeOrder; provider calls never retried). Without it campaigns stay `sending` with `queued` recipients. The scheduler
 # runs campaigns:dispatch-due (1 min), campaigns:reap-stuck (5 min) and campaigns:prune-recipients (daily).
+# `queue-automations` works `automations` (PHASE-8-6-CONTRACT P86-23: EvaluateAutomation + steps, --tries=1 --timeout=250).
+# Without it automation runs are never created/advanced. Automation SMS/email reuse the campaign settings below.
 # Campaigns (Phase 8.5): SMS through SMS_DRIVER (log here), email through the `campaigns` mailer (CAMPAIGN_MAILER=log here;
 # set `smtp` to see them in Mailpit). CAMPAIGNS_DEV_SINK=true (DEV-ONLY) records rendered messages for
 # GET /api/v1/dev/stores/{store}/message-sink. The API refuses to boot with the sink, or a log/array campaign mailer
@@ -403,6 +405,26 @@ services:
   queue-campaigns:
     <<: *api-common
     command: ["php", "artisan", "queue:work", "redis", "--queue=campaigns", "--tries=1", "--timeout=250", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 8.6 automations (PHASE-8-6-CONTRACT P86-23, §13 QA infra): EvaluateAutomation and its message/tag/notify steps
+  # ($timeout <= 240 each) on their own worker, so a burst of triggers never delays campaigns or order notifications.
+  # --tries=1: message steps are at-most-once (P86-5; a step stuck in `sending` becomes `unknown`, never retried). The
+  # scheduler runs automations:detect-abandoned (5 min), automations:resume-due (1 min), automations:reap-stuck (5 min)
+  # and automations:prune-runs (daily). Messages reuse the campaign env (SMS_DRIVER, CAMPAIGN_MAILER, CAMPAIGNS_DEV_SINK);
+  # team notifications go through `queue-notifications`.
+  queue-automations:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=automations", "--tries=1", "--timeout=250", "--sleep=1"]
     depends_on:
       api:
         condition: service_healthy

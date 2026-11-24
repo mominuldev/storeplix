@@ -127,6 +127,9 @@ customer marketing toggle `perm:customers.edit`. `RoutePermissionsTest` gains th
 Migration (API) adds both keys to `plans.limits` for existing plans; `PlanSeeder` updated; `Limit` enum + `FeatureGate::usage`
 cases; `LimitKey` in types. Plan & billing "Usage this month" lists the two new rows ("Campaign SMS this month · N of M").
 Downgrade: nothing deleted; scheduled campaigns fail at execution if the allowance doesn't fit (P85-14).
+**Phase 8.6 note (P86-8, Q157):** both allowances are shared with automation messages. Usage also counts automation
+message steps `done`/`sending`/`unknown` (SMS parts / emails) in the calendar month and `automation.test_sent`; Plan &
+billing labels become "Marketing SMS this month" / "Marketing emails this month". Campaign checks are unchanged.
 
 ## 3. Campaign model
 
@@ -185,6 +188,10 @@ this message" = `recipients`. Counts are an estimate; the snapshot at send start
 function). Limiter `storefront-unsubscribe` 20/min per shopper IP (forwarded `X-Shopper-Ip`, as checkout). Codes never
 expire. Unsubscribe also sets the recipient `unsubscribed_at` (stats); it does **not** change
 `accepts_marketing` (P85-4 as amended). "Subscribe again" removes that channel's `source = link` suppression. Not audited in `audit_logs` (shopper action); the suppression row is the record.
+**Phase 8.6 note (PHASE-8-6 §8):** a code is resolved from `campaign_recipients`, then `automation_run_steps`
+(`unsubscribe_code_hash`), then test codes (`campaign.test_sent` / `automation.test_sent`). Response shape unchanged;
+the suppression written for an automation code has `source = link` and `campaign_id` null. The dev sink (§5.4) also
+records automation messages (`automation_id` set, `campaign_id` null).
 
 ### 4.3 Send-time checks (every recipient, inside the send job, P85-8)
 Skip with `skip_reason` when: suppression exists (`opted_out`); customer deleted (`customer_deleted`); address

@@ -252,6 +252,22 @@ and answers the same 404 `unsubscribe_link_invalid` as an unknown or malformed o
 `BelongsToStore` for the host's store. The storefront page `/u/{code}` lives on the merchant's own host and bypasses the
 Coming-soon rewrite; a suspended store's host does not resolve (404).
 
+**Checkout contact and cart recovery (Phase 8.6, PHASE-8-6 §7, ADR 0020) need no definer function either.**
+`PUT /storefront/cart/contact` resolves tenant and store from `X-Storefront-Host` (`sp_resolve_host`) and finds the cart
+by `sha256(X-Cart-Token)` inside `TenantContext` on the normal RLS path, filtered by the host's `store_id`, exactly like
+the other cart routes; the contact columns are never serialized by any storefront resource. `POST
+/storefront/carts/recover` looks `sha256(code)` up in `automation_runs.recovery_code_hash` the same way (host's
+`store_id`, RLS path): a code of another store or tenant never matches and answers the same 404
+`recovery_link_invalid` as an unknown one (S133). The new cart is created `BelongsToStore` for the host's store and
+copies lines from the run's cart; the original cart row and token are never returned or changed. The storefront route
+`/r/{code}` lives on the merchant's own host outside `(store)` (like `/u`) and is on the proxy allowlist.
+
+**Automation actor (Phase 8.6, P86-20).** Changes an automation makes on its own (customer tags) run inside the job's
+`TenantContext` with actor type `automation` (`actor_id` = automation id). The automation never acts with a member's
+permissions: it can only perform the fixed recipe actions, and per-action effects are recorded in the run log, not
+`audit_logs`. Team notifications resolve recipients at send time from current `tenant_users` memberships whose resolved
+permission set holds the recipe's key (`inventory.adjust` for low stock), plus owners and admins.
+
 ### 9.5 Cross-tenant platform code (`withoutTenancy()` → `pgsql_admin`)
 - `Model::withoutTenancy()` removes the `TenantScope` **and**, with RLS on, moves the query onto `pgsql_admin`
   (`PlatformDb::reroute`). With RLS off it stays on the default connection, exactly as before 5b.
@@ -267,6 +283,13 @@ Coming-soon rewrite; a suspended store's host does not resolve (404).
   `campaigns:prune-recipients` (daily) find due campaigns / stuck recipients / old rows on `pgsql_admin`, then move
   state by conditional UPDATE and dispatch `StartCampaign` / `SendCampaignBatch` as `TenantAware` jobs (queue
   `campaigns`) inside `TenantContext::run()`. The attribution listener on order placed is queued and `TenantAware`.
+- Phase 8.6: `automations:detect-abandoned` (every 5 min), `automations:resume-due` (every minute),
+  `automations:reap-stuck` (every 5 min) and `automations:prune-runs` (daily) find stores with an `on` recovery
+  automation / due `waiting` runs / stuck `sending` steps / old runs on `pgsql_admin`, then move state by conditional
+  UPDATE (`recovery_detected_at`, `waiting → running`, `sending → unknown`) and dispatch `EvaluateAutomation` (and step
+  jobs) as `TenantAware` jobs on the `automations` queue inside `TenantContext::run()`. The trigger fan-out in
+  `WebhookEvents::emit` and the `OrderService::systemCancel` hook run in the request's tenant context and only dispatch
+  `TenantAware` jobs.
 - Seeders run with `--database=pgsql_owner` (the owner bypasses RLS) and keep `TenantContext::run()` around tenant writes.
 - Super-admin `/admin/*` (not built yet) must use `pgsql_admin` and stay out of merchant request paths.
 

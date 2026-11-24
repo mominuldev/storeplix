@@ -109,7 +109,7 @@ describe('PHASE-8-5 helpers', () => {
 
   it('nav: Overview and Campaigns need marketing.manage', () => {
     const marketing = (role: 'owner' | 'staff') => visibleNav({ role }).find((n) => n.to === '/marketing')!.children!.map((c) => c.label);
-    expect(marketing('owner')).toEqual(['Overview', 'Coupons', 'Campaigns']);
+    expect(marketing('owner')).toEqual(['Overview', 'Coupons', 'Campaigns', 'Automations']); // + Automations (PHASE-8-6 §10)
     expect(marketing('staff')).toEqual(['Coupons']);
   });
 });
@@ -124,8 +124,9 @@ describe('Marketing overview', () => {
     expect(within(kpis).getByText('↑ 22% vs last 30 days')).toBeInTheDocument();
     expect(within(kpis).getByText('18% of all orders')).toBeInTheDocument();
     expect(within(kpis).getByText('SMS + email, this month: 20 of 6,000')).toBeInTheDocument();
-    expect(within(kpis).getByText('in the last 30 days')).toBeInTheDocument();
-    for (const hidden of ['Carts recovered', 'Return on spend', 'Automations', 'WhatsApp broadcast', 'Abandoned cart recovery', 'Cart recovery', 'SMS & WhatsApp'])
+    // PHASE-8-6 §10.5: Carts recovered, the Automations tab, Cart recovery series and quick card are unhidden.
+    expect(within(kpis).getByText('Carts recovered')).toBeInTheDocument();
+    for (const hidden of ['Return on spend', 'WhatsApp broadcast', 'SMS & WhatsApp'])
       expect(screen.queryByText(hidden)).not.toBeInTheDocument();
     expect(screen.queryByText(/Best week yet/)).not.toBeInTheDocument();
     expect(screen.queryByText(/per SMS/)).not.toBeInTheDocument();

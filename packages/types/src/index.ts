@@ -192,7 +192,10 @@ export type FeatureKey =
 export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
   /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
   | 'custom_domains'
-  /** Phase 8.5 (PHASE-8-5 P85-13): campaign SMS **parts** / campaign emails per calendar month (store tz). Free 0. */
+  /**
+   * Phase 8.5 (PHASE-8-5 P85-13): campaign SMS **parts** / campaign emails per calendar month (store tz). Free 0.
+   * Phase 8.6 (P86-8): shared with automation messages; labels "Marketing SMS" / "Marketing emails".
+   */
   | 'campaign_sms_per_month' | 'campaign_emails_per_month';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
 
@@ -1384,8 +1387,11 @@ export interface DeliveryReport {
 }
 
 // ---------- Phase 8.1: super admin (PHASE-8-1-CONTRACT; openapi 1.9.0) ----------
-/** Phase 8.4: `api_key` = a call made through the external API (`actor.id` = key id, PHASE-8-4 §3). */
-export type AuditActorType = 'user' | 'system' | 'platform_user' | 'api_key';
+/**
+ * Phase 8.4: `api_key` = a call made through the external API (`actor.id` = key id, PHASE-8-4 §3).
+ * Phase 8.6 (P86-20): `automation` = a store automation (`actor.id` = automation id, `actor.name` = automation name).
+ */
+export type AuditActorType = 'user' | 'system' | 'platform_user' | 'api_key' | 'automation';
 export type PlatformRole = 'super_admin' | 'billing' | 'support' | 'read_only';
 export type PlatformPermission =
   | 'view_merchants' | 'impersonate' | 'manage_billing' | 'manage_domains' | 'suspend' | 'manage_team'
@@ -1890,9 +1896,16 @@ export interface MarketingOverview {
     /** campaign messages (SMS recipients + emails) sent in range */
     messages_sent: number;
     unsubscribes: number;
+    /** Phase 8.6 (P86-15): `automation_conversions` in range (non-cancelled orders) */
+    carts_recovered: number;
+    /** Phase 8.6: revenue of those orders; also included in `revenue_amount` (each order once) */
+    recovered_revenue_amount: number;
   };
-  /** 8 weeks, oldest first; `week_start` = ISO-week Monday (`YYYY-MM-DD`, store tz), as in reports */
-  series: { week_start: string; coupons_amount: number; campaigns_amount: number }[];
+  /**
+   * 8 weeks, oldest first; `week_start` = ISO-week Monday (`YYYY-MM-DD`, store tz), as in reports.
+   * Phase 8.6: `recovery_amount` = automation-conversion revenue that week ("Cart recovery" series).
+   */
+  series: { week_start: string; coupons_amount: number; campaigns_amount: number; recovery_amount: number }[];
   /** top 4 active coupons by revenue */
   active_coupons: {
     id: string; code: string; type: CouponType; percent_bps: number | null; amount: number | null;
@@ -1900,7 +1913,8 @@ export interface MarketingOverview {
   }[];
   /** latest 5 */
   recent_campaigns: CampaignListItem[];
-  counts: { coupons: number; campaigns: number };
+  /** Phase 8.6: `automations` = automations with status `on` (Automations tab count) */
+  counts: { coupons: number; campaigns: number; automations: number };
   currency: string;
 }
 
@@ -1938,6 +1952,8 @@ export interface DevSinkMessage {
   /** full rendered SMS text, or the email plain-text part */
   text: string;
   unsubscribe_url: string; campaign_id: string | null; is_test: boolean; created_at: string;
+  /** Phase 8.6 (§8): set for automation messages (then `campaign_id` is null); null for campaign messages */
+  automation_id: string | null;
 }
 
 /** Audit actions written by Phase 8.5 (§6.1). `AuditLog.action` stays `string`; this lists the new values. */
@@ -1947,4 +1963,351 @@ export type CampaignAuditAction =
 export const CAMPAIGN_AUDIT_ACTIONS: readonly CampaignAuditAction[] = [
   'campaign.created', 'campaign.deleted', 'campaign.test_sent', 'campaign.scheduled', 'campaign.sent',
   'campaign.unscheduled', 'campaign.cancelled', 'customer.marketing_opted_out', 'customer.marketing_opt_out_removed',
+];
+
+// ---------- Phase 8.6: automations + checkout recovery (PHASE-8-6-CONTRACT §3–§9; openapi 1.14.0) ----------
+/** P86-2: the fixed recipe catalogue, UI order. One automation per recipe per store (P86-1). */
+export type RecipeKey = 'checkout_recovery' | 'thank_you' | 'vip_tag' | 'return_flag' | 'low_stock';
+export const RECIPE_KEYS: readonly RecipeKey[] = ['checkout_recovery', 'thank_you', 'vip_tag', 'return_flag', 'low_stock'];
+/** `draft → on ⇄ off`. Only a `draft` (never run) can be deleted. */
+export type AutomationStatus = 'draft' | 'on' | 'off';
+export const AUTOMATION_STATUSES: readonly AutomationStatus[] = ['draft', 'on', 'off'];
+/** P86-17: `plan` = the store's plan lacks `sms_automation`; settings and toggle state are kept, no runs are created. */
+export type AutomationPausedReason = 'plan';
+/** §4.1 trigger keys (`AutomationRun.trigger`). */
+export type AutomationTrigger = 'checkout.abandoned' | 'order.delivered' | 'return.received' | 'stock.low';
+export const RECIPE_TRIGGERS: Readonly<Record<RecipeKey, AutomationTrigger>> = {
+  checkout_recovery: 'checkout.abandoned',
+  thank_you: 'order.delivered',
+  vip_tag: 'order.delivered',
+  return_flag: 'return.received',
+  low_stock: 'stock.low',
+};
+
+/** §1/§8 limits the UI mirrors (server is authoritative). */
+export const AUTOMATION_LIMITS = {
+  name_max: 80,
+  /** P86-7: SMS parts incl. the shop prefix and opt-out footer (campaigns allow 5) */
+  sms_max_parts: 3,
+  email_subject_max: 150,
+  email_body_max: 3000,
+  /** P86-9 quiet hours, store time, always on (not a merchant toggle) */
+  quiet_hours: { from: '21:00', to: '09:00' },
+  /** P86-10: automation marketing messages per (store, channel, address) per rolling 24 h, across automations */
+  frequency_cap_per_24h: 2,
+  /** §5 */
+  max_conditions: 5,
+  /** P86-22 test messages per user per hour */
+  test_sends_per_hour: 5,
+  /** §9.1 dry runs per user per minute */
+  dry_runs_per_minute: 30,
+  /** P86-6 / Q162 */
+  run_retention_days: 90,
+  conversion_retention_months: 13,
+  /** P86-15/P86-11: recovery flow sends at most this many messages per run */
+  recovery_max_messages: 2,
+  tag_max: 40,
+} as const;
+
+/** §3 recipe parameters: defaults and bounds (server validates; WEB pre-fills). Durations are integers. */
+export const RECIPE_PARAMS = {
+  checkout_recovery: {
+    delay_minutes: { default: 30, min: 15, max: 180, options: [15, 30, 60, 120, 180] },
+    wait_hours: { default: 24, min: 6, max: 48 },
+    exit_days: { default: 3, min: 1, max: 7 },
+  },
+  thank_you: { delay_hours: { default: 0, min: 0, max: 72 } },
+  vip_tag: { min_delivered: { default: 5, min: 2, max: 50 }, tag: { default: 'VIP', min_length: 1, max_length: 40 } },
+  return_flag: { tag: { default: 'Returned', min_length: 1, max_length: 40 } },
+  low_stock: {},
+} as const;
+
+/** §8 merge fields per recipe. Anything else in `{…}` → 422 `campaign_unknown_merge_field`. */
+export type AutomationMergeField = '{name}' | '{shop_link}' | '{coupon}' | '{product}' | '{cart_link}' | '{order_no}';
+export const RECIPE_MERGE_FIELDS: Readonly<Record<RecipeKey, readonly AutomationMergeField[]>> = {
+  checkout_recovery: ['{name}', '{cart_link}', '{product}', '{coupon}', '{shop_link}'],
+  thank_you: ['{name}', '{order_no}', '{product}', '{shop_link}'],
+  vip_tag: ['{name}', '{coupon}', '{shop_link}'],
+  return_flag: [],
+  low_stock: [],
+};
+
+/**
+ * One customer message in `settings` (§3). `subject` is required for `email` (1–150, no CR/LF) and null for `sms`.
+ * `body` never includes the automatic shop prefix / opt-out footer.
+ */
+export interface AutomationMessage {
+  channel: MarketingChannel; language: CampaignLanguage; body: string; subject: string | null;
+}
+
+// Conditions (§5): fixed list, all must hold, ≤ 5.
+export type AutomationConditionField =
+  | 'order.total_amount' | 'order.payment_method' | 'order.channel' | 'customer.tag'
+  | 'customer.delivered_orders_count' | 'customer.risk';
+export type AutomationCondition =
+  /** minor units ≥ 0 */
+  | { field: 'order.total_amount'; op: 'gt' | 'lt'; value: number }
+  | { field: 'order.payment_method'; op: 'is'; value: 'cod' | 'online' }
+  /** non-empty subset of `OrderChannel` */
+  | { field: 'order.channel'; op: 'in'; value: OrderChannel[] }
+  /** 1–40 chars */
+  | { field: 'customer.tag'; op: 'has' | 'not_has'; value: string }
+  /** 2–50 */
+  | { field: 'customer.delivered_orders_count'; op: 'gte'; value: number }
+  | { field: 'customer.risk'; op: 'is_not'; value: 'risky' };
+export type AutomationConditionOp = AutomationCondition['op'];
+/** Conditions a recipe's `settings.conditions` may hold (only `thank_you` has a free list; see §11.1 C2). */
+export const RECIPE_CONDITION_FIELDS: Readonly<Record<RecipeKey, readonly AutomationConditionField[]>> = {
+  checkout_recovery: ['customer.risk'],
+  thank_you: ['order.total_amount', 'order.payment_method', 'order.channel', 'customer.tag'],
+  vip_tag: ['customer.delivered_orders_count'],
+  return_flag: [],
+  low_stock: [],
+};
+/** §5 "Order channel" chips → `OrderChannel` values (Messenger / POS hidden). */
+export const AUTOMATION_ORDER_CHANNEL_CHIPS: readonly { label: string; channels: readonly OrderChannel[] }[] = [
+  { label: 'Storefront', channels: ['website'] },
+  { label: 'Landing pages', channels: ['landing_page'] },
+  { label: 'Facebook', channels: ['facebook'] },
+  { label: 'Instagram', channels: ['instagram'] },
+  { label: 'Phone / manual', channels: ['phone', 'walk_in'] },
+  { label: 'Other', channels: ['other'] },
+];
+
+// Settings per recipe (§3). `settings` is replaced as a whole on PATCH; unknown keys → 422.
+export interface CheckoutRecoverySettings {
+  /** idle minutes before a checkout counts as abandoned (15–180) */
+  delay_minutes: number;
+  step1: { enabled: boolean; message: AutomationMessage };
+  /** wait between step 1 and step 2, "only if still no order" (6–48) */
+  wait_hours: number;
+  /** step 2 may carry a coupon (`{coupon}`); inactive at send time → step `skipped/coupon_inactive` */
+  step2: { enabled: boolean; coupon_id: string | null; message: AutomationMessage };
+  /** exit window (1–7) */
+  exit_days: number;
+  /** "Skip risky customers" → condition `customer.risk is_not risky` when the phone matches a customer */
+  skip_risky: boolean;
+}
+export interface ThankYouSettings {
+  /** 0 = send on delivery (0–72) */
+  delay_hours: number;
+  message: AutomationMessage;
+  /** ≤ 5, fields from `RECIPE_CONDITION_FIELDS.thank_you` */
+  conditions: AutomationCondition[];
+}
+export interface VipTagSettings {
+  /** condition `customer.delivered_orders_count gte n` (2–50) */
+  min_delivered: number;
+  /** 1–40 */
+  tag: string;
+  /** optional message; when enabled the body must use `{coupon}` and `coupon_id` is required to enable */
+  message: AutomationMessage & { enabled: boolean };
+  coupon_id: string | null;
+}
+export interface ReturnFlagSettings { tag: string }
+export type LowStockSettings = Record<string, never>;
+export interface AutomationSettingsMap {
+  checkout_recovery: CheckoutRecoverySettings;
+  thank_you: ThankYouSettings;
+  vip_tag: VipTagSettings;
+  return_flag: ReturnFlagSettings;
+  low_stock: LowStockSettings;
+}
+export type AutomationSettings = AutomationSettingsMap[RecipeKey];
+
+/** `RecipeCard` (§9.2): the catalogue tile; `added` = the store already has this recipe. `icon` is a UI icon name. */
+export interface RecipeCard {
+  recipe: RecipeKey; name: string; description: string; trigger_label: string; action_label: string; icon: string;
+  added: boolean;
+}
+
+/** One automation of recipe `R` (§9.2). */
+export interface AutomationOf<R extends RecipeKey> {
+  id: string; recipe: R; name: string; status: AutomationStatus; paused_reason: AutomationPausedReason | null;
+  settings: AutomationSettingsMap[R];
+  /** Figma tag texts, e.g. "Checkout left 30 min" → "Reminder SMS" */
+  trigger_label: string; action_label: string;
+  runs_7d: number; last_run_at: string | null; created_at: string; updated_at: string; revision: number;
+}
+/** Discriminated on `recipe`: `settings` narrows with it. */
+export type Automation = { [R in RecipeKey]: AutomationOf<R> }[RecipeKey];
+
+/** Step kinds in a recipe's fixed flow; `wait` never produces a step row. */
+export type StepAction = 'send_message' | 'add_tag' | 'notify_team';
+export type RecipeStepKind = StepAction | 'wait';
+/** Editor schema summary (`AutomationDetail.recipe_schema`, §11.1 C3). */
+export interface RecipeSchema {
+  trigger: AutomationTrigger;
+  /** "When" step copy */
+  trigger_description: string;
+  allowed_conditions: AutomationConditionField[];
+  max_conditions: number;
+  /** fixed order; `message_step` = 1|2 for `send_message` (test-message / settings key), else null */
+  steps: { kind: RecipeStepKind; title: string; description: string; optional: boolean; message_step: 1 | 2 | null }[];
+  merge_fields: AutomationMergeField[];
+  sms_max_parts: number;
+}
+export interface AutomationStats7d { runs: number; completed: number; skipped: number; stopped: number; failed: number }
+/** GET /automations/{id} */
+export type AutomationDetail = Automation & {
+  recipe_schema: RecipeSchema;
+  stats_7d: AutomationStats7d;
+  /** latest `automation.created|updated` audit actor; null when unknown (§11.1 C4) */
+  last_edited_by: UserRef | null;
+};
+
+/** GET /automations `meta.kpis` (§9.1). Money in minor units of the store currency. */
+export interface AutomationKpis {
+  active: number; drafts: number; total: number;
+  runs_7d: number;
+  /** completed ÷ non-skipped runs in 7 days, percent, one decimal; null when there are none */
+  runs_7d_succeeded_pct: number | null;
+  /** automation message steps `done` this calendar month (store tz) */
+  messages_sent_month: number;
+  carts_recovered_30d: number;
+  recovered_revenue_30d: number;
+}
+export interface AutomationListMeta { recipes: RecipeCard[]; kpis: AutomationKpis }
+
+export interface CreateAutomationInput { recipe: RecipeKey }
+/** PATCH: `revision` required (409 `revision_conflict`); `settings` replaces the whole object and is validated per recipe. */
+export interface UpdateAutomationInput<R extends RecipeKey = RecipeKey> {
+  name?: string; settings?: AutomationSettingsMap[R]; revision: number;
+}
+
+// Runs + steps (§4.2, §6)
+export type RunStatus = 'running' | 'waiting' | 'completed' | 'skipped' | 'stopped' | 'failed';
+export const RUN_STATUSES: readonly RunStatus[] = ['running', 'waiting', 'completed', 'skipped', 'stopped', 'failed'];
+/**
+ * `skipped`: `conditions_not_met` | `subject_missing` | `no_eligible_address` (first message had no eligible address);
+ * `stopped`: `converted` | `window_ended` | `opted_out` | `automation_off` | `plan`; `failed`: `error`.
+ */
+export type RunOutcomeReason =
+  | 'conditions_not_met' | 'subject_missing' | 'no_eligible_address'
+  | 'converted' | 'window_ended' | 'opted_out' | 'automation_off' | 'plan'
+  | 'error';
+export type RunSubjectType = 'order' | 'cart' | 'return' | 'inventory';
+export type StepStatus = 'sending' | 'done' | 'skipped' | 'failed' | 'unknown';
+/** §6 skip reasons (`skipped`) and failure codes (`failed`). */
+export type StepReason =
+  | 'not_eligible' | 'no_address' | 'opted_out' | 'frequency_cap' | 'allowance' | 'coupon_inactive'
+  | 'no_customer' | 'already_tagged' | 'tags_full' | 'no_recipients'
+  | 'provider_error' | 'invalid_address';
+/** Snapshot taken at trigger time (§4.2); keys present depend on the subject. Contact is never unmasked. */
+export interface AutomationRunContext {
+  order_number?: string; order_total_amount?: number;
+  cart_line_count?: number; cart_total_amount?: number;
+  /** first cart/order line */
+  first_product_name?: string; first_product_image_url?: string | null;
+  return_number?: string;
+  product_name?: string; variant_name?: string | null; on_hand?: number;
+  currency?: string;
+}
+export interface AutomationRunStepDetail {
+  /** `notify_team`: number of recipients emailed */
+  recipients?: number;
+  /** `add_tag`: the tag */
+  tag?: string;
+  /** `send_message` with a coupon */
+  coupon_code?: string;
+  /** 1|2 for recovery message steps */
+  message_step?: 1 | 2;
+}
+export interface AutomationRunStep {
+  index: number; action: StepAction; status: StepStatus; reason: StepReason | null;
+  channel: MarketingChannel | null;
+  /** never the full address */
+  masked_address: string | null;
+  parts: number; detail: AutomationRunStepDetail | null; executed_at: string;
+}
+export interface AutomationRunOutcomeDetail {
+  conditions: { field: string; label: string; passed: boolean; detail: string | null }[];
+}
+export interface AutomationRun {
+  id: string;
+  automation: { id: string; recipe: RecipeKey; name: string };
+  trigger: AutomationTrigger; status: RunStatus; outcome_reason: RunOutcomeReason | null;
+  /** Per-condition results when `outcome_reason` is `conditions_not_met` (contract §6 step 3); else null. */
+  outcome_detail: AutomationRunOutcomeDetail | null;
+  /** `label` e.g. "GS-1048", "Cart · 2 items" */
+  subject: { type: RunSubjectType; id: string; label: string };
+  /** null for runs without a person (low stock). `name` needs `customers.view` (else null, P86-18). */
+  contact: { masked_address: string | null; name: string | null } | null;
+  context: AutomationRunContext;
+  steps: AutomationRunStep[];
+  started_at: string; resume_at: string | null; finished_at: string | null;
+  conversion: { order: { id: string; number: string; total_amount: number } } | null;
+}
+export interface AutomationRunFilters {
+  automation_id?: string; recipe?: RecipeKey; status?: RunStatus[];
+  /** ISO 8601 date-time */
+  since?: string; cursor?: string;
+}
+
+// Dry run (P86-21) + test message (P86-22)
+/** At most one id, matching the recipe's subject; none = the latest matching subject. */
+export interface AutomationDryRunInput {
+  order_id?: string; cart_id?: string; inventory_id?: string; return_id?: string;
+}
+export type DryRunWould = 'send' | 'skip' | 'tag' | 'notify';
+export interface AutomationDryRun {
+  /** the evaluated subject; null when the store has no matching subject (then both lists are empty) */
+  subject: { type: RunSubjectType; id: string; label: string } | null;
+  conditions: { label: string; passed: boolean; detail: string | null }[];
+  steps: {
+    index: number; action: StepAction; would: DryRunWould; reason: StepReason | null;
+    rendered: { channel: MarketingChannel; subject: string | null; text: string; parts: number } | null;
+  }[];
+}
+export interface AutomationTestMessageInput { step: 1 | 2 }
+/** POST /automations/{id}/test-message → 202 */
+export type AutomationTestResult = CampaignTestResult;
+
+// Stats (recovery page, §7 / §9.1)
+export type AutomationStatsDays = 14 | 30;
+export interface AutomationStats {
+  days: AutomationStatsDays;
+  /** per message step over `days`: sent = steps `done`, recovered = conversions credited to it */
+  steps: { step: number; sent: number; recovered: number; revenue_amount: number }[];
+  /** `days` entries, oldest first, `YYYY-MM-DD` store tz */
+  daily: { date: string; recovered: number; revenue_amount: number }[];
+  /** always the last 30 days (§11.1 C6) */
+  kpis: {
+    /** runs created */
+    carts_left_behind: number;
+    /** sum of context cart totals */
+    carts_left_behind_amount: number;
+    recovered: number;
+    /** conversions ÷ runs with ≥ 1 message done, percent, one decimal; null when none */
+    recovery_rate_pct: number | null;
+    revenue_amount: number;
+    /** revenue ÷ recovered; null when none */
+    average_recovered_amount: number | null;
+    /** this calendar month */
+    messages_sent_month: number;
+  };
+  currency: string;
+}
+
+// Storefront (§7)
+/** PUT /storefront/cart/contact → 204. `phone` = valid BD mobile (normalized server-side). */
+export interface CartContactInput { phone: string; name?: string | null; email?: string | null }
+/** POST /storefront/carts/recover → 201 */
+export interface RecoverCartInput { code: string }
+export interface RecoverCartResult { cart_token: string; next: 'checkout' | 'cart' }
+/** P86-16 `/r/{code}`: 10 base62 */
+export const RECOVERY_CODE_PATTERN = /^[A-Za-z0-9]{10}$/;
+/** §10.6 checkout notice under the phone field */
+export const CHECKOUT_CONTACT_NOTICE = {
+  en: "If you don't finish, we may text you a reminder. You can opt out any time.",
+  bn: 'অর্ডার শেষ না করলে আমরা একটি রিমাইন্ডার SMS পাঠাতে পারি। যেকোনো সময় বন্ধ করতে পারবেন।',
+} as const;
+
+/** Audit actions written by Phase 8.6 (§4.4). */
+export type AutomationAuditAction =
+  | 'automation.created' | 'automation.updated' | 'automation.enabled' | 'automation.disabled'
+  | 'automation.deleted' | 'automation.test_sent';
+export const AUTOMATION_AUDIT_ACTIONS: readonly AutomationAuditAction[] = [
+  'automation.created', 'automation.updated', 'automation.enabled', 'automation.disabled', 'automation.deleted',
+  'automation.test_sent',
 ];

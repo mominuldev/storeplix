@@ -350,6 +350,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.5 (PHASE-8-5-CONTRACT §6.1, §4.2): campaigns, opt-outs and the storefront unsubscribe API (own groups).
     require __DIR__.'/campaigns.php';
 
+    // Phase 8.6 (PHASE-8-6-CONTRACT §9.1, §7): automations, run log and storefront checkout recovery (own groups).
+    require __DIR__.'/automations.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
