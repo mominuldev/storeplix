@@ -3,6 +3,8 @@
 namespace App\Domain\Inventory;
 
 use App\Domain\Catalog\Models\ProductVariant;
+use App\Domain\Developer\ApiKeys\CurrentApiKey;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
 use App\Domain\Shared\Http\ApiException;
@@ -137,6 +139,7 @@ class InventoryService
                 $row = $rows[$variantId];
                 $row->on_hand = $new;
                 $row->save();
+                WebhookEvents::stock($row, $old, $new);
                 $movements[] = $this->movementRow($storeId, $variantId, $new - $old, $new, $reason, $note, $reference['type'] ?? null, $reference['id'] ?? null, $actorId);
             }
             $this->insertMovements($movements);
@@ -165,6 +168,7 @@ class InventoryService
             'reference_type' => $refType,
             'reference_id' => $refId,
             'actor_user_id' => $actorId,
+            'actor_api_key_id' => $actorId === null ? CurrentApiKey::current()?->id : null, // PHASE-8-4 §3
             'created_at' => now(),
         ];
     }
@@ -282,6 +286,7 @@ class InventoryService
         $movements = [];
         foreach ($plan as $variantId => [$row, $onHand, $committed, $quantity]) {
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'committed' => $committed, 'updated_at' => now()]);
+            WebhookEvents::stock($row, $row->on_hand, $onHand);
             $movements[] = $this->movementRow($storeId, $variantId, -$quantity, $onHand, 'order_shipped', null, 'order', $orderId, $actorId);
         }
         $this->insertMovements($movements);

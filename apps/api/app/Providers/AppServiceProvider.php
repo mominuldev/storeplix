@@ -2,11 +2,14 @@
 
 namespace App\Providers;
 
+use App\Domain\Developer\External\ExternalGate;
+use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -62,6 +65,11 @@ class AppServiceProvider extends ServiceProvider
         // Phase 4: default merchant limiter (per user + tenant) and the bulk-data limiter (imports/exports, per tenant).
         RateLimiter::for('merchant', fn (Request $r) => Limit::perMinute(300)
             ->by('merchant:'.($r->user()?->getAuthIdentifier() ?? $ip($r)).'|'.strtolower((string) $r->header('X-Tenant-Id'))));
+        // Phase 8.4 (PHASE-8-4 §3, S111): 120 requests / minute per API key (the `apikey` middleware runs first).
+        RateLimiter::for('external-api', fn (Request $r) => Limit::perMinute(120)
+            ->by('external-api:'.($r->attributes->get(AuthenticateApiKey::ATTRIBUTE)?->getKey() ?? 'ip:'.$ip($r))));
+        // P84-4: merchant policies evaluated for API-key requests (no user) with the key's tenant context.
+        ExternalGate::register(Gate::getFacadeRoot());
         RateLimiter::for('merchant-bulk', fn (Request $r) => Limit::perHour((int) config('storeplix.bulk_per_hour', 10))
             ->by('merchant-bulk:'.strtolower((string) $r->header('X-Tenant-Id'))));
 
@@ -116,6 +124,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=domains --tries=3 --timeout=90', 'queue-domains');
         // Phase 7: platform billing (mirrors compose `queue-billing`, PHASE-7 §4.5).
         DevCommands::artisan('queue:listen --queue=billing --tries=3 --timeout=150', 'queue-billing');
+        // Phase 8.4: outbound merchant webhooks (mirrors compose `queue-webhooks-out`, PHASE-8-4 §4.3).
+        DevCommands::artisan('queue:listen --queue=webhooks-out --tries=1 --timeout=40', 'queue-webhooks-out');
         DevCommands::artisan('schedule:work', 'scheduler');
     }
 }

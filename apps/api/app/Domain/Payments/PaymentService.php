@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Payments;
 
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Payment;
@@ -319,6 +320,7 @@ class PaymentService
             $amount = (int) $payment->amount;
             $order->paid_amount += $amount;
             $order->payment_status = self::paymentStatus($order);
+            WebhookEvents::orderPaidIfChanged($order);
             $order->revision++;
             $meta = ['payment_id' => $payment->id, 'provider' => $payment->provider, 'purpose' => $payment->purpose, 'amount' => $amount, 'status' => 'succeeded', 'source' => $source];
             $link = $payment->payment_link_id !== null ? PaymentLink::query()->whereKey($payment->payment_link_id)->lockForUpdate()->first() : null;
@@ -331,6 +333,7 @@ class PaymentService
                 $order->save();
                 OrderTimeline::record($order, 'payment', null, null, $meta);
                 OrderTimeline::record($order, 'status_changed', null, null, ['reason' => 'payment_verified', 'payment_id' => $payment->id], Order::PENDING_PAYMENT, Order::CONFIRMED);
+                WebhookEvents::orderStatus($order, Order::CONFIRMED);
                 $this->syncCodCharge($order);
                 $result['placed'] = true;
             } elseif ($clean && $payment->purpose === Payment::PURPOSE_LINK && $link?->status === PaymentLink::ACTIVE
@@ -348,6 +351,7 @@ class PaymentService
                 OrderTimeline::record($order, 'payment_link', null, null, ['action' => 'paid', 'link_id' => $link->id, 'amount' => $amount, 'provider' => $link->provider]);
                 if ($confirm) {
                     OrderTimeline::record($order, 'status_changed', null, null, ['reason' => 'payment_verified', 'payment_id' => $payment->id], Order::PENDING, Order::CONFIRMED);
+                    WebhookEvents::orderStatus($order, Order::CONFIRMED);
                     $result['confirmed'] = true;
                 }
                 $this->syncCodCharge($order);

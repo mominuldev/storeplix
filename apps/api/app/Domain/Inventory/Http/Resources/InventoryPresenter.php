@@ -3,6 +3,7 @@
 namespace App\Domain\Inventory\Http\Resources;
 
 use App\Domain\Catalog\Models\ProductVariant;
+use App\Domain\Developer\ApiKeys\ApiKeyActors;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
 use App\Domain\Media\Http\Resources\MediaPresenter;
@@ -76,7 +77,7 @@ final class InventoryPresenter
             'reason' => $movement->reason,
             'note' => $movement->note,
             'reference' => $movement->reference_type !== null ? ['type' => $movement->reference_type, 'id' => $movement->reference_id] : null,
-            'actor' => UserRef::of($movement->actor),
+            'actor' => $movement->actor_api_key_id !== null ? ApiKeyActors::ref($movement->actor_api_key_id) : UserRef::of($movement->actor), // PHASE-8-4 §3
             'created_at' => UserRef::iso($movement->created_at),
         ];
     }

@@ -9,6 +9,8 @@ use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\DataTransfer\Models\DataExport;
 use App\Domain\DataTransfer\Models\DataImport;
+use App\Domain\Developer\ApiKeys\CurrentApiKey;
+use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Support\SessionSurface;
 use App\Domain\Media\Models\Media;
@@ -56,6 +58,7 @@ class AuditLogger
         PaymentGatewayAccount::class => 'payment_gateway',
         CourierAccount::class => 'courier',
         StoreDomain::class => 'store_domain',
+        ApiKey::class => 'api_key',
     ];
 
     public function __construct(
@@ -90,10 +93,13 @@ class AuditLogger
             $meta['platform_role'] = $actor instanceof User ? $actor->platform_role : null;
         }
 
+        // PHASE-8-4 §3: an external API request has no user; its API key is the actor (actor_id = key id).
+        $apiKey = ($system || $actor !== null) ? null : CurrentApiKey::current();
+
         return AuditLog::query()->create([
             'tenant_id' => $tenantId === false ? null : ($tenantId ?? $this->context->id()),
-            'actor_type' => $actor ? ($platform ? 'platform_user' : 'user') : 'system',
-            'actor_id' => $actor?->getAuthIdentifier(),
+            'actor_type' => $actor ? ($platform ? 'platform_user' : 'user') : ($apiKey !== null ? 'api_key' : 'system'),
+            'actor_id' => $actor?->getAuthIdentifier() ?? $apiKey?->id,
             'action' => $action,
             'subject_type' => $subject ? (self::SUBJECT_TYPES[$subject::class] ?? Str::snake(class_basename($subject))) : null,
             'subject_id' => $subject?->getKey(),

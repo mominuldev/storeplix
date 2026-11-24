@@ -10,6 +10,8 @@ use App\Domain\Catalog\Models\ProductCategory;
 use App\Domain\Catalog\Models\ProductImage;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Catalog\Support\Slug;
+use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Inventory\Models\Inventory;
@@ -88,6 +90,7 @@ class ProductService
             if ($opts['audit'] ?? true) {
                 $this->audit->log('product.created', $product, ['name' => $product->name, 'sku_count' => count(array_filter(array_column($variants, 'sku')))]);
             }
+            WebhookEvents::emit(WebhookEventType::ProductUpdated, $product);
 
             return $product;
         }));
@@ -149,6 +152,7 @@ class ProductService
             if (($opts['audit'] ?? true) && $before !== $locked->status && in_array(Product::ACTIVE, [$before, $locked->status], true)) {
                 $this->audit->log('product.status_changed', $locked, ['from' => $before, 'to' => $locked->status]);
             }
+            WebhookEvents::emit(WebhookEventType::ProductUpdated, $locked);
 
             return $locked;
         }));
@@ -200,6 +204,7 @@ class ProductService
             $locked->revision++;
             $locked->updated_by = $user?->getKey();
             $locked->save();
+            WebhookEvents::emit(WebhookEventType::ProductUpdated, $locked);
 
             return $locked;
         });
@@ -259,6 +264,7 @@ class ProductService
             $this->inventory->createMany($stock, 'initial', null, $user?->getKey());
 
             $this->audit->log('product.created', $copy, ['name' => $copy->name, 'sku_count' => 0]);
+            WebhookEvents::emit(WebhookEventType::ProductUpdated, $copy);
 
             return $copy;
         });
@@ -319,6 +325,7 @@ class ProductService
                 $product->revision++;
                 $product->updated_by = $user?->getKey();
                 $product->save();
+                WebhookEvents::emit(WebhookEventType::ProductUpdated, $product);
             }
 
             $this->audit->log('product.bulk_updated', null, ['action' => $action, 'count' => $products->count()]);

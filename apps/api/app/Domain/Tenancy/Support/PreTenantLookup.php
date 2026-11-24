@@ -3,6 +3,7 @@
 namespace App\Domain\Tenancy\Support;
 
 use App\Domain\Billing\Models\BillingPayment;
+use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -129,6 +130,23 @@ class PreTenantLookup
         $tenant = BillingPayment::withoutTenancy()->whereKey($paymentId)->value('tenant_id');
 
         return $tenant === null ? null : (string) $tenant;
+    }
+
+    /**
+     * PHASE-8-4 P84-3: external API key (sha256 hex) → owning tenant and key id of a NON-revoked key. Ids only.
+     *
+     * @return array{tenant_id: string, key_id: string}|null
+     */
+    public function apiKeyOwner(string $hash): ?array
+    {
+        if (preg_match('/^[0-9a-f]{64}$/', $hash) !== 1) {
+            return null;
+        }
+        $row = $this->rls->enabled()
+            ? DB::selectOne('select tenant_id, key_id from sp_api_key_owner(?)', [$hash])
+            : ApiKey::withoutTenancy()->where('key_hash', $hash)->whereNull('revoked_at')->first(['id as key_id', 'tenant_id']);
+
+        return $row === null ? null : ['tenant_id' => trim((string) $row->tenant_id), 'key_id' => trim((string) $row->key_id)];
     }
 
     /** B5 / P5B-8: store slugs are unique across all tenants. */

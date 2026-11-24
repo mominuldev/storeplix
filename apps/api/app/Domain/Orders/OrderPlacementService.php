@@ -12,6 +12,8 @@ use App\Domain\Coupons\CouponValidator;
 use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Orders\Models\Order;
@@ -437,6 +439,7 @@ class OrderPlacementService
             $meta += ['shipping_overridden' => true, 'computed_shipping_amount' => $computedShipping, 'shipping_amount' => $override];
         }
         OrderTimeline::record($order, 'placed', $storefront ? null : $user, null, $meta, null, $order->status, $storefront ? 'customer' : null);
+        WebhookEvents::emit(WebhookEventType::OrderCreated, $order);
 
         if ($hold) {
             $payments = app(PaymentService::class);
@@ -543,6 +546,7 @@ class OrderPlacementService
                     $c->source = $input['source'] === 'storefront' ? 'storefront' : Customer::SOURCE_MANUAL;
                     $c->created_by = $input['source'] === 'storefront' ? null : ($input['user'] ?? null)?->getKey();
                     $c->save();
+                    WebhookEvents::emit(WebhookEventType::CustomerCreated, $c);
 
                     return $c;
                 });

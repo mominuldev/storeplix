@@ -2,6 +2,7 @@
 
 namespace App\Domain\Orders;
 
+use App\Domain\Developer\ApiKeys\CurrentApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderEvent;
@@ -20,6 +21,11 @@ final class OrderTimeline
         $event->to_status = $to;
         $event->actor_type = $actorType ?? ($user !== null ? 'user' : 'system');
         $event->actor_user_id = $user?->getKey();
+        // PHASE-8-4 §3: a write through the external API is recorded with the API key as the actor.
+        if ($actorType === null && $user === null && ($key = CurrentApiKey::current()) !== null) {
+            $event->actor_type = 'api_key';
+            $event->actor_api_key_id = $key->id;
+        }
         $event->body = $body;
         $event->meta = $meta;
         $event->created_at = now();

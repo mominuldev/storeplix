@@ -275,6 +275,9 @@ class ImpersonationTest extends TestCase
 
         $this->assertSame([], $failures);
         $this->assertGreaterThan(100, $checked, 'the dataset comes from the live route list');
+        // PHASE-8-4 S104: the impersonation session can't use the external API either (no API key → 401).
+        $this->b('POST', "/api/v1/external/stores/{$store->id}/products", ['name' => 'X'], ['X-Tenant-Id' => $tenant->id])
+            ->assertUnauthorized()->assertJsonPath('error.code', 'invalid_api_key');
         $this->assertSame($before, $this->snapshot(), 'no row changed (incl. request_count and audit_logs)');
         $this->b('GET', '/api/v1/auth/me')->assertOk()->assertJsonPath('meta.impersonation.tenant_id', $tenant->id);
     }
@@ -540,7 +543,8 @@ class ImpersonationTest extends TestCase
             return false;
         }
         $path = substr($uri, strlen('api/v1/'));
-        if (preg_match('#^(admin|storefront|dev|webhooks)/|^(billing/)?payments/return/|^billing/webhooks/#', $path) === 1) {
+        // external/ (PHASE-8-4 P84-4, S104): API-key auth only, a session never authenticates it (401 invalid_api_key).
+        if (preg_match('#^(admin|storefront|dev|webhooks|external)/|^(billing/)?payments/return/|^billing/webhooks/#', $path) === 1) {
             return false;
         }
 

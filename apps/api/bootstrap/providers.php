@@ -4,6 +4,7 @@ use App\Domain\Admin\AdminServiceProvider;
 use App\Domain\Billing\BillingServiceProvider;
 use App\Domain\Catalog\CatalogServiceProvider;
 use App\Domain\Couriers\CouriersServiceProvider;
+use App\Domain\Developer\Webhooks\WebhooksServiceProvider;
 use App\Domain\Documents\DocumentsServiceProvider;
 use App\Domain\Domains\DomainsServiceProvider;
 use App\Domain\Orders\CommerceServiceProvider;
@@ -26,4 +27,5 @@ return [
     CouriersServiceProvider::class,
     DomainsServiceProvider::class,
     AdminServiceProvider::class,
+    WebhooksServiceProvider::class,
 ];

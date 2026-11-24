@@ -5,6 +5,7 @@ namespace App\Domain\Orders;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Couriers\ShipmentPresenter;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\ApiKeys\ApiKeyActors;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\MediaMaps;
@@ -228,7 +229,9 @@ final class OrderPresenter
             'type' => $event->type,
             'from_status' => $event->from_status,
             'to_status' => $event->to_status,
-            'actor' => ['type' => $event->actor_type, 'user' => UserRef::of($event->actor)],
+            'actor' => $event->actor_type === 'api_key' && $event->actor_api_key_id !== null
+                ? ['user' => null] + ApiKeyActors::ref($event->actor_api_key_id) // PHASE-8-4 §3
+                : ['type' => $event->actor_type, 'user' => UserRef::of($event->actor)],
             'body' => $event->body,
             'meta' => (object) ($event->meta ?? []),
             'created_at' => UserRef::iso($event->created_at),

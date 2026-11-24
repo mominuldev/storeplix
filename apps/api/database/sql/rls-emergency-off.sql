@@ -652,6 +652,46 @@ BEGIN
   END IF;
 END
 $$;
+-- table: api_keys
+DO $$
+BEGIN
+  IF to_regclass('public.api_keys') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "api_keys";
+    ALTER TABLE "api_keys" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "api_keys" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: webhook_endpoints
+DO $$
+BEGIN
+  IF to_regclass('public.webhook_endpoints') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "webhook_endpoints";
+    ALTER TABLE "webhook_endpoints" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "webhook_endpoints" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: webhook_secrets
+DO $$
+BEGIN
+  IF to_regclass('public.webhook_secrets') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "webhook_secrets";
+    ALTER TABLE "webhook_secrets" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "webhook_secrets" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: webhook_deliveries
+DO $$
+BEGIN
+  IF to_regclass('public.webhook_deliveries') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "webhook_deliveries";
+    ALTER TABLE "webhook_deliveries" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "webhook_deliveries" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

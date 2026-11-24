@@ -132,6 +132,7 @@ class PermissionEnforcementTest extends TestCase
             'settings.manage' => ['settings.manage', ['PATCH', '/settings', ['seo' => ['hide_from_search' => true]]], ['POST', '/couriers/steadfast/test']],
             'integrations.manage' => ['integrations.manage', ['POST', '/couriers/steadfast/test'], ['POST', '/domains', ['hostname' => 'shop-x.example.com']]],
             'domains.manage' => ['domains.manage', ['POST', '/domains', ['hostname' => 'shop-x.example.com']], ['GET', '/api/v1/staff']],
+            'developers.manage' => ['developers.manage', ['GET', '/api/v1/api-keys'], ['GET', '/api/v1/staff']], // PHASE-8-4 §2.1
             'staff.manage' => ['staff.manage', ['GET', '/api/v1/staff'], ['GET', '/api/v1/audit-logs']],
             'audit.view' => ['audit.view', ['GET', '/api/v1/audit-logs'], ['GET', '/api/v1/subscription']],
             'billing.view' => ['billing.view', ['GET', '/api/v1/subscription'], ['POST', '/api/v1/billing/change-plan', ['plan_code' => 'starter', 'interval' => 'month']]],

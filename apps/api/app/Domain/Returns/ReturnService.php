@@ -5,6 +5,8 @@ namespace App\Domain\Returns;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Orders\Models\Order;
@@ -303,6 +305,7 @@ class ReturnService
             $r->revision++;
             $r->save();
             $this->event($r, 'status_changed', $user, null, ['checks' => $r->checks], $from, ReturnRequest::RECEIVED);
+            WebhookEvents::emit(WebhookEventType::ReturnReceived, $r);
             if ($restocked !== []) {
                 $this->event($r, 'restock', $user, null, ['lines' => $restocked, 'units' => array_sum(array_column($restocked, 'quantity'))]);
             }

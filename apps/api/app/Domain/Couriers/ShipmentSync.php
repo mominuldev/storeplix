@@ -8,6 +8,7 @@ use App\Domain\Couriers\Drivers\CourierException;
 use App\Domain\Couriers\Drivers\StatusUpdate;
 use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Couriers\Models\ShipmentEvent;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Shipment;
 use App\Domain\Orders\Notifications\OrderNotifier;
@@ -168,6 +169,7 @@ class ShipmentSync
 
             $outcome = $this->effects->apply($order, $s, $from, $to);
             $s->save();
+            WebhookEvents::shipment($s);
             OrderTimeline::record($order, 'shipment', null, null, [
                 'shipment_id' => $s->id, 'provider' => $s->provider, 'from' => $from, 'to' => $to, 'provider_status' => $providerStatus, 'source' => $source,
             ], actorType: 'system');

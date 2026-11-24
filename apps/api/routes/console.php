@@ -52,3 +52,9 @@ Schedule::command('admin:check-suspensions')->hourly()->withoutOverlapping();
 // Phase 8.2 (PHASE-8-2 P82-3): nightly analytics; hourly catch-up at :20 Dhaka, in-process (no queue). The first run
 // after midnight does the work; a run with nothing missing exits at once.
 Schedule::command('analytics:aggregate')->hourlyAt(20)->timezone('Asia/Dhaka')->withoutOverlapping(60)->onOneServer()->runInBackground();
+
+// Phase 8.4 (PHASE-8-4 §4.4, owner API-HOOKS): outbound webhook retry sweep, delivery log retention (30 d, Q135) and
+// auto-disable of endpoints failing for 72 h (P84-11). Discovery on the platform connection, work per tenant.
+Schedule::command('webhooks:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('webhooks:prune-deliveries')->dailyAt('04:10')->timezone('Asia/Dhaka')->withoutOverlapping();
+Schedule::command('webhooks:auto-disable')->hourly()->withoutOverlapping();

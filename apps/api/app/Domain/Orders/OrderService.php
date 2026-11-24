@@ -5,6 +5,7 @@ namespace App\Domain\Orders;
 use App\Domain\Coupons\Models\Coupon;
 use App\Domain\Coupons\Models\CouponRedemption;
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Geo\AddressValidator;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
@@ -87,6 +88,7 @@ class OrderService
             $shipment->shipped_at = $now;
             $shipment->created_by = $user?->getKey();
             $shipment->save();
+            WebhookEvents::shipment($shipment);
 
             $lines = [];
             foreach (OrderItem::query()->where('order_id', $o->id)->orderBy('position')->get() as $i => $item) {
@@ -115,7 +117,9 @@ class OrderService
             if ($o->total_amount > 0) {
                 $o->paid_amount = $o->total_amount;
                 $o->payment_status = $o->refunded_amount > 0 ? 'partially_refunded' : 'paid';
+                WebhookEvents::orderPaidIfChanged($o);
             }
+            Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->get()->each(fn (Shipment $sh) => WebhookEvents::shipment($sh, 'delivered'));
             Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->update(['status' => 'delivered', 'delivered_at' => $now, 'updated_at' => $now]);
             $o->delivered_at = $now;
             if ($o->customer_id !== null) {
@@ -169,6 +173,7 @@ class OrderService
             $now = now();
             Payment::query()->where('order_id', $o->id)->where('provider', 'cod')->where('type', 'charge')->where('status', 'pending')
                 ->update(['status' => 'cancelled', 'updated_at' => $now]);
+            Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->get()->each(fn (Shipment $sh) => WebhookEvents::shipment($sh, 'returned'));
             Shipment::query()->where('order_id', $o->id)->where('status', 'shipped')->update(['status' => 'returned', 'returned_at' => $now, 'updated_at' => $now]);
             $o->returned_at = $now;
             if ($o->customer_id !== null) {
@@ -272,6 +277,7 @@ class OrderService
             $o->revision++;
             $o->save();
             OrderTimeline::record($o, 'status_changed', null, null, ['reason' => $reason], $from, Order::CANCELLED);
+            WebhookEvents::orderStatus($o, Order::CANCELLED);
 
             return $o;
         });
@@ -497,6 +503,7 @@ class OrderService
             $o->revision++;
             $o->save();
             OrderTimeline::record($o, 'status_changed', $user, $body, $meta, $from, $to);
+            WebhookEvents::orderStatus($o, $to);
 
             return $o;
         });

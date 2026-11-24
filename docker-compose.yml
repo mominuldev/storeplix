@@ -144,6 +144,10 @@ x-api-env: &api-env
   # DOMAINS_FAKE binds the fake DNS resolver + fake Cloudflare for SaaS driver and the /api/v1/dev/domains/* routes;
   # refused in production (like PAYMENTS_FAKE). Real certification: DOMAINS_FAKE=false + CLOUDFLARE_* (RUNBOOK §9).
   DOMAINS_FAKE: ${DOMAINS_FAKE:-true}
+  # Phase 8.4 outbound merchant webhooks (PHASE-8-4 §4.3): WEBHOOKS_OUT_FAKE=true (DEV-ONLY) sends nothing and records each
+  # request in GET /api/v1/dev/webhook-sink; WEBHOOKS_OUT_ALLOW_HTTP allows http:// receivers. Both refused in production.
+  WEBHOOKS_OUT_FAKE: ${WEBHOOKS_OUT_FAKE:-true}
+  WEBHOOKS_OUT_ALLOW_HTTP: ${WEBHOOKS_OUT_ALLOW_HTTP:-false}
   # Shared key of the Caddy `ask` endpoint GET /api/v1/internal/domains/allowed?domain=&key= (empty → always 401).
   DOMAINS_ASK_KEY: ${DOMAINS_ASK_KEY:-dev-domains-ask-key-change-me}
   # The CNAME target merchants point their hostname at (contract default customers.{PLATFORM_DOMAIN}). Set explicitly:
@@ -343,6 +347,23 @@ services:
   queue-webhooks:
     <<: *api-common
     command: ["php", "artisan", "queue:work", "redis", "--queue=webhooks", "--tries=5", "--backoff=10,60,300", "--timeout=60", "--sleep=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 8.4 outbound merchant webhooks (PHASE-8-4 §4.3): DeliverWebhook (one attempt, ≤ 10 s HTTP) on its own worker so a
+  # slow merchant receiver never delays checkout, mail or inbound webhooks. Retries are scheduled on the row
+  # (webhooks:dispatch-due every minute), so the queue itself never retries.
+  queue-webhooks-out:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=webhooks-out", "--tries=1", "--timeout=40", "--sleep=1"]
     depends_on:
       api:
         condition: service_healthy

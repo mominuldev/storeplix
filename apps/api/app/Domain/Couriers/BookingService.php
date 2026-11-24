@@ -10,6 +10,7 @@ use App\Domain\Couriers\Drivers\CourierException;
 use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Couriers\Models\CourierAreaMapping;
 use App\Domain\Couriers\Models\ShipmentEvent;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Identity\Models\User;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
@@ -151,6 +152,7 @@ class BookingService
                 'raw' => $result->raw !== [] ? $result->raw : null,
                 'failure_reason' => null,
             ])->save();
+            WebhookEvents::shipment($s);
             $event = new ShipmentEvent;
             $event->forceFill([
                 'store_id' => $s->store_id, 'shipment_id' => $s->id, 'status' => 'booked',
@@ -182,6 +184,7 @@ class BookingService
                 return $s;
             }
             $s->forceFill(['status' => 'booking_failed', 'failure_reason' => mb_substr($reason, 0, 255)])->save();
+            WebhookEvents::shipment($s);
             $event = new ShipmentEvent;
             $event->forceFill([
                 'store_id' => $s->store_id, 'shipment_id' => $s->id, 'status' => 'booking_failed', 'provider_status' => null,
@@ -264,6 +267,7 @@ class BookingService
             $this->assertCancellable($s);
             $now = now();
             $s->forceFill(['status' => 'cancelled', 'cancelled_at' => $now, 'problem' => null])->save();
+            WebhookEvents::shipment($s);
             $event = new ShipmentEvent;
             $event->forceFill([
                 'store_id' => $s->store_id, 'shipment_id' => $s->id, 'status' => 'cancelled', 'provider_status' => null,

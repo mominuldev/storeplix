@@ -4,6 +4,8 @@ namespace App\Domain\Customers;
 
 use App\Domain\Customers\Models\Customer;
 use App\Domain\Customers\Models\CustomerNote;
+use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Support\AuditLogger;
@@ -29,6 +31,7 @@ class CustomerService
             $customer->source = $source;
             $customer->created_by = $user?->getKey();
             $customer->save();
+            WebhookEvents::emit(WebhookEventType::CustomerCreated, $customer);
 
             return $customer;
         }));

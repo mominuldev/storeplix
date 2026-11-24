@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Couriers;
 
 use App\Domain\Customers\Models\Customer;
+use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
@@ -110,6 +111,7 @@ class ShipmentStatusApplier
             $o->total_amount === 0 => 'paid',
             default => 'unpaid',
         };
+        WebhookEvents::orderPaidIfChanged($o);
         $o->delivered_at = $now;
         $s->delivered_at ??= $now;
         if ($o->customer_id !== null) {

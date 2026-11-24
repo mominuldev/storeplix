@@ -4,6 +4,8 @@ use App\Domain\Admin\Http\Middleware\PlatformIpAllowlist;
 use App\Domain\Admin\Http\Middleware\RequirePlatformPermission;
 use App\Domain\Admin\Http\Middleware\RequirePlatformStaff;
 use App\Domain\Admin\Impersonation\Http\ReadOnlyImpersonation;
+use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
+use App\Domain\Developer\External\Http\Middleware\RequireApiScope;
 use App\Domain\Identity\Http\Middleware\EnforceAbsoluteSessionExpiry;
 use App\Domain\Identity\Http\Middleware\RequireStatefulRequest;
 use App\Domain\Identity\Http\Middleware\RequireSurface;
@@ -19,6 +21,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -39,6 +42,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'platform.ip' => PlatformIpAllowlist::class,
             // Phase 8.3 (PHASE-8-3 P83-4): `perm:<key>|…` / `perm:base` on every tenant route
             'perm' => RequirePermission::class,
+            // Phase 8.4 (PHASE-8-4 §3): external API key auth + `scope:<scope>` on every /external route
+            'apikey' => AuthenticateApiKey::class,
+            'scope' => RequireApiScope::class,
         ]);
 
         // Phase 4.7 (§7.2): same-origin cookie sessions for the SPAs (exact stateful domain list) with the absolute
@@ -70,6 +76,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Phase 8.3 (P83-4): permissions are checked after the tenant AND after route-model binding (foreign ids → 404).
         $middleware->appendToPriorityList(SubstituteBindings::class, RequirePermission::class);
+
+        // Phase 8.4 (P84-4): the API key (tenant context) before the throttle (the external-api limiter keys by key id) and
+        // before route-model binding; the scope check after binding (foreign ids → 404 first), like `perm`.
+        $middleware->prependToPriorityList(ThrottleRequests::class, AuthenticateApiKey::class);
+        $middleware->appendToPriorityList(SubstituteBindings::class, RequireApiScope::class);
 
         // API clients never get redirected to a login page.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

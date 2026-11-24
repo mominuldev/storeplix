@@ -8,6 +8,7 @@ use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Customers\Models\CustomerNote;
+use App\Domain\Developer\Webhooks\Sending\HostResolver;
 use App\Domain\Documents\TemplateConfig;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Stores\Models\Store;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Group;
+use Tests\Feature\Developer\Webhooks\FakeHostResolver;
 use Tests\Support\BillingFixtures;
 use Tests\Support\OnlinePaymentFixtures;
 use Tests\Support\ShipmentFixtures;
@@ -75,6 +77,26 @@ class PermissionParityTest extends TestCase
         'GET api/v1/roles/{role}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'PATCH api/v1/roles/{role}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'DELETE api/v1/roles/{role}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        // Phase 8.4 (PHASE-8-4 §6.1): developers.manage → O and A allowed, S 403.
+        'GET api/v1/api-keys' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/api-keys' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'PATCH api/v1/api-keys/{key}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/api-keys/{key}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/api-scopes' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/webhook-event-types' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/webhook-endpoints' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-endpoints' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/webhook-endpoints/{endpoint}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/webhook-endpoints/{endpoint}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-endpoints/{endpoint}/test' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'GET api/v1/stores/{store}/webhook-secret' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-secret/reveal' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-secret/rotate' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/webhook-deliveries' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/webhook-deliveries/{delivery}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-deliveries/{delivery}/resend' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'POST api/v1/stores/{store}/webhook-deliveries/resend-failed' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'GET api/v1/dev/webhook-sink' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -84,7 +106,8 @@ class PermissionParityTest extends TestCase
     {
         parent::setUp();
         Mail::fake();
-        config(['couriers.fake' => true, 'payments.fake' => true]);
+        config(['couriers.fake' => true, 'payments.fake' => true, 'webhooks_out.fake' => true]);
+        $this->app->instance(HostResolver::class, new FakeHostResolver(['hooks.example.com' => ['93.184.216.34']]));
         $this->withoutMiddleware(ThrottleRequests::class);
     }
 
@@ -232,6 +255,9 @@ class PermissionParityTest extends TestCase
         ], ['Accept' => 'application/json'])->json('data.id');
         $export = $this->req($h, 'POST', "{$base}/exports", ['type' => 'customers'])->json('data.id');
         $customRole = $this->req($h, 'POST', '/api/v1/roles', ['name' => 'Packer', 'permissions' => ['shipments.manage']])->json('data.id');
+        $apiKey = $this->req($h, 'POST', '/api/v1/api-keys', ['name' => 'Parity key', 'scopes' => ['orders:read']])->assertCreated()->json('data.id');
+        $endpoint = $this->req($h, 'POST', "{$base}/webhook-endpoints", ['url' => 'https://hooks.example.com/parity', 'events' => ['order.created']])->assertCreated()->json('data.id');
+        $delivery = $this->req($h, 'POST', "{$base}/webhook-endpoints/{$endpoint}/test")->assertStatus(202)->json('data.id');
         $pickup = $this->req($h, 'POST', "{$base}/pickup-locations", ['name' => 'Warehouse 1', 'contact_name' => 'Rafi', 'phone' => '01711000008', 'district_code' => 'dhaka', 'thana_code' => 'dhaka-dhanmondi', 'address_line' => 'Road 1'])
             ->assertCreated()->json('data.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
@@ -244,7 +270,7 @@ class PermissionParityTest extends TestCase
             'shipment' => $shipment, 'batch' => $batch, 'delivered' => $delivered['id'], 'delivered_item' => $deliveredItem,
             'return' => $return, 'link' => $link, 'document' => $document, 'domain' => $domain, 'page' => $page,
             'media' => $media, 'import' => $import, 'export' => $export, 'pickup' => $pickup, 'invoice' => $invoice,
-            'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'victim' => $victimMembership,
+            'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -306,6 +332,27 @@ class PermissionParityTest extends TestCase
             'GET api/v1/roles/{role}' => $r('GET', '/api/v1/roles/'.$s['role']),
             'PATCH api/v1/roles/{role}' => $r('PATCH', '/api/v1/roles/'.$s['role'], ['revision' => 1, 'name' => 'Packers']),
             'DELETE api/v1/roles/{role}' => $r('DELETE', '/api/v1/roles/'.$s['role'].'?revision=1'),
+            // --- Phase 8.4 API keys ---
+            'GET api/v1/api-keys' => $r('GET', '/api/v1/api-keys'),
+            'POST api/v1/api-keys' => $r('POST', '/api/v1/api-keys', ['name' => 'Zapier', 'scopes' => ['orders:read']]),
+            'PATCH api/v1/api-keys/{key}' => $r('PATCH', '/api/v1/api-keys/'.$s['api_key'], ['name' => 'Renamed']),
+            'DELETE api/v1/api-keys/{key}' => $r('DELETE', '/api/v1/api-keys/'.$s['api_key']),
+            'GET api/v1/api-scopes' => $r('GET', '/api/v1/api-scopes'),
+            // --- Phase 8.4 webhooks (API-HOOKS routes) ---
+            'GET api/v1/webhook-event-types' => $r('GET', '/api/v1/webhook-event-types'),
+            'GET api/v1/stores/{store}/webhook-endpoints' => $r('GET', "{$b}/webhook-endpoints"),
+            'POST api/v1/stores/{store}/webhook-endpoints' => $r('POST', "{$b}/webhook-endpoints", ['url' => 'https://hooks.example.com/second', 'events' => ['order.paid']]),
+            'PATCH api/v1/stores/{store}/webhook-endpoints/{endpoint}' => $r('PATCH', "{$b}/webhook-endpoints/{$s['endpoint']}", ['description' => 'ERP']),
+            'DELETE api/v1/stores/{store}/webhook-endpoints/{endpoint}' => $r('DELETE', "{$b}/webhook-endpoints/{$s['endpoint']}"),
+            'POST api/v1/stores/{store}/webhook-endpoints/{endpoint}/test' => $r('POST', "{$b}/webhook-endpoints/{$s['endpoint']}/test"),
+            'GET api/v1/stores/{store}/webhook-secret' => $r('GET', "{$b}/webhook-secret"),
+            'POST api/v1/stores/{store}/webhook-secret/reveal' => $r('POST', "{$b}/webhook-secret/reveal"),
+            'POST api/v1/stores/{store}/webhook-secret/rotate' => $r('POST', "{$b}/webhook-secret/rotate"),
+            'GET api/v1/stores/{store}/webhook-deliveries' => $r('GET', "{$b}/webhook-deliveries"),
+            'GET api/v1/stores/{store}/webhook-deliveries/{delivery}' => $r('GET', "{$b}/webhook-deliveries/{$s['delivery']}"),
+            'POST api/v1/stores/{store}/webhook-deliveries/{delivery}/resend' => $r('POST', "{$b}/webhook-deliveries/{$s['delivery']}/resend"),
+            'POST api/v1/stores/{store}/webhook-deliveries/resend-failed' => $r('POST', "{$b}/webhook-deliveries/resend-failed"),
+            'GET api/v1/dev/webhook-sink' => $r('GET', '/api/v1/dev/webhook-sink'),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),

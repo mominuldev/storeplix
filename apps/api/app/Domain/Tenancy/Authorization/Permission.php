@@ -7,7 +7,7 @@ namespace App\Domain\Tenancy\Authorization;
 /**
  * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * 22 grantable keys plus the owner-only `billing.manage`. Case order = UI order = catalogue order of
+ * 23 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`). Case order = UI order = catalogue order of
  * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
  * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
  */
@@ -32,6 +32,7 @@ enum Permission: string
     case SettingsManage = 'settings.manage';
     case IntegrationsManage = 'integrations.manage';
     case DomainsManage = 'domains.manage';
+    case DevelopersManage = 'developers.manage'; // PHASE-8-4 §2.1
     case StaffManage = 'staff.manage';
     case AuditView = 'audit.view';
     case BillingView = 'billing.view';
@@ -56,7 +57,7 @@ enum Permission: string
             self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust => 'products',
             self::CustomersView, self::CustomersEdit, self::CustomersDelete => 'customers',
             self::CostsView, self::ReportsView, self::DataExport, self::DataImport => 'money',
-            self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage => 'store',
+            self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage, self::DevelopersManage => 'store',
             self::StaffManage, self::AuditView, self::BillingView, self::BillingManage => 'team',
         };
     }
@@ -79,7 +80,7 @@ enum Permission: string
     public function sensitive(): bool
     {
         return in_array($this, [
-            self::OrdersRefund, self::CostsView, self::DataExport, self::IntegrationsManage, self::StaffManage, self::BillingManage,
+            self::OrdersRefund, self::CostsView, self::DataExport, self::IntegrationsManage, self::DevelopersManage, self::StaffManage, self::BillingManage,
         ], true);
     }
 
@@ -111,6 +112,7 @@ enum Permission: string
             self::SettingsManage => 'Change shop settings',
             self::IntegrationsManage => 'Connect payments & couriers',
             self::DomainsManage => 'Manage domains',
+            self::DevelopersManage => 'Manage API keys & webhooks',
             self::StaffManage => 'Manage staff & roles',
             self::AuditView => 'View activity log',
             self::BillingView => 'View plan & invoices',

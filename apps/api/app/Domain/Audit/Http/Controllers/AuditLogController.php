@@ -3,6 +3,7 @@
 namespace App\Domain\Audit\Http\Controllers;
 
 use App\Domain\Audit\Http\Requests\ListAuditLogsRequest;
+use App\Domain\Developer\ApiKeys\Models\ApiKey;
 use App\Domain\Identity\Models\User;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\TenantContext;
@@ -61,6 +62,11 @@ class AuditLogController
         $actorNames = User::query()
             ->whereIn('id', $page->getCollection()->where('actor_type', 'user')->pluck('actor_id')->filter()->unique())
             ->pluck('name', 'id');
+        // PHASE-8-4: API key actors are named "API: <key name>" (keys are never deleted; revoked ones keep their name).
+        $keyIds = $page->getCollection()->where('actor_type', 'api_key')->pluck('actor_id')->filter()->unique();
+        if ($keyIds->isNotEmpty()) {
+            $actorNames = $actorNames->union(ApiKey::query()->whereIn('id', $keyIds)->pluck('name', 'id')->map(fn ($n) => 'API: '.$n));
+        }
 
         return new JsonResponse([
             'data' => $page->getCollection()->map(fn (AuditLog $log) => self::row($log, $actorNames->all()))->all(),
