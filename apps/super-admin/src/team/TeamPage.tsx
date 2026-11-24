@@ -219,7 +219,9 @@ export function TeamPage() {
         <div className="flex flex-wrap items-center gap-3 px-5 pt-5 pb-4">
           <div className="flex min-w-0 flex-col">
             <h2 className="text-body-lg font-semibold text-text-primary">Platform staff</h2>
-            <p className="text-caption text-text-muted">2FA is required for every member</p>
+            <p className="text-caption text-text-muted">
+              {meta && !meta.security.totp_required ? '2FA is optional while two-step sign-in is off' : '2FA is required for every member'}
+            </p>
           </div>
           <div className="flex-1" />
           {/* Figma 39:12019 card header: title · tabs · search · Role, one row (wraps when narrow). */}
@@ -346,7 +348,10 @@ export function TeamPage() {
           </div>
           {meta ? (
             <dl className="flex flex-col divide-y divide-border-default px-5 pb-3">
-              <SecurityRow label="Require 2FA" hint="Authenticator app for every staff member">
+              <SecurityRow
+                label="Require 2FA"
+                hint={meta.security.totp_required ? 'Authenticator app for every staff member' : 'Off · staff sign in with a password only'}
+              >
                 <Toggle label="Require 2FA" checked={meta.security.totp_required} disabled />
               </SecurityRow>
               <SecurityRow label="IP allowlist" hint={meta.security.ip_allowlist_enabled ? 'Admin is reachable only from listed networks' : 'Not configured'}>

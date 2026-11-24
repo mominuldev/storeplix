@@ -1,4 +1,4 @@
-import type { AdminSession, PlatformUser } from '@storeplix/types';
+import type { AdminSession, AdminSessionSecurity, PlatformUser } from '@storeplix/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { api } from '../lib/api';
@@ -9,7 +9,13 @@ type AuthStatus = 'anonymous' | 'loading' | 'authenticated';
 interface AuthContextValue {
   status: AuthStatus;
   user: PlatformUser | null;
-  /** Call after the TOTP / enrolment step answered `AdminSession` (the session cookie is already set). */
+  /** Amendment A1-5: the API's `APP_ENV` (`local`, `staging`, `production`, …); null while signed out. */
+  environment: string | null;
+  /** Amendment A1-5: effective platform security settings; null while signed out. */
+  security: AdminSessionSecurity | null;
+  /** Patches the cached session after a settings change (no extra /me round trip). */
+  setSecurity: (security: AdminSessionSecurity) => void;
+  /** Call after the TOTP / enrolment step (or a `signed_in` login, A1-3) answered `AdminSession` (the session cookie is already set). */
   signIn: (s: AdminSession) => void;
   logout: () => Promise<void>;
 }
@@ -113,6 +119,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const setSecurity = useCallback(
+    (security: AdminSessionSecurity) => {
+      queryClient.setQueryData<AdminSession>(['auth', 'me', session.getEpoch()], (old) => (old ? { ...old, security } : old));
+    },
+    [queryClient],
+  );
+
   const logout = useCallback(async () => {
     try {
       await api.admin.auth.logout();
@@ -126,7 +139,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const status: AuthStatus = me.data ? 'authenticated' : me.isError ? 'anonymous' : 'loading';
   const user = me.data?.user ?? null;
-  const value = useMemo(() => ({ status, user, signIn, logout }), [status, user, signIn, logout]);
+  const environment = me.data?.environment ?? null;
+  const security = me.data?.security ?? null;
+  const value = useMemo(
+    () => ({ status, user, environment, security, setSecurity, signIn, logout }),
+    [status, user, environment, security, setSecurity, signIn, logout],
+  );
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

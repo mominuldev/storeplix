@@ -1,5 +1,5 @@
 import type { PlatformPermission } from '@storeplix/types';
-import { BarChart3, Building, Clock, CreditCard, Eye, Globe, LayoutDashboard, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Building, Clock, CreditCard, Eye, Globe, LayoutDashboard, Settings, Users, type LucideIcon } from 'lucide-react';
 
 export interface NavEntry {
   label: string;
@@ -13,6 +13,8 @@ export interface NavEntry {
 // not built yet (Integration health, Risk network, Support tickets, Announcements, Plans & features,
 // Themes & templates, Platform settings) are removed, not shown as placeholders. Domains (from Platform settings →
 // Domains & SSL 45:8156) and Impersonations are their own items under Operations. Phase 8.2 adds Revenue reports.
+// Amendment A1-6: Platform settings comes back (Configuration group, as in 15:2) for `manage_settings` only, with just
+// its Security tab.
 export const navGroups: { heading: string; items: NavEntry[] }[] = [
   {
     heading: 'Overview',
@@ -35,6 +37,7 @@ export const navGroups: { heading: string; items: NavEntry[] }[] = [
     items: [
       { label: 'Team & roles', to: '/team', icon: Users },
       { label: 'Audit log', to: '/audit-log', icon: Clock },
+      { label: 'Platform settings', to: '/settings', icon: Settings, permission: 'manage_settings' },
     ],
   },
 ];

@@ -1,8 +1,8 @@
 import type { AdminTenantSummary } from '@storeplix/types';
 import { Button } from '@storeplix/ui';
-import { KeyRound, Menu } from 'lucide-react';
+import { KeyRound, Menu, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
-import { Outlet, useLocation } from 'react-router';
+import { Link, Outlet, useLocation } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ShopPickerDialog } from '../components/ShopPickerDialog';
@@ -17,11 +17,14 @@ import { Sidebar } from './Sidebar';
 export function AppShell() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
-  const { user } = useAuth();
+  const { user, environment, security } = useAuth();
   const can = useCan();
   const [picker, setPicker] = useState(false);
   const [target, setTarget] = useState<AdminTenantSummary | null>(null);
-  const lowCodes = user && user.recovery_codes_left < 3;
+  // Staff who never enrolled (two-step sign-in off, A1-3) have no codes to run low on.
+  const lowCodes = user && user.totp_enrolled && user.recovery_codes_left < 3;
+  // Amendment A1-5: persistent warning for whoever can switch it back on, except on a developer machine.
+  const twoStepOff = can('manage_settings') && security?.staff_two_factor_required === false && environment !== null && environment !== 'local';
 
   return (
     <div className="flex min-h-dvh bg-surface-canvas">
@@ -45,6 +48,18 @@ export function AppShell() {
             </Button>
           )}
         </header>
+        {twoStepOff && (
+          <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-default bg-danger-bg px-4 py-2.5 text-body text-danger lg:px-8">
+            <ShieldAlert aria-hidden className="size-4 shrink-0" />
+            <span className="font-semibold">Two-step sign-in is off for platform staff</span>
+            <span className="text-text-secondary">Staff sign in with a password only ({environment}).</span>
+            {pathname !== '/settings' && (
+              <Link to="/settings" className="rounded-sm font-medium text-brand-600 underline-offset-2 outline-none hover:underline focus-visible:shadow-focus">
+                Review security settings
+              </Link>
+            )}
+          </div>
+        )}
         <main className="flex flex-1 flex-col gap-5 px-4 pt-7 pb-10 lg:px-8">
           {lowCodes && (
             <p role="status" className="flex items-center gap-2 rounded-lg bg-warning-bg px-4 py-3 text-body text-warning">

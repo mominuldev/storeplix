@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { SESSION_EXPIRED_MESSAGE, isApiError } from '@storeplix/api-client';
-import type { AdminSession } from '@storeplix/types';
+import type { AdminLoginStep, AdminSession } from '@storeplix/types';
 import { Badge, Button, Input } from '@storeplix/ui';
 import { Shield } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
@@ -25,6 +25,8 @@ type Banner = 'locked' | 'expired' | null;
 
 // Figma Platform Admin · Sign in 44:4707 → 2FA 44:4784 (PHASE-8-1 §3.1): email + password → TOTP (or recovery code)
 // or first-time enrolment → recovery codes → session. No "keep me signed in", security key or trusted device.
+// Amendment A1-3: while staff two-step sign-in is switched off the password alone answers `step: "signed_in"` with
+// the session — straight into the app, same as after the TOTP step.
 export function LoginPage() {
   const { signIn } = useAuth();
   const [step, setStep] = useState<Step>({ kind: 'credentials' });
@@ -40,6 +42,10 @@ export function LoginPage() {
       {step.kind === 'credentials' && (
         <CredentialsStep
           banner={banner}
+          onSignedIn={(s) => {
+            setBanner(null);
+            signIn(s);
+          }}
           onStep={(s, email) => {
             setBanner(null);
             setStep(s.step === 'enroll' ? { kind: 'enroll', token: s.login_token, email } : { kind: 'totp', token: s.login_token, email });
@@ -60,7 +66,15 @@ export function LoginPage() {
   );
 }
 
-function CredentialsStep({ banner, onStep }: { banner: Banner; onStep: (s: { step: 'totp' | 'enroll'; login_token: string }, email: string) => void }) {
+function CredentialsStep({
+  banner,
+  onStep,
+  onSignedIn,
+}: {
+  banner: Banner;
+  onStep: (s: AdminLoginStep, email: string) => void;
+  onSignedIn: (s: AdminSession) => void;
+}) {
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const notice = useSyncExternalStore(session.subscribe, session.peekNotice, () => null);
@@ -79,7 +93,11 @@ function CredentialsStep({ banner, onStep }: { banner: Banner; onStep: (s: { ste
     setFormError(null);
     try {
       const s = await api.admin.auth.login({ email, password });
-      onStep(s, email);
+      if (s.step === 'signed_in') {
+        onSignedIn(s);
+      } else {
+        onStep(s, email);
+      }
     } catch (error) {
       if (isApiError(error) && error.isValidation && error.fieldError('email')) {
         setError('email', {
@@ -132,7 +150,7 @@ function CredentialsStep({ banner, onStep }: { banner: Banner; onStep: (s: { ste
       </form>
       <p className="flex items-center gap-2 text-caption text-text-muted">
         <Shield className="size-4 shrink-0" aria-hidden />
-        2-factor verification is required for every staff account.
+        You may be asked for a 6-digit code after your password.
       </p>
     </>
   );

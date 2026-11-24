@@ -14,6 +14,7 @@ import { MerchantsPage } from './merchants/MerchantsPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { SettingsPage } from './settings/SettingsPage';
 import { TeamPage } from './team/TeamPage';
 
 function NotFound() {
@@ -46,6 +47,7 @@ export function AppRoutes() {
           <Route path="/impersonations" element={<ImpersonationsPage />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

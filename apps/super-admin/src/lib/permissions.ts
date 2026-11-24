@@ -43,4 +43,8 @@ export const permissionMeta: Record<PlatformPermission, { label: string; hint: s
     label: 'View analytics',
     hint: 'Platform MRR, GMV, churn and revenue reports',
   },
+  manage_settings: {
+    label: 'Platform settings',
+    hint: 'Staff two-step sign-in and other platform-wide settings',
+  },
 };
