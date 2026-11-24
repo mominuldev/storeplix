@@ -180,8 +180,10 @@ existed before 5b and revokes `UPDATE, DELETE ON audit_logs` from the app role (
 - `RlsTables::TENANT` is the single list: **52 tables** (40 from Phases 1–5a + `return_requests`, `return_items`,
   `return_events`, `document_templates`, `documents`, `payment_gateway_accounts`, `payment_links`, `webhook_events`,
   `courier_accounts`, `shipment_events`, `courier_area_mappings`, `shipment_batches`) at 5b-1; later phases add their
-  tables in the same change (**76 after Phase 8.8a**: + `fraud_guard_settings`, `blocked_phones`,
-  `order_risk_checks`, `fraud_guard_events`, `checkout_otps`; the `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
+  tables in the same change (76 after Phase 8.8a: + `fraud_guard_settings`, `blocked_phones`,
+  `order_risk_checks`, `fraud_guard_events`, `checkout_otps`; **82 after Phase 8.8b**: + `suppliers`,
+  `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments`; the
+  `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
   tables without `tenant_id` and without RLS (`users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`,
   `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`, `tenants`, `plans`, `otp_codes`, `migrations`).
 - Every listed table is `ENABLE` **and** `FORCE ROW LEVEL SECURITY` (so even the owning role is subject to policies
@@ -291,6 +293,12 @@ store's orders, no cross-tenant aggregate exists (the "Delivery record across St
 designs stay unbuilt, Q23) and the guard makes no outbound call. The storefront OTP and checkout rules run after the
 storefront host lookup has set `TenantContext`, so they need no definer function. Test: the same phone with returns in
 another tenant and in another store never changes this store's tier (S154, S161).
+
+**Purchasing is per tenant and per store (Phase 8.8b, PHASE-8-8B S167, ADR 0023).** Suppliers, purchase orders,
+their lines, receipts, receipt lines and supplier payments are `BelongsToStore` with RLS; every id in a request
+(supplier, PO, line `item_id`, `variant_id`, `invoice_media_id`, `purchase_order_id` on a payment) must belong to the
+route's tenant **and** store, else 404 / 422. Receipts change stock only through `InventoryService` inside the tenant
+transaction. Supplier CSV import matches by phone or name among this store's suppliers only. No scheduler, no job.
 
 ### 9.5 Cross-tenant platform code (`withoutTenancy()` → `pgsql_admin`)
 - `Model::withoutTenancy()` removes the `TenantScope` **and**, with RLS on, moves the query onto `pgsql_admin`

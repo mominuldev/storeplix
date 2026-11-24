@@ -192,7 +192,9 @@ export interface UpdateStoreSettingsInput {
 // ---------- Plans / subscription / features ----------
 export type FeatureKey =
   | 'custom_domain' | 'all_couriers' | 'bulk_courier_booking' | 'fake_order_guard' | 'sms_automation'
-  | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks';
+  | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks'
+  /** Phase 8.8b (PHASE-8-8B §2.2): suppliers + purchase orders; Starter + Growth. Without it writes 402, reads 200. */
+  | 'purchasing';
 export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
   /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
   | 'custom_domains'
@@ -389,8 +391,8 @@ export interface MeMeta {
 // ---------- Roles & permissions (Phase 8.3, PHASE-8-3 §2, §8) ----------
 export type PermissionKey =
   | 'orders.view' | 'orders.process' | 'orders.refund' | 'fraud.manage' | 'shipments.manage' | 'shipments.cancel'
-  | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
-  | 'costs.view' | 'reports.view' | 'expenses.manage' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
+  | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'purchasing.manage' | 'customers.view' | 'customers.edit'
+  | 'customers.delete' | 'costs.view' | 'reports.view' | 'expenses.manage' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
   | 'billing.manage';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
@@ -401,10 +403,12 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
  * Phase 8.7 (PHASE-8-7 §2.1): `expenses.manage` (group `money`, sensitive) after `reports.view`; owner + admin, never staff.
  * Phase 8.8a (PHASE-8-8 §2.1): `fraud.manage` (group `orders`, sensitive, requires `orders.view`) after `orders.refund`;
  * owner + admin, never staff.
+ * Phase 8.8b (PHASE-8-8B §2.1): `purchasing.manage` (group `products`, sensitive, requires `costs.view`) after
+ * `inventory.adjust`; owner + admin, never staff. 26 grantable keys + owner-only `billing.manage`.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'orders.view', 'orders.process', 'orders.refund', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
-  'products.edit', 'products.delete', 'inventory.adjust', 'customers.view', 'customers.edit', 'customers.delete',
+  'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
   'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
   'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
 ];
@@ -541,6 +545,11 @@ export interface InventoryItem {
   on_hand: number; committed: number; available: number;
   low_stock_threshold: number | null; effective_threshold: number; status: StockStatus;
   track_inventory: boolean; price_amount: number; cost_amount: number | null; updated_at: string;
+  /**
+   * Phase 8.8b (PHASE-8-8B §8.1, §10.1): units still expected on open purchase orders (`ordered` / `partially_received`;
+   * Σ ordered − received − damaged). Always an integer (0 when none); visible to every inventory reader.
+   */
+  incoming: number;
 }
 export interface InventorySummary {
   currency: string; stock_value_cost_amount: number | null; stock_value_price_amount: number;
@@ -561,13 +570,19 @@ export interface StockMovement {
   id: string; variant_id: string; product: { id: string; name: string };
   variant_title: string; sku: string | null; delta: number; on_hand_after: number;
   reason: StockMovementReason; note: string | null;
-  reference: { type: 'import' | 'order'; id: string } | null;
+  /**
+   * `return` since 5b; `purchase_order` since 8.8b (reason `received`; `note` = "PO-0012 · {supplier name}", PHASE-8-8B §5.3).
+   */
+  reference: { type: StockMovementReferenceType; id: string } | null;
   /** Phase 8.4: a movement made with an API key renders `{ type: 'api_key', id, name: "API: <key name>" }`. */
   actor: UserRef | { type: 'api_key'; id: string; name: string } | null; created_at: string;
 }
+export type StockMovementReferenceType = 'import' | 'order' | 'return' | 'purchase_order';
 export interface StockAdjustmentResult { items: InventoryItem[]; movements: StockMovement[] }
 export interface StockMovementFilters {
   variant_id?: string; product_id?: string; reason?: StockMovementReason[];
+  /** Phase 8.8b: `filter[reference_type]` (single value), e.g. `purchase_order`. */
+  reference_type?: StockMovementReferenceType;
   created_from?: string; created_to?: string; page?: number; per_page?: number;
 }  // api-client maps to filter[...] / filter[created_at][gte|lte]
 
@@ -603,7 +618,8 @@ export interface CustomerListFilters {
 export interface CustomerListMeta extends PaginationMeta { counts: { all: number; new_this_month: number } }
 
 // ---------- Imports / exports ----------
-export type DataImportType = 'products' | 'customers';
+/** Phase 8.8b (P88B-15): `suppliers` is import-only (no export); needs `data.import` + `purchasing.manage`. */
+export type DataImportType = 'products' | 'customers' | 'suppliers';
 export type DataImportStatus = 'uploaded' | 'validating' | 'validated' | 'importing' | 'completed' | 'failed' | 'cancelled';
 export type ProductImportField =
   | 'handle' | 'name' | 'description' | 'status' | 'category' | 'tags'
@@ -611,7 +627,11 @@ export type ProductImportField =
   | 'sku' | 'barcode' | 'price' | 'compare_at_price' | 'cost_price' | 'stock' | 'weight_kg'
   | 'seo_title' | 'seo_description' | 'image_urls';
 export type CustomerImportField = 'name' | 'phone' | 'email' | 'district' | 'area' | 'channel' | 'tags' | 'accepts_marketing' | 'note';
-export type ImportField = ProductImportField | CustomerImportField;
+/** Phase 8.8b (P88B-15): match by phone, else by exact name (case-insensitive) among this store's suppliers. */
+export type SupplierImportField =
+  | 'name' | 'contact_name' | 'phone' | 'city' | 'supplies' | 'payment_terms_days' | 'lead_time_days'
+  | 'pays_by_method' | 'pays_by_account' | 'notes';
+export type ImportField = ProductImportField | CustomerImportField | SupplierImportField;
 export interface ImportOptions { update_existing: boolean; import_as_draft: boolean; create_missing_categories: boolean }
 export interface ImportSummary {
   total: number; create: number; update: number; unchanged: number;
@@ -2636,4 +2656,397 @@ export type FraudAuditAction =
   | 'fraud.number_checked';
 export const FRAUD_AUDIT_ACTIONS: readonly FraudAuditAction[] = [
   'fraud.settings_updated', 'fraud.number_blocked', 'fraud.number_unblocked', 'fraud.hold_released', 'fraud.number_checked',
+];
+
+// ---------- Purchasing: suppliers + purchase orders (Phase 8.8b, PHASE-8-8B-CONTRACT §3–§8; openapi 1.17.0) ----------
+/**
+ * Money on purchasing resources is integer minor units in the store currency. Every money/cost field is `null` for an
+ * actor without `purchasing.manage` (an `inventory.adjust`-only receiver, P88B-11); quantities are always present.
+ */
+export type PurchaseOrderStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'closed' | 'cancelled';
+export const PURCHASE_ORDER_STATUSES: readonly PurchaseOrderStatus[] = [
+  'draft', 'ordered', 'partially_received', 'received', 'closed', 'cancelled',
+];
+/** "Open" = still expected: counts as incoming stock and in "On the way". */
+export const OPEN_PURCHASE_ORDER_STATUSES: readonly PurchaseOrderStatus[] = ['ordered', 'partially_received'];
+/** P88B-8 from payments linked to the PO vs its total (advances before receipt show progress). */
+export type PurchasePaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
+export const PURCHASE_PAYMENT_STATUSES: readonly PurchasePaymentStatus[] = ['unpaid', 'partially_paid', 'paid', 'overpaid'];
+export type SupplierPaymentMethod = 'cash' | 'bkash' | 'nagad' | 'bank' | 'card' | 'other';
+export const SUPPLIER_PAYMENT_METHODS: readonly SupplierPaymentMethod[] = ['cash', 'bkash', 'nagad', 'bank', 'card', 'other'];
+export const SUPPLIER_PAYMENT_METHOD_LABELS: Record<SupplierPaymentMethod, string> = {
+  cash: 'Cash', bkash: 'bKash', nagad: 'Nagad', bank: 'Bank', card: 'Card', other: 'Other',
+};
+/** P88B-14 "Send to supplier" channel (`sent_via`). Email is hidden in 8.8b. */
+export type PurchaseOrderSentVia = 'whatsapp' | 'pdf' | 'manual';
+
+/** §3 / §8.3 bounds (QA and WEB Zod mirror these). */
+export const SUPPLIER_NAME_MAX = 120;
+export const SUPPLIER_CITY_MAX = 80;
+export const SUPPLIER_SUPPLIES_MAX = 200;
+export const SUPPLIER_ACCOUNT_MAX = 60;
+export const SUPPLIER_NOTES_MAX = 500;
+export const SUPPLIER_TERMS_DAYS_MAX = 180;
+export const SUPPLIER_LEAD_TIME_DAYS_MAX = 180;
+export const PURCHASE_ORDER_NOTES_MAX = 1000;
+export const PURCHASE_ORDER_LINES_MAX = 200;
+export const PURCHASE_LINE_QUANTITY_MAX = 100_000;
+export const PURCHASE_UNIT_COST_MAX = 1_000_000_000;
+export const SUPPLIER_PAYMENT_AMOUNT_MAX = 10_000_000_000;
+export const SUPPLIER_PAYMENT_NOTE_MAX = 200;
+export const SUPPLIER_PAYMENT_REFERENCE_MAX = 60;
+export const PURCHASE_RECEIPT_NOTE_MAX = 500;
+export const SUPPLIER_INVOICE_REF_MAX = 60;
+export const PURCHASING_MIN_DATE = '2020-01-01';
+/** Supplier invoice uploads (`POST …/purchasing/invoices`): same rules as expense receipts (P87, S176). */
+export const PURCHASE_INVOICE_MIMES = EXPENSE_RECEIPT_MIMES;
+export const PURCHASE_INVOICE_MAX_BYTES = EXPENSE_RECEIPT_MAX_BYTES;
+/** Private media purpose; never a library `MediaPurpose` (never accepted, listed or shown by `/media`). */
+export type PurchaseInvoicePurpose = 'purchase_invoice';
+
+// ----- Suppliers (§4, §6.1) -----
+/** List row (`GET …/suppliers`). Derived numbers are computed per request (§4). */
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  /** normalised "8801XXXXXXXXX" */
+  phone: string | null;
+  city: string | null;
+  /** "What they supply" */
+  supplies: string | null;
+  payment_terms_days: number | null;
+  advance_percent: number | null;
+  lead_time_days: number | null;
+  pays_by_method: SupplierPaymentMethod | null;
+  pays_by_account: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  /** distinct products of the variants on its POs */
+  products_count: number;
+  /** POs `ordered` + `partially_received` */
+  open_pos_count: number;
+  /** non-draft, non-cancelled POs */
+  past_orders_count: number;
+  currency: string;
+  /** Q209: Σ received value of non-cancelled POs − Σ payments; negative = credit (advance). */
+  owed_amount: number;
+  /** Σ balance of overdue POs (P88B-9); 0 when none. */
+  overdue_amount: number;
+  /** earliest `due_on` among overdue POs (`YYYY-MM-DD`) */
+  overdue_since: string | null;
+  /** last PO creation date (store tz, `YYYY-MM-DD`) */
+  last_order_on: string | null;
+  /** any PO created or receipt recorded this calendar month (store tz) */
+  active_this_month: boolean;
+  created_by: UserRef | null;
+  created_at: string;
+  updated_at: string;
+}
+/** `GET …/suppliers/{supplier}`: + the last 5 POs (newest first) with delivery and payment status. */
+export interface SupplierDetail extends Supplier { recent_purchase_orders: PurchaseOrder[] }
+export interface SupplierInput {
+  name: string;
+  contact_name?: string | null;
+  /** BD mobile (`PhoneRule::bdMobile`), stored normalised */
+  phone?: string | null;
+  city?: string | null;
+  supplies?: string | null;
+  payment_terms_days?: number | null;
+  advance_percent?: number | null;
+  lead_time_days?: number | null;
+  pays_by_method?: SupplierPaymentMethod | null;
+  pays_by_account?: string | null;
+  notes?: string | null;
+}
+export type UpdateSupplierInput = Partial<SupplierInput>;
+export type SupplierSort = 'name' | '-owed_amount' | '-last_order_on';
+/** `q` matches name, phone or city; `archived` false (default) = active only; 50 per page; default sort `name`. */
+export interface SupplierListFilters { q?: string; archived?: boolean; sort?: SupplierSort; page?: number; per_page?: number }
+export interface SupplierListMeta extends PaginationMeta { counts: { active: number; archived: number } }
+/** `GET …/suppliers/summary` (§6.1). "Bought this month" = received value by receipt date (store tz); no comparison (Q211). */
+export interface SupplierSummary {
+  currency: string;
+  suppliers_count: number;
+  active_this_month: number;
+  owed_amount: number;
+  owed_suppliers_count: number;
+  overdue_count: number;
+  pos_on_the_way: number;
+  arriving_this_week: number;
+  bought_this_month_amount: number;
+}
+
+// ----- Purchase orders (§5) -----
+export interface PurchaseOrderSupplierRef { id: string; name: string; phone: string | null; city: string | null }
+/** Up to 2 thumbnails for the list "items" cell. */
+export interface PurchaseOrderPreviewItem { product_name: string; image: MediaRef | null }
+/** List item (`GET …/purchase-orders`). */
+export interface PurchaseOrder {
+  id: string;
+  /** "PO-0012" (per-store sequence, P88B-3) */
+  number: string;
+  status: PurchaseOrderStatus;
+  /** null for adjust-only actors */
+  payment_status: PurchasePaymentStatus | null;
+  supplier: PurchaseOrderSupplierRef;
+  lines_count: number;
+  preview_items: PurchaseOrderPreviewItem[];
+  units_ordered: number;
+  units_received: number;
+  units_damaged: number;
+  /** Σ left (ordered − received − damaged); 0 once received/closed/cancelled */
+  units_left: number;
+  /** `YYYY-MM-DD` */
+  expected_on: string | null;
+  /** expected_on < today (store tz) and status `ordered` / `partially_received` */
+  is_late: boolean;
+  days_late: number | null;
+  ordered_at: string | null;
+  sent_at: string | null;
+  sent_via: PurchaseOrderSentVia | null;
+  closed_at: string | null;
+  cancelled_at: string | null;
+  /** P88B-9: first receipt date + supplier terms (null terms → due on receipt) */
+  due_on: string | null;
+  is_overdue: boolean;
+  currency: string;
+  subtotal_amount: number | null;
+  shipping_amount: number | null;
+  discount_amount: number | null;
+  total_amount: number | null;
+  received_value_amount: number | null;
+  paid_amount: number | null;
+  /** received value − paid (negative = advance/credit) */
+  balance_amount: number | null;
+  revision: number;
+  created_by: UserRef | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface PurchaseOrderLine {
+  id: string;
+  variant_id: string;
+  product: { id: string; name: string; image: MediaRef | null };
+  variant_title: string;
+  option_values: string[];
+  sku: string | null;
+  unit_cost_amount: number | null;
+  quantity_ordered: number;
+  quantity_received: number;
+  quantity_damaged: number;
+  /** ordered − received − damaged (Q213), never negative */
+  quantity_left: number;
+  /** unit cost × ordered */
+  line_total_amount: number | null;
+  /** current landed unit cost from the PO's present transport/discount (§5.4); what the next receipt would use */
+  landed_unit_cost_amount: number | null;
+  /** current on hand of the variant ("IN STOCK") */
+  in_stock: number;
+  /** "Last bought at": last PO unit cost for the variant from any supplier (excluding this PO) */
+  last_bought_unit_cost_amount: number | null;
+  position: number;
+}
+export interface PurchaseReceiptLine {
+  item_id: string;
+  variant_id: string;
+  quantity_received: number;
+  quantity_damaged: number;
+  landed_unit_cost_amount: number | null;
+  cost_before_amount: number | null;
+  cost_after_amount: number | null;
+  on_hand_before: number;
+}
+/** Attached supplier invoice. `url` = signed 5-minute link (null while processing or in an impersonation session). */
+export interface PurchaseInvoiceAttachment {
+  id: string; mime: ExpenseReceiptMime; size_bytes: number; status: MediaStatus; url: string | null;
+}
+export interface PurchaseReceipt {
+  id: string;
+  received_at: string;
+  received_by: UserRef | null;
+  supplier_invoice_ref: string | null;
+  invoice: PurchaseInvoiceAttachment | null;
+  note: string | null;
+  units_received: number;
+  units_damaged: number;
+  /** Σ received × landed unit cost (damaged excluded) */
+  value_amount: number | null;
+  lines: PurchaseReceiptLine[];
+}
+export interface SupplierPayment {
+  id: string;
+  supplier: { id: string; name: string };
+  purchase_order: { id: string; number: string } | null;
+  amount: number;
+  currency: string;
+  method: SupplierPaymentMethod;
+  /** `YYYY-MM-DD` */
+  paid_on: string;
+  reference: string | null;
+  note: string | null;
+  created_by: UserRef | null;
+  created_at: string;
+}
+/** History rows on the PO detail (no "Approved by", P88B-7). */
+export type PurchaseOrderEventType =
+  | 'created' | 'updated' | 'sent' | 'marked_ordered' | 'received' | 'quick_received' | 'payment_recorded'
+  | 'payment_deleted' | 'closed' | 'cancelled';
+export interface PurchaseOrderEvent {
+  type: PurchaseOrderEventType;
+  actor: UserRef | null;
+  created_at: string;
+  sent_via: PurchaseOrderSentVia | null;
+  /** receipts: units received / damaged */
+  units: number | null;
+  damaged: number | null;
+  /** payments (null for adjust-only actors) */
+  amount: number | null;
+}
+/** Supplier block on the PO detail and New PO card. */
+export interface PurchaseOrderSupplier extends PurchaseOrderSupplierRef {
+  contact_name: string | null;
+  lead_time_days: number | null;
+  payment_terms_days: number | null;
+  advance_percent: number | null;
+  pays_by_method: SupplierPaymentMethod | null;
+  pays_by_account: string | null;
+  past_orders_count: number;
+  archived_at: string | null;
+  /** null for adjust-only actors */
+  owed_amount: number | null;
+}
+/** `GET …/purchase-orders/{po}`; also the 201 body of create, quick and receipts and the 200 body of PATCH/transitions. */
+export interface PurchaseOrderDetail extends Omit<PurchaseOrder, 'supplier'> {
+  supplier: PurchaseOrderSupplier;
+  notes: string | null;
+  lines: PurchaseOrderLine[];
+  /** newest first */
+  receipts: PurchaseReceipt[];
+  /** empty for adjust-only actors; newest first */
+  payments: SupplierPayment[];
+  /** oldest first */
+  events: PurchaseOrderEvent[];
+}
+export type PurchaseOrderStatusCounts = Record<PurchaseOrderStatus | 'all', number>;
+export interface PurchaseOrderListMeta extends PaginationMeta { counts: PurchaseOrderStatusCounts }
+/** `filter[status]` csv, `filter[supplier_id]`, `q` (PO number or supplier name); newest first; 25 per page. */
+export interface PurchaseOrderListFilters {
+  status?: PurchaseOrderStatus[]; supplier_id?: string; q?: string; page?: number; per_page?: number;
+}
+/** `GET …/purchase-orders/summary` (§6.2). */
+export interface PurchaseOrderSummary {
+  currency: string;
+  open_count: number;
+  open_total_amount: number;
+  units_coming: number;
+  suppliers_coming: number;
+  owed_amount: number;
+  /** POs with `due_on` in the next 7 days and a balance > 0 */
+  payments_due_this_week: number;
+  late_count: number;
+  /** the most overdue late PO */
+  first_late: { id: string; number: string; days_late: number } | null;
+}
+
+// ----- Inputs -----
+export interface PurchaseOrderLineInput {
+  variant_id: string;
+  /** omitted on create → last unit cost from this supplier, else the variant's `cost_amount`, else 0 (§5.1) */
+  unit_cost_amount?: number;
+  quantity: number;
+}
+/** POST …/purchase-orders → 201 draft. Totals are always recomputed server-side; currency is the store's. */
+export interface CreatePurchaseOrderInput {
+  supplier_id: string;
+  lines: PurchaseOrderLineInput[];
+  expected_on?: string | null;
+  shipping_amount?: number;
+  discount_amount?: number;
+  notes?: string | null;
+}
+/**
+ * PATCH (`draft` / `ordered` only). `lines` replaces the whole set, matched by `variant_id`; a line with received or
+ * damaged units can't be removed or drop below received + damaged (422). `supplier_id` only while `draft`.
+ */
+export interface UpdatePurchaseOrderInput extends Partial<CreatePurchaseOrderInput> { revision: number }
+/** Transitions accept an optional `revision` (checked when sent → 409 `revision_mismatch`). */
+export interface PurchaseOrderTransitionInput { revision?: number }
+export interface SendPurchaseOrderInput extends PurchaseOrderTransitionInput { sent_via: PurchaseOrderSentVia }
+export interface ReceiveLineInput { item_id: string; received: number; damaged: number }
+/** POST …/{po}/receipts (Idempotency-Key). Lines omitted or 0/0 are untouched; at least one quantity > 0. */
+export interface ReceivePurchaseOrderInput {
+  lines: ReceiveLineInput[];
+  supplier_invoice_ref?: string | null;
+  invoice_media_id?: string | null;
+  note?: string | null;
+}
+export interface SupplierPaymentInput {
+  amount: number;
+  method: SupplierPaymentMethod;
+  paid_on: string;
+  /** the PO must belong to this supplier (422) */
+  purchase_order_id?: string | null;
+  reference?: string | null;
+  note?: string | null;
+  /** optional; must equal the store currency */
+  currency?: string;
+}
+/** `quantity` = pieces delivered (ordered = quantity); `damaged` ≤ quantity; received = quantity − damaged. */
+export interface QuickPurchaseLineInput { variant_id: string; unit_cost_amount: number; quantity: number; damaged?: number }
+/** POST …/purchase-orders/quick (Idempotency-Key) → 201 `PurchaseOrderDetail` with status `received` (P88B-13). */
+export interface QuickPurchaseInput {
+  supplier_id: string;
+  lines: QuickPurchaseLineInput[];
+  shipping_amount?: number;
+  discount_amount?: number;
+  payment?: Omit<SupplierPaymentInput, 'purchase_order_id'> | null;
+  supplier_invoice_ref?: string | null;
+  invoice_media_id?: string | null;
+  notes?: string | null;
+}
+/** POST …/purchasing/invoices → 201. Images re-encoded (`processing` → `ready`); PDFs `ready`. */
+export interface PurchaseInvoice { id: string; mime: ExpenseReceiptMime; size_bytes: number; status: MediaStatus; created_at: string }
+
+// ----- Reorder suggestions (§7) -----
+export interface ReorderSuggestionItem {
+  variant_id: string;
+  product: { id: string; name: string; image: MediaRef | null };
+  variant_title: string;
+  sku: string | null;
+  /** on_hand − committed */
+  available: number;
+  incoming: number;
+  /** units shipped in the last 30 days */
+  sold_30d: number;
+  /** floor((available + incoming) ÷ daily); ≤ 0 → "Out of stock" */
+  days_left: number;
+  suggested_quantity: number;
+  /** last PO unit cost for the variant from its last supplier; null when never bought */
+  last_unit_cost_amount: number | null;
+}
+/** One group per last supplier (`supplier` null = "No supplier yet"); items sorted by `days_left`; ≤ 50 items in all. */
+export interface ReorderSuggestionGroup {
+  supplier: { id: string; name: string; lead_time_days: number | null } | null;
+  items: ReorderSuggestionItem[];
+}
+
+/** §8.4 error codes added by 8.8b (`invalid_state_transition`, `revision_mismatch`, `feature_not_in_plan` already exist). */
+export type PurchasingErrorCode = 'over_receive' | 'variant_not_tracked' | 'supplier_in_use';
+
+/** P88B-18 audit actions. */
+export type PurchasingAuditAction =
+  | 'purchasing.supplier_created' | 'purchasing.supplier_updated' | 'purchasing.supplier_archived'
+  | 'purchasing.supplier_unarchived' | 'purchasing.supplier_deleted'
+  | 'purchasing.purchase_order_created' | 'purchasing.purchase_order_updated' | 'purchasing.purchase_order_sent'
+  | 'purchasing.purchase_order_marked_ordered' | 'purchasing.purchase_order_closed' | 'purchasing.purchase_order_cancelled'
+  | 'purchasing.purchase_order_deleted' | 'purchasing.receipt_recorded' | 'purchasing.quick_received'
+  | 'purchasing.payment_recorded' | 'purchasing.payment_deleted' | 'purchasing.suppliers_imported';
+export const PURCHASING_AUDIT_ACTIONS: readonly PurchasingAuditAction[] = [
+  'purchasing.supplier_created', 'purchasing.supplier_updated', 'purchasing.supplier_archived',
+  'purchasing.supplier_unarchived', 'purchasing.supplier_deleted', 'purchasing.purchase_order_created',
+  'purchasing.purchase_order_updated', 'purchasing.purchase_order_sent', 'purchasing.purchase_order_marked_ordered',
+  'purchasing.purchase_order_closed', 'purchasing.purchase_order_cancelled', 'purchasing.purchase_order_deleted',
+  'purchasing.receipt_recorded', 'purchasing.quick_received', 'purchasing.payment_recorded', 'purchasing.payment_deleted',
+  'purchasing.suppliers_imported',
 ];

@@ -299,6 +299,21 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'fraud'"; exit 1; }
           exit $status
 
+      # Phase 8.8b (PHASE-8-8B-CONTRACT §12, §13, §16 AC 6): the `purchasing` group (every §8.1 route: happy, validation,
+      # authz, isolation; PO state machine matrix; receipts incl. partial, damaged, over-receive, idempotency; weighted-
+      # average + landed-cost vectors (null old cost, on_hand <= 0, rounding, remainder to the largest line); payments,
+      # owed/overdue/due-this-week; summaries; reorder suggestions; quick purchase; PO PDF (fake driver); supplier CSV
+      # import; invoice uploads; CustomerRisk alias removal; no purchase reaches expenses/P&L; S167–S178) must exist and
+      # pass on sqlite. Concurrency (`race`) runs on Postgres only.
+      - name: phase 8.8b group (purchasing)
+        run: |
+          mkdir -p build
+          php artisan test --group=purchasing --exclude-group perf --exclude-group race --log-junit build/purchasing.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/purchasing.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "purchasing tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'purchasing'"; exit 1; }
+          exit $status
+
   api-postgres:
     name: api (migrations + tenancy on postgres)
     needs: changes
@@ -470,6 +485,16 @@ jobs:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
           CACHE_STORE: array
+      # Phase 8.8b (§3): suppliers / purchase_orders / purchase_order_items / purchase_receipts / purchase_receipt_items /
+      # supplier_payments (CHECKs incl. received + damaged <= ordered and the status/method lists, partial unique
+      # lower(name) among non-archived suppliers, composite FKs, the store_counters `purchase_orders` kind) exist on
+      # Postgres; purchasing must pass there too.
+      - name: phase 8.8b purchasing (postgres)
+        run: php artisan test --group=purchasing --exclude-group perf --exclude-group race
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
 
   # Phase 4 (PHASE-4-CONTRACT §5.4, §12, §15.4): perf group on the Postgres service. Fails the build when
   # the 5 000-row product import (validate + run) takes > 120 s, or the parallel stock-adjustment test
@@ -586,6 +611,7 @@ jobs:
             test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
             test_concurrent_ipn_and_return_apply_the_payment_once \
             test_concurrent_bookings_create_one_shipment \
+            test_concurrent_receipts_never_exceed_ordered \
             test_concurrent_make_primary_keeps_one_primary \
             test_concurrent_remove_and_make_primary_do_not_deadlock \
             test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
@@ -789,6 +815,7 @@ jobs:
             test_concurrent_edit_and_checkout_on_the_last_unit_do_not_oversell \
             test_concurrent_ipn_and_return_apply_the_payment_once \
             test_concurrent_bookings_create_one_shipment \
+            test_concurrent_receipts_never_exceed_ordered \
             test_concurrent_make_primary_keeps_one_primary \
             test_concurrent_remove_and_make_primary_do_not_deadlock \
             test_concurrent_invites_at_the_seat_limit_give_one_201_and_one_402 \
@@ -848,6 +875,11 @@ jobs:
       # storefront OTP + checkout rules resolve inside the host's tenant (their RLS probes are also in the `rls` step above).
       - name: phase 8.8a fraud (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" fraud lenient --group=fraud --exclude-group perf --exclude-group race'
+      # Phase 8.8b (PHASE-8-8B-CONTRACT §3, S167): the six purchasing tables are RLS-forced; receipts, quick purchase and
+      # the supplier import write stock and cost inside the actor's tenant; invoice uploads stay on the private disk
+      # (their RLS probes are also in the `rls` step above).
+      - name: phase 8.8b purchasing (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" purchasing lenient --group=purchasing --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'

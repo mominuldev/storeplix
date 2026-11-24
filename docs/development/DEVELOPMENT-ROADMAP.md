@@ -235,6 +235,16 @@ link; confirm/booking refused while held; blocklist + repeat returners, per-phon
 OTP for numbers new to the shop (fail open); new permission `fraud.manage`; `fake_order_guard` enforced; Fake order
 guard `39:11233`, order/customer risk UI. Out: cross-shop network and super-admin Risk network (Q23), Steadfast/RedX/
 Pathao records (Q185), VPN rule (Q190), CAPTCHA, call-outcome log, holds webhooks, advance rules by order total (Q192).
+**8.8b** contract: `docs/development/PHASE-8-8B-CONTRACT.md` (accepted 2026-11-24; branch
+`feat/phase-8-8b-suppliers-pos`; openapi 1.17.0; ADR 0023; Q200–Q214 defaults accepted): suppliers (KPIs, detail panel,
+archive, CSV import), purchase orders draft → ordered → partially received → received / closed / cancelled with
+per-store `PO-{n}`, multiple receipts per PO with damaged pieces excluded, stock in through `InventoryService`,
+weighted-average landed cost written to the variant on every receipt, supplier payments (advances, part payments,
+owed/overdue), PO PDF + WhatsApp link, quick purchase, reorder suggestions, inventory INCOMING column; new permission
+`purchasing.manage`, new plan feature `purchasing` (Starter, Growth); purchases never enter expenses or Profit & loss;
+removes the 8.8a `CustomerRisk` alias; Purchase orders `35:5619`, New PO `35:6210`, Receive `36:6607`, Suppliers
+`153:35999`. Out: locations, transfers, stock count, POS, Inbox (8.8c+), approval, email sending, supplier claims,
+returns to supplier, FIFO, landed-cost revaluation, VAT registers (Q214).
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
@@ -245,7 +255,8 @@ Pathao records (Q185), VPN rule (Q190), CAPTCHA, call-outcome log, holds webhook
 | 8.6 | Automations (140:30335) + abandoned cart recovery (71:20614): 5 recipes, run log, checkout recovery | API/WEB/SF | Trigger → action runs logged; PHASE-8-6 §16 |
 | 8.7 | Expenses (144:41613) + profit report: six categories, private receipts, monthly repeat, Ad spend + Other expenses in Profit & loss, `expenses.manage`, store currency lock | API/WEB | Expenses recorded with receipts reduce net profit in Profit & loss; every changed number is traceable; the store currency locks once the store has an order or an expense; PHASE-8-7 §16 |
 | 8.8a | Fake-order guard (39:11233, section 41:12365): own-shop record and tiers, order checks with hold / advance, blocklist + repeat returners, daily COD limit, duplicates, checkout OTP, `fraud.manage`, `fake_order_guard` enforced | API/WEB/SF | Every new COD order of a guarded store gets one explained risk check; risky orders are held or asked for an advance before anyone can book a courier; blocked and over-limit numbers can't place COD orders; new numbers verify by OTP; nothing about a shopper comes from another shop; PHASE-8-8 §16 |
-| 8.8b+ | Inbox (141:48129), POS (26:2147, page 22:1736), multi-location/suppliers/POs/transfers | API/WEB | Scoped after PO confirms (OPEN-QUESTIONS Q1; split Q184) |
+| 8.8b | Suppliers + purchase orders (35:5619, 35:6210, 36:6607, 153:35999): suppliers, POs, receiving with damaged, weighted-average landed cost, supplier payments/owed, PO PDF + WhatsApp, quick purchase, reorder suggestions, `purchasing.manage`, plan `purchasing` | API/WEB | Merchant records suppliers, sends POs, receives in one or more deliveries; variant cost = weighted-average landed cost; owed = received value − payments; no purchase in Profit & loss; PHASE-8-8B §16 |
+| 8.8c+ | Multi-location / warehouses, stock transfers (153:34425), stock count (153:35246), POS (26:2147, page 22:1736), Inbox (141:48129) | API/WEB | Scoped after PO (product owner) confirms (OPEN-QUESTIONS Q1; split Q184, Q200) |
 | 8.9 | Help center (71:21271), Payments/tracking/messaging/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |
 
 ## Phase 9 — Production readiness

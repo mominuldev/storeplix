@@ -103,6 +103,10 @@ export const can = {
   seeReports: (m: PermissionHolder) => any(m, 'reports.view', 'expenses.manage'),
   /** PHASE-8-8 §2.1 `fraud.manage`: Fake order guard page, blocked numbers, number checks, decision log. */
   manageFraudGuard: (m: PermissionHolder) => hasPermission(m, 'fraud.manage'),
+  /** PHASE-8-8B §2.1 `purchasing.manage`: suppliers, purchase orders (prices), supplier payments, PO PDF, import. */
+  managePurchasing: (m: PermissionHolder) => hasPermission(m, 'purchasing.manage'),
+  /** P88B-11: receiving stock against a PO (and seeing POs, quantities only) with `purchasing.manage|inventory.adjust`. */
+  receiveStock: (m: PermissionHolder) => any(m, 'purchasing.manage', 'inventory.adjust'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

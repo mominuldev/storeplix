@@ -15,4 +15,5 @@ enum Feature: string
     case Pos = 'pos';
     case ProfitReports = 'profit_reports';
     case ApiWebhooks = 'api_webhooks';
+    case Purchasing = 'purchasing'; // PHASE-8-8B §2.2 (Starter, Growth)
 }

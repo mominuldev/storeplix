@@ -10,7 +10,7 @@ type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-ex
 
 export type PermissionKey =
   | 'orders.view' | 'orders.process' | 'orders.refund' | 'fraud.manage' | 'shipments.manage' | 'shipments.cancel'
-  | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'customers.view' | 'customers.edit' | 'customers.delete'
+  | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'purchasing.manage' | 'customers.view' | 'customers.edit' | 'customers.delete'
   | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage';
 
@@ -25,6 +25,7 @@ export const LABEL: Record<PermissionKey, string> = {
   'products.edit': 'Edit products & prices',
   'products.delete': 'Delete products & categories',
   'inventory.adjust': 'Adjust stock',
+  'purchasing.manage': 'Suppliers & purchase orders', // PHASE-8-8B §2.1 (sensitive, requires costs.view)
   'customers.view': 'View customers',
   'customers.edit': 'Add & edit customers',
   'customers.delete': 'Delete customers and others’ notes',

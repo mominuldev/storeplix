@@ -2,6 +2,7 @@
 
 namespace App\Domain\DataTransfer\Http\Controllers;
 
+use App\Domain\Billing\Feature;
 use App\Domain\Billing\FeatureGate;
 use App\Domain\Billing\Limit;
 use App\Domain\DataTransfer\Csv\CsvCell;
@@ -40,7 +41,7 @@ class ImportController
     public function template(Request $request, Store $store): Response
     {
         $this->authorize($store);
-        $type = $request->validate(['type' => ['required', 'in:products,customers']])['type'];
+        $type = $request->validate(['type' => ['required', 'in:products,customers,suppliers']])['type'];
         $writer = CsvWriter::toString();
         $writer->insertAll(ImportColumns::template($type));
 
@@ -63,7 +64,7 @@ class ImportController
             throw new ApiException(413, 'payload_too_large', 'The file is larger than 10 MB.');
         }
         $input = $request->validate([
-            'type' => ['required', 'string', 'in:products,customers'],
+            'type' => ['required', 'string', 'in:products,customers,suppliers'],
             'file' => ['required', 'file'],
         ]);
         $this->authorizeType($input['type']);
@@ -144,7 +145,7 @@ class ImportController
             }
             $map[$header] = $field;
         }
-        $required = $import->type === DataImport::PRODUCTS ? ['name', 'price'] : ['name'];
+        $required = $import->type === DataImport::PRODUCTS ? ['name', 'price'] : ['name']; // suppliers: name (P88B-15)
         foreach ($required as $field) {
             if (! isset($seen[$field])) {
                 $errors['column_map'][] = "Match a column to \"{$field}\".";
@@ -303,13 +304,18 @@ class ImportController
      */
     private function authorizeType(string $type): void
     {
-        $needs = $type === DataImport::PRODUCTS
-            ? [Permission::ProductsEdit, Permission::InventoryAdjust]
-            : [Permission::CustomersEdit];
+        $needs = match ($type) {
+            DataImport::PRODUCTS => [Permission::ProductsEdit, Permission::InventoryAdjust],
+            DataImport::SUPPLIERS => [Permission::PurchasingManage], // PHASE-8-8B P88B-15 (+ plan `purchasing`, below)
+            default => [Permission::CustomersEdit],
+        };
         foreach ($needs as $permission) {
             if (! $this->context->allows($permission)) {
                 throw new ApiException(403, 'forbidden', 'You do not have permission to do this.');
             }
+        }
+        if ($type === DataImport::SUPPLIERS) {
+            FeatureGate::assertAllows($this->context->tenant(), Feature::Purchasing);
         }
     }
 

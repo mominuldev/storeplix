@@ -122,6 +122,7 @@ class PermissionEnforcementTest extends TestCase
             'products.edit' => ['products.edit', ['POST', '/products', ['name' => 'Shirt', 'variants' => [['price_amount' => 1000]]]], ['DELETE', '/products/{product}']],
             'products.delete' => ['products.delete', ['DELETE', '/products/{product}'], ['POST', '/inventory/adjustments', ['reason' => 'received', 'items' => [['variant_id' => '{variant}', 'mode' => 'delta', 'quantity' => 1]]]]],
             'inventory.adjust' => ['inventory.adjust', ['POST', '/inventory/adjustments', ['reason' => 'received', 'items' => [['variant_id' => '{variant}', 'mode' => 'delta', 'quantity' => 1]]]], ['PATCH', '/products/{product}', ['revision' => 1, 'name' => 'X']]],
+            'purchasing.manage' => ['purchasing.manage', ['GET', '/suppliers/summary'], ['GET', '/expenses/summary']], // PHASE-8-8B §2.1
             'customers.view' => ['customers.view', ['GET', '/customers/{customer}'], ['POST', '/customers', ['name' => 'Salma Begum', 'phone' => '01812345679']]],
             'customers.edit' => ['customers.edit', ['POST', '/customers', ['name' => 'Salma Begum', 'phone' => '01812345679']], ['DELETE', '/customers/{customer}']],
             'customers.delete' => ['customers.delete', ['DELETE', '/customers/{customer}'], ['GET', '/reports/sales']],

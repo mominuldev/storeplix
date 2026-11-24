@@ -124,6 +124,7 @@ export function features(o: Partial<FeatureAccess> = {}, limits: Partial<Feature
       all_couriers: false,
       bulk_courier_booking: false,
       fake_order_guard: false,
+      purchasing: false,
       sms_automation: false,
       custom_roles: false,
       multi_warehouse: false,

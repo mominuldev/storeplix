@@ -13,7 +13,7 @@ import { CatalogPanel as Panel, FilterSelect } from '../catalog/ui';
 import { saveFile } from '../catalog/download';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
-import { columnMapErrors, fieldLabels, pollInterval, wizardStep, type ColumnMap } from './fields';
+import { columnMapErrors, fieldLabels, importCopy, importTypeOf, pollInterval, wizardStep, type ColumnMap } from './fields';
 
 // Figma Import products from CSV 60:10175 (Main 60:10177), Column map row 63:16638, Import preview row 63:16857.
 // Contract §4 / §5: CSV only (Q30), "Download photos from image URLs" disabled (Q28), no inline fix — fix the file
@@ -27,13 +27,14 @@ export function ImportPage() {
   const scope = useStoreScope();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const type: DataImportType = params.get('type') === 'customers' ? 'customers' : 'products';
+  const type: DataImportType = importTypeOf(params.get('type'));
+  const copy = importCopy(type);
   const fromOnboarding = params.get('from') === 'onboarding';
   const importId = params.get('import');
   const queryClient = useQueryClient();
   const invalidate = useInvalidate();
-  const noun = type === 'products' ? 'products' : 'customers';
-  const backTo = fromOnboarding ? '/onboarding/products' : type === 'products' ? '/products' : '/customers';
+  const noun = copy.noun;
+  const backTo = fromOnboarding ? '/onboarding/products' : copy.back;
 
   const imp = useQuery({
     queryKey: keys.import(scope, importId),
@@ -64,7 +65,7 @@ export function ImportPage() {
 
   // Completed → refresh the catalog/customers once.
   useEffect(() => {
-    if (step === 'done') void (type === 'products' ? invalidate.afterProductSave() : invalidate.customers());
+    if (step === 'done') void (type === 'products' ? invalidate.afterProductSave() : type === 'suppliers' ? queryClient.invalidateQueries({ queryKey: [scope.tenantId, scope.storeId, 'suppliers'] }) : invalidate.customers());
   }, [step, type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setImport = (id: string | null) => {
@@ -197,7 +198,7 @@ export function ImportPage() {
             ) : (
               <>
                 <Link to={backTo} className="hover:text-text-primary">
-                  {type === 'products' ? 'Products' : 'Customers'}
+                  {copy.backLabel}
                 </Link>
                 <ChevronRight aria-hidden className="size-3" /> Import
               </>
@@ -205,7 +206,7 @@ export function ImportPage() {
           </nav>
           <h1 className="text-heading-24 text-text-primary">Import {noun} from CSV</h1>
           <p className="text-body text-text-secondary">
-            {type === 'products' ? 'Bring products from a spreadsheet, Shopify or WooCommerce export.' : 'Bring customers from a spreadsheet or your old shop.'} Nothing changes until you press Import.
+            {copy.intro} Nothing changes until you press Import.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -420,7 +421,7 @@ function ReadyCard({
   const s = data.summary;
   const validated = step === 'review' && !mapDirty;
   const importable = s ? s.create + s.update - s.over_limit : 0;
-  const noun = type === 'products' ? 'product' : 'customer';
+  const noun = importCopy(type).one;
   const opt = (key: keyof ImportOptions, title: string, hint: string) => (
     <div className="flex items-center justify-between gap-3">
       <span className="flex flex-col">
@@ -440,7 +441,7 @@ function ReadyCard({
         <dl className="flex flex-col gap-2">
           {[
             [`New ${noun}s`, s.create, 'bg-surface-subtle text-text-primary'],
-            [type === 'products' ? 'Update existing (same SKU)' : 'Update existing (same phone/email)', s.update, 'bg-surface-subtle text-text-primary'],
+            [importCopy(type).updateRow, s.update, 'bg-surface-subtle text-text-primary'],
             ['No changes', s.unchanged, 'bg-surface-subtle text-text-secondary'],
             ['Fixed for you (warnings)', s.warnings, 'bg-warning-bg text-warning'],
             ['Errors — will be skipped', s.errors, 'bg-danger-bg text-danger'],
@@ -463,7 +464,7 @@ function ReadyCard({
       )}
       <div className="flex flex-col gap-3">
         <span className="text-body font-medium text-text-primary">Options</span>
-        {opt('update_existing', type === 'products' ? 'Update products with the same SKU' : 'Update customers with the same phone', type === 'products' ? 'Price, stock and details are replaced' : 'Filled cells replace current details')}
+        {opt('update_existing', importCopy(type).updateOpt, importCopy(type).updateHint)}
         {type === 'products' && opt('import_as_draft', 'Import as Draft', 'Review before buyers can see them')}
         {type === 'products' && opt('create_missing_categories', 'Create missing categories', 'Adds categories named in the file')}
         {type === 'products' && (
@@ -593,7 +594,7 @@ function ImportRow({ row }: { row: DataImportRow }) {
 
 function ImportReport({ data, type, backTo, onAnother, onErrors }: { data: DataImport; type: DataImportType; backTo: string; onAnother: () => void; onErrors: () => void }) {
   const s = data.summary;
-  const noun = type === 'products' ? 'product' : 'customer';
+  const noun = importCopy(type).one;
   return (
     <Panel title="Import finished" description={data.completed_at ? `Done · ${new Date(data.completed_at).toLocaleString('en-GB')}` : undefined}>
       <dl className="grid gap-3 sm:grid-cols-4">

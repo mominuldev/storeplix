@@ -59,7 +59,7 @@ class RolesApiTest extends TestCase
         ], $data[0]['permissions'][2]);
         $team = collect($data[6]['permissions'])->keyBy('key');
         $this->assertFalse($team['billing.manage']['grantable']);
-        $this->assertSame(26, collect($data)->sum(fn ($g) => count($g['permissions'])));
+        $this->assertSame(27, collect($data)->sum(fn ($g) => count($g['permissions']))); // PHASE-8-8B: + purchasing.manage
     }
 
     public function test_list_puts_system_roles_first_then_custom_by_name_with_meta(): void
@@ -76,8 +76,8 @@ class RolesApiTest extends TestCase
         $this->assertSame(['custom_roles_used' => 2, 'custom_roles_limit' => 20, 'custom_roles_enabled' => true], $res->json('meta'));
 
         [$o, $a, $s, $p, $z] = $res->json('data');
-        $this->assertCount(26, $o['permissions']);
-        $this->assertCount(25, $a['permissions']);
+        $this->assertCount(27, $o['permissions']);
+        $this->assertCount(26, $a['permissions']);
         $this->assertSame('Products, inventory, orders & customers', $s['description']);
         $this->assertTrue($o['is_system']);
         $this->assertFalse($o['editable']);

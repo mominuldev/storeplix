@@ -18,6 +18,9 @@ use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
 use App\Domain\Payments\Models\PaymentGatewayAccount;
+use App\Domain\Purchasing\Models\PurchaseOrder;
+use App\Domain\Purchasing\Models\Supplier;
+use App\Domain\Purchasing\Models\SupplierPayment;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -61,6 +64,9 @@ class AuditLogger
         StoreDomain::class => 'store_domain',
         ApiKey::class => 'api_key',
         Automation::class => 'automation', // PHASE-8-6 §4.4
+        Supplier::class => 'supplier', // PHASE-8-8B P88B-18
+        PurchaseOrder::class => 'purchase_order',
+        SupplierPayment::class => 'supplier_payment',
     ];
 
     public function __construct(

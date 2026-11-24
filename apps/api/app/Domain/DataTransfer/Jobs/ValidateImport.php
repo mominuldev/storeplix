@@ -7,6 +7,7 @@ use App\Domain\Billing\Limit;
 use App\Domain\DataTransfer\Import\CustomerImportValidator;
 use App\Domain\DataTransfer\Import\ImportFile;
 use App\Domain\DataTransfer\Import\ProductImportValidator;
+use App\Domain\DataTransfer\Import\SupplierImportValidator;
 use App\Domain\DataTransfer\Models\DataImport;
 use App\Domain\DataTransfer\Models\DataImportRow;
 use App\Domain\Stores\Models\Store;
@@ -58,6 +59,10 @@ class ValidateImport implements ShouldQueue
                     $remaining = $limit === null ? null : max(0, $limit - FeatureGate::usage($tenant, Limit::Products));
 
                     return (new ProductImportValidator)->validate($store, $import->column_map ?? [], $options, $records, $remaining);
+                }
+
+                if ($import->type === DataImport::SUPPLIERS) {
+                    return (new SupplierImportValidator)->validate($store, $import->column_map ?? [], $options, $records);
                 }
 
                 return (new CustomerImportValidator)->validate($store, $import->column_map ?? [], $options, $records);

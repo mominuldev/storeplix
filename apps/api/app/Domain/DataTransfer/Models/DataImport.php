@@ -47,7 +47,9 @@ class DataImport extends Model
 
     public const CUSTOMERS = 'customers';
 
-    public const TYPES = [self::PRODUCTS, self::CUSTOMERS];
+    public const SUPPLIERS = 'suppliers'; // PHASE-8-8B P88B-15 (import only)
+
+    public const TYPES = [self::PRODUCTS, self::CUSTOMERS, self::SUPPLIERS];
 
     public const UPLOADED = 'uploaded';
 

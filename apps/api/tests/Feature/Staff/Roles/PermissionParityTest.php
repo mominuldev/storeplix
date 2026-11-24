@@ -153,6 +153,34 @@ class PermissionParityTest extends TestCase
         'DELETE api/v1/stores/{store}/fraud-guard/blocked-numbers/{entry}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
         'POST api/v1/stores/{store}/fraud-guard/check' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/orders/{order}/guard/release' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        // Phase 8.8b (PHASE-8-8B §2.1, §8.1): purchasing.manage → O and A, S 403; PO list/detail, receipts and invoice
+        // upload also with inventory.adjust (staff has it, P88B-11).
+        'GET api/v1/stores/{store}/suppliers' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/suppliers/summary' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/suppliers' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/suppliers/{supplier}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/suppliers/{supplier}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/suppliers/{supplier}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/suppliers/{supplier}/archive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/suppliers/{supplier}/unarchive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/suppliers/{supplier}/payments' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/suppliers/{supplier}/payments' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/supplier-payments/{payment}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'GET api/v1/stores/{store}/purchase-orders' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/purchase-orders/summary' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/quick' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/purchase-orders/{purchase_order}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PATCH api/v1/stores/{store}/purchase-orders/{purchase_order}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/purchase-orders/{purchase_order}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/send' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/mark-ordered' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/close' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/receipts' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/purchase-orders/{purchase_order}/pdf' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/purchasing/reorder-suggestions' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/purchasing/invoices' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
     ];
 
     /** @var array<string, mixed> */
@@ -334,6 +362,15 @@ class PermissionParityTest extends TestCase
         $blocked = $this->req($h, 'POST', "{$base}/fraud-guard/blocked-numbers", ['phone' => '01712000999', 'note' => 'Parity'])->assertCreated()->json('data.id');
         $held = $this->manual($h, $store, $this->manualBody($variant))->assertCreated()->json('data.id');
         $this->inTenant($tenant, fn () => Order::query()->whereKey($held)->update(['guard_hold' => 'call_first', 'guard_hold_at' => now()]));
+        // Phase 8.8b: two suppliers (one deletable), a draft PO, an ordered PO and a supplier payment.
+        $supplier = $this->req($h, 'POST', "{$base}/suppliers", ['name' => 'Parity Supplier'])->assertCreated()->json('data.id');
+        $spareSupplier = $this->req($h, 'POST', "{$base}/suppliers", ['name' => 'Spare Supplier'])->assertCreated()->json('data.id');
+        $poBody = ['supplier_id' => $supplier, 'lines' => [['variant_id' => $variant, 'unit_cost_amount' => 1000, 'quantity' => 5]]];
+        $draftPo = $this->req($h, 'POST', "{$base}/purchase-orders", $poBody)->assertCreated()->json('data.id');
+        $orderedPo = $this->req($h, 'POST', "{$base}/purchase-orders", $poBody)->assertCreated()->json('data.id');
+        $orderedItem = $this->req($h, 'POST', "{$base}/purchase-orders/{$orderedPo}/mark-ordered")->assertOk()->json('data.lines.0.id');
+        $supplierPayment = $this->req($h, 'POST', "{$base}/suppliers/{$supplier}/payments", ['amount' => 1000, 'method' => 'cash',
+            'paid_on' => now('Asia/Dhaka')->format('Y-m-d')])->assertCreated()->json('data.id');
         $this->req($h, 'POST', "{$base}/customers/{$customer}/notes", ['body' => 'VIP'])->assertSuccessful();
         $note = $this->inTenant($tenant, fn () => CustomerNote::query()->where('customer_id', $customer)->value('id'));
         $coupon = $this->req($h, 'POST', "{$base}/coupons", ['code' => 'PARITY', 'type' => 'fixed', 'amount' => 100])->assertCreated()->json('data.id');
@@ -384,6 +421,8 @@ class PermissionParityTest extends TestCase
             'payment' => $payment, 'invitation' => $invitation, 'role' => $customRole, 'api_key' => $apiKey, 'endpoint' => $endpoint, 'delivery' => $delivery, 'victim' => $victimMembership,
             'campaign' => $campaign, 'scheduled_campaign' => $scheduledCampaign, 'automation' => $automation['id'], 'draft_automation' => $draftAutomation, 'run' => $run,
             'expense' => $expense, 'blocked' => $blocked, 'held' => $held,
+            'supplier' => $supplier, 'spare_supplier' => $spareSupplier, 'draft_po' => $draftPo, 'ordered_po' => $orderedPo,
+            'ordered_item' => $orderedItem, 'supplier_payment' => $supplierPayment,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -526,6 +565,36 @@ class PermissionParityTest extends TestCase
             'DELETE api/v1/stores/{store}/fraud-guard/blocked-numbers/{entry}' => $r('DELETE', "{$b}/fraud-guard/blocked-numbers/{$s['blocked']}"),
             'POST api/v1/stores/{store}/fraud-guard/check' => $r('POST', "{$b}/fraud-guard/check", ['phone' => '01712000777']),
             'POST api/v1/stores/{store}/orders/{order}/guard/release' => $r('POST', "{$b}/orders/{$s['held']}/guard/release"),
+
+            // --- Phase 8.8b purchasing ---
+            'GET api/v1/stores/{store}/suppliers' => $r('GET', "{$b}/suppliers"),
+            'GET api/v1/stores/{store}/suppliers/summary' => $r('GET', "{$b}/suppliers/summary"),
+            'POST api/v1/stores/{store}/suppliers' => $r('POST', "{$b}/suppliers", ['name' => 'New Supplier', 'phone' => '01712000555']),
+            'GET api/v1/stores/{store}/suppliers/{supplier}' => $r('GET', "{$b}/suppliers/{$s['supplier']}"),
+            'PATCH api/v1/stores/{store}/suppliers/{supplier}' => $r('PATCH', "{$b}/suppliers/{$s['supplier']}", ['city' => 'Dhaka']),
+            'DELETE api/v1/stores/{store}/suppliers/{supplier}' => $r('DELETE', "{$b}/suppliers/{$s['spare_supplier']}"),
+            'POST api/v1/stores/{store}/suppliers/{supplier}/archive' => $r('POST', "{$b}/suppliers/{$s['supplier']}/archive"),
+            'POST api/v1/stores/{store}/suppliers/{supplier}/unarchive' => $r('POST', "{$b}/suppliers/{$s['supplier']}/unarchive"),
+            'GET api/v1/stores/{store}/suppliers/{supplier}/payments' => $r('GET', "{$b}/suppliers/{$s['supplier']}/payments"),
+            'POST api/v1/stores/{store}/suppliers/{supplier}/payments' => $r('POST', "{$b}/suppliers/{$s['supplier']}/payments", ['amount' => 500, 'method' => 'bkash', 'paid_on' => now('Asia/Dhaka')->format('Y-m-d')]),
+            'DELETE api/v1/stores/{store}/supplier-payments/{payment}' => $r('DELETE', "{$b}/supplier-payments/{$s['supplier_payment']}"),
+            'GET api/v1/stores/{store}/purchase-orders' => $r('GET', "{$b}/purchase-orders"),
+            'GET api/v1/stores/{store}/purchase-orders/summary' => $r('GET', "{$b}/purchase-orders/summary"),
+            'POST api/v1/stores/{store}/purchase-orders' => $r('POST', "{$b}/purchase-orders", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'quantity' => 2]]]),
+            'POST api/v1/stores/{store}/purchase-orders/quick' => $r('POST', "{$b}/purchase-orders/quick", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'unit_cost_amount' => 900, 'quantity' => 2]]], true),
+            'GET api/v1/stores/{store}/purchase-orders/{purchase_order}' => $r('GET', "{$b}/purchase-orders/{$s['ordered_po']}"),
+            'PATCH api/v1/stores/{store}/purchase-orders/{purchase_order}' => $r('PATCH', "{$b}/purchase-orders/{$s['draft_po']}", ['revision' => 1, 'notes' => 'Parity']),
+            'DELETE api/v1/stores/{store}/purchase-orders/{purchase_order}' => $r('DELETE', "{$b}/purchase-orders/{$s['draft_po']}"),
+            'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/send' => $r('POST', "{$b}/purchase-orders/{$s['draft_po']}/send", ['sent_via' => 'pdf']),
+            'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/mark-ordered' => $r('POST', "{$b}/purchase-orders/{$s['draft_po']}/mark-ordered"),
+            'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/close' => $r('POST', "{$b}/purchase-orders/{$s['ordered_po']}/close"),
+            'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/cancel' => $r('POST', "{$b}/purchase-orders/{$s['draft_po']}/cancel"),
+            'POST api/v1/stores/{store}/purchase-orders/{purchase_order}/receipts' => $r('POST', "{$b}/purchase-orders/{$s['ordered_po']}/receipts", ['lines' => [['item_id' => $s['ordered_item'], 'received' => 1, 'damaged' => 0]]], true),
+            'GET api/v1/stores/{store}/purchase-orders/{purchase_order}/pdf' => $r('GET', "{$b}/purchase-orders/{$s['ordered_po']}/pdf"),
+            'GET api/v1/stores/{store}/purchasing/reorder-suggestions' => $r('GET', "{$b}/purchasing/reorder-suggestions"),
+            'POST api/v1/stores/{store}/purchasing/invoices' => fn (array $h) => $this->flushHeaders()->withHeaders($h)->post("{$b}/purchasing/invoices", [
+                'file' => UploadedFile::fake()->createWithContent('i.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+            ], ['Accept' => 'application/json']),
 
             // --- catalog ---
             'GET api/v1/stores/{store}/categories' => $r('GET', "{$b}/categories"),

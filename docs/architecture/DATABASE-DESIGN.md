@@ -1026,6 +1026,67 @@ phone, sent_at DESC). Rows older than 24 h are pruned (`fraud:prune`).
 - `audit_logs` action catalogue gains `fraud.settings_updated`, `fraud.number_blocked`, `fraud.number_unblocked`,
   `fraud.hold_released`, `fraud.number_checked` (meta: masked phone and tier only).
 
+## 5.9 Phase 8.8b purchasing tables (PHASE-8-8B-CONTRACT §3, ADR 0023, migrations `2026_12_06_*`)
+Replaces the suppliers/purchasing part of the §6 "Suppliers / purchasing / transfers" sketch: one stock pool (no
+`locations`, no `inventories.location_id`; locations and transfers stay sketched for 8.8c+). All six tables are
+store-scoped `[S]` (`BelongsToStore`, composite FK `(tenant_id, store_id) → stores`), have RLS forced in their create
+migration and are listed in `RlsTables::TENANT` (**82 after Phase 8.8b**) and `database/sql/rls-emergency-off.sql`.
+Plan feature `purchasing`; permission `purchasing.manage` (receiving also `inventory.adjust`). Money = bigint minor
+units in the store currency at write time; phones in `Phone::bdMsisdn` form (`8801XXXXXXXXX`, varchar(13)).
+
+### suppliers [S] (`000100`)
+id PK · tenant_id · store_id · name varchar(120) · contact_name varchar(120) null · phone varchar(13) null · city
+varchar(80) null · supplies varchar(200) null · payment_terms_days smallint null `CHECK 0–180` · advance_percent smallint
+null `CHECK 0–100` · lead_time_days smallint null `CHECK 0–180` · pays_by_method varchar(8) null `CHECK IN ('cash',
+'bkash','nagad','bank','card','other')` · pays_by_account varchar(60) null · notes varchar(500) null · archived_at
+timestamptz null · created_by FK users SET NULL null · timestamps. Partial **U(tenant_id, store_id, lower(name)) WHERE
+archived_at IS NULL**; IX(tenant_id, store_id, phone). Delete only without POs or payments (else archive).
+
+### purchase_orders [S] (`000100`)
+id PK · tenant_id · store_id · supplier_id char(26), FK (tenant_id, store_id, supplier_id) → suppliers RESTRICT ·
+sequence int · number varchar(20) (`PO-{n}`, `StoreCounter` kind `purchase_orders`) **U(tenant_id, store_id, number)** ·
+status varchar(20) `CHECK IN ('draft','ordered','partially_received','received','closed','cancelled')` · expected_on
+date null · ordered_at · sent_at · sent_via varchar(8) null `CHECK IN ('whatsapp','pdf','manual')` · closed_at ·
+cancelled_at (timestamptz null) · notes varchar(1000) null · subtotal_amount · shipping_amount `CHECK ≥ 0` ·
+discount_amount `CHECK ≥ 0 AND ≤ subtotal_amount + shipping_amount` · total_amount · received_value_amount (Σ receipt
+values) · paid_amount (Σ linked payments) · currency char(3) · due_on date null (first receipt + supplier terms) ·
+revision int · created_by / updated_by FK users SET NULL null · timestamps. IX(tenant_id, store_id, status,
+created_at DESC), IX(tenant_id, store_id, supplier_id).
+
+### purchase_order_items [S] (`000100`)
+id PK · tenant_id · store_id · purchase_order_id FK3 → purchase_orders CASCADE · variant_id FK3 → product_variants
+RESTRICT · unit_cost_amount bigint `CHECK 0–1e9` · quantity_ordered int `CHECK 1–100000` · quantity_received int
+default 0 · quantity_damaged int default 0 · position smallint · `CHECK (quantity_received + quantity_damaged <=
+quantity_ordered)`. **U(purchase_order_id, variant_id)**. "Left" = ordered − received − damaged; `incoming` on the
+inventory list = Σ left over POs in `ordered`/`partially_received`.
+
+### purchase_receipts [S] (`000100`; never deleted)
+id PK · tenant_id · store_id · purchase_order_id FK3 CASCADE · received_at timestamptz · received_by FK users SET NULL
+null · supplier_invoice_ref varchar(60) null · invoice_media_id char(26) null (media purpose `purchase_invoice`,
+private disk, never in the library) · note varchar(500) null · value_amount bigint (Σ received × landed unit cost) ·
+created_at. IX(tenant_id, store_id, received_at) for "Bought this month".
+
+### purchase_receipt_items [S] (`000100`)
+id PK · tenant_id · store_id · purchase_receipt_id FK3 CASCADE · purchase_order_item_id FK3 · variant_id ·
+quantity_received int · quantity_damaged int · landed_unit_cost_amount bigint · cost_before_amount bigint null ·
+cost_after_amount bigint · on_hand_before int (read under the inventory row lock before the adjust, P88B-5).
+
+### supplier_payments [S] (`000100`; hard delete with an audit snapshot)
+id PK · tenant_id · store_id · supplier_id FK3 RESTRICT · purchase_order_id FK3 null SET NULL · amount bigint `CHECK
+1–1e10` · currency char(3) · method varchar(8) `CHECK` as `pays_by_method` · paid_on date (2020-01-01 … today) ·
+reference varchar(60) null · note varchar(200) null · created_by FK users SET NULL null · timestamps.
+IX(tenant_id, store_id, supplier_id, paid_on DESC). Never written to `expenses` (ADR 0023 §4).
+
+### Changes to existing tables and catalogues
+- **store_counters**: kind `purchase_orders` (code constant; CHECK widened if present).
+- **inventory_movements**: no schema change; receipts write reason `received`, `reference_type = 'purchase_order'`,
+  note `PO-0012 · {supplier}`; the movement list gains `filter[reference_type]`.
+- **product_variants.cost_amount**: now also written by receipts (weighted-average landed cost, P88B-5).
+- **media**: purpose `purchase_invoice` (private, like `expense_receipt`).
+- **plans.features**: data migration adds `purchasing` to Starter and Growth.
+- `audit_logs` action catalogue gains the `purchasing.*` actions (PHASE-8-8B P88B-18; `packages/types`
+  `PURCHASING_AUDIT_ACTIONS`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1038,7 +1099,8 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
-| Suppliers / purchasing / transfers (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `suppliers`, `purchase_orders`, `purchase_order_items(received_qty)`, `stock_transfers`, `stock_transfer_items` | 8+ |
+| Suppliers / purchasing (26:2146 Inventory) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments` — **specified in 8.8b (§5.9, PHASE-8-8B §3, ADR 0023)** | 8.8b |
+| Locations / transfers / stock count (26:2146 Inventory) | `locations(tenant_id, name, type)`; `inventories` gains `location_id` (U(variant_id, location_id)); `stock_transfers`, `stock_transfer_items`, stock counts | 8.8c+ |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `fraud_guard_settings`, `blocked_phones`, `order_risk_checks`, `fraud_guard_events`, `checkout_otps`, `orders.guard_hold` (no `customers.risk_flags`, no courier provider rows) — **specified in 8.8a (§5.8, PHASE-8-8 §4, ADR 0022)** | 8.8a |
 | Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |

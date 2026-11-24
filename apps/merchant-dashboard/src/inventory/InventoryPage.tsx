@@ -1,5 +1,5 @@
 import type { InventoryItem, InventoryListFilters, StockMovement, StockMovementReason } from '@storeplix/types';
-import { Button, cn, DataTable, Dialog, Pagination, StockBadge, Tabs, type DataTableColumn } from '@storeplix/ui';
+import { Button, buttonVariants, cn, DataTable, Dialog, Pagination, StockBadge, type DataTableColumn } from '@storeplix/ui';
 import { AlertTriangle, ArrowRight, Minus, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -9,10 +9,15 @@ import { useCategories, useInventory, useMovements } from '../catalog/queries';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, LoadingRows, NoResults, StateCard } from '../catalog/states';
 import { Cell2, FilterSelect, SearchBox, StatTile, Thumb, useDebounced } from '../catalog/ui';
+import { ReorderCard } from '../purchasing/ReorderCard';
+import { movementPoRef } from '../purchasing/purchasing';
 import { AdjustDialog, reasonLabels } from './AdjustDialog';
+import { InventoryTabs } from './InventoryTabs';
 
-// Figma Inventory 11:589 (Main 11:743). Contract §9.1: tabs Stock levels + Stock movements only; Transfer stock,
-// Purchase order, Incoming, warehouse selector, reorder suggestion and barcode scan are deferred (Phase 8).
+// Figma Inventory 11:589 (Main 11:743). Contract §9.1: tabs Stock levels + Stock movements. PHASE-8-8B §10.1 adds the
+// Purchase orders + Suppliers tabs (own routes), the INCOMING column, the "Purchase order" header button, the reorder
+// suggestion card and "Received · PO-0012" movement rows. Transfer stock, Warehouses, Stock count, the location
+// selector and barcode scan stay hidden (8.8c+).
 
 const movementReasonLabel: Record<StockMovementReason, string> = {
   initial: 'Opening stock',
@@ -58,19 +63,20 @@ export function InventoryPage() {
       <PageHeader
         title="Inventory"
         subtitle="Every stock change is recorded. Available = on hand − held for orders."
-        actions={<Button onClick={() => setReceiving(true)}>+ Receive stock</Button>}
+        actions={
+          <>
+            {scope.canManagePurchasing && (
+              <Link to="/inventory/purchase-orders/new" className={buttonVariants({ variant: 'secondary' })}>
+                Purchase order
+              </Link>
+            )}
+            <Button onClick={() => setReceiving(true)}>+ Receive stock</Button>
+          </>
+        }
       />
-      <Tabs
-        aria-label="Inventory"
-        value={tab}
-        onChange={setTab}
-        items={[
-          { value: 'levels', label: 'Stock levels' },
-          { value: 'movements', label: 'Stock movements' },
-        ]}
-      />
+      <InventoryTabs value={tab} onChange={(t) => setTab(t as 'levels' | 'movements')} />
       {tab === 'levels' ? (
-        <StockLevels canViewCosts={scope.canViewCosts} onAdjust={scope.canAdjustInventory ? (item) => setAdjusting({ item, reason: 'correction' }) : undefined} onLedger={() => setTab('movements')} />
+        <StockLevels canViewCosts={scope.canViewCosts} canManagePurchasing={scope.canManagePurchasing} onAdjust={scope.canAdjustInventory ? (item) => setAdjusting({ item, reason: 'correction' }) : undefined} onLedger={() => setTab('movements')} />
       ) : (
         <Movements />
       )}
@@ -87,7 +93,7 @@ export function InventoryPage() {
   );
 }
 
-function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boolean; onAdjust?: (i: InventoryItem) => void; onLedger: () => void }) {
+function StockLevels({ canViewCosts, canManagePurchasing, onAdjust, onLedger }: { canViewCosts: boolean; canManagePurchasing: boolean; onAdjust?: (i: InventoryItem) => void; onLedger: () => void }) {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const debounced = useDebounced(q);
@@ -125,6 +131,13 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
     },
     { key: 'on_hand', header: 'On hand', width: 80, align: 'end', cell: (i) => <span className="text-body text-text-primary">{formatCount(i.on_hand)}</span> },
     { key: 'held', header: 'Held', width: 64, align: 'end', cell: (i) => <span className="text-body text-text-primary">{formatCount(i.committed)}</span> },
+    {
+      key: 'incoming',
+      header: 'Incoming',
+      width: 84,
+      align: 'end',
+      cell: (i) => (i.incoming > 0 ? <span className="text-body font-medium text-brand-600">+{formatCount(i.incoming)}</span> : <span className="text-body text-text-muted">—</span>),
+    },
     {
       key: 'available',
       header: 'Available',
@@ -170,6 +183,7 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
 
   return (
     <>
+      {canManagePurchasing && <ReorderCard variant="inventory" />}
       <section aria-label="Stock summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {canViewCosts ? (
           <StatTile label="Stock value (cost)" value={formatBdt(summary?.stock_value_cost_amount ?? null)} hint={`Selling value ${formatBdt(summary?.stock_value_price_amount ?? 0)}`} />
@@ -232,10 +246,10 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
                   <MovementIcon m={m} />
                   <span className="flex min-w-0 flex-1 flex-col gap-px">
                     <span className="truncate text-body font-medium text-text-primary">
-                      {movementReasonLabel[m.reason]} · {m.product.name}
+                      {movementPoRef(m) ? `Received · ${movementPoRef(m)!.number}` : movementReasonLabel[m.reason]} · {m.product.name}
                     </span>
                     <span className="truncate text-caption text-text-muted">
-                      {[m.variant_title !== 'Default' ? m.variant_title : null, m.actor?.name ? `By ${m.actor.name}` : null, shortDate(m.created_at)].filter(Boolean).join(' · ')}
+                      {[m.variant_title !== 'Default' ? m.variant_title : null, movementPoRef(m)?.supplier ?? null, m.actor?.name ? `By ${m.actor.name}` : null, shortDate(m.created_at)].filter(Boolean).join(' · ')}
                     </span>
                   </span>
                   <span className={cn('text-body font-semibold', m.delta > 0 ? 'text-success' : 'text-danger')}>{deltaText(m.delta)}</span>
@@ -252,6 +266,7 @@ function StockLevels({ canViewCosts, onAdjust, onLedger }: { canViewCosts: boole
 const reasonOptions: StockMovementReason[] = ['received', 'correction', 'damaged', 'lost', 'returned', 'import', 'initial', 'other'];
 
 function Movements() {
+  const canOpenPo = useStoreScope().canReceiveStock;
   const [reason, setReason] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -277,7 +292,30 @@ function Movements() {
       mobileLabel: false,
       cell: (m) => <Cell2 top={m.product.name} bottom={[m.variant_title !== 'Default' ? m.variant_title : null, m.sku ? `SKU ${m.sku}` : null].filter(Boolean).join(' · ')} />,
     },
-    { key: 'reason', header: 'Reason', width: 150, cell: (m) => <Cell2 top={movementReasonLabel[m.reason]} bottom={m.note ?? undefined} topClass="font-medium" /> },
+    {
+      key: 'reason',
+      header: 'Reason',
+      width: 170,
+      cell: (m) => {
+        const po = movementPoRef(m);
+        if (!po) return <Cell2 top={movementReasonLabel[m.reason]} bottom={m.note ?? undefined} topClass="font-medium" />;
+        return (
+          <Cell2
+            top={
+              canOpenPo ? (
+                <Link to={`/inventory/purchase-orders/${po.id}`} className="text-brand-600 hover:text-brand-700">
+                  Received · {po.number}
+                </Link>
+              ) : (
+                `Received · ${po.number}`
+              )
+            }
+            bottom={po.supplier ?? undefined}
+            topClass="font-medium"
+          />
+        );
+      },
+    },
     { key: 'delta', header: 'Change', width: 80, align: 'end', cell: (m) => <span className={cn('text-body font-semibold', m.delta > 0 ? 'text-success' : 'text-danger')}>{deltaText(m.delta)}</span> },
     { key: 'after', header: 'On hand after', width: 110, align: 'end', cell: (m) => <span className="text-body text-text-primary">{formatCount(m.on_hand_after)}</span> },
     { key: 'by', header: 'By', width: 120, cell: (m) => <span className="truncate text-body text-text-secondary">{m.actor?.name ?? (m.reason === 'import' ? 'CSV import' : '—')}</span> },

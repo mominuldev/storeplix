@@ -43,6 +43,7 @@ use App\Domain\Payments\Http\Controllers\PaymentLinkController;
 use App\Domain\Payments\Http\Controllers\PaymentReturnController;
 use App\Domain\Payments\Http\Controllers\PaymentWebhookController;
 use App\Domain\Payments\Http\Controllers\StorefrontPaymentController;
+use App\Domain\Purchasing\Http\Controllers\PurchasingController;
 use App\Domain\Reports\Http\ReportController;
 use App\Domain\Returns\Http\ReturnController;
 use App\Domain\Shared\Http\HealthController;
@@ -361,6 +362,10 @@ Route::prefix('v1')->group(function (): void {
     // release and the storefront checkout code (own groups).
     require __DIR__.'/fraud-guard.php';
 
+    // Phase 8.8b (PHASE-8-8B-CONTRACT §8.1): suppliers, purchase orders, receipts, supplier payments, PO PDF, reorder
+    // suggestions and supplier invoice uploads (own group).
+    require __DIR__.'/purchasing.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
@@ -465,6 +470,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.7 (PHASE-8-7 §5.3): signed 5-minute expense receipt download (tenant from the signed parameters).
     Route::get('expense-receipts/{media}/download', [ExpenseReceiptController::class, 'download'])->where('media', '[0-9A-Za-z]{26}')
         ->middleware(['signed', 'throttle:60,1,expense-receipts.download'])->name('expense-receipts.download');
+    // Phase 8.8b (PHASE-8-8B §3, S176): signed 5-minute supplier invoice download (no session; tenant from the signature).
+    Route::get('purchase-invoices/{media}/download', [PurchasingController::class, 'downloadInvoice'])->where('media', '[0-9A-Za-z]{26}')
+        ->middleware(['signed', 'throttle:60,1,purchase-invoices.download'])->name('purchase-invoices.download');
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])

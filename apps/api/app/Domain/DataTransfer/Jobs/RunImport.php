@@ -13,6 +13,8 @@ use App\Domain\Customers\Models\Customer;
 use App\Domain\DataTransfer\Models\DataImport;
 use App\Domain\DataTransfer\Models\DataImportRow;
 use App\Domain\Identity\Models\User;
+use App\Domain\Purchasing\Models\Supplier;
+use App\Domain\Purchasing\SupplierService;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Revalidation\StorefrontRevalidation;
@@ -52,7 +54,7 @@ class RunImport implements ShouldQueue
         $this->onQueue('bulk');
     }
 
-    public function handle(TenantCache $cache, ProductService $products, CustomerService $customers, CategoryService $categories, AuditLogger $audit): void
+    public function handle(TenantCache $cache, ProductService $products, CustomerService $customers, CategoryService $categories, AuditLogger $audit, SupplierService $suppliers): void
     {
         $import = DataImport::query()->find($this->importId);
         if ($import === null || $import->status !== DataImport::IMPORTING) {
@@ -67,16 +69,20 @@ class RunImport implements ShouldQueue
         }
 
         try {
-            StorefrontRevalidation::muted(function () use ($import, $store, $user, $products, $customers, $categories) {
+            StorefrontRevalidation::muted(function () use ($import, $store, $user, $products, $customers, $categories, $suppliers) {
                 $rows = DataImportRow::query()->where('import_id', $import->id)
                     ->whereIn('status', ['ready', 'warning'])->whereIn('action', ['create', 'update'])
                     ->orderBy('row_number')->get();
                 $processed = 0;
                 foreach ($this->chunks($rows->all(), $import->type) as $chunk) {
-                    DB::transaction(function () use ($chunk, $import, $store, $user, $products, $customers, $categories) {
+                    DB::transaction(function () use ($chunk, $import, $store, $user, $products, $customers, $categories, $suppliers) {
                         if ($import->type === DataImport::PRODUCTS) {
                             foreach ($this->groups($chunk) as $group) {
                                 $this->product($group, $import, $store, $user, $products, $categories);
+                            }
+                        } elseif ($import->type === DataImport::SUPPLIERS) {
+                            foreach ($chunk as $row) {
+                                $this->supplier($row, $store, $user, $suppliers);
                             }
                         } else {
                             foreach ($chunk as $row) {
@@ -91,7 +97,11 @@ class RunImport implements ShouldQueue
 
             $summary = $this->finalSummary($import);
             $import->forceFill(['status' => DataImport::COMPLETED, 'completed_at' => now(), 'summary' => $summary])->save();
-            $audit->log('import.run', $import, ['type' => $import->type, 'summary' => array_intersect_key($summary, array_flip(['total', 'create', 'update', 'unchanged', 'warnings', 'errors', 'over_limit']))], $user, system: $user === null);
+            $auditSummary = array_intersect_key($summary, array_flip(['total', 'create', 'update', 'unchanged', 'warnings', 'errors', 'over_limit']));
+            $audit->log('import.run', $import, ['type' => $import->type, 'summary' => $auditSummary], $user, system: $user === null);
+            if ($import->type === DataImport::SUPPLIERS) {
+                $audit->log('purchasing.suppliers_imported', $import, ['summary' => $auditSummary], $user, system: $user === null); // P88B-18
+            }
 
             if ($this->touchedActive) {
                 app(StorefrontRevalidationObserver::class)->dispatch($store->tenant_id, $store->id);
@@ -305,6 +315,28 @@ class RunImport implements ShouldQueue
             });
         } catch (ValidationException $e) {
             $this->fail_rows([$row], collect($e->errors())->flatten()->first() ?? 'This customer could not be imported.');
+        } catch (ApiException $e) {
+            $this->fail_rows([$row], $e->getMessage());
+        }
+    }
+
+    /** PHASE-8-8B P88B-15: create or update one supplier (no per-row audit; the run is audited once). */
+    private function supplier(DataImportRow $row, Store $store, ?User $user, SupplierService $suppliers): void
+    {
+        $fields = array_filter($row->values['supplier'], fn ($x) => $x !== null);
+        try {
+            DB::transaction(function () use ($row, $store, $user, $suppliers, $fields) {
+                if ($row->action === 'create') {
+                    $supplier = $suppliers->create($store, $fields, $user, audit: false);
+                } else {
+                    $supplier = Supplier::query()->where('store_id', $store->id)->find($row->values['target_id'])
+                        ?? throw new ApiException(422, 'validation_failed', 'This supplier was deleted after the check.');
+                    $supplier = $suppliers->update($store, $supplier, $fields, $user, audit: false);
+                }
+                $row->forceFill(['result_id' => $supplier->id])->save();
+            });
+        } catch (ValidationException $e) {
+            $this->fail_rows([$row], collect($e->errors())->flatten()->first() ?? 'This supplier could not be imported.');
         } catch (ApiException $e) {
             $this->fail_rows([$row], $e->getMessage());
         }
