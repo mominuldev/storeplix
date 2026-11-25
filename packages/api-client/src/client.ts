@@ -1808,7 +1808,7 @@ export function createApiClient(options: ApiClientOptions) {
           listOf<PosSaleSummary, PosSaleListMeta>(`${store(storeId)}/pos/sales`, posSaleListQuery(filters), {
             next_cursor: null,
             prev_cursor: null,
-            per_page: 25,
+            per_page: 50,
             summary: { sales_amount: 0, receipts_count: 0, average_sale_amount: 0, returns_count: 0, returns_amount: 0 },
           }),
         get: (storeId: string, id: string) => request<PosSale>(`${store(storeId)}/pos/sales/${enc(id)}`),
