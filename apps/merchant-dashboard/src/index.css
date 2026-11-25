@@ -12,3 +12,10 @@
   .sp-richtext blockquote { border-left: 3px solid var(--color-border-strong); padding-left: 10px; color: var(--color-text-secondary); }
   .sp-richtext a { color: var(--color-brand-600); text-decoration: underline; }
 }
+
+/* PHASE-8-8D P88D-11: 80 mm receipt / Z-report printing. Only `.pos-print-root` prints while body has `pos-printing`. */
+.pos-print-root { display: none; }
+@media print {
+  body.pos-printing > *:not(.pos-print-root) { display: none !important; }
+  body.pos-printing .pos-print-root { display: block; width: 80mm; }
+}
