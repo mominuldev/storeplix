@@ -108,8 +108,8 @@ for (const width of [1280, 390]) {
   });
 }
 
-// Last on purpose (serial file): fails until P88DB-QA-1 is fixed and must not skip the tests above.
-test('P88DB-QA-1: a simple product shows no "Default" variant caption in the receipt detail or the return dialog', async ({ page, context }) => {
+// Regression for P88DB-QA-1 (fixed in 79e730b).
+test('a simple product shows no "Default" variant caption in the receipt detail or the return dialog', async ({ page, context }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await signInDashboard(context, shop.s);
   await page.goto(mUrl(historyUrl(sess.id, `&sale=${sale.id}`)));
