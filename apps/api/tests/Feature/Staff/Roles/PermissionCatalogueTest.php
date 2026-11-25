@@ -15,16 +15,16 @@ use Tests\TestCase;
 class PermissionCatalogueTest extends TestCase
 {
     private const KEYS = [
-        'orders.view', 'orders.process', 'orders.refund', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
+        'orders.view', 'orders.process', 'orders.refund', 'pos.sell', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
         'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
         'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
         'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
     ];
 
-    public function test_27_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
+    public function test_28_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
     {
         $this->assertSame(self::KEYS, Permission::values());
-        $this->assertCount(26, Permission::grantableCases()); // PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage; PHASE-8-8B §2.1: + purchasing.manage
+        $this->assertCount(27, Permission::grantableCases()); // PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage; PHASE-8-8B §2.1: + purchasing.manage; PHASE-8-8D §2.1: + pos.sell
         $this->assertSame([Permission::BillingManage], array_values(array_filter(Permission::cases(), fn (Permission $p) => ! $p->grantable())));
         foreach (Permission::cases() as $p) {
             $this->assertMatchesRegularExpression('/^[a-z]+\.[a-z_]+$/', $p->value); // the DB CHECK
@@ -66,8 +66,8 @@ class PermissionCatalogueTest extends TestCase
         $this->assertSame(self::KEYS, SystemRole::Owner->permissions()->keys());
         $this->assertSame(array_values(array_diff(self::KEYS, ['billing.manage'])), SystemRole::Admin->permissions()->keys());
         $this->assertSame([
-            'orders.view', 'orders.process', 'shipments.manage', 'shipments.cancel', 'products.edit', 'inventory.adjust',
-            'customers.view', 'customers.edit', 'reports.view',
+            'orders.view', 'orders.process', 'pos.sell', 'shipments.manage', 'shipments.cancel', 'products.edit', 'inventory.adjust',
+            'customers.view', 'customers.edit', 'reports.view', // PHASE-8-8D P88D-18: + pos.sell
         ], SystemRole::Staff->permissions()->keys());
         $this->assertSame(['Owner', 'Manager', 'Staff'], array_map(fn (SystemRole $r) => $r->label(), SystemRole::cases()));
         // every system set is closed under prerequisites
@@ -102,6 +102,11 @@ class PermissionCatalogueTest extends TestCase
 
         $this->assertSame(1, preg_match('/staff:\s*\[(.*?)\]/s', substr($ts, (int) strpos($ts, 'SYSTEM_ROLE_PERMISSIONS')), $s));
         preg_match_all("/'([a-z_.]+)'/", $s[1], $staff);
-        $this->assertSame(SystemRole::Staff->permissions()->keys(), $staff[1]);
+        // Same set (PHASE-8-8D: packages/types lists `pos.sell` last, the enum keeps catalogue order).
+        $expected = SystemRole::Staff->permissions()->keys();
+        $actual = $staff[1];
+        sort($expected);
+        sort($actual);
+        $this->assertSame($expected, $actual);
     }
 }

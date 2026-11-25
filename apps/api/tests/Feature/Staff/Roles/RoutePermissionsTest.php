@@ -103,6 +103,11 @@ class RoutePermissionsTest extends TestCase
         ],
         'settings.manage' => [
             'stores.document-templates.update',
+            // PHASE-8-8D P88D-18: register writes.
+            'stores.pos.registers.archive',
+            'stores.pos.registers.store',
+            'stores.pos.registers.unarchive',
+            'stores.pos.registers.update',
             'stores.locations.archive',
             'stores.locations.make-default',
             'stores.locations.store',
@@ -375,6 +380,20 @@ class RoutePermissionsTest extends TestCase
             'stores.purchase-orders.receipts.store',
             'stores.purchase-orders.show',
             'stores.purchasing.invoices.store',
+        ],
+        // PHASE-8-8D §10 (P88D-18): every other POS route.
+        'pos.sell' => [
+            'stores.pos.catalog',
+            'stores.pos.customers.lookup',
+            'stores.pos.lookup',
+            'stores.pos.quote',
+            'stores.pos.registers.index',
+            'stores.pos.registers.open',
+            'stores.pos.sales.show',
+            'stores.pos.sales.sms-receipt',
+            'stores.pos.sales.store',
+            'stores.pos.sessions.close',
+            'stores.pos.sessions.show',
         ],
     ];
 

@@ -369,6 +369,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.8c part A (PHASE-8-8C-CONTRACT §4, §9): stock locations (own group).
     require __DIR__.'/inventory.php';
 
+    // Phase 8.8d part A (PHASE-8-8D-CONTRACT §4–§7, §10): POS registers, sessions, sales and receipts (own group).
+    require __DIR__.'/pos.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');

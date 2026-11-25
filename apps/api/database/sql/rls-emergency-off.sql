@@ -952,6 +952,36 @@ BEGIN
   END IF;
 END
 $$;
+-- table: pos_registers
+DO $$
+BEGIN
+  IF to_regclass('public.pos_registers') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "pos_registers";
+    ALTER TABLE "pos_registers" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "pos_registers" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: pos_sessions
+DO $$
+BEGIN
+  IF to_regclass('public.pos_sessions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "pos_sessions";
+    ALTER TABLE "pos_sessions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "pos_sessions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: pos_sales
+DO $$
+BEGIN
+  IF to_regclass('public.pos_sales') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "pos_sales";
+    ALTER TABLE "pos_sales" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "pos_sales" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN
