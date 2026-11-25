@@ -1,4 +1,18 @@
 import type {
+  ClosePosSessionInput,
+  OpenPosSessionInput,
+  OrderCustomerSummary,
+  PosCatalogItem,
+  PosCatalogParams,
+  PosLookupParams,
+  PosQuote,
+  PosQuoteInput,
+  PosRegister,
+  PosRegisterInput,
+  PosRegisterListFilters,
+  PosSale,
+  PosSaleInput,
+  PosSession,
   AcceptInvitationInput,
   CreateRoleInput,
   PermissionGroup,
@@ -293,7 +307,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1724,6 +1738,68 @@ export function createApiClient(options: ApiClientOptions) {
         }),
       cancel: (storeId: string, id: string, input: StockCountTransitionInput = {}) =>
         request<StockCountDetail>(`${store(storeId)}/stock-counts/${enc(id)}/cancel`, { method: 'POST', body: input }),
+    },
+
+    /**
+     * PHASE-8-8D point of sale (part A). Every route needs `pos.sell`; register writes need `settings.manage`. Writes
+     * marked "plan" answer 402 `feature_not_in_plan` without plan feature `pos`. `idempotencyKey` is minted once per
+     * attempt (open, charge, close) and reused on every retry of that attempt.
+     */
+    pos: {
+      registers: {
+        /** Active registers (shops first) with `open_session` / `last_session`; `archived: true` → archived only. */
+        list: (storeId: string, filters: PosRegisterListFilters = {}) =>
+          request<PosRegister[]>(`${store(storeId)}/pos/registers`, { query: posRegisterListQuery(filters) }),
+        /** Plan; `name` + `location_id` → 201. 409 `register_limit_reached`, 422 `register_name_taken` / `location_archived`. */
+        create: (storeId: string, input: PosRegisterInput) =>
+          request<PosRegister>(`${store(storeId)}/pos/registers`, { method: 'POST', body: input }),
+        /** `location_id` only without an open session (409 `register_in_use`). */
+        update: (storeId: string, id: string, input: PosRegisterInput) =>
+          request<PosRegister>(`${store(storeId)}/pos/registers/${enc(id)}`, { method: 'PATCH', body: input }),
+        archive: (storeId: string, id: string) => request<PosRegister>(`${store(storeId)}/pos/registers/${enc(id)}/archive`, { method: 'POST' }),
+        /** Plan. */
+        unarchive: (storeId: string, id: string) => request<PosRegister>(`${store(storeId)}/pos/registers/${enc(id)}/unarchive`, { method: 'POST' }),
+        /** Plan; Idempotency-Key → 201 `PosSession`. 409 `register_already_open` (`details.session_id`). */
+        open: (storeId: string, registerId: string, input: OpenPosSessionInput, idempotencyKey: string) =>
+          request<PosSession>(`${store(storeId)}/pos/registers/${enc(registerId)}/open`, {
+            method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+      },
+      sessions: {
+        /** Header + live totals (`totals.cash_in_drawer_amount` = expected, computed on read). */
+        get: (storeId: string, id: string) => request<PosSession>(`${store(storeId)}/pos/sessions/${enc(id)}`),
+        /** Idempotency-Key; allowed after a downgrade. 422 `close_note_required`, 409 `revision_conflict`. */
+        close: (storeId: string, id: string, input: ClosePosSessionInput, idempotencyKey: string) =>
+          request<PosSession>(`${store(storeId)}/pos/sessions/${enc(id)}/close`, {
+            method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+      },
+      /** Active products with stock at the register location; 40 per page, `meta.next_cursor`. */
+      catalog: (storeId: string, params: PosCatalogParams, opts?: Pick<RequestOptions, 'signal'>) =>
+        requestEnvelope<PosCatalogItem[]>(`${store(storeId)}/pos/catalog`, { query: posCatalogQuery(params), signal: opts?.signal }).then((env) => ({
+          data: env?.data ?? [],
+          meta: (env?.meta as CursorMeta | undefined) ?? { next_cursor: null, prev_cursor: null, per_page: 40 },
+        })),
+      /** Exact SKU then barcode → the product with that one variant; 404 `pos_code_not_found`. */
+      lookup: (storeId: string, params: PosLookupParams) =>
+        request<PosCatalogItem>(`${store(storeId)}/pos/lookup`, { query: { register_id: params.register_id, code: params.code } }),
+      /** Exact phone → `OrderCustomerSummary`; 404 `not_found`. Limiter `pos-lookup`. */
+      customerLookup: (storeId: string, phone: string) =>
+        request<OrderCustomerSummary>(`${store(storeId)}/pos/customers/lookup`, { query: { phone } }),
+      /** Plan; read-only server pricing (coupon, VAT line, availability). */
+      quote: (storeId: string, input: PosQuoteInput, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<PosQuote>(`${store(storeId)}/pos/quote`, { method: 'POST', body: input, signal: opts?.signal }),
+      sales: {
+        /**
+         * Plan; Idempotency-Key required → 201 `PosSale`. 409 `checkout_changed` / `register_closed`, 422 `out_of_stock`,
+         * `pos_payment_mismatch`, `cash_tendered_short`.
+         */
+        create: (storeId: string, input: PosSaleInput, idempotencyKey: string) =>
+          request<PosSale>(`${store(storeId)}/pos/sales`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+        get: (storeId: string, id: string) => request<PosSale>(`${store(storeId)}/pos/sales/${enc(id)}`),
+        /** Plan; limiter `pos-sms`. 422 `no_phone`, 402 `plan_limit_reached`. */
+        smsReceipt: (storeId: string, id: string) => request<PosSale>(`${store(storeId)}/pos/sales/${enc(id)}/sms-receipt`, { method: 'POST' }),
+      },
     },
 
     /** PHASE-8-8B §7 and §8.1 purchasing helpers. */

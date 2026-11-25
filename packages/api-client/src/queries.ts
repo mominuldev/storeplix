@@ -17,6 +17,8 @@ import type {
   StockTransferListFilters,
   PurchaseOrderListFilters,
   SupplierListFilters,
+  PosCatalogParams,
+  PosRegisterListFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -99,6 +101,8 @@ export function orderListQuery(f: OrderListFilters = {}): Query {
     // PHASE-8-8 §6.5: risk tiers and held orders.
     'filter[risk]': list(f.risk),
     'filter[guard_hold]': f.guard_hold ? '1' : undefined,
+    // PHASE-8-8D §8: "POS" chip (till sales).
+    'filter[created_via]': list(f.created_via),
     q: text(f.q),
     sort: f.sort,
     page: f.page,
@@ -229,4 +233,14 @@ export function stockCountLineListQuery(f: StockCountLineFilters = {}): Query {
     page: f.page,
     per_page: f.per_page,
   };
+}
+
+/** PHASE-8-8D §5.3 `GET /pos/catalog` (40 per page by name; cursor pages). */
+export function posCatalogQuery(p: PosCatalogParams): Query {
+  return { register_id: p.register_id, q: text(p.q), 'filter[category_id]': p.category_id || undefined, cursor: p.cursor || undefined };
+}
+
+/** PHASE-8-8D §4 `GET /pos/registers` (`filter[archived]=true` → archived only). */
+export function posRegisterListQuery(f: PosRegisterListFilters = {}): Query {
+  return { 'filter[archived]': f.archived ? 'true' : undefined };
 }
