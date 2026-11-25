@@ -83,7 +83,8 @@ describe('Phase 8.8a fake-order guard client', () => {
   });
 
   it('catalogue: fraud.manage after orders.refund; owner + admin, not staff; four tiers', () => {
-    expect(PERMISSION_KEYS.indexOf('fraud.manage')).toBe(PERMISSION_KEYS.indexOf('orders.refund') + 1);
+    // Phase 8.8d inserts pos.sell between orders.refund and fraud.manage.
+    expect(PERMISSION_KEYS.indexOf('fraud.manage')).toBe(PERMISSION_KEYS.indexOf('pos.sell') + 1);
     expect(SYSTEM_ROLE_PERMISSIONS.owner).toContain('fraud.manage');
     expect(SYSTEM_ROLE_PERMISSIONS.admin).toContain('fraud.manage');
     expect(SYSTEM_ROLE_PERMISSIONS.staff).not.toContain('fraud.manage');
