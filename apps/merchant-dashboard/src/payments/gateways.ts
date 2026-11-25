@@ -1,5 +1,5 @@
 import type { BadgeTone } from '@storeplix/ui';
-import type { GatewayProvider, IntegrationMode, IntegrationStatus, Order, Payment, PaymentGatewayAccount, PaymentLink, PaymentLinkAmountKind, PaymentMethod, PaymentPurpose } from '@storeplix/types';
+import type { GatewayProvider, IntegrationMode, IntegrationStatus, Order, OrderPaymentMethod, Payment, PaymentGatewayAccount, PaymentLink, PaymentLinkAmountKind, PaymentPurpose } from '@storeplix/types';
 
 // Phase 5b-2 payment gateway copy and pure helpers (PHASE-5B §1.B, §4.1, §10; Figma 14:980, 32:3770, 52:564).
 
@@ -87,7 +87,9 @@ export function linkGateways(list: PaymentGatewayAccount[] | undefined): Payment
   return (list ?? []).filter(isUsable).sort((a, b) => Number(b.is_default) - Number(a.is_default));
 }
 
-export function paymentMethodLabel(m: PaymentMethod): string {
+/** Phase 8.8d: a till sale's method is `pos` (the payments card says how it was paid). */
+export function paymentMethodLabel(m: OrderPaymentMethod): string {
+  if (m === 'pos') return 'POS';
   return m === 'cod' ? 'Cash on delivery' : gatewayMeta[m].checkoutLabel;
 }
 

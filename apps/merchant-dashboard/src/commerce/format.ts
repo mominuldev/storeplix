@@ -33,6 +33,7 @@ export const refundMethodLabels: Record<RefundMethod, string> = {
   bank: 'Bank transfer',
   other: 'Other',
   gateway: 'Back through the gateway',
+  card: 'Card',
 };
 
 /** Status tabs of Orders 7:276 (In transit = `shipped`). */
