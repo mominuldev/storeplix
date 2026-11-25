@@ -58,9 +58,7 @@ test('UI: double-click Charge and Complete → one order', async ({ page, contex
   await tile(page, WRAP).click();
   expect(await chargeTotal(page)).toBe(50000);
   await cart(page).getByTestId('pos-charge').dblclick();
-  // A double tap may dismiss the dialog (P88DA-QA-3, tested last); make sure one dialog is open, then double-click Complete.
-  if ((await page.getByRole('dialog', { name: 'Take payment' }).count()) === 0) await cart(page).getByTestId('pos-charge').click();
-  await expect(page.getByRole('dialog', { name: 'Take payment' })).toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: 'Take payment' }), 'one payment dialog stays open (P88DA-QA-3)').toHaveCount(1);
   await paymentDialog(page).getByTestId('pos-complete-sale').dblclick();
   await expect(saleComplete(page)).toBeVisible();
   await page.waitForTimeout(1500);
@@ -138,13 +136,13 @@ test('API: key required; same key replays (also in parallel); other body → 409
   expect(await stockAt(shop.s, shop.wrap, shop.shop.id)).toMatchObject({ on_hand: 7 });
 });
 
-// Last on purpose (serial file): fails until P88DA-QA-3 is fixed and must not skip the tests above.
-test('P88DA-QA-3: a double-click on Charge leaves the payment dialog open', async ({ page, context }) => {
+// Regression for P88DA-QA-3 (fixed in 6cb0a78).
+test('a double-click on Charge leaves the payment dialog open', async ({ page, context }) => {
   await signInDashboard(context, shop.s);
   await gotoPos(page, `/pos/${sess.id}`);
   await tile(page, WRAP).click();
   await chargeTotal(page);
   await cart(page).getByTestId('pos-charge').dblclick();
   await page.waitForTimeout(500);
-  await expect(page.getByRole('dialog', { name: 'Take payment' }), 'the 2nd click lands on the new dialog backdrop and closes it').toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: 'Take payment' }), 'the 2nd click on the backdrop does not close it').toHaveCount(1);
 });

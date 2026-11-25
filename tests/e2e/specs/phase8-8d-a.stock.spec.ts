@@ -153,6 +153,7 @@ test('UI: out-of-stock tile, picker cap, stock gone during payment → inline er
   expect((await looked).status()).toBe(200);
   await expect(page.getByRole('dialog', { name: 'Choose options' })).toHaveCount(0);
   await expect(cart(page).getByTestId('pos-cart-line')).toHaveCount(1);
+  await expect(cart(page).getByTestId('pos-cart-line'), 'scanned variant keeps its options (P88DA-QA-2)').toContainText('L · ৳ 1,400');
   await expect(search).toHaveValue('');
   await search.fill('NO-SUCH-CODE-8D');
   await search.press('Enter');
@@ -217,8 +218,8 @@ test('S198: coupon priced by the server; a stale expected total → 409 checkout
   expect(c.errors, c.errors.join('\n')).toEqual([]);
 });
 
-// Last on purpose (serial file): it fails until P88DA-QA-2 is fixed and must not skip the tests above.
-test('P88DA-QA-2: a scanned variant keeps its options in the cart line ("{options} · ৳ price", §11.2)', async ({ page, context }) => {
+// Regression for P88DA-QA-2 (fixed in 6252d70).
+test('a scanned variant keeps its options in the cart line ("{options} · ৳ price", §11.2)', async ({ page, context }) => {
   await signInDashboard(context, shop.s);
   await gotoPos(page, `/pos/${sess.id}`);
   const search = page.getByTestId('pos-search');

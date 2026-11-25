@@ -250,8 +250,8 @@ export async function saleResponse(page: Page, act: () => Promise<void>): Promis
 export const logMark = () => mailMark();
 
 /**
- * Laravel ERROR lines logged since `mark`, minus the known local sqlite "database is locked" flake and lines of the
- * developer's own dev API (it shares laravel.log but runs on database/database.sqlite).
+ * Laravel ERROR lines logged since `mark`, minus the known local sqlite "database is locked" flake, lines of the
+ * developer's own dev API (it shares laravel.log but runs on database/database.sqlite) and Pest runs (`testing.`).
  */
 export function serverErrorsSince(mark: number): string[] {
   let text = '';
@@ -263,6 +263,8 @@ export function serverErrorsSince(mark: number): string[] {
   return text
     .split('\n')
     .filter((l) => /^\[[^\]]+\] \w+\.ERROR:/.test(l))
+    // `testing.ERROR` lines come from a Pest run sharing the log file, not from the E2E API.
+    .filter((l) => !/^\[[^\]]+\] testing\.ERROR:/.test(l))
     .filter((l) => !/database is locked/.test(l) && !/apps\/api\/database\/database\.sqlite/.test(l))
     .map((l) => l.slice(0, 300));
 }

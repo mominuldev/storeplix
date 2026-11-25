@@ -241,7 +241,8 @@ test('registers: archive / move an open register → 409 register_in_use; held_s
   expect([held.status, held.json.error?.code]).toEqual([422, 'validation_failed']);
 });
 
-test('P88DA-QA-1: an empty drawer (৳ 0) opens and closes from the count table', async ({ page, context }) => {
+// Regression for P88DA-QA-1 (fixed in 6659714): `counts: {}` = ৳ 0.
+test('an empty drawer (৳ 0) opens and closes from the count table', async ({ page, context }) => {
   test.setTimeout(120_000);
   // Shop B is back on Growth; Register 1 is closed. Open with every count blank (= ৳ 0 float), then close at ৳ 0.
   await signInDashboard(context, b.s);
