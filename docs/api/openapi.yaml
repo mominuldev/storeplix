@@ -16,7 +16,8 @@ info:
     /pos/sales/{sale}/sms-receipt, POST /pos/sales/{sale}/returns (also orders.refund), GET|POST /pos/held-sales, GET|
     DELETE /pos/held-sales/{held}. Every POS route needs pos.sell (new PermissionKey) unless noted; writes need plan
     feature pos (402 feature_not_in_plan) except close; limiter pos-write 120/min per user, pos-lookup 30/min, pos-sms
-    10/min. Enum additions: PermissionKey + pos.sell, PaymentMethod + pos, OrderSummary.created_via + pos,
+    10/min. Enum additions: PermissionKey + pos.sell, new OrderPaymentMethod (PaymentMethod + pos) on OrderSummary.payment_method,
+    OrderSummary.created_via + pos,
     RefundMethod + card, StockMovementReason + pos_sale; Payment gains pos_session_id; OrderSummary gains pos; GET
     /stores/{store}/orders gains filter[created_via]. New schemas PosRegister, PosRegisterInput, PosSessionRef,
     PosSession, PosSessionStatus, PosSessionTotals, PosDenominationCounts, OpenPosSessionInput, ClosePosSessionInput,
@@ -27818,8 +27819,16 @@ components:
       - cod
       - bkash
       - sslcommerz
+      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12).'
+    OrderPaymentMethod:
+      type: string
+      enum:
+      - cod
+      - bkash
+      - sslcommerz
       - pos
-      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12). Phase 8.8d: ''pos'' on till sales only (the payments list says how it was paid); never accepted by checkout.'
+      description: Phase 8.8d. An order's payment_method — PaymentMethod plus 'pos' on till sales (the payments list says how
+        it was paid). Checkout never accepts 'pos'.
     StorefrontCommerce:
       type: object
       required:
@@ -28496,7 +28505,7 @@ components:
         payment_status:
           $ref: '#/components/schemas/PaymentStatus'
         payment_method:
-          $ref: '#/components/schemas/PaymentMethod'
+          $ref: '#/components/schemas/OrderPaymentMethod'
         channel:
           $ref: '#/components/schemas/OrderChannel'
         created_via:

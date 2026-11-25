@@ -327,7 +327,8 @@ Orders list gains `filter[created_via]` (`storefront|dashboard|pos`). Shapes: `P
 `ClosePosSessionInput`, `PosCatalogItem`, `PosCatalogVariant`, `PosQuoteInput`, `PosQuote`, `PosSaleInput`,
 `PosPaymentInput`, `PosPaymentMethod`, `PosSale`, `PosSaleSummary`, `PosSaleListMeta`, `PosReceipt`, `PosHeldSale`,
 `PosHeldSaleInput`, `PosReturnInput`, `PosReturnResult`; `PermissionKey` + `pos.sell`; `StockMovementReason` +
-`pos_sale`; `RefundMethod` + `card`; `Payment.method` + `card`, `Payment.pos_session_id`; `PaymentMethod` + `pos`;
+`pos_sale`; `RefundMethod` + `card`; `Payment.method` + `card`, `Payment.pos_session_id`; new `OrderPaymentMethod` (= `PaymentMethod` + `pos`) on
+`OrderSummary.payment_method` (checkout's `PaymentMethod` unchanged);
 `OrderSummary.created_via` + `pos`, `OrderSummary.pos {register_id, register_name} | null`.
 Errors (new): `register_name_taken` (422), `register_limit_reached` (409), `register_in_use` (409),
 `register_already_open` (409, details.session_id), `register_closed` (409), `register_archived` (422),
