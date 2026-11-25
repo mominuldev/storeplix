@@ -491,6 +491,24 @@ describe('PHASE-8-8D sale screen', () => {
     expect(headerOf(posts(fetchMock, '/stores/S1/pos/sales')[2]!, 'Idempotency-Key')).not.toBe(headerOf(calls[0]!, 'Idempotency-Key'));
   });
 
+  it('a double-click on Charge keeps the payment dialog open (P88DA-QA-3)', async () => {
+    signedIn('owner', saleRoutes());
+    renderApp(<AppRoutes />, { route: '/pos/PS1' });
+    await addPanjabi();
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    fireEvent.click(screen.getByTestId('pos-charge'));
+    const dialog = (await screen.findByTestId('pos-payment')).closest('dialog')!;
+    // The second click of the double-click lands on the backdrop (the <dialog> element itself).
+    now.mockReturnValue(t0 + 150);
+    fireEvent.click(dialog);
+    expect(screen.getByTestId('pos-payment')).toBeInTheDocument();
+    // Later, a backdrop click closes it as usual.
+    now.mockReturnValue(t0 + 1000);
+    fireEvent.click(dialog);
+    await waitFor(() => expect(screen.queryByTestId('pos-payment')).not.toBeInTheDocument());
+  });
+
   it('split payment with bKash TrxID sends both parts; remaining shown', async () => {
     const fetchMock = signedIn('owner', { ...saleRoutes(), 'POST /stores/S1/pos/sales': jsonResponse(201, { data: sale({ change_amount: 0, receipt: receipt({ payments: [{ method: 'cash', amount: 50000 }, { method: 'bkash_personal', amount: 100000 }], change_amount: 0 }) }) }) });
     renderApp(<AppRoutes />, { route: '/pos/PS1' });

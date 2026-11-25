@@ -1,7 +1,7 @@
 import { POS_PAYMENT_METHOD_LABELS, POS_PAYMENT_REFERENCE_MAX, POS_PAYMENTS_MAX, type PosPaymentMethod } from '@storeplix/types';
 import { Button, Checkbox, cn, formatBdt, Modal, moneyToInput, parseMoney } from '@storeplix/ui';
 import { Delete, Plus, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { buildTender, changeBreakdown, numpadNext, quickCash, splitRemaining, tenderCards, type SplitPart, type TenderMode, type TenderResult, type TenderState } from './pos';
 
 // PHASE-8-8D §11.4 Payment 22:2073: "Take payment" + "{customer} · n items · {register}"; Amount to pay + subtotal /
@@ -34,6 +34,9 @@ export interface PaymentDialogProps {
 
 const methods: PosPaymentMethod[] = ['cash', 'bkash_personal', 'card'];
 
+/** Close requests (backdrop, Escape, ×) within this many ms of opening are ignored (P88DA-QA-3). */
+const PAYMENT_CLOSE_GRACE_MS = 400;
+
 export function PaymentDialog({
   total,
   subtotal,
@@ -57,6 +60,16 @@ export function PaymentDialog({
     { method: 'bkash_personal', amount: null, reference: '' },
   ]);
   const [print, setPrint] = useState(true);
+  // P88DA-QA-3: a double-click on Charge opens the dialog with the first click and lands the second on the <dialog>
+  // backdrop. Ignore close requests for a moment after opening.
+  const openedAt = useRef<number | null>(null);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, []);
+  const requestClose = () => {
+    if (openedAt.current === null || Date.now() - openedAt.current < PAYMENT_CLOSE_GRACE_MS) return;
+    onClose();
+  };
   const [sms, setSms] = useState(hasPhone);
 
   const cash = parseMoney(cashText);
@@ -76,7 +89,7 @@ export function PaymentDialog({
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={requestClose}
       title="Take payment"
       description={subtitle}
       size="xl"
