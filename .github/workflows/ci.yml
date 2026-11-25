@@ -748,7 +748,9 @@ jobs:
             test_parallel_till_sales_and_checkouts_on_one_location_never_oversell \
             test_parallel_opens_of_one_register_open_one_session \
             test_a_sale_racing_the_close_is_counted_in_it_or_refused \
-            test_a_double_tapped_sale_makes_one_order; do
+            test_a_double_tapped_sale_makes_one_order \
+            test_two_resumes_of_one_held_sale_complete_it_once \
+            test_a_cash_return_racing_the_close_is_counted_in_it_or_refused_and_two_never_empty_the_drawer_twice; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -805,9 +807,11 @@ jobs:
             [ "${listed:-0}" -ge 2 ] || { echo "::error::stocktransfer race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
           done
           exit $fail
-      # Phase 8.8d-A (S199, S200, S201, §14): the `pos` ∩ `race` tests (two till sales + a storefront checkout never
-      # oversell one location; parallel opens of one register open one session; a sale racing the close is counted in it
-      # or refused with register_closed; a double-tapped sale makes one order) run in the list above. This guard
+      # Phase 8.8d-A/B (S199, S200, S201, S206, S207, §14): the `pos` ∩ `race` tests (two till sales + a storefront checkout
+      # never oversell one location; parallel opens of one register open one session; a sale racing the close is counted in
+      # it or refused with register_closed; a double-tapped sale makes one order; part B: two resumes of one held sale
+      # complete it once; a cash return racing the close is counted in it or refused, and two never empty the drawer
+      # twice) run in the list above. This guard
       # DISCOVERS that intersection from the test files (a #[Group('race')] method or class in a file tagged
       # #[Group('pos')]) and fails when it is empty or when a discovered test is missing from the race lists of api-perf
       # and api-rls, so a new POS race test can't silently not run.
@@ -1032,7 +1036,9 @@ jobs:
             test_parallel_till_sales_and_checkouts_on_one_location_never_oversell \
             test_parallel_opens_of_one_register_open_one_session \
             test_a_sale_racing_the_close_is_counted_in_it_or_refused \
-            test_a_double_tapped_sale_makes_one_order; do
+            test_a_double_tapped_sale_makes_one_order \
+            test_two_resumes_of_one_held_sale_complete_it_once \
+            test_a_cash_return_racing_the_close_is_counted_in_it_or_refused_and_two_never_empty_the_drawer_twice; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail

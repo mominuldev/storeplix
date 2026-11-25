@@ -24,7 +24,7 @@ import {
 /**
  * PHASE-8-8D §11.9 / §16 AC 8 (part A screens): Open register 25:581, Sale 22:1737, Variant picker 22:1905, Payment
  * 22:2073, Sale complete 22:2241, Close register 25:829 at 1280 and 390 px. No page overflow, no console errors, the
- * documented omissions absent (Hold sale — part B, Scanner ready, Open drawer, Void receipt, Cashier select), Cashier
+ * documented omissions absent (Scanner ready, Open drawer, Void receipt, Cashier select), Cashier
  * read-only. 390 px (P88D-24): 2-column catalog, sticky "Charge ৳ x · n items" bar, cart as a bottom sheet, payment
  * full width. States: empty "Set up your first register" / "Create Register 1 at Main warehouse", "No products match —
  * try another name or scan the barcode", loading and error on the catalog.
@@ -37,7 +37,8 @@ let shop: PosShop;
 let empty: CommerceShop;
 let sess: Json;
 const SHOTS = resolve(E2E_ROOT, 'test-results/phase8-8d-a-visual');
-const OMITTED = [/^Hold sale$/, /Scanner ready/, /Open drawer/, /Void receipt/, /manager PIN/];
+// "Hold sale" shipped with part B (PHASE-8-8D §11.6), so it is no longer an omission.
+const OMITTED = [/Scanner ready/, /Open drawer/, /Void receipt/, /manager PIN/];
 
 test.beforeAll(async () => {
   test.setTimeout(240_000);
@@ -63,7 +64,6 @@ async function noOverflow(page: Page, where: string): Promise<void> {
 
 async function noOmitted(page: Page, where: string): Promise<void> {
   for (const re of OMITTED) await expect(page.getByText(re).filter({ visible: true }), `${where}: ${re} is hidden (§11)`).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Hold sale$/ }), `${where}: Hold sale is part B`).toHaveCount(0);
 }
 
 for (const width of [1280, 390]) {
