@@ -691,3 +691,6 @@ export const DATE_FILTERS: { value: 'today' | 'yesterday' | '7d' | 'custom'; lab
   { value: '7d', label: 'Last 7 days' },
   { value: 'custom', label: 'Custom' },
 ];
+
+/** A line's variant caption: null for a simple product's "Default" variant (same rule as Orders and the cart). */
+export const variantCaption = (title: string | null | undefined): string | null => (title && title !== 'Default' ? title : null);

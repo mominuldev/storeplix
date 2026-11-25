@@ -472,3 +472,18 @@ describe('PHASE-8-8D part B API behaviours', () => {
     expect(bodyOf(second!).held_sale_id).toBeUndefined();
   });
 });
+
+describe('P88DB-QA-1: simple products hide the "Default" variant title', () => {
+  it('history detail and return dialog captions', async () => {
+    const simple = [item({ id: 'OI5', product_name: 'Cotton Panjabi', variant_title: 'Default', option_values: [], quantity: 2, total_amount: 300000, restocked_quantity: 0 })];
+    signedIn('owner', historyRoutes({ 'GET /stores/S1/pos/sales/SALE1': jsonResponse(200, { data: detail({ order: order({ id: 'O1', number: 'MF-2232', items: simple }) }) }) }));
+    renderApp(<AppRoutes />, { route: '/pos/history?session=PS1&sale=SALE1' });
+    const panel = await screen.findByTestId('pos-sale-detail');
+    expect(await within(panel).findByText('Qty 2')).toBeInTheDocument();
+    expect(panel).not.toHaveTextContent('Default');
+    await userEvent.click(within(panel).getByTestId('pos-return-items'));
+    const line = within(await screen.findByTestId('pos-return-dialog')).getByTestId('pos-return-line');
+    expect(line).toHaveTextContent('2 of 2 returnable');
+    expect(line).not.toHaveTextContent('Default');
+  });
+});

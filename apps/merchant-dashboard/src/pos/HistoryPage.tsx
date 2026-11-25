@@ -14,7 +14,7 @@ import { formatBdPhone } from '../lib/phone';
 import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
 import { PosBar, PrintArea, ReceiptView } from './components';
-import { DATE_FILTERS, PAID_BY_LABELS, paidByTone, receiptTime, returnableOf, saleCustomerLine, salePill } from './pos';
+import { variantCaption, DATE_FILTERS, PAID_BY_LABELS, paidByTone, receiptTime, returnableOf, saleCustomerLine, salePill } from './pos';
 import { printPos } from './print';
 import { posKeys, usePosRegisters, usePosSale, usePosSales, usePosSession } from './queries';
 import { ReturnDialog } from './ReturnDialog';
@@ -362,7 +362,9 @@ function SaleDetail({
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-body font-semibold text-text-primary">{i.product_name}</span>
               <span className="text-caption text-text-secondary">
-                {[i.variant_title, `Qty ${formatCount(i.quantity)}`, i.restocked_quantity > 0 ? `${formatCount(i.restocked_quantity)} returned` : null].filter(Boolean).join(' · ')}
+                {[variantCaption(i.variant_title), `Qty ${formatCount(i.quantity)}`, i.restocked_quantity > 0 ? `${formatCount(i.restocked_quantity)} returned` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </div>
             <span className="text-body font-medium text-text-primary">{formatBdt(i.total_amount)}</span>

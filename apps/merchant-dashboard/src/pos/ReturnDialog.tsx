@@ -12,7 +12,7 @@ import { newIdempotencyKey } from '../commerce/format';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
-import { createAttemptKeys, returnableOf, returnEstimate, returnLines } from './pos';
+import { variantCaption, createAttemptKeys, returnableOf, returnEstimate, returnLines } from './pos';
 import { posKeys } from './queries';
 
 // PHASE-8-8D §11.7 / P88D-17 "Return items" (composed; Figma "Return or exchange items" relabelled, Q250): per-line
@@ -115,7 +115,7 @@ export function ReturnDialog({ sale, sessionId, onClose }: { sale: PosSale; sess
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-body font-semibold text-text-primary">{i.product_name}</span>
                   <span className="text-caption text-text-secondary">
-                    {[i.variant_title, `${formatCount(max)} of ${formatCount(i.quantity)} returnable`].filter(Boolean).join(' · ')}
+                    {[variantCaption(i.variant_title), `${formatCount(max)} of ${formatCount(i.quantity)} returnable`].filter(Boolean).join(' · ')}
                   </span>
                 </div>
                 <div className="flex items-center rounded-md border border-border-default">
