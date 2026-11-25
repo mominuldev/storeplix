@@ -299,7 +299,7 @@ class OnlineCheckoutTest extends TestCase
         $full = $this->api($h, 'GET', "/api/v1/stores/{$store->id}/orders/{$order->id}")->assertOk()->json('data');
         $advance = collect($full['payments'])->firstWhere('purpose', 'advance');
         $this->assertSame(['succeeded', 'bkash', 7000, true], [$advance['status'], $advance['provider'], $advance['amount'], $advance['can_refund']]);
-        $this->assertSame(['id', 'provider', 'type', 'status', 'amount', 'currency', 'method', 'reference', 'note', 'actor', 'created_at', 'purpose', 'provider_trx_id', 'refunded_amount', 'expires_at', 'failure_code', 'payment_link_id', 'return_request_id', 'can_refund'], array_keys($advance));
+        $this->assertSame(['id', 'provider', 'type', 'status', 'amount', 'currency', 'method', 'reference', 'note', 'actor', 'created_at', 'purpose', 'provider_trx_id', 'refunded_amount', 'expires_at', 'failure_code', 'payment_link_id', 'return_request_id', 'can_refund', 'pos_session_id'], array_keys($advance)); // PHASE-8-8D: + pos_session_id
         $this->assertSame([], $full['payment_links']);
 
         // A free-delivery order needs no advance.

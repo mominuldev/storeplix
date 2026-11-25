@@ -61,7 +61,23 @@ final class OrderPresenter
             'label_printed_at' => UserRef::iso($order->label_printed_at),
             // PHASE-8-8 §6.5
             'guard' => FraudGuardPresenter::orderGuard($order, $order->relationLoaded('riskCheck') ? $order->riskCheck : $order->riskCheck()->first()),
+            // PHASE-8-8D §8: the till sale behind a POS order ("POS · {register}" tag), else null
+            'pos' => self::posRef($order),
         ];
+    }
+
+    /** @return array{sale_id: string, register_id: string, register_name: string}|null OrderPosRef */
+    public static function posRef(Order $order): ?array
+    {
+        if (! $order->isPos()) {
+            return null;
+        }
+        $sale = $order->relationLoaded('posSale') ? $order->posSale : $order->posSale()->with('register')->first();
+        if ($sale === null) {
+            return null;
+        }
+
+        return ['sale_id' => $sale->id, 'register_id' => $sale->register_id, 'register_name' => (string) $sale->register?->name];
     }
 
     /** @return array{provider: string, status: string, consignment_id: string|null}|null OrderSummary.shipment */
@@ -280,6 +296,7 @@ final class OrderPresenter
             'return_request_id' => $payment->return_request_id ?? null,
             'can_refund' => $payment->type === Payment::TYPE_CHARGE && $payment->isOnline() && $payment->status === Payment::STATUS_SUCCEEDED
                 && ($permissions?->has(Permission::OrdersRefund) ?? false) && (int) $payment->amount - (int) $payment->refunded_amount > 0,
+            'pos_session_id' => $payment->pos_session_id ?? null, // PHASE-8-8D §6.3: the till session ("Till · Register 1"), else null
         ];
     }
 

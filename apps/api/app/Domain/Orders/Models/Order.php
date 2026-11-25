@@ -5,6 +5,7 @@ namespace App\Domain\Orders\Models;
 use App\Domain\Customers\Models\Customer;
 use App\Domain\FraudGuard\Models\OrderRiskCheck;
 use App\Domain\Identity\Models\User;
+use App\Domain\Pos\Models\PosSale;
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -106,6 +107,11 @@ class Order extends Model
 
     public const MAX_ITEMS = 50;
 
+    /** PHASE-8-8D §3.2: how the order was created (OrderCreatedVia); `pos` = a till sale (ADR 0025). */
+    public const VIA_POS = 'pos';
+
+    public const CREATED_VIA = ['storefront', 'dashboard', self::VIA_POS];
+
     /** Post-delivery return state (P5B-68), derived by ReturnService. */
     public const RETURN_STATUSES = ['none', 'requested', 'partially_returned', 'returned'];
 
@@ -184,6 +190,17 @@ class Order extends Model
     public function riskCheck(): HasOne
     {
         return $this->hasOne(OrderRiskCheck::class);
+    }
+
+    /** PHASE-8-8D §3.1: the till facts of a `created_via = 'pos'` order (null for every other order). */
+    public function posSale(): HasOne
+    {
+        return $this->hasOne(PosSale::class, 'order_id');
+    }
+
+    public function isPos(): bool
+    {
+        return $this->created_via === self::VIA_POS;
     }
 
     public function customer(): BelongsTo
