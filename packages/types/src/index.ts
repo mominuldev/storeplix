@@ -10,11 +10,8 @@ export interface ApiSuccess<T> { data: T; meta?: PaginationMeta | Record<string,
  */
 export type ApiErrorDetailValue = string[] | string | number | boolean | null | { [key: string]: unknown } | unknown[];
 export type ApiErrorDetailsWire = Record<string, ApiErrorDetailValue>;
-/**
- * `details` stays typed as `Record<string, string[]>` here until `@storeplix/api-client`'s `ApiErrorDetails` is widened
- * (it assigns this field; PHASE-8-8D §5.4). New code reads non-validation details as `ApiErrorDetailsWire`.
- */
-export interface ApiError { error: { code: string; message: string; details?: Record<string, string[]>; /** seconds; present on 429 (also sent as Retry-After header) */ retry_after?: number } }
+/** Validation errors put `string[]` per field in `details`; other codes may carry plain values (PHASE-8-8D §5.4). */
+export interface ApiError { error: { code: string; message: string; details?: ApiErrorDetailsWire; /** seconds; present on 429 (also sent as Retry-After header) */ retry_after?: number } }
 export interface PaginationMeta { current_page: number; per_page: number; total: number; last_page: number }
 
 export interface HealthStatus { status: 'ok'; version: string; time: string }

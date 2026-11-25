@@ -25144,9 +25144,12 @@ components:
           - string
           - 'null'
           maxLength: 300
-      description: Exactly one of counts or opening_cash_amount (counts win when both are sent).
+      description: Send counts or opening_cash_amount (counts win when both are sent). An empty counts object `{}` means
+        ৳0; opening_cash_amount is required only when counts is absent.
     ClosePosSessionInput:
       type: object
+      description: Send counts or counted_cash_amount (counts win when both are sent). An empty counts object `{}` means
+        ৳0; counted_cash_amount is required only when counts is absent.
       required:
       - left_in_drawer_amount
       - revision
