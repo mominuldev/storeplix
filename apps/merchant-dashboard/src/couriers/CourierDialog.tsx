@@ -259,7 +259,7 @@ function Credentials({
       if (handlePlanLimit(e)) return onPlanLimit();
       if (isApiError(e) && e.status === 422) {
         const fieldErrors: Record<string, string> = {};
-        for (const [k, m] of Object.entries(e.details ?? {})) fieldErrors[k.replace(/^credentials\./, '')] = m[0] ?? '';
+        for (const [k, m] of Object.entries(e.fieldErrors ?? {})) fieldErrors[k.replace(/^credentials\./, '')] = m[0] ?? '';
         setErrors(fieldErrors);
         return setFormError(courierErrorMessage(e.code, meta.short) ?? e.message);
       }
@@ -522,9 +522,9 @@ function BookingRules({ provider, account, titleId, step, onSaved, onBack }: { p
         await invalidate();
         return setFormError(courierErrorMessage('revision_conflict', meta.short));
       }
-      if (isApiError(e) && e.status === 422 && e.details) {
+      if (isApiError(e) && e.status === 422 && e.fieldErrors) {
         const next: RulesErrors = {};
-        for (const [k, m] of Object.entries(e.details)) next[k.replace(/^settings\./, '') as keyof RulesErrors] = m[0];
+        for (const [k, m] of Object.entries(e.fieldErrors)) next[k.replace(/^settings\./, '') as keyof RulesErrors] = m[0];
         setErrors(next);
       }
       setFormError((isApiError(e) && courierErrorMessage(e.code, meta.short)) || errorMessage(e, 'We couldn’t save the booking rules.'));

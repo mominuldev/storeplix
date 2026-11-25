@@ -1,6 +1,24 @@
-import type { ApiError as ApiErrorBody } from '@storeplix/types';
+import type { ApiError as ApiErrorBody, ApiErrorDetailValue } from '@storeplix/types';
 
-export type ApiErrorDetails = Record<string, string[]>;
+/**
+ * `error.details` as sent: Laravel validation messages (`string[]` per field) or any other value for domain errors
+ * (e.g. `session_id`, `variance_amount`, a fresh `quote`; openapi `ApiError.details`, PHASE-8-8D §5.4).
+ */
+export type ApiErrorDetails = Record<string, ApiErrorDetailValue>;
+/** Field → messages: only the `string[]` entries of `details`. */
+export type ApiFieldErrors = Record<string, string[]>;
+
+/** The `string[]` entries of `details` (non-string items dropped); undefined when there are none. */
+export function fieldErrorsOf(details: ApiErrorDetails | null | undefined): ApiFieldErrors | undefined {
+  if (!details) return undefined;
+  const out: ApiFieldErrors = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (!Array.isArray(value)) continue;
+    const messages = (value as readonly unknown[]).filter((m): m is string => typeof m === 'string');
+    if (messages.length) out[key] = messages;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 /** Thrown for every non-2xx response, network failure or malformed body. */
 export class ApiError extends Error {
@@ -27,9 +45,14 @@ export class ApiError extends Error {
     return this.status === 422;
   }
 
+  /** Validation messages per field: only the array values of `details`; undefined when there are none. */
+  get fieldErrors(): ApiFieldErrors | undefined {
+    return fieldErrorsOf(this.details);
+  }
+
   /** First message for a field from `details` (Laravel validation shape). */
   fieldError(field: string): string | undefined {
-    return this.details?.[field]?.[0];
+    return this.fieldErrors?.[field]?.[0];
   }
 }
 

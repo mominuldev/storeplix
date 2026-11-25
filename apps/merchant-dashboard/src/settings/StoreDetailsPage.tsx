@@ -74,9 +74,9 @@ function StoreDetailsForm({ settings, storeId, justSaved, onSaved }: { settings:
         setError('region.currency', { message: e.message || 'Your shop’s currency can’t be changed after the first order or expense.' });
         return setFormError('Some fields need attention.');
       }
-      if (isApiError(e) && e.isValidation && e.details) {
+      if (isApiError(e) && e.isValidation && e.fieldErrors) {
         let mapped = false;
-        for (const [path, messages] of Object.entries(e.details)) {
+        for (const [path, messages] of Object.entries(e.fieldErrors)) {
           if (path.includes('.')) {
             setError(path as FieldPath<SettingsValues>, { message: messages[0] });
             mapped = true;

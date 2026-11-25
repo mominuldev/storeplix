@@ -4,8 +4,8 @@ export { couponListQuery, customerListQuery, filenameFromDisposition, inventoryL
 export type { ReturnListFilters } from './queries';
 export { adminAuditQuery, adminDomainQuery, adminImpersonationQuery, adminInvoiceQuery, adminTeamQuery, adminTenantQuery, analyticsQuery } from './admin';
 export type { AdminApi, AdminAuditFilters, AdminDomainFilters, AdminImpersonationFilters, AdminInvoiceFilters, AdminTeamFilters, AdminTenantFilters, AdminTenantListMeta, AnalyticsResult } from './admin';
-export { ApiError, isApiError } from './errors';
-export type { ApiErrorDetails } from './errors';
+export { ApiError, fieldErrorsOf, isApiError } from './errors';
+export type { ApiErrorDetails, ApiFieldErrors } from './errors';
 export { createSessionStore, SESSION_EXPIRED_MESSAGE } from './session';
 export { IMPERSONATION_ENDED, IMPERSONATION_READ_ONLY, TENANT_SUSPENDED, isImpersonationEnded, isImpersonationReadOnly, isTenantSuspended } from './impersonation';
 export type { MeSessionMeta, SessionInfo } from './impersonation';

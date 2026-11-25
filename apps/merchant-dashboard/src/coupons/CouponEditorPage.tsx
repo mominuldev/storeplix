@@ -79,9 +79,9 @@ function CouponForm({ coupon }: { coupon: Coupon | null }) {
     },
     onError: (e) => {
       if (isApiError(e) && e.code === 'revision_conflict') return setConflict(true);
-      if (isApiError(e) && e.status === 422 && e.details) {
+      if (isApiError(e) && e.status === 422 && e.fieldErrors) {
         const next: Record<string, string> = {};
-        for (const [k, m] of Object.entries(e.details)) next[k.replace(/\.\d+$/, '')] = m[0] ?? '';
+        for (const [k, m] of Object.entries(e.fieldErrors)) next[k.replace(/\.\d+$/, '')] = m[0] ?? '';
         setErrors(next);
         return setFormError('Some fields need attention.');
       }

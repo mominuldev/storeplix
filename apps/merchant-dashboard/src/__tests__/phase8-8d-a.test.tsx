@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
+import { applyApiErrors } from '../auth/formErrors';
 import { visibleNav } from '../layout/nav';
 import { can } from '../lib/permissions';
 import { outOfStockLines, alreadyOpenSession, closeNoteDetails } from '../pos/errors';
@@ -187,8 +188,8 @@ describe('PHASE-8-8D money helpers (integer minor units)', () => {
     expect(posLocked(starterNoPos())).toBe(true);
     expect(posLocked(growthPos())).toBe(false);
     expect(posLocked(undefined)).toBe(false);
-    expect(alreadyOpenSession(new ApiError(409, 'register_already_open', 'x', { session_id: 'PS9' } as never))).toBe('PS9');
-    expect(closeNoteDetails(new ApiError(422, 'close_note_required', 'x', { variance_amount: -8000, tolerance_amount: 5000 } as never))).toEqual({ variance_amount: -8000, tolerance_amount: 5000 });
+    expect(alreadyOpenSession(new ApiError(409, 'register_already_open', 'x', { session_id: 'PS9' }))).toBe('PS9');
+    expect(closeNoteDetails(new ApiError(422, 'close_note_required', 'x', { variance_amount: -8000, tolerance_amount: 5000 }))).toEqual({ variance_amount: -8000, tolerance_amount: 5000 });
     expect(outOfStockLines(new ApiError(422, 'out_of_stock', 'x', { 'lines.1.quantity': ['Only 2 left at Mirpur shop.'] }))).toEqual({ 1: 'Only 2 left at Mirpur shop.' });
   });
 });
@@ -618,5 +619,17 @@ describe('PHASE-8-8D orders', () => {
     renderApp(<AppRoutes />, { route: '/orders' });
     await userEvent.click(await screen.findByTestId('orders-pos-chip'));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/orders').some((c) => new URL(c[0], 'http://x').searchParams.get('filter[created_via]') === 'pos')).toBe(true));
+  });
+});
+
+describe('ApiErrorDetails with non-array values', () => {
+  it('form error mapping reads only string-array details', () => {
+    const set: [string, string][] = [];
+    const setError = ((field: string, e: { message?: string }) => set.push([field, e.message ?? ''])) as never;
+    const e = new ApiError(422, 'validation_failed', 'Check the form.', { name: ['Name is required.'], session_id: 'PS9', quote: { total_amount: 1 } });
+    expect(applyApiErrors(e, setError, ['name', 'session_id'] as never)).toBeNull();
+    expect(set).toEqual([['name', 'Name is required.']]);
+    const onlyValues = new ApiError(422, 'close_note_required', 'Add a note.', { variance_amount: -8000 });
+    expect(applyApiErrors(onlyValues, setError, ['variance_amount'] as never)).toBe('Add a note.');
   });
 });

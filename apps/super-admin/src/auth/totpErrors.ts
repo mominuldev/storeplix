@@ -26,7 +26,7 @@ export function classifyTotpError(error: unknown): TotpFailure {
     if (error.isValidation)
       return {
         kind: 'message',
-        message: Object.values(error.details ?? {})[0]?.[0] ?? error.message,
+        message: Object.values(error.fieldErrors ?? {})[0]?.[0] ?? error.message,
       };
     return { kind: 'message', message: error.message };
   }

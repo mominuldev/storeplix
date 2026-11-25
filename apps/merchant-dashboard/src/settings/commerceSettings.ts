@@ -24,7 +24,7 @@ export function useSaveSettings(success = 'Saved.') {
       toast(success);
       await invalidate.launch();
     },
-    onError: (e) => toast(isApiError(e) ? (Object.values(e.details ?? {})[0]?.[0] ?? e.message) : errorMessage(e), 'error'),
+    onError: (e) => toast(isApiError(e) ? (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message) : errorMessage(e), 'error'),
   });
 }
 

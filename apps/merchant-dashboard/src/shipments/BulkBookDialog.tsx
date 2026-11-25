@@ -59,8 +59,8 @@ export function BulkBookDialog({ orders, onClose, onDone }: BulkBookDialogProps)
     onError: (e) => {
       if (isApiError(e) && e.status === 402 && e.code === 'feature_not_in_plan') return setPhase({ kind: 'upgrade', message: e.message });
       if (isApiError(e) && e.code === 'gateway_not_connected') return setError(`${provider ? courierName[provider] : 'The courier'} isn’t connected any more. Check Integrations.`);
-      if (isApiError(e) && e.status === 422 && e.details) {
-        const first = Object.entries(e.details)[0];
+      if (isApiError(e) && e.status === 422 && e.fieldErrors) {
+        const first = Object.entries(e.fieldErrors)[0];
         const idx = first ? /order_ids\.(\d+)/.exec(first[0]) : null;
         const order = idx ? picked[Number(idx[1])] : undefined;
         return setError(order ? `${order.number}: ${first?.[1][0] ?? 'can’t be booked'}. Nothing was booked.` : (first?.[1][0] ?? e.message));

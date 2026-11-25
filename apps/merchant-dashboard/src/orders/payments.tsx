@@ -278,7 +278,7 @@ export function AskAdvanceDialog({ order, onClose }: { order: Order; onClose: ()
       if (isApiError(e) && e.code === 'payment_link_active') return setError('This order already has an active payment link. Cancel it first.');
       if (isApiError(e) && e.code === 'gateway_not_connected') return setError('That gateway isn’t on at checkout any more. Choose another or check Integrations.');
       if (isApiError(e) && e.code === 'invalid_state_transition') return setError('This order can’t take an advance in its current status.');
-      setError(isApiError(e) ? (Object.values(e.details ?? {})[0]?.[0] ?? e.message) : errorMessage(e));
+      setError(isApiError(e) ? (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message) : errorMessage(e));
     },
   });
   const disabled = !!invalid || amount === null || !gateway || create.isPending;

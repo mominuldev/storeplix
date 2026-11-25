@@ -103,7 +103,7 @@ export function AdjustDialog({
       onClose();
     } catch (e) {
       if (isApiError(e) && e.code === 'stock_changed') {
-        const msg = Object.values(e.details ?? {})[0]?.[0] ?? 'Stock changed since you opened this. Check and try again.';
+        const msg = Object.values(e.fieldErrors ?? {})[0]?.[0] ?? 'Stock changed since you opened this. Check and try again.';
         setNotice(msg);
         setError(null);
         const fresh = await api.inventory.list(storeId, { product_id: base.product.id, per_page: 100 }).catch(() => null);
@@ -111,8 +111,8 @@ export function AdjustDialog({
         if (row) setBase(row);
         await invalidate.afterAdjustment();
       } else if (isApiError(e) && e.code === 'insufficient_stock') {
-        setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
-      } else setError(isApiError(e) && e.details ? (Object.values(e.details)[0]?.[0] ?? e.message) : errorMessage(e));
+        setError(Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message);
+      } else setError(isApiError(e) && e.fieldErrors ? (Object.values(e.fieldErrors)[0]?.[0] ?? e.message) : errorMessage(e));
     } finally {
       setSaving(false);
     }

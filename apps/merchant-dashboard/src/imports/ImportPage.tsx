@@ -107,7 +107,7 @@ export function ImportPage() {
     try {
       setCache(await api.imports.validate(scope.storeId!, data.id, { column_map: map, options }));
     } catch (e) {
-      setError(isApiError(e) && e.details ? Object.values(e.details).flat().join(' ') : errorMessage(e));
+      setError(isApiError(e) && e.fieldErrors ? Object.values(e.fieldErrors).flat().join(' ') : errorMessage(e));
     } finally {
       setBusy(false);
     }

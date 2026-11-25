@@ -126,9 +126,9 @@ function ProductEditor({ product }: { product: Product | null }) {
   };
 
   const applyServerErrors = (e: unknown): boolean => {
-    if (!isApiError(e) || e.status !== 422 || !e.details) return false;
+    if (!isApiError(e) || e.status !== 422 || !e.fieldErrors) return false;
     const unmapped: string[] = [];
-    for (const [path, messages] of Object.entries(e.details)) {
+    for (const [path, messages] of Object.entries(e.fieldErrors)) {
       const field = serverPathToField(path);
       const root = field.split('.')[0];
       if (['name', 'slug', 'status', 'tags', 'category_ids', 'options', 'variants', 'images', 'seo_title', 'seo_description'].includes(root!)) {
@@ -163,7 +163,7 @@ function ProductEditor({ product }: { product: Product | null }) {
           saved = await api.products.get(scope.storeId!, saved.id);
           loadProduct(saved);
           await invalidate.afterProductSave(saved.id);
-          const detail = isApiError(adjError) ? Object.values(adjError.details ?? {})[0]?.[0] : undefined;
+          const detail = isApiError(adjError) ? Object.values(adjError.fieldErrors ?? {})[0]?.[0] : undefined;
           setFormError(`Product saved, but stock wasn’t changed: ${detail ?? errorMessage(adjError)}`);
           return;
         }

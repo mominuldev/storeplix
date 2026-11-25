@@ -120,7 +120,7 @@ export function countError(e: unknown, fallback: string): string {
     if (e.code === 'revision_mismatch' || e.code === 'revision_conflict') return 'Someone else changed this count. Reload and try again.';
     if (e.code === 'invalid_state_transition') return 'This count is already finished or cancelled. Reload to see it.';
     if (e.code === 'location_archived') return 'This location is archived.';
-    if (e.status === 422) return e.details ? (Object.values(e.details)[0]?.[0] ?? e.message) : e.message || fallback;
+    if (e.status === 422) return e.fieldErrors ? (Object.values(e.fieldErrors)[0]?.[0] ?? e.message) : e.message || fallback;
   }
   return errorMessage(e, fallback);
 }

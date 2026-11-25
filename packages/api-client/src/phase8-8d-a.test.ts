@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PosSaleInput } from '@storeplix/types';
 import { POS_BDT_DENOMINATIONS, POS_PAYMENT_METHOD_LABELS, PERMISSION_KEYS, SYSTEM_ROLE_PERMISSIONS } from '@storeplix/types';
-import { createApiClient, isApiError, orderListQuery, posCatalogQuery, posRegisterListQuery } from './index';
+import { ApiError, createApiClient, fieldErrorsOf, isApiError, orderListQuery, posCatalogQuery, posRegisterListQuery } from './index';
 
 // PHASE-8-8D part A (§10, §12): pos.registers.*, pos.sessions.*, pos.catalog, pos.lookup, pos.customerLookup,
 // pos.quote, pos.sales.create/get/smsReceipt, orders `filter[created_via]`.
@@ -130,5 +130,32 @@ describe('PHASE-8-8D api-client', () => {
     const error = await client.pos.registers.open('S1', 'R1', { opening_cash_amount: 0 }, 'k').catch((e: unknown) => e);
     expect(isApiError(error) && error.code).toBe('register_already_open');
     expect(isApiError(error) && error.details).toEqual({ session_id: 'PS9' });
+  });
+});
+
+describe('ApiErrorDetails accepts non-array values (openapi ApiError.details, PHASE-8-8D §5.4)', () => {
+  it('keeps every detail value; field helpers read only string arrays', () => {
+    const e = new ApiError(409, 'checkout_changed', 'Changed.', {
+      quote: { total_amount: 456000 },
+      session_id: 'PS9',
+      variance_amount: -8000,
+      'lines.0.quantity': ['Only 2 left at Mirpur shop.'],
+      mixed: ['ok', 3, null],
+      empty: [],
+    });
+    expect(e.details?.session_id).toBe('PS9');
+    expect(e.details?.quote).toEqual({ total_amount: 456000 });
+    expect(e.fieldErrors).toEqual({ 'lines.0.quantity': ['Only 2 left at Mirpur shop.'], mixed: ['ok'] });
+    expect(e.fieldError('lines.0.quantity')).toBe('Only 2 left at Mirpur shop.');
+    expect(e.fieldError('session_id')).toBeUndefined();
+    expect(fieldErrorsOf({ session_id: 'PS9' })).toBeUndefined();
+    expect(fieldErrorsOf(undefined)).toBeUndefined();
+  });
+
+  it('non-array details from the wire survive parsing', async () => {
+    const { client } = setup(() => json(422, { error: { code: 'close_note_required', message: 'Add a note.', details: { variance_amount: -8000, tolerance_amount: 5000 } } }));
+    const error = await client.pos.sessions.close('S1', 'PS1', { left_in_drawer_amount: 0, revision: 1 }, 'k').catch((e: unknown) => e);
+    expect(isApiError(error) && error.details).toEqual({ variance_amount: -8000, tolerance_amount: 5000 });
+    expect(isApiError(error) && error.fieldErrors).toBeUndefined();
   });
 });

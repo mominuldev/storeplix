@@ -122,9 +122,9 @@ function AcceptForm({ token, invite, onEnroll }: { token: string; invite: Platfo
 function useAcceptError() {
   const [error, setErrorText] = useState<string | null>(null);
   const handle = (e: unknown, mapField: (field: string, message: string) => boolean) => {
-    if (isApiError(e) && e.isValidation && e.details) {
+    if (isApiError(e) && e.isValidation && e.fieldErrors) {
       let mapped = false;
-      for (const [field, messages] of Object.entries(e.details)) if (messages[0]) mapped = mapField(field, messages[0]) || mapped;
+      for (const [field, messages] of Object.entries(e.fieldErrors)) if (messages[0]) mapped = mapField(field, messages[0]) || mapped;
       if (mapped) return setErrorText(null);
     }
     if (isApiError(e) && e.status === 404) return setErrorText('This invitation expired or was already used. Ask for a new one.');

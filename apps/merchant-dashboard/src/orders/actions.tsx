@@ -206,8 +206,8 @@ export function ShipOrderDialog({
       await invalidate.afterOrderChange(order.id, order.customerId);
     },
     onError: (e) => {
-      if (isApiError(e) && e.status === 422 && e.details) {
-        return setErrors(Object.fromEntries(Object.entries(e.details).map(([k, m]) => [k, m[0] ?? ''])));
+      if (isApiError(e) && e.status === 422 && e.fieldErrors) {
+        return setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, m]) => [k, m[0] ?? ''])));
       }
       onClose();
       handleOrderError(e, () => invalidate.afterOrderChange(order.id, order.customerId));
@@ -295,7 +295,7 @@ export function ReturnOrderDialog({ order, open, onClose }: { order: Order; open
       await invalidate.afterOrderChange(order.id, order.customer.id);
     },
     onError: (e) => {
-      if (isApiError(e) && e.status === 422) return setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
+      if (isApiError(e) && e.status === 422) return setError(Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message);
       onClose();
       handleOrderError(e, () => invalidate.afterOrderChange(order.id, order.customer.id));
     },
@@ -423,7 +423,7 @@ export function RestockDialog({ order, open, onClose }: { order: Order; open: bo
       await invalidate.afterOrderChange(order.id, order.customer.id);
     },
     onError: (e) => {
-      if (isApiError(e) && e.status === 422) return setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
+      if (isApiError(e) && e.status === 422) return setError(Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message);
       onClose();
       handleOrderError(e, () => invalidate.afterOrderChange(order.id, order.customer.id));
     },
@@ -511,7 +511,7 @@ export function CreateReturnDialog({ order, open, onClose }: { order: Order; ope
       navigate(`/returns/${r.id}`);
     },
     onError: (e) => {
-      if (isApiError(e) && (e.status === 422 || e.code === 'return_not_allowed')) return setError(Object.values(e.details ?? {})[0]?.[0] ?? e.message);
+      if (isApiError(e) && (e.status === 422 || e.code === 'return_not_allowed')) return setError(Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message);
       setError(errorMessage(e, 'We couldn’t create the return.'));
     },
   });

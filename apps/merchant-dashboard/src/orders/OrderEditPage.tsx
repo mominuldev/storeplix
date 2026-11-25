@@ -190,9 +190,9 @@ function EditForm({ order, hint, setHint }: { order: Order; hint: ShippingQuote 
         return setFormError('This order is booked with a courier. Cancel the parcel to edit items.');
       }
       if (e.code === 'total_below_paid') return setFormError('The new total would be less than what the customer already paid. Refund first.');
-      if (e.status === 422 && e.details) {
+      if (e.status === 422 && e.fieldErrors) {
         const next: Record<string, string> = {};
-        for (const [k, m] of Object.entries(e.details)) {
+        for (const [k, m] of Object.entries(e.fieldErrors)) {
           const line = /^items\.(\d+)\./.exec(k);
           if (line) next[`line:${payloadLines[Number(line[1])]?.key ?? ''}`] = m[0] ?? '';
           else next[k.replace(/^contact\./, '').replace(/^shipping_address\./, '')] = m[0] ?? '';

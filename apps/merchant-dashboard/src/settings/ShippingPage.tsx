@@ -342,7 +342,7 @@ export function PickupDialog({ pickup, onClose }: { pickup: PickupLocation | nul
       await invalidate.shipping();
     },
     onError: (e) => {
-      if (isApiError(e) && e.details) setErrors(Object.fromEntries(Object.entries(e.details).map(([k, m]) => [k, m[0]])));
+      if (isApiError(e) && e.fieldErrors) setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, m]) => [k, m[0]])));
       else toast(errorMessage(e), 'error');
     },
   });

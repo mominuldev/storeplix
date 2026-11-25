@@ -102,9 +102,9 @@ export function CreateOrderPage() {
     onError: (e) => {
       // 402: the single app-wide PlanLimitDialog (AppShell) opens; this page renders inside AppShell.
       if (handlePlanLimit(e)) return;
-      if (isApiError(e) && e.status === 422 && e.details) {
+      if (isApiError(e) && e.status === 422 && e.fieldErrors) {
         const next: Record<string, string> = {};
-        for (const [k, m] of Object.entries(e.details)) next[k.replace(/^contact\./, '').replace(/^shipping_address\./, '')] = m[0] ?? '';
+        for (const [k, m] of Object.entries(e.fieldErrors)) next[k.replace(/^contact\./, '').replace(/^shipping_address\./, '')] = m[0] ?? '';
         setErrors(next);
         return setFormError(e.code === 'out_of_stock' ? 'Some items don’t have enough stock.' : e.code === 'coupon_invalid' ? (next.coupon_code ?? e.message) : 'Some fields need attention.');
       }

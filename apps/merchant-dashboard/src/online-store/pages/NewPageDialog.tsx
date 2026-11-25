@@ -51,7 +51,7 @@ export function NewPageDialog({ initialTemplate, onClose, onCreated }: { initial
     onSuccess: onCreated,
     onError: (e) => {
       if (isApiError(e) && e.code === 'page_limit_reached') setServerErrors({ form: 'You’ve reached the 50-page limit. Delete a page to add a new one.' });
-      else if (isApiError(e) && e.details) setServerErrors({ title: e.fieldError('title') ?? '', slug: e.fieldError('slug') ?? '', form: e.fieldError('template') ?? '' });
+      else if (isApiError(e) && e.fieldErrors) setServerErrors({ title: e.fieldError('title') ?? '', slug: e.fieldError('slug') ?? '', form: e.fieldError('template') ?? '' });
       else setServerErrors({ form: 'Couldn’t create the page. Try again.' });
     },
   });

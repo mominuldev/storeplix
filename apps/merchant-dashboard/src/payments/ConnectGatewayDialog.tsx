@@ -209,7 +209,7 @@ function Credentials({ provider, account, titleId, onBack, onSaved }: { provider
     onError: (e) => {
       if (isApiError(e) && e.status === 422) {
         const fieldErrors: Record<string, string> = {};
-        for (const [k, m] of Object.entries(e.details ?? {})) fieldErrors[k.replace(/^credentials\./, '')] = m[0] ?? '';
+        for (const [k, m] of Object.entries(e.fieldErrors ?? {})) fieldErrors[k.replace(/^credentials\./, '')] = m[0] ?? '';
         setErrors(fieldErrors);
         return setFormError(e.code === 'credentials_invalid' ? `${meta.short} didn’t accept these keys. Check them in the merchant portal and try again.` : e.message);
       }
