@@ -1,8 +1,16 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.21.0
+  version: 1.22.0
   description: |
+    1.22.0 (2026-11-25, Phase 8.8d part B as built, PHASE-8-8D §9). PosReturnInput.reason is now PosReturnReason
+    (wrong_size | damaged | wrong_item | changed_mind | refused_at_door | other, default other; was free text); note is
+    stored as the return's customer_note and the refund note. POST /pos/sales/{sale}/returns: 403 (orders.refund,
+    checked in the Form Request) comes before 402; over-return → 409 return_not_allowed; the session row is locked FOR
+    UPDATE. GET /pos/sales: no filter[date] = today (with q: every day), custom range ≤ 366 days, 50 per page, KPIs over
+    date range + register only. Held sales: coupon validated at hold (422 coupon_invalid), total_amount = server total
+    at hold, a second completion of one held sale → 422 on held_sale_id; held_sales_count is live. PosSale has no
+    returns list (refunded_amount and order.return_status show returns).
     1.21.0 (2026-11-25, Phase 8.8d POS, PHASE-8-8D-CONTRACT.md, ADR 0025; Q232–Q256 defaults accepted). New tag
     pos. Store-scoped
     /stores/{store}/pos/...: registers (GET list with open/last session; POST/PATCH/archive/unarchive need
@@ -5407,7 +5415,7 @@ paths:
       - pos
       summary: Sales history
       operationId: listPosSales
-      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Till sales newest first with meta.summary KPIs (sales = totals − till refunds in range).'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Till sales newest first, 50 per page, with meta.summary KPIs (sales = totals − till refunds in range). No filter[date] = today; with q and no date, every day. Custom range ≤ 366 days (422). KPIs use the date range and filter[register_id] only; filter[method] and q narrow the list only.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5577,7 +5585,7 @@ paths:
       - pos
       summary: Get a till sale with its receipt
       operationId: getPosSale
-      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. No returns list: refunded_amount and order.return_status show returns.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5677,7 +5685,7 @@ paths:
       - pos
       summary: Return items at the till and refund
       operationId: createPosReturn
-      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell and orders.refund, plan feature pos. One transaction: ReturnService create (type return) + receive with full restock at the line location + OrderService refund with pos_session_id. Cash refund needs the session open and ≤ cash in drawer. Same Idempotency-Key replays.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Route needs pos.sell; orders.refund is checked in the Form Request before the plan (403 before 402); plan feature pos. Order row then session row FOR UPDATE (two cash refunds serialise). Over-return (beyond quantity − restocked_quantity; till returns always restock in full) → 409 return_not_allowed. One transaction: ReturnService create (type return) + receive with full restock at the line location + OrderService refund with pos_session_id. Cash refund needs the session open and ≤ cash in drawer. Same Idempotency-Key replays.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5792,7 +5800,7 @@ paths:
       - pos
       summary: Hold (park) a sale
       operationId: createPosHeldSale
-      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell and plan feature pos. No stock is reserved (P88D-16). ≤ 20 per register.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell and plan feature pos. No stock is reserved (P88D-16). ≤ 20 per register. The coupon is validated now (422 coupon_invalid); total_amount = the server total at hold time.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -25014,7 +25022,7 @@ components:
           type: integer
         held_sales_count:
           type: integer
-          description: Always 0 until part B (held sales)
+          description: Held sales of the register while the session is open (0 when closed)
     PosSession:
       type: object
       description: Phase 8.8d (PHASE-8-8D §4, P88D-5, P88D-15). Money in minor units of currency.
@@ -25447,7 +25455,7 @@ components:
         sms_receipt:
           type: boolean
         held_sale_id:
-          description: Part B. Until then any non-null value → 422 validation_failed
+          description: Resumed held sale; deleted by this sale. Already completed or deleted → 422 on held_sale_id
           oneOf:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'
@@ -25837,15 +25845,26 @@ components:
         refund_method:
           $ref: '#/components/schemas/PosPaymentMethod'
         reason:
-          type:
-          - string
-          - 'null'
-          maxLength: 120
+          description: Default other
+          oneOf:
+          - $ref: '#/components/schemas/PosReturnReason'
+          - type: 'null'
         note:
           type:
           - string
           - 'null'
           maxLength: 500
+          description: Stored as the return's customer_note and as the refund's note
+    PosReturnReason:
+      type: string
+      description: The existing return reasons (ReturnReason; the return_requests CHECK limits them)
+      enum:
+      - wrong_size
+      - damaged
+      - wrong_item
+      - changed_mind
+      - refused_at_door
+      - other
     PosReturnResult:
       type: object
       required:

@@ -3522,7 +3522,7 @@ export interface PosSessionTotals {
   cash_sales_amount: number; cash_refunds_amount: number; sales_amount: number; receipts_count: number;
   by_method: { method: PosPaymentMethod; amount: number; count: number }[];
   returns_count: number; returns_amount: number; discounts_amount: number;
-  /** Always 0 until part B (held sales). */
+  /** Held sales of the register while the session is open (0 when closed). */
   held_sales_count: number;
 }
 export interface PosSession {
@@ -3612,7 +3612,7 @@ export interface PosSaleInput {
   /** Cash handed over; required with a cash payment; ≥ the cash amount */
   tendered_cash_amount?: number | null;
   sms_receipt: boolean;
-  /** Part B. Until then any non-null value → 422 `validation_failed`. */
+  /** Resumed held sale; deleted by this sale. Already completed or deleted → 422 on `held_sale_id`. */
   held_sale_id?: string | null;
   note?: string | null;
 }
@@ -3650,6 +3650,9 @@ export interface PosSale extends PosSaleSummary {
 
 // ----- History (§9, part B) -----
 export type PosSalesDateFilter = 'today' | 'yesterday' | '7d' | 'custom';
+/** §9 as built: page size; custom range limit (days). No `date` = today; with `q` and no `date`, every day. */
+export const POS_SALES_PER_PAGE = 50;
+export const POS_SALES_RANGE_MAX_DAYS = 366;
 export interface PosSaleListFilters {
   date?: PosSalesDateFilter;
   /** YYYY-MM-DD (custom) */
@@ -3658,6 +3661,7 @@ export interface PosSaleListFilters {
   /** Order number or phone (exact) */
   q?: string; cursor?: string;
 }
+/** KPIs use the date range and `register_id` only (`method` and `q` narrow the list, not the KPIs). */
 export interface PosSaleListMeta extends CursorMeta {
   summary: {
     sales_amount: number; receipts_count: number; average_sale_amount: number; returns_count: number; returns_amount: number;
@@ -3679,11 +3683,25 @@ export interface PosHeldSaleInput {
   customer?: { phone: string; name?: string | null } | null; coupon_code?: string | null; note?: string | null;
 }
 
-// ----- Returns at the till (§9, P88D-17, part B) -----
-/** POST …/pos/sales/{sale}/returns (Idempotency-Key; `pos.sell` + `orders.refund`). */
+// ----- Returns at the till (§9, P88D-17, part B; openapi 1.22.0) -----
+/** The existing return reasons (the `return_requests` CHECK limits them); default `other`. */
+export type PosReturnReason = ReturnReason;
+export const POS_RETURN_REASONS: readonly PosReturnReason[] = [
+  'wrong_size', 'damaged', 'wrong_item', 'changed_mind', 'refused_at_door', 'other',
+];
+/**
+ * POST …/pos/sales/{sale}/returns (Idempotency-Key; route `pos.sell`, `orders.refund` checked first → 403 before 402).
+ * Returnable per line = `quantity − restocked_quantity` (till returns always restock in full); more → 409
+ * `return_not_allowed`. `note` is stored as the return's `customer_note` and the refund's note.
+ */
 export interface PosReturnInput {
   session_id: string; lines: { order_item_id: string; quantity: number }[]; refund_method: PosPaymentMethod;
-  reason?: string | null; note?: string | null;
+  /**
+   * One of `PosReturnReason` (API 422 otherwise). Typed `string` for now so existing callers that pass a widened
+   * string keep compiling (api-client `phase8-8d-b.test.ts`); narrow to `PosReturnReason | null` once they pass the type.
+   */
+  reason?: string | null;
+  note?: string | null;
 }
 export interface PosReturnResult { sale: PosSale; return_request: ReturnRequest; refund: Payment }
 
@@ -3706,7 +3724,7 @@ export type PosErrorCode =
   | 'register_archived' | 'pos_payment_mismatch' | 'cash_tendered_short' | 'close_note_required' | 'drawer_short'
   | 'held_sales_limit' | 'pos_code_not_found' | 'no_phone'
   /** existing codes with POS-specific details */
-  | 'checkout_changed' | 'coupon_invalid';
+  | 'checkout_changed' | 'coupon_invalid' | 'return_not_allowed';
 export type PosAuditAction =
   | 'pos_register.created' | 'pos_register.updated' | 'pos_register.archived' | 'pos_register.unarchived'
   | 'pos_session.opened' | 'pos_session.closed' | 'pos_held_sale.deleted';
