@@ -1,5 +1,5 @@
 import { isApiError } from '@storeplix/api-client';
-import type { OrderCustomerSummary, PosQuoteInput, PosRegisterInput } from '@storeplix/types';
+import type { OrderCustomerSummary, PosQuoteInput, PosRegisterInput, PosSaleListFilters } from '@storeplix/types';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useStoreScope } from '../catalog/scope';
@@ -16,6 +16,9 @@ export const posKeys = {
   catalog: (s: Scope, registerId: string | undefined, q: string, categoryId: string) => [s.tenantId, s.storeId, 'pos', 'catalog', registerId, q, categoryId] as const,
   quote: (s: Scope, input: PosQuoteInput | null) => [s.tenantId, s.storeId, 'pos', 'quote', input] as const,
   customer: (s: Scope, phone: string | null) => [s.tenantId, s.storeId, 'pos', 'customer', phone] as const,
+  held: (s: Scope, registerId: string | undefined) => [s.tenantId, s.storeId, 'pos', 'held', registerId] as const,
+  sales: (s: Scope, filters?: PosSaleListFilters) => (filters ? ([s.tenantId, s.storeId, 'pos', 'sales', filters] as const) : ([s.tenantId, s.storeId, 'pos', 'sales'] as const)),
+  sale: (s: Scope, id: string | null | undefined) => [s.tenantId, s.storeId, 'pos', 'sale', id] as const,
 };
 
 export function usePosRegisters() {
@@ -115,4 +118,28 @@ export function useOnline(): boolean {
     };
   }, []);
   return online;
+}
+
+/** §11.6 held sales of one register (newest first). */
+export function usePosHeld(registerId: string | undefined) {
+  const s = useStoreScope();
+  return useQuery({ queryKey: posKeys.held(s, registerId), queryFn: () => api.pos.held.list(s.storeId!, registerId!), enabled: !!s.storeId && !!registerId });
+}
+
+/** §11.7 history: cursor pages + `meta.summary` (KPIs come from the first page). */
+export function usePosSales(filters: PosSaleListFilters, enabled = true) {
+  const s = useStoreScope();
+  return useInfiniteQuery({
+    queryKey: posKeys.sales(s, filters),
+    queryFn: ({ pageParam }) => api.pos.sales.list(s.storeId!, { ...filters, cursor: pageParam || undefined }),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.meta.next_cursor ?? undefined,
+    enabled: enabled && !!s.storeId,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function usePosSale(id: string | null | undefined) {
+  const s = useStoreScope();
+  return useQuery({ queryKey: posKeys.sale(s, id), queryFn: () => api.pos.sales.get(s.storeId!, id!), enabled: !!s.storeId && !!id });
 }

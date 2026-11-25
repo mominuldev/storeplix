@@ -15,6 +15,10 @@ import {
   type PosReceipt,
   type PosSession,
   type PosSmsReceiptStatus,
+  type OrderItem,
+  type PosHeldSale,
+  type PosPaidBy,
+  type PosSaleSummary,
 } from '@storeplix/types';
 import { formatBdt, formatCount } from '@storeplix/ui';
 import { formatBdPhone } from '../lib/phone';
@@ -599,3 +603,91 @@ export function smsView(status: PosSmsReceiptStatus, phone: string | null, sendi
     };
   return { text: 'SMS receipt not sent', tone: 'muted', action: 'Send' };
 }
+
+// ---------- Part B: held sales (P88D-16, §11.6) ----------
+/** Q242 copy (replaces Figma "reserved for 30 minutes"). */
+export const HELD_STOCK_NOTE = 'Held sales don’t hold stock. Items are checked again when you resume.';
+
+export const heldTitle = (h: Pick<PosHeldSale, 'customer_name'>) => h.customer_name || 'Walk-in customer';
+
+/** "01711-552211 · 3 items" / "— · 1 item". */
+export function heldSub(h: Pick<PosHeldSale, 'customer_phone' | 'items_count'>): string {
+  return `${h.customer_phone ? formatBdPhone(h.customer_phone) : '—'} · ${formatCount(h.items_count)} ${h.items_count === 1 ? 'item' : 'items'}`;
+}
+
+/** Search by customer name, phone (any format) or note. */
+export function filterHeld<T extends Pick<PosHeldSale, 'customer_name' | 'customer_phone' | 'note'>>(list: readonly T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...list];
+  const digits = q.replace(/\D/g, '');
+  return list.filter((h) => {
+    const phone = (h.customer_phone ?? '').replace(/\D/g, '');
+    return (
+      (h.customer_name ?? 'walk-in customer').toLowerCase().includes(q) ||
+      (h.note ?? '').toLowerCase().includes(q) ||
+      (digits.length >= 3 && (phone.includes(digits) || phone.includes(digits.replace(/^0/, ''))))
+    );
+  });
+}
+
+/** A held sale's lines as cart lines; names, prices and stock arrive with the next quote (`hydrateLines`). */
+export function linesFromHeld(h: Pick<PosHeldSale, 'lines'>): CartLine[] {
+  return h.lines.map((l) => ({ variantId: l.variant_id, productId: '', name: '', variantTitle: '', imageUrl: null, unitPrice: 0, available: null, quantity: l.quantity }));
+}
+
+/** Fill resumed lines (no catalog data) from the quote. */
+export function hydrateLines(lines: CartLine[], quote: PosQuote | undefined): CartLine[] {
+  if (!quote) return lines;
+  return lines.map((l) => {
+    if (l.name) return l;
+    const q = quote.lines.find((x) => x.variant_id === l.variantId);
+    return q ? { ...l, name: q.name, variantTitle: q.variant_title, unitPrice: q.unit_price_amount, available: q.available } : l;
+  });
+}
+
+// ---------- Part B: history and returns (§9, §11.7, P88D-17) ----------
+export const PAID_BY_LABELS: Record<PosPaidBy, string> = { cash: 'Cash', bkash_personal: 'bKash', card: 'Card', split: 'Split' };
+export const paidByTone: Record<PosPaidBy, 'brand' | 'success' | 'warning' | 'neutral'> = { cash: 'brand', bkash_personal: 'success', card: 'warning', split: 'neutral' };
+
+/** Detail pill: Paid / Partly refunded / Refunded. */
+export function salePill(s: Pick<PosSaleSummary, 'refunded_amount' | 'total_amount'>): { label: string; tone: 'success' | 'warning' | 'neutral' } {
+  if (s.refunded_amount <= 0) return { label: 'Paid', tone: 'success' };
+  if (s.refunded_amount < s.total_amount) return { label: 'Partly refunded', tone: 'warning' };
+  return { label: 'Refunded', tone: 'neutral' };
+}
+
+/** "Farhana Yasmin · 3 items" / "Walk-in · 1 item". */
+export const saleCustomerLine = (s: Pick<PosSaleSummary, 'customer_name' | 'items_count'>) =>
+  `${s.customer_name || 'Walk-in'} · ${formatCount(s.items_count)} ${s.items_count === 1 ? 'item' : 'items'}`;
+
+/** Units still returnable on a line: sold − returned (till returns restock in full, P88D-17). */
+export const returnableOf = (item: Pick<OrderItem, 'quantity' | 'restocked_quantity'>) => Math.max(0, item.quantity - item.restocked_quantity);
+
+/** Refund estimate: each line's paid total (after discount) pro rata per unit, rounded per line. The server decides. */
+export function returnEstimate(items: readonly Pick<OrderItem, 'id' | 'quantity' | 'total_amount'>[], picked: Record<string, number>): number {
+  return items.reduce((sum, i) => {
+    const q = picked[i.id] ?? 0;
+    return q > 0 && i.quantity > 0 ? sum + Math.round((i.total_amount * q) / i.quantity) : sum;
+  }, 0);
+}
+
+/** Lines to send (quantity > 0, ≤ returnable); null when nothing valid is picked. */
+export function returnLines(
+  items: readonly Pick<OrderItem, 'id' | 'quantity' | 'restocked_quantity'>[],
+  picked: Record<string, number>,
+): { order_item_id: string; quantity: number }[] | null {
+  const out: { order_item_id: string; quantity: number }[] = [];
+  for (const i of items) {
+    const q = picked[i.id] ?? 0;
+    if (!Number.isInteger(q) || q < 0 || q > returnableOf(i)) return null;
+    if (q > 0) out.push({ order_item_id: i.id, quantity: q });
+  }
+  return out.length ? out : null;
+}
+
+export const DATE_FILTERS: { value: 'today' | 'yesterday' | '7d' | 'custom'; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: 'custom', label: 'Custom' },
+];

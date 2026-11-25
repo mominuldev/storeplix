@@ -1,5 +1,16 @@
 import { isApiError } from '@storeplix/api-client';
-import type { OrderCustomerSummary, PosCatalogItem, PosCatalogVariant, PosQuote, PosQuoteInput, PosSale, PosSaleInput, PosSession } from '@storeplix/types';
+import type {
+  OrderCustomerSummary,
+  PosCatalogItem,
+  PosCatalogVariant,
+  PosHeldSale,
+  PosHeldSaleInput,
+  PosQuote,
+  PosQuoteInput,
+  PosSale,
+  PosSaleInput,
+  PosSession,
+} from '@storeplix/types';
 import { Button, cn, formatBdt, formatCount, riskTierMeta, Spinner } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Barcode, Minus, Phone, Plus, Search, ShoppingCart, X } from 'lucide-react';
@@ -20,6 +31,8 @@ import { isNetworkError, outOfStockLines } from './errors';
 import { PaymentDialog, type PaymentSubmit } from './PaymentDialog';
 import {
   addToCart,
+  hydrateLines,
+  linesFromHeld,
   cartSignature,
   createAttemptKeys,
   estimateSubtotal,
@@ -40,11 +53,13 @@ import {
   type TenderMode,
 } from './pos';
 import { posKeys, useOnline, usePosCatalog, usePosCustomer, usePosQuote, usePosSession } from './queries';
+import { HeldSalesDrawer, HoldDialog } from './HeldSales';
 import { SaleComplete } from './SaleComplete';
 import { VariantPicker } from './VariantPicker';
 
 // PHASE-8-8D §11.2 Sale 22:1737 (section 27:1026): POS bar (title, "{register} · {location} · Opened {time} by {name}",
-// Online/Offline pill, Cash in drawer tile, Close register; Hold sale is part B and hidden). Catalog: search / scan box
+// Online/Offline pill, Cash in drawer tile, Close register; part B adds Hold sale, Held · n (drawer 22:2409) and the
+// History link — composed, the Figma bar has no entry for them). Catalog: search / scan box
 // (Enter = exact SKU/barcode lookup; a match adds, else the text filters), barcode icon focuses the box, category chips,
 // product tiles with stock at the register location. Cart "Current sale": customer (phone lookup / walk-in / new),
 // lines with − qty +, totals from the server quote (Discount · {code} with "Add coupon", VAT per P88D-8, Total), method
@@ -127,6 +142,8 @@ function Till({ session }: { session: PosSession }) {
   const [mode, setMode] = useState<TenderMode>('cash');
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [cartNotice, setCartNotice] = useState<string | null>(null);
+  // Part B: the held sale this cart was resumed from (sent as `held_sale_id`; the API deletes it with the sale).
+  const [heldId, setHeldId] = useState<string | null>(null);
 
   const phone = customer.kind === 'phone' ? normalizeBdPhone(customer.text) : null;
   const lookup = usePosCustomer(phone);
@@ -178,6 +195,7 @@ function Till({ session }: { session: PosSession }) {
     setMode('cash');
     setLineErrors({});
     setCartNotice(null);
+    setHeldId(null);
   }, []);
 
   const add = (item: PosCatalogItem, variant: PosCatalogVariant, quantity = 1) => {
@@ -187,7 +205,7 @@ function Till({ session }: { session: PosSession }) {
     setCartNotice(null);
   };
   const changeQty = (variantId: string, q: number) => {
-    setLines(setQuantity(lines, variantId, q));
+    setLines(setQuantity(hydrateLines(lines, quote.data), variantId, q));
     setLineErrors(({ [variantId]: _drop, ...rest }) => rest);
   };
 
@@ -247,6 +265,7 @@ function Till({ session }: { session: PosSession }) {
       void qc.invalidateQueries({
         queryKey: [scope.tenantId, scope.storeId, 'pos', 'catalog'],
       });
+      void qc.invalidateQueries({ queryKey: posKeys.held(scope, session.register.id) });
     },
     onError: (e) => {
       // The attempt key is kept: retrying the same sale replays it instead of selling twice (S200).
@@ -271,9 +290,17 @@ function Till({ session }: { session: PosSession }) {
         setPaying(null);
         return setCartNotice('Some items are short at this shop. Fix the cart, then charge again.');
       }
+      // A held sale that is gone, completed or from another register (422 on `held_sale_id`): sell without it.
+      if (isApiError(e) && e.status === 422 && e.fieldErrors?.held_sale_id) {
+        setHeldId(null);
+        return setPayError('This held sale is no longer available. Tap Complete again to sell these items without it.');
+      }
       setPayError(errorMessage(e, 'We couldn’t complete the sale.'));
     },
   });
+
+  const customerPayload = (): Pick<PosSaleInput, 'customer_id' | 'customer'> =>
+    customer.kind === 'phone' && phone ? (known?.id ? { customer_id: known.id } : { customer: { phone, name: (known?.name ?? customer.name).trim() || null } }) : {};
 
   const submitPayment = ({ tender, print, sms }: PaymentSubmit) => {
     if (!quote.data || total === null) return;
@@ -288,19 +315,69 @@ function Till({ session }: { session: PosSession }) {
       payments: tender.payments,
       tendered_cash_amount: tender.tendered,
       sms_receipt: sms,
-      ...(customer.kind === 'phone' && phone
-        ? known?.id
-          ? { customer_id: known.id }
-          : {
-              customer: {
-                phone,
-                name: (known?.name ?? customer.name).trim() || null,
-              },
-            }
-        : {}),
+      ...customerPayload(),
+      ...(heldId ? { held_sale_id: heldId } : {}),
     };
     setPayError(null);
     sale.mutate({ input, print });
+  };
+
+  // ---- Held sales (part B, §11.6) ----
+  const [holding, setHolding] = useState(false);
+  const [holdError, setHoldError] = useState<string | null>(null);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const afterHeldChange = () => {
+    void qc.invalidateQueries({ queryKey: posKeys.held(scope, session.register.id) });
+    void qc.invalidateQueries({ queryKey: posKeys.session(scope, session.id) });
+  };
+  const removeHeld = useMutation({
+    mutationFn: (id: string) => api.pos.held.delete(scope.storeId!, id),
+    onSuccess: (_r, id) => {
+      if (id === heldId) setHeldId(null);
+      afterHeldChange();
+    },
+    onError: (e) => toast(errorMessage(e, 'We couldn’t delete the held sale.'), 'error'),
+  });
+  const hold = useMutation({
+    mutationFn: (note: string | null) => {
+      const input: PosHeldSaleInput = {
+        session_id: session.id,
+        lines: lines.map((l) => ({ variant_id: l.variantId, quantity: l.quantity })),
+        coupon_code: coupon,
+        note,
+        ...customerPayload(),
+      };
+      return api.pos.held.create(scope.storeId!, input);
+    },
+    onSuccess: () => {
+      // Re-holding a resumed sale replaces the old parked copy.
+      if (heldId) removeHeld.mutate(heldId);
+      setHolding(false);
+      setHoldError(null);
+      resetSale();
+      afterHeldChange();
+      toast('Sale held. Resume it from Held sales.');
+    },
+    onError: (e) => {
+      if (handlePlanLimit(e)) return setHolding(false);
+      setHoldError(
+        isApiError(e) && e.code === 'held_sales_limit' ? 'This register already has 20 held sales. Resume or delete one first.' : errorMessage(e, 'We couldn’t hold the sale.'),
+      );
+    },
+  });
+  const resume = (h: PosHeldSale) => {
+    if (lines.length && !window.confirm('Replace the current sale with this held sale?')) return;
+    setLines(linesFromHeld(h));
+    setCustomer(h.customer_phone ? { kind: 'phone', text: formatBdPhone(h.customer_phone), name: h.customer_name ?? '' } : { kind: 'walk_in' });
+    setCoupon(h.coupon_code);
+    setCouponOpen(false);
+    setLineErrors({});
+    setCartNotice(null);
+    setHeldId(h.id);
+    setHeldOpen(false);
+  };
+  const deleteHeld = (h: PosHeldSale) => {
+    if (window.confirm(`Delete the held sale for ${h.customer_name || 'the walk-in customer'}?`)) removeHeld.mutate(h.id);
   };
 
   const openPayment = (initialCash: number | null = null) => {
@@ -323,7 +400,7 @@ function Till({ session }: { session: PosSession }) {
 
   const cart = (
     <CartPanel
-      lines={lines}
+      lines={hydrateLines(lines, quote.data)}
       quote={lines.length && (quoteFresh || quote.isPlaceholderData) ? quote.data : undefined}
       quoteLoading={!!lines.length && !quoteFresh && !quote.isError}
       quoteError={quote.isError && !couponError ? errorMessage(quote.error, 'We couldn’t price the cart.') : null}
@@ -377,6 +454,23 @@ function Till({ session }: { session: PosSession }) {
             {formatBdt(session.totals.cash_in_drawer_amount)}
           </span>
         </div>
+        <Link to={`/pos/history?session=${session.id}`} className="rounded-md px-3 py-2 text-body font-semibold text-brand-600 hover:bg-brand-50" data-testid="pos-history-link">
+          History
+        </Link>
+        <Button variant="secondary" onClick={() => setHeldOpen(true)} data-testid="pos-held-open">
+          Held · {formatCount(session.totals.held_sales_count)}
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={lines.length === 0 || !online}
+          onClick={() => {
+            setHoldError(null);
+            setHolding(true);
+          }}
+          data-testid="pos-hold-sale"
+        >
+          Hold sale
+        </Button>
         <Button variant="secondary" onClick={() => navigate(`/pos/${session.id}/close`)} data-testid="pos-close-register">
           Close register
         </Button>
@@ -512,6 +606,16 @@ function Till({ session }: { session: PosSession }) {
         </div>
       )}
 
+      <HeldSalesDrawer
+        open={heldOpen}
+        registerId={session.register.id}
+        activeId={heldId}
+        busyId={removeHeld.isPending ? removeHeld.variables ?? null : null}
+        onClose={() => setHeldOpen(false)}
+        onResume={resume}
+        onDelete={deleteHeld}
+      />
+      {holding && <HoldDialog pending={hold.isPending} error={holdError} onClose={() => setHolding(false)} onHold={(note) => hold.mutate(note)} />}
       {picking && (
         <VariantPicker
           item={picking}
