@@ -1,7 +1,7 @@
 # ADR 0025 — Till sales are orders; registers and cash sessions
 
-Status: **Proposed** (Phase 8.8d; scope POS-first set by the PO (product owner), Q232, 2026-11-25; defaults Q233–Q256
-pending) · Date: 2026-11-25 · Binding detail once accepted: PHASE-8-8D-CONTRACT §1 (P88D-1 – P88D-24), §3–§9, §13
+Status: Accepted (Phase 8.8d; scope POS-first set by the PO (product owner), Q232; defaults Q233–Q256 accepted,
+2026-11-25) · Date: 2026-11-25 · Binding detail: PHASE-8-8D-CONTRACT §1 (P88D-1 – P88D-24), §3–§9, §13
 (S195–S207)
 Builds on: ADR 0001 (shared-database tenancy), 0006 (cart and checkout: server prices), 0007 (payments), 0011 (orders and
 stock commitment), 0012 (Postgres RLS), 0014 (documents), 0017 (granular permissions), 0024 (per-location stock).

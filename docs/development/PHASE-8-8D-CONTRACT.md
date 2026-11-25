@@ -1,10 +1,8 @@
-# Phase 8.8d contract: POS — point of sale (binding for ARCH, API, WEB, QA once accepted)
+# Phase 8.8d contract: POS — point of sale (binding for ARCH, API, WEB, QA)
 
-Status: **Draft for PO (product owner) review, 2026-11-25.** The PO (product owner) set the scope: **POS first; Inbox
-later** (Q232, answered). Every other default in this file is **proposed** (OPEN-QUESTIONS **Q233–Q256**, unanswered).
-Build agents start only after the PO (product owner) accepts this file. Branch `feat/phase-8-8d-pos` (from `main` @
-26c818c, after PR #19). "PO" in this file means **purchase order** (as in 8.8b/8.8c); the product owner is written "PO
-(product owner)".
+Status: **Accepted, 2026-11-25 — PO (product owner) set the scope (POS first; Inbox later, Q232) and accepted the
+proposed defaults for Q233–Q256**. Branch `feat/phase-8-8d-pos` (from `main` @ 26c818c, after PR #19). "PO" in this
+file means **purchase order** (as in 8.8b/8.8c); the product owner is written "PO (product owner)".
 Roadmap task **8.8d** is split: this file is **8.8d "POS"**. Inbox (`141:48129`) and AI integrations stay open under
 Q1 and are not in this contract.
 AC: **"A shop opens a register with a counted float, sells to walk-in customers from that shop's stock with cash,
@@ -20,7 +18,7 @@ and returns (P5B-67/68), and ADR 0024 (per-location stock, readers classified on
 gains `pos_session_id` and method `card`), PHASE-7 §2.1 (`pos` becomes enforced), PHASE-7 §6.3 (Sales report district
 breakdown skips till sales), PHASE-8-3 §2.1 (new key `pos.sell`), PHASE-8-6 (recipes never fire on till sales),
 PHASE-8-8 §6 (own-shop record ignores till sales), PHASE-8-8C §5.3 (one new *location* reader). Machine-readable spec:
-`docs/api/openapi.yaml` **v1.21.0** (draft). ADR **0025** (new, Proposed: till sales are orders; registers and cash
+`docs/api/openapi.yaml` **v1.21.0**. ADR **0025** (new: till sales are orders; registers and cash
 sessions). Product defaults: OPEN-QUESTIONS **Q232–Q256**.
 
 ### Scope
@@ -112,7 +110,7 @@ pool by accident.
 | P88D-23 | **Audit**: `pos_register.created/updated/archived/unarchived`, `pos_session.opened` (opening amount, counts), `pos_session.closed` (counted, expected, variance, left, banked, note, held sales deleted), `pos_held_sale.deleted`; returns and refunds keep their existing `return.*` / `order.refunded` actions with `meta.pos_session_id` | Cash differences must be explainable |
 | P88D-24 | **Mobile** (Q254): POS is designed at 1440 px and is meant for a laptop or tablet. Below `md` it stays usable at 390 px: catalog full width, cart as a bottom sheet behind a sticky "Charge ৳ x · n items" bar, payment and close as full-screen sheets | No mobile frame on `22:1736` or `2:5` |
 
-### 1.1 Product-owner questions (OPEN-QUESTIONS Q232–Q256; **Q232 answered 2026-11-25; Q233–Q256 proposed, unanswered**)
+### 1.1 Product-owner questions (OPEN-QUESTIONS Q232–Q256; **answered 2026-11-25: proposed defaults accepted**)
 
 | Q | Question | Proposed default |
 |---|---|---|
@@ -303,7 +301,7 @@ existing).
   open and ≤ cash in drawer (422 `drawer_short`). Lines beyond sold − returned → 422 `validation_failed` (existing
   ReturnService messages).
 
-## 10. Merchant API (openapi 1.21.0, draft; `routes/pos.php` + include line; merchant group; `{store}` scoped)
+## 10. Merchant API (openapi 1.21.0 binding; `routes/pos.php` + include line; merchant group; `{store}` scoped)
 
 | Method | Path (`/api/v1/stores/{store}`) | Perm | Part · notes |
 |---|---|---|---|
@@ -417,10 +415,9 @@ without `pos.sell` don't see POS in the sidebar or More (`/pos` → 403 page). F
 P88D-24 (390 px: catalog grid 2 columns, cart bottom sheet, sticky Charge bar, full-screen dialogs).
 
 ## 12. ARCH and types (owner ARCH)
-**Types first**, per part, after PO (product owner) acceptance. Part A: openapi **1.21.0** final (this draft →
-binding), `packages/types` (§10 shapes, enum additions, `PERMISSIONS` catalogue + `ORDER_CREATED_VIA`),
+**Types first**, per part. Part A: openapi **1.21.0**, `packages/types` (§10 shapes, enum additions, `PERMISSIONS` catalogue + `ORDER_CREATED_VIA`),
 `packages/api-client` (`pos.registers.*`, `pos.sessions.*`, `pos.catalog`, `pos.lookup`, `pos.customerLookup`,
-`pos.quote`, `pos.sales.create/get/smsReceipt`, orders `created_via` filter), ADR 0025 → Accepted, DATABASE-DESIGN §5.11
+`pos.quote`, `pos.sales.create/get/smsReceipt`, orders `created_via` filter), ADR 0025, DATABASE-DESIGN §5.11
 (+ replace the §6 POS sketch row), SECURITY T42 (S195–S207), MULTI-TENANCY count 91, PHASE-7 §2.1 `pos` row, PHASE-8-3
 catalogue note, FIGMA-INDEX rows for `27:1025`–`27:1028`, RUNBOOK (register won't open: close the stale session; cash
 difference investigation; printer setup for 80 mm), roadmap. Part B: openapi 1.22.0 if shapes change, types + client

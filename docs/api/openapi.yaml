@@ -3,8 +3,8 @@ info:
   title: Store Plix API
   version: 1.21.0
   description: |
-    1.21.0 (2026-11-25, Phase 8.8d POS, PHASE-8-8D-CONTRACT.md, ADR 0025 — **DRAFT for PO (product owner) review**;
-    defaults Q233–Q256 pending; binding only once the contract is accepted). New tag pos. Store-scoped
+    1.21.0 (2026-11-25, Phase 8.8d POS, PHASE-8-8D-CONTRACT.md, ADR 0025; Q232–Q256 defaults accepted). New tag
+    pos. Store-scoped
     /stores/{store}/pos/...: registers (GET list with open/last session; POST/PATCH/archive/unarchive need
     settings.manage; ≤ 10 active), POST /pos/registers/{register}/open (counted float, one open session per register,
     Idempotency-Key), GET /pos/sessions/{session} (live cash in drawer and totals), POST /pos/sessions/{session}/close
@@ -293,7 +293,7 @@ tags:
 - name: purchasing
   description: 'Phase 8.8b: suppliers, purchase orders, receiving, supplier payments and reorder suggestions (PHASE-8-8B §8)'
 - name: pos
-  description: 'Phase 8.8d (DRAFT): POS registers, cash sessions, till sales, held sales and returns at the till (PHASE-8-8D §10)'
+  description: 'Phase 8.8d: POS registers, cash sessions, till sales, held sales and returns at the till (PHASE-8-8D §10)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -4698,7 +4698,7 @@ paths:
       - pos
       summary: List registers with their open and last session
       operationId: listPosRegisters
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Active registers sorted by location (shops first), position, name; archived with filter[archived]=true. Each carries open_session and last_session (P88D-4).'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Active registers sorted by location (shops first), position, name; archived with filter[archived]=true. Each carries open_session and last_session (P88D-4).'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -4750,7 +4750,7 @@ paths:
       - pos
       summary: Create a register
       operationId: createPosRegister
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage and plan feature pos. ≤ 10 active per store. Audited pos_register.created. Limiter pos-write.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs settings.manage and plan feature pos. ≤ 10 active per store. Audited pos_register.created. Limiter pos-write.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -4815,7 +4815,7 @@ paths:
       - pos
       summary: Rename a register or move it to another location
       operationId: updatePosRegister
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage. location_id only while the register has no open session (409 register_in_use). Audited pos_register.updated.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs settings.manage. location_id only while the register has no open session (409 register_in_use). Audited pos_register.updated.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -4874,7 +4874,7 @@ paths:
       - pos
       summary: Archive a register
       operationId: archivePosRegister
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage. Refused with an open session. Audited pos_register.archived.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs settings.manage. Refused with an open session. Audited pos_register.archived.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -4927,7 +4927,7 @@ paths:
       - pos
       summary: Unarchive a register
       operationId: unarchivePosRegister
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs settings.manage and plan feature pos; counts toward the 10 active.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs settings.manage and plan feature pos; counts toward the 10 active.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -4986,7 +4986,7 @@ paths:
       - pos
       summary: Open a register (start a cash session)
       operationId: openPosSession
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. counts (denomination → count) or opening_cash_amount; counts win. One open session per register (partial unique index). Same Idempotency-Key + body replays. Audited pos_session.opened.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell and plan feature pos. counts (denomination → count) or opening_cash_amount; counts win. One open session per register (partial unique index). Same Idempotency-Key + body replays. Audited pos_session.opened.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5052,7 +5052,7 @@ paths:
       - pos
       summary: Get a session with live totals
       operationId: getPosSession
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. totals.cash_in_drawer_amount = opening + cash charges − cash refunds of this session, computed on read (P88D-15).'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. totals.cash_in_drawer_amount = opening + cash charges − cash refunds of this session, computed on read (P88D-15).'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5099,7 +5099,7 @@ paths:
       - pos
       summary: Close a register (count the drawer)
       operationId: closePosSession
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell; allowed after a downgrade. Session row FOR UPDATE; expected computed on the server; variance = counted − expected; |variance| > tolerance (৳ 50) needs a note (422 close_note_required); banked = counted − left_in_drawer_amount; held sales of the register are deleted. Same Idempotency-Key replays. Audited pos_session.closed.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell; allowed after a downgrade. Session row FOR UPDATE; expected computed on the server; variance = counted − expected; |variance| > tolerance (৳ 50) needs a note (422 close_note_required); banked = counted − left_in_drawer_amount; held sales of the register are deleted. Same Idempotency-Key replays. Audited pos_session.closed.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5157,7 +5157,7 @@ paths:
       - pos
       summary: Products for the till with stock at the register location
       operationId: listPosCatalog
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Active products only, 40 per page by name; available = on_hand − committed at the register location (null = untracked).'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Active products only, 40 per page by name; available = on_hand − committed at the register location (null = untracked).'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5227,7 +5227,7 @@ paths:
       - pos
       summary: Find one variant by exact SKU or barcode
       operationId: lookupPosCode
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Case-insensitive exact SKU, then barcode; % and _ literal; code ≤ 64. Used by the scan box.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Case-insensitive exact SKU, then barcode; % and _ literal; code ≤ 64. Used by the scan box.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5286,7 +5286,7 @@ paths:
       - pos
       summary: Find a customer by exact phone
       operationId: lookupPosCustomer
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell (not customers.view). Exact normalised phone only; no partial search. Limiter pos-lookup 30/min per user.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell (not customers.view). Exact normalised phone only; no partial search. Limiter pos-lookup 30/min per user.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5340,7 +5340,7 @@ paths:
       - pos
       summary: Price a cart (read-only)
       operationId: quotePosSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. Server prices, coupon, VAT line, availability at the register location; no locks, nothing written.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell and plan feature pos. Server prices, coupon, VAT line, availability at the register location; no locks, nothing written.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5403,7 +5403,7 @@ paths:
       - pos
       summary: Sales history
       operationId: listPosSales
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell. Till sales newest first with meta.summary KPIs (sales = totals − till refunds in range).'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell. Till sales newest first with meta.summary KPIs (sales = totals − till refunds in range).'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5499,7 +5499,7 @@ paths:
       - pos
       summary: Complete a till sale
       operationId: createPosSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. One transaction (P88D-2, P88D-6, P88D-9): session open (FOR SHARE), server pricing (expected_total_amount mismatch → 409 checkout_changed with the fresh quote), Σ payments = total, cash part ≤ tendered; order created_via pos, channel walk_in, delivered + paid; InventoryService::sell at the register location (ledger pos_sale); manual payment rows with pos_session_id; held_sale_id deleted. Same Idempotency-Key + body replays the first 201. Webhooks order.created and order.paid after commit; SMS receipt queued when sms_receipt and a phone.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell and plan feature pos. One transaction (P88D-2, P88D-6, P88D-9): session open (FOR SHARE), server pricing (expected_total_amount mismatch → 409 checkout_changed with the fresh quote), Σ payments = total, cash part ≤ tendered; order created_via pos, channel walk_in, delivered + paid; InventoryService::sell at the register location (ledger pos_sale); manual payment rows with pos_session_id; held_sale_id deleted. Same Idempotency-Key + body replays the first 201. Webhooks order.created and order.paid after commit; SMS receipt queued when sms_receipt and a phone.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5565,7 +5565,7 @@ paths:
       - pos
       summary: Get a till sale with its receipt
       operationId: getPosSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5612,7 +5612,7 @@ paths:
       - pos
       summary: Send or resend the SMS receipt
       operationId: sendPosSmsReceipt
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Needs pos.sell and plan feature pos. Only to the sale’s phone; counted in sms_per_month. Limiter pos-sms 10/min per user.'
+      description: 'Phase 8.8d (PHASE-8-8D). Needs pos.sell and plan feature pos. Only to the sale’s phone; counted in sms_per_month. Limiter pos-sms 10/min per user.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5665,7 +5665,7 @@ paths:
       - pos
       summary: Return items at the till and refund
       operationId: createPosReturn
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell and orders.refund, plan feature pos. One transaction: ReturnService create (type return) + receive with full restock at the line location + OrderService refund with pos_session_id. Cash refund needs the session open and ≤ cash in drawer. Same Idempotency-Key replays.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell and orders.refund, plan feature pos. One transaction: ReturnService create (type return) + receive with full restock at the line location + OrderService refund with pos_session_id. Cash refund needs the session open and ≤ cash in drawer. Same Idempotency-Key replays.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5729,7 +5729,7 @@ paths:
       - pos
       summary: Held sales of a register
       operationId: listPosHeldSales
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. Newest first.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell. Newest first.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5780,7 +5780,7 @@ paths:
       - pos
       summary: Hold (park) a sale
       operationId: createPosHeldSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell and plan feature pos. No stock is reserved (P88D-16). ≤ 20 per register.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell and plan feature pos. No stock is reserved (P88D-16). ≤ 20 per register.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5845,7 +5845,7 @@ paths:
       - pos
       summary: Get a held sale (resume)
       operationId: getPosHeldSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. The client re-prices with POST /pos/quote.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell. The client re-prices with POST /pos/quote.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -5889,7 +5889,7 @@ paths:
       - pos
       summary: Delete a held sale
       operationId: deletePosHeldSale
-      description: 'Phase 8.8d (DRAFT, PHASE-8-8D). Part B. Needs pos.sell. Audited pos_held_sale.deleted.'
+      description: 'Phase 8.8d (PHASE-8-8D). Part B. Needs pos.sell. Audited pos_held_sale.deleted.'
       security:
       - sessionCookie: []
       - bearerAuth: []
@@ -7966,7 +7966,7 @@ paths:
       - in: query
         name: filter[created_via]
         required: false
-        description: Phase 8.8d (DRAFT). Comma list of storefront, dashboard, pos.
+        description: Phase 8.8d. Comma list of storefront, dashboard, pos.
         schema:
           type: string
       - in: query
@@ -19948,28 +19948,28 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Ulid'
-      description: Phase 8.8d (DRAFT) — pos_registers.id of this store, else 404 `not_found`.
+      description: Phase 8.8d — pos_registers.id of this store, else 404 `not_found`.
     PosSessionPath:
       in: path
       name: session
       required: true
       schema:
         $ref: '#/components/schemas/Ulid'
-      description: Phase 8.8d (DRAFT) — pos_sessions.id of this store, else 404 `not_found`.
+      description: Phase 8.8d — pos_sessions.id of this store, else 404 `not_found`.
     PosSalePath:
       in: path
       name: sale
       required: true
       schema:
         $ref: '#/components/schemas/Ulid'
-      description: Phase 8.8d (DRAFT) — pos_sales.id of this store, else 404 `not_found`.
+      description: Phase 8.8d — pos_sales.id of this store, else 404 `not_found`.
     PosHeldSalePath:
       in: path
       name: held
       required: true
       schema:
         $ref: '#/components/schemas/Ulid'
-      description: Phase 8.8d (DRAFT) — pos_held_sales.id of this store, else 404 `not_found`.
+      description: Phase 8.8d — pos_held_sales.id of this store, else 404 `not_found`.
     StockCountLinePath:
       in: path
       name: line
@@ -21239,7 +21239,7 @@ components:
         adds developers.manage (owner and admin; grantable to custom roles). Phase 8.7 adds expenses.manage (owner and
         admin; grantable; sensitive). Phase 8.8a adds fraud.manage (group orders, after orders.refund; owner and admin;
         grantable; sensitive; requires orders.view). Phase 8.8b adds purchasing.manage (group products, after
-        inventory.adjust; owner and admin; grantable; sensitive; requires costs.view). Phase 8.8d (DRAFT) adds pos.sell
+        inventory.adjust; owner and admin; grantable; sensitive; requires costs.view). Phase 8.8d adds pos.sell
         (group orders, after orders.refund in catalogue order; owner, admin and staff; grantable; not sensitive; requires
         nothing).
       enum:
@@ -24819,7 +24819,7 @@ components:
           description: Optional; when sent and stale → 409 revision_conflict
     PosRegister:
       type: object
-      description: Phase 8.8d (DRAFT, PHASE-8-8D §4). A till at an 8.8c location.
+      description: Phase 8.8d (PHASE-8-8D §4). A till at an 8.8c location.
       required:
       - id
       - name
@@ -24981,7 +24981,7 @@ components:
           type: integer
     PosSession:
       type: object
-      description: Phase 8.8d (DRAFT, PHASE-8-8D §4, P88D-5, P88D-15). Money in minor units of currency.
+      description: Phase 8.8d (PHASE-8-8D §4, P88D-5, P88D-15). Money in minor units of currency.
       required:
       - id
       - register
@@ -25872,7 +25872,7 @@ components:
       - count
       - pos_sale
       description: transfer_out, transfer_in, count since Phase 8.8c (written by part B transfers and counts); pos_sale since
-        Phase 8.8d (DRAFT) — a till sale at the register location, reference order
+        Phase 8.8d — a till sale at the register location, reference order
     StockAdjustmentInput:
       type: object
       required:
@@ -27819,7 +27819,7 @@ components:
       - bkash
       - sslcommerz
       - pos
-      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12). Phase 8.8d (DRAFT): ''pos'' on till sales only (the payments list says how it was paid); never accepted by checkout.'
+      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12). Phase 8.8d: ''pos'' on till sales only (the payments list says how it was paid); never accepted by checkout.'
     StorefrontCommerce:
       type: object
       required:
@@ -28074,7 +28074,7 @@ components:
       - other
       - gateway
       - card
-      description: Also the method of manual charge rows. card since Phase 8.8d (DRAFT) — a till payment on an external card
+      description: Also the method of manual charge rows. card since Phase 8.8d — a till payment on an external card
         terminal.
     CheckoutInput:
       type: object
@@ -28505,10 +28505,10 @@ components:
           - storefront
           - dashboard
           - pos
-          description: pos since Phase 8.8d (DRAFT) — a till sale (delivered + paid at once; walk-in sales have an empty
+          description: pos since Phase 8.8d — a till sale (delivered + paid at once; walk-in sales have an empty
             customer.phone, district and address)
         pos:
-          description: Phase 8.8d (DRAFT). Present for created_via = pos, else null.
+          description: Phase 8.8d. Present for created_via = pos, else null.
           oneOf:
           - type: object
             required:
@@ -28764,7 +28764,7 @@ components:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'
         pos_session_id:
-          description: Phase 8.8d (DRAFT). The till session the money went into or out of; null for every other payment.
+          description: Phase 8.8d. The till session the money went into or out of; null for every other payment.
           oneOf:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'
