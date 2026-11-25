@@ -1,5 +1,35 @@
 # QA gate: Phase 8.8d part B (POS — held sales, sales history, returns at the till)
 
+## Re-gate, 2026-11-25 · `feat/phase-8-8d-pos-b` @ 4b8f027 — **Verdict: PASS**
+
+P88DB-QA-1 is fixed in `79e730b`: `variantCaption()` hides "Default" in the history receipt lines and in the Return
+items dialog. `4b8f027` narrows `PosReturnInput.reason` to `PosReturnReason | null`, and ReturnDialog now builds its
+select from `POS_RETURN_REASONS`. `0462b04` (ARCH) reconciled the docs and types, and openapi is now 1.22.0. There are
+no API changes since the first gate (`git diff 742407e..4b8f027 -- apps/api` is empty), so the API full suite and
+Postgres were not re-run, as agreed. The first gate's findings are kept below, unchanged.
+
+| Check | Result |
+|---|---|
+| Playwright `phase8-8d-b.*`, each file alone | held 4/4 · history 2/2 · returns 5/5 · access 3/3 · visual **4/4** (incl. the QA-1 regression) |
+| Playwright `phase8-8d-b.*` together | **18/18** |
+| Playwright `phase8-8d-a.*` together (regression) | **27/27** |
+| merchant-dashboard typecheck · lint · test · build | clean · 0 errors (46 warnings, unchanged) · **681/681** (43 files) · ok |
+| super-admin typecheck · lint · test · build | clean · clean · **69/69** · ok |
+| `packages/api-client` typecheck · lint · test · build | clean · clean · **204/204** (25 files) · ok |
+| storefront typecheck · `tests/e2e` `tsc --noEmit` | clean · clean |
+| `npx --yes @redocly/cli@1.25.11 lint docs/api/openapi.yaml` (1.22.0) | valid, 29 warnings |
+
+**Spec change:** the QA-1 test in `phase8-8d-b.visual` is now an ordinary regression test ("a simple product shows no
+\"Default\" variant caption in the receipt detail or the return dialog").
+
+**New defects: none.** The environment was the same as the first gate: API on :8011 and vite on :5185 against a fresh
+`.backup` of the dev DB. The user's servers and the dev DB were left alone, and everything was stopped and deleted at
+the end.
+
+---
+
+## First gate (2026-11-25 · @ f15f948) — FAIL
+
 Date: 2026-11-25 · Branch `feat/phase-8-8d-pos-b` @ f15f948 (API `0bb1b83`, `fee5570`; WEB `738aee0`, `d1f2c71`,
 `3daae39`, `f15f948`; part A merged as #20 `f2f2043`) plus the QA files of this gate · Contract PHASE-8-8D §9,
 §10 (part B rows), §11.6, §11.7, §11.9, §13 (S206, S207 and the part-A items as they apply to B), §14, §16 AC 7–9.
