@@ -1,5 +1,49 @@
 # QA gate: Phase 8.8d part A (POS — sell, open/close)
 
+## Re-gate, 2026-11-25 · `feat/phase-8-8d-pos` @ dd041de — **Verdict: PASS**
+
+The three defects of the first gate are fixed and verified on the real stack. The `ApiError.details` widening
+(`f0f2217`, `dd041de`) does not break field errors on forms. The first gate's findings are kept below, unchanged.
+
+| ID | Fix | Verification |
+|---|---|---|
+| P88DA-QA-1 | `6659714` (API): `counts: {}` means ৳ 0 on open and close | `access` › "an empty drawer (৳ 0) opens and closes from the count table": open sends `{counts: {}}` → 201, close at ৳ 0 → 200, session `opening 0 / counted 0 / variance 0` |
+| P88DA-QA-2 | `6252d70` (WEB): a scanned variant keeps its options | `stock`: the scan in the UI flow, plus the dedicated test, show "L · ৳ 1,400" |
+| P88DA-QA-3 | `6cb0a78` (WEB): `PaymentDialog` ignores close requests for 400 ms after it opens | `double`: a double-click on Charge keeps one "Take payment" dialog, both in-flow and in the dedicated test |
+
+The three defect tests are now ordinary regression tests: no defect IDs in their titles and no "expected fail". The
+QA-2 and QA-3 checks are also asserted inside the main flows again.
+
+**What ran (re-gate):**
+
+| Check | Result |
+|---|---|
+| Full API suite, sqlite (`php artisan test --exclude-group perf --exclude-group race`) | **1448 tests: 1397 passed, 51 skipped, 0 failed** |
+| merchant-dashboard typecheck · lint · test · build | clean · 0 errors (46 warnings, all `react-refresh/only-export-components`) · **662/662** (42 files) · ok |
+| super-admin typecheck · lint · test · build | clean · clean · **69/69** (6 files) · ok |
+| `packages/api-client` typecheck · lint · test · build | clean · clean · **199/199** (24 files) · ok |
+| storefront typecheck · `tests/e2e` `tsc --noEmit` | clean · clean |
+| Playwright `phase8-8d-a.*` (7 files, 27 tests), each file alone | access 7/7 · stock 4/4 · orders 2/2; sell 4/4, double 4/4, visual 3/3 and form-errors 3/3 after one re-run (below) |
+| Playwright `phase8-8d-a.*` together | **27/27 passed** (second run; the first lost `access` to a "database is locked" 500 in the shop setup's `POST /categories`, with 6 tests not run) |
+| Form-error regression (new `phase8-8d-a.form-errors`) | **3/3**: a 422 `validation_failed` from the API shows its exact field message under **Phone** on Customers › Add customer (duplicate phone), under **Name** on Warehouses › Add location (taken name), and under **Name** on POS › Add register (`register_name_taken`) |
+| Playwright regression: `phase8-3.roles`, `phase8-3.editor`, `phase5.merchant-orders`, `phase5.manual-order`, `phase8-8c-b.transfer`, `phase4.inventory`, `phase6.domains` | 23 passed, 3 failed, 11 not run, **none caused by this branch**. `phase5.merchant-orders` l.157 is the pre-existing hidden-`.first()` drift from §6. `phase4.inventory` "20 parallel −1 adjustments" is the documented sqlite flake: the log shows `database is locked` on `update "inventories"`, and the invariant part passed. `phase6.domains` fails at l.103 because `ask` → 401: the ask key in the spec doesn't match the gate API's env, so it is environmental. That serial file then skips its later tests, including the inline-error test. The new `form-errors` spec covers the field-error regression instead |
+
+No Postgres was run, as agreed: nothing in the fixes touches RLS.
+
+**Spec changes in the re-gate:**
+- `support/pos.ts` `serverErrorsSince()` also ignores `testing.ERROR` lines. A concurrent `php artisan test` run writes to the same `laravel.log`; that caused the first `sell` failure in the re-gate.
+- `phase8-8d-a.form-errors.spec.ts` is new.
+- The defect tests were renamed into regression tests (see above).
+- The `visual` and `double` specs were slow in the first pass (about 15 min) only because the full Pest suite ran at the same time; they took 1.7 min together afterwards.
+
+**New defects: none.**
+
+**Environment:** the same as the first gate. API on :8011 and vite on :5185 ran against a fresh `.backup` of the dev DB, with `migrate` applied, `CACHE_STORE=file` and the fake drivers. The pre-existing servers on :8010, :5183, :5184 and :3010 were left alone.
+
+---
+
+## First gate (2026-11-25 · @ b21021e) — FAIL
+
 Date: 2026-11-25 · Branch `feat/phase-8-8d-pos` @ b21021e (API `dbe2639..b21021e`, WEB `114bbff..46c1238`) plus the QA
 files of this gate · Contract PHASE-8-8D §13 (S195–S205), §14, §16 part A (AC 1–6, 8, 9 for part A), §11.9.
 Reviewer: QA.
