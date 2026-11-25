@@ -197,6 +197,38 @@ class PosRegistersSessionsApiTest extends TestCase
             ->assertOk()->assertJsonPath('data.variance_amount', 10000)->assertJsonPath('data.close_note', 'Owner added float')->assertJsonPath('data.banked_amount', 20000);
     }
 
+    /** P88DA-QA-1: an empty drawer opens and closes with `counts: {}` (the SPA drops zero rows), zeros, or the amount. */
+    public function test_a_zero_drawer_opens_and_closes_with_empty_counts_explicit_zeros_or_the_amount(): void
+    {
+        $s = $this->posShop();
+        [$h, $store] = [$s['h'], $s['store']];
+        $second = $this->addRegister($h, $store, 'Register 2', $s['shop'])->json('data.id');
+        $third = $this->addRegister($h, $store, 'Register 3', $s['shop'])->json('data.id');
+
+        $opened = $this->openRegister($h, $store, $s['register'], ['counts' => (object) []])->assertCreated()
+            ->assertJsonPath('data.opening_cash_amount', 0);
+        $this->assertStringContainsString('"opening_counts":{}', (string) $opened->getContent()); // a JSON object, never a list
+        $empty = $opened->json('data');
+        $zeros = $this->openRegister($h, $store, $second, ['counts' => ['100000' => 0, '500' => 0]])->assertCreated()
+            ->assertJsonPath('data.opening_cash_amount', 0)->assertJsonPath('data.opening_counts', ['100000' => 0, '500' => 0])->json('data.id');
+        $amount = $this->openRegister($h, $store, $third, ['opening_cash_amount' => 0])->assertCreated()
+            ->assertJsonPath('data.opening_cash_amount', 0)->assertJsonPath('data.opening_counts', null)->json('data.id');
+
+        $this->closeRegister($h, $store, $empty['id'], ['counts' => (object) [], 'left_in_drawer_amount' => 0, 'revision' => 1])->assertOk()
+            ->assertJsonPath('data.counted_cash_amount', 0)->assertJsonPath('data.variance_amount', 0)->assertJsonPath('data.banked_amount', 0);
+        $this->closeRegister($h, $store, $zeros, ['counts' => ['100000' => 0], 'left_in_drawer_amount' => 0, 'revision' => 1])->assertOk()
+            ->assertJsonPath('data.counted_cash_amount', 0)->assertJsonPath('data.closing_counts', ['100000' => 0]);
+        $this->closeRegister($h, $store, $amount, ['counted_cash_amount' => 0, 'left_in_drawer_amount' => 0, 'revision' => 1])->assertOk()
+            ->assertJsonPath('data.counted_cash_amount', 0)->assertJsonPath('data.closing_counts', null);
+
+        // Only a missing `counts` key needs the amount; an empty drawer can't leave money behind.
+        $fourth = $this->addRegister($h, $store, 'Register 4', $s['shop'])->json('data.id');
+        $this->openRegister($h, $store, $fourth, [])->assertStatus(422)->assertJsonValidationErrors(['opening_cash_amount'], 'error.details');
+        $open = $this->openRegister($h, $store, $fourth, ['counts' => (object) []])->assertCreated()->json('data.id');
+        $this->closeRegister($h, $store, $open, ['left_in_drawer_amount' => 0, 'revision' => 1])->assertStatus(422)->assertJsonValidationErrors(['counted_cash_amount'], 'error.details');
+        $this->closeRegister($h, $store, $open, ['counts' => (object) [], 'left_in_drawer_amount' => 100, 'revision' => 1])->assertStatus(422)->assertJsonValidationErrors(['left_in_drawer_amount'], 'error.details');
+    }
+
     public function test_plan_gates_and_downgrade_keeps_reads_and_close(): void
     {
         $s = $this->posShop();
