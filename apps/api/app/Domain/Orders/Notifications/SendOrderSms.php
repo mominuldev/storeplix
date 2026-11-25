@@ -10,6 +10,7 @@ use App\Domain\Orders\OrderTimeline;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Payments\PaymentUrls;
+use App\Domain\Pos\PosReceipts;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Sms\Models\SmsMessage;
 use App\Domain\Sms\SmsGateway;
@@ -100,6 +101,13 @@ class SendOrderSms implements ShouldQueue
                 return null;
             }
             $vars = SmsTemplates::varsFor($locked, $store, $this->carrier);
+            if ($this->event === SmsTemplates::POS_RECEIPT) {
+                // PHASE-8-8D S204: a till sale's receipt, only to the phone stored on the order.
+                if (! $locked->isPos() || trim($locked->customer_phone) === '') {
+                    return null;
+                }
+                $vars += PosReceipts::smsVars($locked, $language);
+            }
             if ($this->event === 'payment_link') {
                 // P5B-28: ref = "{link id}:{send #}"; only an active link is sent (never a paid/expired one).
                 $link = PaymentLink::query()->whereKey(explode(':', (string) $this->ref)[0])->where('order_id', $locked->id)->first();
