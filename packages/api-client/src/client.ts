@@ -10,8 +10,15 @@ import type {
   PosRegister,
   PosRegisterInput,
   PosRegisterListFilters,
+  PosHeldSale,
+  PosHeldSaleInput,
+  PosReturnInput,
+  PosReturnResult,
   PosSale,
   PosSaleInput,
+  PosSaleListFilters,
+  PosSaleListMeta,
+  PosSaleSummary,
   PosSession,
   AcceptInvitationInput,
   CreateRoleInput,
@@ -307,7 +314,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1796,9 +1803,32 @@ export function createApiClient(options: ApiClientOptions) {
          */
         create: (storeId: string, input: PosSaleInput, idempotencyKey: string) =>
           request<PosSale>(`${store(storeId)}/pos/sales`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+        /** Part B history: newest first, `meta.summary` KPIs (sales = totals − till refunds in range), cursor pages. */
+        list: (storeId: string, filters: PosSaleListFilters = {}) =>
+          listOf<PosSaleSummary, PosSaleListMeta>(`${store(storeId)}/pos/sales`, posSaleListQuery(filters), {
+            next_cursor: null,
+            prev_cursor: null,
+            per_page: 25,
+            summary: { sales_amount: 0, receipts_count: 0, average_sale_amount: 0, returns_count: 0, returns_amount: 0 },
+          }),
         get: (storeId: string, id: string) => request<PosSale>(`${store(storeId)}/pos/sales/${enc(id)}`),
         /** Plan; limiter `pos-sms`. 422 `no_phone`, 402 `plan_limit_reached`. */
         smsReceipt: (storeId: string, id: string) => request<PosSale>(`${store(storeId)}/pos/sales/${enc(id)}/sms-receipt`, { method: 'POST' }),
+        /**
+         * Part B return at the till (`pos.sell` + `orders.refund`, plan; Idempotency-Key required) → 201. 422
+         * `drawer_short` (cash over the drawer), `validation_failed` (over returnable), 409 `register_closed`.
+         */
+        returns: (storeId: string, saleId: string, input: PosReturnInput, idempotencyKey: string) =>
+          request<PosReturnResult>(`${store(storeId)}/pos/sales/${enc(saleId)}/returns`, {
+            method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+      },
+      /** Part B held sales per register (≤ 20; they don't reserve stock). POST needs plan; 409 `held_sales_limit`. */
+      held: {
+        list: (storeId: string, registerId: string) => request<PosHeldSale[]>(`${store(storeId)}/pos/held-sales`, { query: { register_id: registerId } }),
+        get: (storeId: string, id: string) => request<PosHeldSale>(`${store(storeId)}/pos/held-sales/${enc(id)}`),
+        create: (storeId: string, input: PosHeldSaleInput) => request<PosHeldSale>(`${store(storeId)}/pos/held-sales`, { method: 'POST', body: input }),
+        delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/pos/held-sales/${enc(id)}`, { method: 'DELETE' }),
       },
     },
 

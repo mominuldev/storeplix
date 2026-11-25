@@ -19,6 +19,7 @@ import type {
   SupplierListFilters,
   PosCatalogParams,
   PosRegisterListFilters,
+  PosSaleListFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -243,4 +244,18 @@ export function posCatalogQuery(p: PosCatalogParams): Query {
 /** PHASE-8-8D §4 `GET /pos/registers` (`filter[archived]=true` → archived only). */
 export function posRegisterListQuery(f: PosRegisterListFilters = {}): Query {
   return { 'filter[archived]': f.archived ? 'true' : undefined };
+}
+
+/** PHASE-8-8D §9 `GET /pos/sales` (history; newest first, cursor pages). `from`/`to` only with `date=custom`. */
+export function posSaleListQuery(f: PosSaleListFilters = {}): Query {
+  const custom = f.date === 'custom';
+  return {
+    'filter[date]': f.date || undefined,
+    from: custom ? f.from || undefined : undefined,
+    to: custom ? f.to || undefined : undefined,
+    'filter[register_id]': f.register_id || undefined,
+    'filter[method]': f.method || undefined,
+    q: text(f.q),
+    cursor: f.cursor || undefined,
+  };
 }
