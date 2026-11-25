@@ -385,10 +385,16 @@ class RoutePermissionsTest extends TestCase
         'pos.sell' => [
             'stores.pos.catalog',
             'stores.pos.customers.lookup',
+            'stores.pos.held-sales.destroy',
+            'stores.pos.held-sales.index',
+            'stores.pos.held-sales.show',
+            'stores.pos.held-sales.store',
             'stores.pos.lookup',
             'stores.pos.quote',
             'stores.pos.registers.index',
             'stores.pos.registers.open',
+            'stores.pos.sales.index',
+            'stores.pos.sales.returns.store', // + orders.refund in the Form Request (PHASE-8-8D P88D-17)
             'stores.pos.sales.show',
             'stores.pos.sales.sms-receipt',
             'stores.pos.sales.store',

@@ -333,7 +333,7 @@ class OrderService
      * and the return moves to `refunded` when a received return is refunded in full. Gateway refunds (5b-2, method
      * `gateway`) plug in here: same order lock, same ReturnService assert → record pair.
      *
-     * @param  array{amount: int, method: string, reference?: string|null, note?: string|null, return_id?: string|null}  $input
+     * @param  array{amount: int, method: string, reference?: string|null, note?: string|null, return_id?: string|null, pos_session_id?: string|null}  $input
      */
     public function refund(Order $order, array $input, ?string $idempotencyKey, ?User $user): Payment
     {
@@ -364,6 +364,7 @@ class OrderService
             $payment->idempotency_key = $idempotencyKey;
             $payment->actor_user_id = $user?->getKey();
             $payment->return_request_id = $return?->id;
+            $payment->pos_session_id = $input['pos_session_id'] ?? null; // PHASE-8-8D §6.3: a refund out of a till drawer
             $payment->save();
             if ($return !== null) {
                 $this->returns->recordRefund($return, $payment, $user);
@@ -380,7 +381,8 @@ class OrderService
                 ]);
             }
             OrderTimeline::record($o, 'refund', $user, $payment->note, ['amount' => $payment->amount, 'method' => $payment->method, 'payment_id' => $payment->id] + ($return !== null ? ['return_id' => $return->id, 'return_number' => $return->number] : []));
-            $this->audit->log('order.refunded', $o, ['amount' => $payment->amount, 'method' => $payment->method], $user);
+            $this->audit->log('order.refunded', $o, ['amount' => $payment->amount, 'method' => $payment->method]
+                + ($payment->pos_session_id !== null ? ['pos_session_id' => $payment->pos_session_id] : []), $user); // P88D-23
 
             return $payment;
         });

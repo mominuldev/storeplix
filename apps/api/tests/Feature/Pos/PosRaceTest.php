@@ -8,6 +8,7 @@ use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Payment;
+use App\Domain\Pos\Models\PosHeldSale;
 use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\Models\PosSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -115,6 +116,60 @@ class PosRaceTest extends TestCase
             $this->assertSame([], array_values(array_filter($results, fn ($r) => ! in_array($r, [201, 409], true))), json_encode($results));
             $this->assertSame(1, Order::withoutTenancy()->where('store_id', $s['store']->id)->where('created_via', 'pos')->count());
             $this->assertSame(4, (int) Inventory::withoutTenancy()->where('variant_id', $s['variant'])->where('location_id', $s['shop'])->value('on_hand'));
+        } finally {
+            $this->raceCleanup();
+        }
+    }
+
+    public function test_two_resumes_of_one_held_sale_complete_it_once(): void
+    {
+        $this->requirePostgresRace();
+        try {
+            $s = $this->posShop(shopStock: 10, price: 1000);
+            $session = $this->posSession($s);
+            $held = $this->api($s['h'], 'POST', $this->pUrl($s['store'], '/held-sales'), ['session_id' => $session, 'lines' => [['variant_id' => $s['variant'], 'quantity' => 1]]])->json('data.id');
+            $body = $this->saleBody($session, [['variant_id' => $s['variant'], 'quantity' => 1]], 1000, ['held_sale_id' => $held]);
+
+            $results = $this->parallel(3, fn (int $i) => $this->sell($s['h'], $s['store'], $body)->status());
+
+            sort($results);
+            $this->assertSame([201, 422, 422], $results);
+            $this->assertSame(1, PosSale::withoutTenancy()->where('session_id', $session)->count());
+            $this->assertSame(0, PosHeldSale::withoutTenancy()->whereKey($held)->count());
+        } finally {
+            $this->raceCleanup();
+        }
+    }
+
+    public function test_a_cash_return_racing_the_close_is_counted_in_it_or_refused_and_two_never_empty_the_drawer_twice(): void
+    {
+        $this->requirePostgresRace();
+        try {
+            $s = $this->posShop(shopStock: 10, price: 1000);
+            $session = $this->posSession($s, 0);
+            $sales = [];
+            for ($i = 0; $i < 3; $i++) {
+                $sales[] = $this->cashSale($s, $session); // drawer: 3000
+            }
+            $card = $this->cashSale($s, $session, 1, ['payments' => [['method' => 'card', 'amount' => 1000]], 'tendered_cash_amount' => null]);
+            $ret = fn (array $sale, string $method) => $this->api($s['h'] + ['Idempotency-Key' => (string) Str::uuid()], 'POST', $this->pUrl($s['store'], "/sales/{$sale['id']}/returns"),
+                ['session_id' => $session, 'lines' => [['order_item_id' => $sale['order']['items'][0]['id'], 'quantity' => 1]], 'refund_method' => $method])->status();
+
+            // Two returns of the same line: one wins (S206).
+            $same = $this->parallel(2, fn (int $i) => $ret($card, 'card'));
+            sort($same);
+            $this->assertSame([201, 409], $same, json_encode($same));
+
+            $results = $this->parallel(4, fn (int $i) => $i === 3
+                ? $this->closeRegister($s['h'], $s['store'], $session, ['counted_cash_amount' => 0, 'left_in_drawer_amount' => 0, 'note' => 'race', 'revision' => 1])->status()
+                : $ret($sales[$i], 'cash'));
+
+            $this->assertSame(200, $results[3], json_encode($results));
+            $this->assertSame([], array_values(array_filter(array_slice($results, 0, 3), fn ($r) => ! in_array($r, [201, 409], true))), json_encode($results));
+            $refunded = count(array_filter(array_slice($results, 0, 3), fn ($r) => $r === 201));
+            $closed = PosSession::withoutTenancy()->whereKey($session)->firstOrFail();
+            $this->assertSame(3000 - 1000 * $refunded, $closed->expected_cash_amount); // every committed refund is in the close
+            $this->assertSame($refunded, Payment::withoutTenancy()->where('pos_session_id', $session)->where('type', 'refund')->where('method', 'cash')->count());
         } finally {
             $this->raceCleanup();
         }
