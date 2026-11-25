@@ -77,7 +77,7 @@ function SeoSettingsForm({ settings }: { settings: StoreSettings }) {
       toast('SEO settings saved.');
     },
     onError: (e) => {
-      if (isApiError(e) && e.details) setServerErrors(Object.fromEntries(Object.entries(e.details).map(([k, v]) => [k, v[0] ?? ''])));
+      if (isApiError(e) && e.fieldErrors) setServerErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k, v[0] ?? ''])));
       toast(isApiError(e) ? e.message : 'Couldn’t save. Try again.', 'error');
     },
   });

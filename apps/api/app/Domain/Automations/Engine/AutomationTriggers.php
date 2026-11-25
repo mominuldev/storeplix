@@ -13,6 +13,7 @@ use App\Domain\Billing\FeatureGate;
 use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Shipment;
+use App\Domain\Returns\Models\ReturnRequest;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -28,6 +29,9 @@ final class AutomationTriggers
     public static function handle(WebhookEventType $type, string $storeId, string $subjectType, string $subjectId, mixed $at = null): void
     {
         try {
+            if (self::isTillSale($subjectType, $subjectId)) {
+                return; // PHASE-8-8D P88D-13: 8.6 recipes never fire on till sales (webhooks still do)
+            }
             if ($type === WebhookEventType::OrderCreated) {
                 if (Automation::query()->where('store_id', $storeId)->where('recipe', 'checkout_recovery')->exists()) {
                     dispatch(new HandleOrderPlaced($subjectId));
@@ -77,9 +81,25 @@ final class AutomationTriggers
         }
     }
 
+    /** PHASE-8-8D P88D-13: an order (or a return / shipment of an order) created at the till. */
+    public static function isTillSale(string $subjectType, string $subjectId): bool
+    {
+        $orderId = match ($subjectType) {
+            'order' => $subjectId,
+            'shipment' => Shipment::query()->whereKey($subjectId)->value('order_id'),
+            'return', 'return_request' => ReturnRequest::query()->whereKey($subjectId)->value('order_id'),
+            default => null,
+        };
+
+        return is_string($orderId) && Order::query()->whereKey($orderId)->where('created_via', Order::VIA_POS)->exists();
+    }
+
     /** Dispatches EvaluateAutomation for each `on` automation of the store listening to `$trigger`. Returns the count. */
     public static function fire(string $storeId, string $trigger, string $subjectType, string $subjectId): int
     {
+        if (self::isTillSale($subjectType, $subjectId)) {
+            return 0;
+        }
         $automations = Automation::query()->where('store_id', $storeId)->where('status', Automation::ON)
             ->whereIn('recipe', RecipeCatalogue::forTrigger($trigger))->pluck('id');
         if ($automations->isEmpty() || ! self::planAllows()) {

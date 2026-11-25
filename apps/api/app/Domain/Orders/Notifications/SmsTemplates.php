@@ -18,8 +18,14 @@ final class SmsTemplates
     /** PHASE-8-8 P88-13: the shopper checkout code (not an order event; vars `shop`, `code`). */
     public const CHECKOUT_OTP = 'checkout_otp';
 
-    /** `sms_messages.purpose` values counted against the `sms_per_month` allowance (P5-26 + P88-13). */
-    public const COUNTED = [...self::EVENTS, self::CHECKOUT_OTP];
+    /**
+     * PHASE-8-8D P88D-12: the till SMS receipt (vars `shop`, `number`, `total`, `method`, `footer`). Not an order-status
+     * event: never sent by the order notifier or the store SMS toggles, only when the cashier ticks it.
+     */
+    public const POS_RECEIPT = 'pos_receipt';
+
+    /** `sms_messages.purpose` values counted against the `sms_per_month` allowance (P5-26 + P88-13 + P88D-12). */
+    public const COUNTED = [...self::EVENTS, self::CHECKOUT_OTP, self::POS_RECEIPT];
 
     public const LABELS = [
         'order_placed' => 'Order received',
@@ -28,6 +34,7 @@ final class SmsTemplates
         'order_cancelled' => 'Order cancelled',
         'order_updated' => 'Order updated',
         'payment_link' => 'Payment link',
+        self::POS_RECEIPT => 'Receipt',
     ];
 
     /** 3 UCS-2 segments (Bangla); English GSM-7 texts are far below this. */
@@ -35,7 +42,8 @@ final class SmsTemplates
 
     /**
      * Renders a template; when a long shop name, buyer name or host would push it past 3 segments, the free-text
-     * variables (name, carrier, shop) are shortened, never the order number, amount or tracking link.
+     * variables (receipt footer first, then name, carrier, shop) are shortened, never the order number, amount or
+     * tracking link.
      *
      * @param  array<string, string|int|null>  $vars
      */
@@ -44,7 +52,7 @@ final class SmsTemplates
         $templates = require resource_path('sms/'.($language === 'en' ? 'en' : 'bn').'.php');
         $template = $templates[$event] ?? throw new InvalidArgumentException("Unknown SMS event {$event}.");
         $vars = array_map(fn ($v) => (string) $v, $vars);
-        $minimum = ['first_name' => 0, 'carrier' => 8, 'shop' => 12];
+        $minimum = ['footer' => 0, 'first_name' => 0, 'carrier' => 8, 'shop' => 12];
         for ($i = 0; $i < 10; $i++) {
             $text = self::fill($template, $vars);
             $over = mb_strlen($text) - self::MAX_CHARS;

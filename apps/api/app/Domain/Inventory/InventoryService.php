@@ -8,6 +8,7 @@ use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
+use App\Domain\Inventory\Models\Location;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Support\Facades\DB;
@@ -473,6 +474,59 @@ class InventoryService
         $this->insertMovements($movements);
 
         return $applied;
+    }
+
+    /**
+     * Till sale (PHASE-8-8D §5.2, P88D-6, ADR 0025): the goods leave the register's location in ONE step — no commit,
+     * no backorder. Rows at that location are locked FOR UPDATE in (variant_id, location_id) order; each variant's
+     * total quantity must fit its AVAILABLE stock there (on_hand − committed), so a till sale never takes stock already
+     * promised to an online order and never goes below zero; else 422 `out_of_stock` with details[field] = ["Only n left
+     * at {location}."] and nothing changes. on_hand decreases; one `pos_sale` ledger row per stock row, reference the
+     * order. Caller passes TRACKED variants only and runs this inside its transaction (session → advisory lock → stock).
+     *
+     * @param  list<array{variant_id: string, quantity: int, field?: string}>  $lines
+     * @return list<InventoryMovement>
+     */
+    public function sell(string $storeId, string $locationId, array $lines, string $orderId, ?string $actorId): array
+    {
+        $lines = array_values(array_filter(
+            array_map(fn (array $l) => ['variant_id' => strtolower($l['variant_id']), 'quantity' => (int) $l['quantity'], 'location_id' => $locationId, 'field' => $l['field'] ?? 'lines'], $lines),
+            fn (array $l) => $l['quantity'] > 0,
+        ));
+        if ($lines === []) {
+            return [];
+        }
+        $rows = $this->lockRows($storeId, $lines);
+        $wanted = $this->sum($lines);
+
+        $errors = [];
+        foreach ($lines as $line) {
+            $key = self::key($line['variant_id'], $locationId);
+            $row = $rows[$key] ?? null;
+            $available = $row === null ? 0 : max(0, $row->on_hand - $row->committed);
+            if ($wanted[$key] > $available) {
+                $errors[$line['field']] = $available;
+            }
+        }
+        if ($errors !== []) {
+            $name = (string) Location::query()->whereKey($locationId)->value('name');
+            throw new ApiException(422, 'out_of_stock', 'Some items are not in stock at this register in that quantity.', array_map(
+                fn (int $available) => [$available > 0 ? "Only {$available} left at {$name}." : "None left at {$name}."],
+                $errors,
+            ));
+        }
+
+        $movements = [];
+        foreach ($wanted as $key => $quantity) {
+            $row = $rows[$key];
+            $onHand = $row->on_hand - $quantity;
+            Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
+            WebhookEvents::stock($row, $row->on_hand, $onHand);
+            $movements[] = $this->movementRow($storeId, $row->variant_id, $locationId, -$quantity, $onHand, 'pos_sale', null, 'order', $orderId, $actorId);
+        }
+        $this->insertMovements($movements);
+
+        return $this->movementsOf($movements);
     }
 
     /**

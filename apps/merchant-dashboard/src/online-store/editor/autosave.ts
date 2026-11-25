@@ -1,4 +1,4 @@
-import { isApiError, type ApiErrorDetails } from '@storeplix/api-client';
+import { isApiError, type ApiFieldErrors } from '@storeplix/api-client';
 
 // Contract §6 autosave: debounce (600 ms theme / 800 ms pages); at most one request in flight; the latest
 // queued state is saved after it; each response sets the next base revision. 409 → stop and report a conflict;
@@ -13,7 +13,7 @@ export interface AutosaveOptions<T, R> {
   onStatus?: (status: AutosaveStatus) => void;
   onSaved?: (result: R, value: T) => void;
   onConflict?: () => void;
-  onInvalid?: (details: ApiErrorDetails) => void;
+  onInvalid?: (details: ApiFieldErrors) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -108,7 +108,7 @@ export class AutosaveController<T, R = unknown> {
           this.opts.onConflict?.();
         } else if (isApiError(error) && error.status === 422) {
           this.setStatus('invalid');
-          this.opts.onInvalid?.(error.details ?? {});
+          this.opts.onInvalid?.(error.fieldErrors ?? {});
         } else {
           this.setStatus('error');
           this.opts.onError?.(error);

@@ -64,7 +64,7 @@ export function areaSummary(z: ShippingZoneInput, index: GeoIndex): string {
 /** Maps a 422/409 from PUT /shipping to a readable message. */
 export function shippingErrorMessage(e: unknown): string {
   if (isApiError(e)) {
-    const first = Object.values(e.details ?? {})[0]?.[0];
+    const first = Object.values(e.fieldErrors ?? {})[0]?.[0];
     return first ?? e.message;
   }
   return 'We couldn’t save your delivery charges.';

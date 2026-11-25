@@ -103,7 +103,7 @@ function ReturnView({ ret, onClose }: { ret: ReturnRequest; onClose: () => void 
       toast('This return changed. We reloaded it.', 'error');
       return;
     }
-    toast(isApiError(e) ? (Object.values(e.details ?? {})[0]?.[0] ?? e.message) : errorMessage(e), 'error');
+    toast(isApiError(e) ? (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message) : errorMessage(e), 'error');
   };
   const done = (message: string) => async () => {
     toast(message);
@@ -498,7 +498,7 @@ function ExchangeDialog({ ret, onClose }: { ret: ReturnRequest; onClose: () => v
     },
     onError: (e) => {
       if (handlePlanLimit(e)) return onClose();
-      setError(isApiError(e) ? (e.code === 'out_of_stock' ? 'The new size or colour is out of stock.' : (Object.values(e.details ?? {})[0]?.[0] ?? e.message)) : errorMessage(e));
+      setError(isApiError(e) ? (e.code === 'out_of_stock' ? 'The new size or colour is out of stock.' : (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message)) : errorMessage(e));
     },
   });
   return (

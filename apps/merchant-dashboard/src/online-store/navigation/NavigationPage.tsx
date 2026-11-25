@@ -64,7 +64,7 @@ function NavigationEditor({ menus, pages }: { menus: NavigationMenu[]; pages: St
     },
     onError: (e) => {
       if (isApiError(e) && e.status === 409) setConflict(true);
-      else toast(isApiError(e) ? (Object.values(e.details ?? {})[0]?.[0] ?? e.message) : 'Couldn’t save the menu. Try again.', 'error');
+      else toast(isApiError(e) ? (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message) : 'Couldn’t save the menu. Try again.', 'error');
     },
   });
 

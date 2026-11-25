@@ -45,7 +45,7 @@ export function CategoriesPage() {
     onSuccess: () => toast('Menu order saved.'),
     onError: (e, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(keys.categories(scope), ctx.prev);
-      const detail = isApiError(e) ? Object.values(e.details ?? {})[0]?.[0] : undefined;
+      const detail = isApiError(e) ? Object.values(e.fieldErrors ?? {})[0]?.[0] : undefined;
       toast(detail ?? errorMessage(e, 'Couldn’t save the order. Try again.'), 'error');
     },
     onSettled: () => void invalidate.categories(),
@@ -259,9 +259,9 @@ function CategoryPanel({
       onSaved(c);
     },
     onError: (e) => {
-      if (isApiError(e) && e.isValidation && e.details) {
+      if (isApiError(e) && e.isValidation && e.fieldErrors) {
         const next: Record<string, string> = {};
-        for (const [k, v] of Object.entries(e.details)) next[k] = v[0]!;
+        for (const [k, v] of Object.entries(e.fieldErrors)) next[k] = v[0]!;
         setErrors(next);
         setFormError(null);
       } else setFormError(isApiError(e) && e.code === 'category_limit_reached' ? 'You’ve reached 500 categories.' : errorMessage(e));

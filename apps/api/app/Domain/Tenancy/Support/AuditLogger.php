@@ -21,6 +21,8 @@ use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
 use App\Domain\Payments\Models\PaymentGatewayAccount;
+use App\Domain\Pos\Models\PosRegister;
+use App\Domain\Pos\Models\PosSession;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\Supplier;
 use App\Domain\Purchasing\Models\SupplierPayment;
@@ -73,6 +75,8 @@ class AuditLogger
         Location::class => 'location', // PHASE-8-8C P88C-18
         StockTransfer::class => 'stock_transfer',
         StockCount::class => 'stock_count',
+        PosRegister::class => 'pos_register', // PHASE-8-8D P88D-23
+        PosSession::class => 'pos_session',
     ];
 
     public function __construct(

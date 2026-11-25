@@ -87,7 +87,7 @@ export function CustomerFormDialog({ open, customer, onClose, onSaved }: { open:
       close();
     } catch (e) {
       if (isApiError(e) && e.code === 'revision_conflict') return setConflict(true);
-      if (isApiError(e) && e.isValidation && e.details) {
+      if (isApiError(e) && e.isValidation && e.fieldErrors) {
         let mapped = false;
         for (const f of ['name', 'phone', 'email', 'district', 'area', 'channel', 'tags'] as const) {
           const m = e.fieldError(f);

@@ -81,11 +81,13 @@ class DocumentController
             'language' => ['sometimes', 'string', 'in:en,bn'],
         ]);
         $ids = array_map('strtolower', array_values($input['order_ids']));
-        $known = Order::query()->where('store_id', $store->id)->whereIn('id', $ids)->pluck('id')->flip();
+        $known = Order::query()->where('store_id', $store->id)->whereIn('id', $ids)->pluck('created_via', 'id');
         $errors = [];
         foreach ($ids as $i => $id) {
             if (! isset($known[$id])) {
                 $errors["order_ids.{$i}"] = ['Unknown order.'];
+            } elseif ($input['kind'] === 'label_4x6' && $known[$id] === Order::VIA_POS) {
+                $errors["order_ids.{$i}"] = ['A till sale has no shipping label.']; // PHASE-8-8D §8 (S205)
             }
         }
         if ($errors !== []) {

@@ -107,6 +107,8 @@ export const can = {
   managePurchasing: (m: PermissionHolder) => hasPermission(m, 'purchasing.manage'),
   /** P88B-11: receiving stock against a PO (and seeing POs, quantities only) with `purchasing.manage|inventory.adjust`. */
   receiveStock: (m: PermissionHolder) => any(m, 'purchasing.manage', 'inventory.adjust'),
+  /** PHASE-8-8D §2.1 `pos.sell`: POS (registers, open/close, sell). Register writes also need `settings.manage`. */
+  sellPos: (m: PermissionHolder) => hasPermission(m, 'pos.sell'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

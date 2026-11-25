@@ -86,7 +86,7 @@ export function locationError(e: unknown, fallback: string): string | null {
     if (e.code === 'location_name_taken') return 'You already have a location with this name.';
     if (e.code === 'location_archived') return 'This location is archived. Restore it first.';
     if (e.code === 'location_in_use') return 'This location is still in use.';
-    if (e.status === 422) return e.details ? (Object.values(e.details)[0]?.[0] ?? e.message) : e.message || fallback;
+    if (e.status === 422) return e.fieldErrors ? (Object.values(e.fieldErrors)[0]?.[0] ?? e.message) : e.message || fallback;
   }
   return errorMessage(e, fallback);
 }

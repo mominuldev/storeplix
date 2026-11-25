@@ -100,6 +100,10 @@ const WarehousesPage = lazy(() => import('./inventory/warehouses/WarehousesPage'
 const TransfersPage = lazy(() => import('./inventory/transfers/TransfersPage'));
 const CountsPage = lazy(() => import('./inventory/counts/CountsPage'));
 const CountPage = lazy(() => import('./inventory/counts/CountPage'));
+// PHASE-8-8D POS (part A)
+const PosPage = lazy(() => import('./pos/PosPage'));
+const PosSalePage = lazy(() => import('./pos/SalePage'));
+const PosClosePage = lazy(() => import('./pos/ClosePage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -109,7 +113,7 @@ const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => 
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const reportRoutes = ['/reports'];
-const commerceRoutes = ['/orders', '/orders/new', '/orders/print', '/orders/fraud-guard', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
+const commerceRoutes = ['/pos', '/orders', '/orders/new', '/orders/print', '/orders/fraud-guard', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 /** `/marketing`: the overview for `marketing.manage` (PHASE-8-5 §8), Coupons for everyone else. */
@@ -240,6 +244,9 @@ export function AppRoutes() {
               <Route path="/inventory/counts/:id" element={lazyEl(<CountPage />)} />
               <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
               <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
+              <Route path="/pos" element={gated(can.sellPos, <PosPage />)} />
+              <Route path="/pos/:sessionId" element={gated(can.sellPos, <PosSalePage />)} />
+              <Route path="/pos/:sessionId/close" element={gated(can.sellPos, <PosClosePage />)} />
               <Route path="/orders" element={gated(can.seeOrders, <OrdersPage />)} />
               <Route path="/orders/new" element={gated(can.viewOrders, <CreateOrderPage />)} />
               <Route path="/orders/print" element={gated(can.seeShipments, <PrintPage />)} />

@@ -40,6 +40,7 @@ const movementReasonLabel: Record<StockMovementReason, string> = {
   transfer_out: 'Transfer out',
   transfer_in: 'Transfer in',
   count: 'Stock count',
+  pos_sale: 'POS sale',
 };
 
 function MovementIcon({ m }: { m: StockMovement }) {

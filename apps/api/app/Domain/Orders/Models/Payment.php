@@ -55,7 +55,7 @@ class Payment extends Model
 {
     use BelongsToTenant, HasUlids;
 
-    public const REFUND_METHODS = ['cash', 'bkash_personal', 'nagad_personal', 'bank', 'other'];
+    public const REFUND_METHODS = ['cash', 'bkash_personal', 'nagad_personal', 'bank', 'other', 'card']; // PHASE-8-8D: + card (P88D-9)
 
     /** 5b P5B-24: refunds through the gateway of the charge. */
     public const METHOD_GATEWAY = 'gateway';

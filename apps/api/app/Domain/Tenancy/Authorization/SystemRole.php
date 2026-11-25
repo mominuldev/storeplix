@@ -23,7 +23,7 @@ enum SystemRole: string
             self::Staff => new PermissionSet([
                 Permission::OrdersView, Permission::OrdersProcess, Permission::ShipmentsManage, Permission::ShipmentsCancel,
                 Permission::ProductsEdit, Permission::InventoryAdjust, Permission::CustomersView, Permission::CustomersEdit,
-                Permission::ReportsView,
+                Permission::ReportsView, Permission::PosSell, // PHASE-8-8D P88D-18: cashiers are staff
             ]),
         };
     }

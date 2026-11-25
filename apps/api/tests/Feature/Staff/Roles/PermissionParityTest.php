@@ -206,6 +206,22 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/stock-counts/{count}/scan' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'POST api/v1/stores/{store}/stock-counts/{count}/finish' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'POST api/v1/stores/{store}/stock-counts/{count}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        // Phase 8.8d part A (PHASE-8-8D §2.1, §10): POS needs pos.sell (staff has it); register writes settings.manage (S 403).
+        'GET api/v1/stores/{store}/pos/registers' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/registers' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/pos/registers/{register}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/pos/registers/{register}/archive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/pos/registers/{register}/unarchive' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/pos/registers/{register}/open' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/pos/sessions/{session}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/sessions/{session}/close' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/pos/catalog' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/pos/lookup' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/pos/customers/lookup' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/quote' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/sales' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/pos/sales/{sale}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/sales/{sale}/sms-receipt' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
     ];
 
     /** @var array<string, mixed> */
@@ -448,6 +464,21 @@ class PermissionParityTest extends TestCase
         $transit = $this->req($h, 'POST', "{$base}/stock-transfers", $transferBody + ['send' => true], true)->assertCreated()->json('data');
         $count = $this->req($h, 'POST', "{$base}/stock-counts", ['location_id' => $hub])->assertCreated()->json('data.id');
         $countLine = $this->req($h, 'GET', "{$base}/stock-counts/{$count}/lines")->assertOk()->json('data.0.id');
+        // Phase 8.8d part A: a till shop with stock, an open register with one sale, a closed spare and an archived one.
+        $till = $this->req($h, 'POST', "{$base}/locations", ['name' => 'Till shop', 'type' => 'shop'])->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "{$base}/inventory/adjustments", ['reason' => 'received', 'items' => [['variant_id' => $variant, 'mode' => 'delta', 'quantity' => 5, 'location_id' => $till]]])->assertOk();
+        $register = $this->req($h, 'POST', "{$base}/pos/registers", ['name' => 'Register 1', 'location_id' => $till])->assertCreated()->json('data.id');
+        $spareRegister = $this->req($h, 'POST', "{$base}/pos/registers", ['name' => 'Register 2', 'location_id' => $till])->assertCreated()->json('data.id');
+        $archivedRegister = $this->req($h, 'POST', "{$base}/pos/registers", ['name' => 'Old till', 'location_id' => $till])->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "{$base}/pos/registers/{$archivedRegister}/archive")->assertOk();
+        $posSession = $this->req($h, 'POST', "{$base}/pos/registers/{$register}/open", ['opening_cash_amount' => 100000], true)->assertCreated()->json('data.id');
+        $posLines = [['variant_id' => $variant, 'quantity' => 1]];
+        $posTotal = $this->req($h, 'POST', "{$base}/pos/quote", ['session_id' => $posSession, 'lines' => $posLines])->assertOk()->json('data.total_amount');
+        $posSale = $this->req($h, 'POST', "{$base}/pos/sales", [
+            'session_id' => $posSession, 'lines' => $posLines, 'customer' => ['phone' => '01711000077', 'name' => 'Till buyer'],
+            'expected_total_amount' => $posTotal, 'payments' => [['method' => 'cash', 'amount' => $posTotal]], 'tendered_cash_amount' => $posTotal,
+            'sms_receipt' => false,
+        ], true)->assertCreated()->json('data.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -466,6 +497,8 @@ class PermissionParityTest extends TestCase
             'location' => $location, 'archived_location' => $archivedLocation,
             'transfer_body' => $transferBody, 'draft_transfer' => $draftTransfer, 'transit' => $transit['id'], 'transit_item' => $transit['lines'][0]['id'],
             'count' => $count, 'count_line' => $countLine, 'sku' => $sku,
+            'till' => $till, 'register' => $register, 'spare_register' => $spareRegister, 'archived_register' => $archivedRegister,
+            'pos_session' => $posSession, 'pos_lines' => $posLines, 'pos_total' => $posTotal, 'pos_sale' => $posSale,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -644,6 +677,25 @@ class PermissionParityTest extends TestCase
             'POST api/v1/stores/{store}/stock-counts/{count}/scan' => $r('POST', "{$b}/stock-counts/{$s['count']}/scan", ['code' => $s['sku']]),
             'POST api/v1/stores/{store}/stock-counts/{count}/finish' => $r('POST', "{$b}/stock-counts/{$s['count']}/finish", ['zero_uncounted' => false], true),
             'POST api/v1/stores/{store}/stock-counts/{count}/cancel' => $r('POST', "{$b}/stock-counts/{$s['count']}/cancel"),
+            // Phase 8.8d part A (POS).
+            'GET api/v1/stores/{store}/pos/registers' => $r('GET', "{$b}/pos/registers"),
+            'POST api/v1/stores/{store}/pos/registers' => $r('POST', "{$b}/pos/registers", ['name' => 'Register 3', 'location_id' => $s['till']]),
+            'PATCH api/v1/stores/{store}/pos/registers/{register}' => $r('PATCH', "{$b}/pos/registers/{$s['register']}", ['name' => 'Front till']),
+            'POST api/v1/stores/{store}/pos/registers/{register}/archive' => $r('POST', "{$b}/pos/registers/{$s['spare_register']}/archive"),
+            'POST api/v1/stores/{store}/pos/registers/{register}/unarchive' => $r('POST', "{$b}/pos/registers/{$s['archived_register']}/unarchive"),
+            'POST api/v1/stores/{store}/pos/registers/{register}/open' => $r('POST', "{$b}/pos/registers/{$s['spare_register']}/open", ['opening_cash_amount' => 0], true),
+            'GET api/v1/stores/{store}/pos/sessions/{session}' => $r('GET', "{$b}/pos/sessions/{$s['pos_session']}"),
+            'POST api/v1/stores/{store}/pos/sessions/{session}/close' => $r('POST', "{$b}/pos/sessions/{$s['pos_session']}/close", ['counted_cash_amount' => 100000, 'left_in_drawer_amount' => 0, 'note' => 'Parity', 'revision' => 1], true),
+            'GET api/v1/stores/{store}/pos/catalog' => $r('GET', "{$b}/pos/catalog?register_id={$s['register']}"),
+            'GET api/v1/stores/{store}/pos/lookup' => $r('GET', "{$b}/pos/lookup?register_id={$s['register']}&code={$s['sku']}"),
+            'GET api/v1/stores/{store}/pos/customers/lookup' => $r('GET', "{$b}/pos/customers/lookup?phone=01711000077"),
+            'POST api/v1/stores/{store}/pos/quote' => $r('POST', "{$b}/pos/quote", ['session_id' => $s['pos_session'], 'lines' => $s['pos_lines']]),
+            'POST api/v1/stores/{store}/pos/sales' => $r('POST', "{$b}/pos/sales", [
+                'session_id' => $s['pos_session'], 'lines' => $s['pos_lines'], 'expected_total_amount' => $s['pos_total'],
+                'payments' => [['method' => 'card', 'amount' => $s['pos_total'], 'reference' => 'APP-1']], 'sms_receipt' => false,
+            ], true),
+            'GET api/v1/stores/{store}/pos/sales/{sale}' => $r('GET', "{$b}/pos/sales/{$s['pos_sale']}"),
+            'POST api/v1/stores/{store}/pos/sales/{sale}/sms-receipt' => $r('POST', "{$b}/pos/sales/{$s['pos_sale']}/sms-receipt"),
             'GET api/v1/stores/{store}/purchase-orders' => $r('GET', "{$b}/purchase-orders"),
             'GET api/v1/stores/{store}/purchase-orders/summary' => $r('GET', "{$b}/purchase-orders/summary"),
             'POST api/v1/stores/{store}/purchase-orders' => $r('POST', "{$b}/purchase-orders", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'quantity' => 2]]]),

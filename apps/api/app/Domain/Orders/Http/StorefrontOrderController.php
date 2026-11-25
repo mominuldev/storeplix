@@ -107,7 +107,8 @@ class StorefrontOrderController
 
         $order = null;
         if ($phone !== null && $digits !== null) {
-            $candidate = Order::query()->where('store_id', $ctx->store->id)->where('sequence', $digits)->first();
+            // PHASE-8-8D P88D-22: a till sale is never found by tracking (same 404 as an unknown number).
+            $candidate = Order::query()->where('store_id', $ctx->store->id)->where('sequence', $digits)->where('created_via', '<>', Order::VIA_POS)->first();
             $prefixOk = $candidate !== null && (ctype_digit($number) || strtoupper($candidate->number) === $number
                 || strtoupper(str_replace('-', '', $candidate->number)) === $number);
             if ($candidate !== null && $prefixOk && hash_equals($candidate->customer_phone, $phone)) {

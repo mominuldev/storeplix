@@ -42,7 +42,9 @@ class OrderController
         Gate::authorize('view', $store);
         $list = fn (array $values) => 'regex:/^('.implode('|', $values).')(,('.implode('|', $values).'))*$/';
         $input = $request->validate([
-            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed,has_shipment,risk,guard_hold'],
+            'filter' => ['sometimes', 'array:status,payment_status,channel,district_code,customer_id,coupon_id,placed_at,printed,not_printed,has_shipment,risk,guard_hold,created_via'],
+            // PHASE-8-8D §8: `filter[created_via]` comma list (storefront, dashboard, pos).
+            'filter.created_via' => ['sometimes', 'string', $list(Order::CREATED_VIA)],
             // PHASE-8-8 §6.5: `filter[risk]` (guard.tier, else the customer's tier) and `filter[guard_hold]=1`.
             'filter.risk' => ['sometimes', 'string', $list(RiskTier::ALL)],
             'filter.guard_hold' => ['sometimes', 'string', 'in:0,1'],
@@ -86,7 +88,7 @@ class OrderController
             '-total' => $query->orderByDesc('total_amount')->orderByDesc('id'),
             default => $query->orderByDesc('placed_at')->orderByDesc('id'),
         };
-        $page = $query->with(['customer', 'shipment', 'riskCheck'])->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
+        $page = $query->with(['customer', 'shipment', 'riskCheck', 'posSale.register'])->withSum('items', 'quantity')->paginate((int) ($input['per_page'] ?? 25));
 
         $byStatus = self::filtered($store, $filter, $q, withStatus: false)->toBase()->reorder()
             ->groupBy('status')->selectRaw('status, count(*) as aggregate')->pluck('aggregate', 'status');
@@ -116,7 +118,7 @@ class OrderController
         if ($withStatus && isset($filter['status'])) {
             $query->whereIn('status', explode(',', $filter['status']));
         }
-        foreach (['payment_status', 'channel'] as $key) {
+        foreach (['payment_status', 'channel', 'created_via'] as $key) {
             if (isset($filter[$key])) {
                 $query->whereIn($key, explode(',', $filter[$key]));
             }

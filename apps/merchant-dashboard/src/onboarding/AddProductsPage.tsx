@@ -110,7 +110,7 @@ export function AddProductsPage() {
       await Promise.all([queryClient.invalidateQueries({ queryKey: keys.products(scope) }), queryClient.invalidateQueries({ queryKey: keys.dashboard(scope) })]);
       return true;
     } catch (e) {
-      if (!handlePlanLimit(e)) setError(isApiError(e) && e.details ? Object.values(e.details).flat()[0] ?? e.message : errorMessage(e, 'Saving failed. Try again.'));
+      if (!handlePlanLimit(e)) setError(isApiError(e) && e.fieldErrors ? Object.values(e.fieldErrors).flat()[0] ?? e.message : errorMessage(e, 'Saving failed. Try again.'));
       return false;
     }
   };

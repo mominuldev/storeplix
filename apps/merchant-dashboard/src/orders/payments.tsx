@@ -61,6 +61,8 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
   const refunds = order.payments.filter((p) => p.type === 'refund');
   const pastLinks = (order.payment_links ?? []).filter((l) => l.status === 'expired' || l.status === 'cancelled');
   const showCod = order.payment_method === 'cod' || !!cod;
+  // PHASE-8-8D §6.3: till payments (manual rows with a session) read "Till · {register}".
+  const till = order.payments.filter((p) => p.type === 'charge' && p.provider === 'manual' && !!p.pos_session_id);
   return (
     <ul className="flex flex-col gap-2">
       {online.map((p) => {
@@ -84,6 +86,20 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
           />
         );
       })}
+      {till.map((p) => (
+        <Row
+          key={p.id}
+          icon={
+            <IconTile>
+              <CreditCard aria-hidden />
+            </IconTile>
+          }
+          title={`Till · ${order.pos?.register_name ?? 'POS'}`}
+          sub={[p.method ? refundMethodLabels[p.method] : null, p.reference ? `Ref ${p.reference}` : null, p.actor?.name, dateTime(p.created_at)].filter(Boolean).join(' · ')}
+          amount={formatBdt(p.amount)}
+          state={<Badge tone="success">Paid</Badge>}
+        />
+      ))}
       {showCod && (
         <Row
           icon={
@@ -262,7 +278,7 @@ export function AskAdvanceDialog({ order, onClose }: { order: Order; onClose: ()
       if (isApiError(e) && e.code === 'payment_link_active') return setError('This order already has an active payment link. Cancel it first.');
       if (isApiError(e) && e.code === 'gateway_not_connected') return setError('That gateway isn’t on at checkout any more. Choose another or check Integrations.');
       if (isApiError(e) && e.code === 'invalid_state_transition') return setError('This order can’t take an advance in its current status.');
-      setError(isApiError(e) ? (Object.values(e.details ?? {})[0]?.[0] ?? e.message) : errorMessage(e));
+      setError(isApiError(e) ? (Object.values(e.fieldErrors ?? {})[0]?.[0] ?? e.message) : errorMessage(e));
     },
   });
   const disabled = !!invalid || amount === null || !gateway || create.isPending;

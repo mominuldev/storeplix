@@ -19,8 +19,8 @@ const byCode: Record<string, string> = {
 export function errorMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
   if (isApiError(error)) {
     if (error.status === 402) return 'Not included in the shop’s plan.';
-    if (error.status === 422 && error.details) {
-      const first = Object.values(error.details)[0];
+    if (error.status === 422 && error.fieldErrors) {
+      const first = Object.values(error.fieldErrors)[0];
       if (Array.isArray(first) && typeof first[0] === 'string') return first[0];
     }
     if (error.status === 429 && error.retryAfter) return `Too many requests. Try again in ${error.retryAfter} s.`;

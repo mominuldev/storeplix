@@ -55,7 +55,8 @@ export const mainNav: NavEntry[] = [
     ],
   },
   { label: 'Inbox', to: '/inbox', icon: MessageCircle },
-  { label: 'POS', to: '/pos', icon: Monitor },
+  // PHASE-8-8D §11.9: POS shows only with `pos.sell` (the route gates itself too).
+  { label: 'POS', to: '/pos', icon: Monitor, requires: can.sellPos },
   {
     label: 'Products',
     to: '/products',

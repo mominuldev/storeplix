@@ -2,7 +2,16 @@
 // Change here => change the Laravel resource in the same PR (see docs/api/API-CONVENTIONS.md).
 
 export interface ApiSuccess<T> { data: T; meta?: PaginationMeta | Record<string, unknown> }
-export interface ApiError { error: { code: string; message: string; details?: Record<string, string[]>; /** seconds; present on 429 (also sent as Retry-After header) */ retry_after?: number } }
+/**
+ * Value of one `error.details` key on the wire (openapi 1.21.0 `ApiError.details`). Validation errors use `string[]`
+ * per field; some codes carry plain values or objects (e.g. 409 `checkout_changed` → `quote`, 409
+ * `register_already_open` → `session_id`, 422 `pos_payment_mismatch` → amounts). Narrow with the per-error `*Details`
+ * interfaces (Zod at the trust boundary).
+ */
+export type ApiErrorDetailValue = string[] | string | number | boolean | null | { [key: string]: unknown } | unknown[];
+export type ApiErrorDetailsWire = Record<string, ApiErrorDetailValue>;
+/** Validation errors put `string[]` per field in `details`; other codes may carry plain values (PHASE-8-8D §5.4). */
+export interface ApiError { error: { code: string; message: string; details?: ApiErrorDetailsWire; /** seconds; present on 429 (also sent as Retry-After header) */ retry_after?: number } }
 export interface PaginationMeta { current_page: number; per_page: number; total: number; last_page: number }
 
 export interface HealthStatus { status: 'ok'; version: string; time: string }
@@ -394,7 +403,9 @@ export type PermissionKey =
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'purchasing.manage' | 'customers.view' | 'customers.edit'
   | 'customers.delete' | 'costs.view' | 'reports.view' | 'expenses.manage' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
   | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
-  | 'billing.manage';
+  | 'billing.manage'
+  /** Phase 8.8d (PHASE-8-8D §2.1) */
+  | 'pos.sell';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
 
 /**
@@ -404,10 +415,12 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
  * Phase 8.8a (PHASE-8-8 §2.1): `fraud.manage` (group `orders`, sensitive, requires `orders.view`) after `orders.refund`;
  * owner + admin, never staff.
  * Phase 8.8b (PHASE-8-8B §2.1): `purchasing.manage` (group `products`, sensitive, requires `costs.view`) after
- * `inventory.adjust`; owner + admin, never staff. 26 grantable keys + owner-only `billing.manage`.
+ * `inventory.adjust`; owner + admin, never staff.
+ * Phase 8.8d (PHASE-8-8D §2.1, P88D-18): `pos.sell` (group `orders`, not sensitive, requires nothing) after
+ * `orders.refund`; owner + admin + staff. 27 grantable keys + owner-only `billing.manage`.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
-  'orders.view', 'orders.process', 'orders.refund', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
+  'orders.view', 'orders.process', 'orders.refund', 'pos.sell', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
   'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
   'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
@@ -418,7 +431,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRoleKey, readonly PermissionK
   owner: PERMISSION_KEYS,
   admin: PERMISSION_KEYS.filter((k) => k !== 'billing.manage'),
   staff: [
-    'orders.view', 'orders.process', 'shipments.manage', 'shipments.cancel', 'products.edit',
+    'orders.view', 'orders.process', 'pos.sell', 'shipments.manage', 'shipments.cancel', 'products.edit',
     'inventory.adjust', 'customers.view', 'customers.edit', 'reports.view',
   ],
 };
@@ -651,12 +664,15 @@ export interface InventoryListFilters {
   location_id?: string;
   sort?: 'name' | 'available' | '-available' | '-updated_at'; page?: number; per_page?: number;
 }
-/** Phase 8.8c adds `transfer_out`, `transfer_in` (stock transfers, part B) and `count` (stock counts, part B). */
+/**
+ * Phase 8.8c adds `transfer_out`, `transfer_in` (stock transfers, part B) and `count` (stock counts, part B).
+ * Phase 8.8d adds `pos_sale` (a till sale at the register location, reference `order`; PHASE-8-8D P88D-6).
+ */
 export type StockMovementReason =
   | 'initial' | 'received' | 'correction' | 'damaged' | 'lost' | 'returned' | 'import' | 'other' | 'order_shipped'
-  | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count';
+  | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count' | 'pos_sale';
 export type ManualStockReason = Exclude<
-  StockMovementReason, 'initial' | 'import' | 'order_shipped' | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count'
+  StockMovementReason, 'initial' | 'import' | 'order_shipped' | 'order_returned' | 'transfer_out' | 'transfer_in' | 'count' | 'pos_sale'
 >;
 export interface StockAdjustmentItem {
   variant_id: string; mode: 'delta' | 'set'; quantity: number; expected_on_hand?: number;
@@ -947,6 +963,8 @@ export interface CartMeta { cart_token?: string; notices?: string[] }
 
 // ---------- Checkout / storefront orders ----------
 export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz';
+/** Phase 8.8d: an order's method also allows `pos` (till sales; the payments list says how it was paid). Checkout never accepts it. */
+export type OrderPaymentMethod = PaymentMethod | 'pos';
 export interface CheckoutInput {
   contact: { name: string; phone: string; email?: string | null };
   shipping_address: AddressInput; payment_method: PaymentMethod;
@@ -1005,8 +1023,10 @@ export interface OrderCustomerSummary {
   risk: CustomerRisk;
 }
 export interface OrderSummary {
-  id: string; number: string; status: OrderStatus; payment_status: PaymentStatus; payment_method: PaymentMethod;
-  channel: OrderChannel; created_via: 'storefront' | 'dashboard';
+  id: string; number: string; status: OrderStatus; payment_status: PaymentStatus; payment_method: OrderPaymentMethod;
+  channel: OrderChannel;
+  /** Phase 8.8d: `pos` = a till sale (delivered + paid at once; walk-in sales have an empty phone, district and address). */
+  created_via: OrderCreatedVia;
   customer: OrderCustomerSummary; district: string; thana: string;
   items_count: number; total_amount: number; paid_amount: number; due_amount: number; currency: string;
   coupon_code: string | null; tags: string[]; placed_at: string; updated_at: string;
@@ -1015,7 +1035,13 @@ export interface OrderSummary {
   return_status: OrderReturnStatus;
   /** Phase 8.8a (PHASE-8-8 §6.5): fake-order guard state; null when the order has no check and no hold. */
   guard: OrderGuard | null;
+  /** Phase 8.8d (PHASE-8-8D §8): present for `created_via = 'pos'`, else null. */
+  pos?: OrderPosRef | null;
 }
+export type OrderCreatedVia = 'storefront' | 'dashboard' | 'pos';
+export const ORDER_CREATED_VIA: readonly OrderCreatedVia[] = ['storefront', 'dashboard', 'pos'];
+/** Phase 8.8d: the till sale behind a POS order. */
+export interface OrderPosRef { sale_id: string; register_id: string; register_name: string }
 export interface OrderItem {
   id: string; product_id: string | null; variant_id: string | null;
   product_name: string; variant_title: string; option_values: string[]; sku: string | null;
@@ -1044,6 +1070,8 @@ export interface Payment {
   purpose: PaymentPurpose; provider_trx_id: string | null; refunded_amount: number;
   expires_at: string | null; failure_code: string | null; payment_link_id: string | null;
   return_request_id: string | null; can_refund: boolean;
+  /** Phase 8.8d (PHASE-8-8D §6.3): the till session the money went into or out of; null for every other payment. */
+  pos_session_id?: string | null;
 }
 export interface Shipment {
   id: string; provider: 'manual' | CourierProvider; carrier_name: string | null;
@@ -1084,6 +1112,8 @@ export interface OrderListFilters {
   risk?: RiskTier[];
   /** Phase 8.8a: `filter[guard_hold]=1` → held orders only (`guard.hold` not null) */
   guard_hold?: boolean;
+  /** Phase 8.8d: `filter[created_via]` comma list */
+  created_via?: OrderCreatedVia[];
 }
 /** Phase 8.8a: `counts.held` = orders with `guard.hold` not null (any status, ignores the status filter like the rest). */
 export interface OrderListMeta extends PaginationMeta { counts: Record<'all' | OrderStatus | 'held', number> }
@@ -1105,7 +1135,8 @@ export interface UpdateOrderInput {
 export interface ShipOrderInput { carrier_name?: string | null; tracking_code?: string | null; tracking_url?: string | null; notify_customer?: boolean }
 export interface ReturnOrderInput { restock: { item_id: string; quantity: number }[]; note?: string | null }
 export interface CancelOrderInput { reason: CancelReason; note?: string | null; notify_customer?: boolean; /** 5b */ refund_to_gateway?: boolean }
-export type RefundMethod = 'cash' | 'bkash_personal' | 'nagad_personal' | 'bank' | 'other' | 'gateway';
+/** Also the method of manual charge rows. `card` since Phase 8.8d (a till payment on an external card terminal). */
+export type RefundMethod = 'cash' | 'bkash_personal' | 'nagad_personal' | 'bank' | 'other' | 'gateway' | 'card';
 export interface RefundInput { amount: number; method: RefundMethod; reference?: string | null; note?: string | null; /** 5b */ payment_id?: string | null; return_id?: string | null }
 export interface OrderBulkInput { action: 'confirm' | 'ready'; ids: string[] }
 export interface OrderBulkResult { action: 'confirm' | 'ready'; updated: number; skipped: { id: string; reason: string }[] }
@@ -3447,4 +3478,239 @@ export type StockCountErrorCode =
 export type StockCountAuditAction = 'stock_count.started' | 'stock_count.finished' | 'stock_count.cancelled';
 export const STOCK_COUNT_AUDIT_ACTIONS: readonly StockCountAuditAction[] = [
   'stock_count.started', 'stock_count.finished', 'stock_count.cancelled',
+];
+
+// ---------- POS: registers, cash sessions, till sales, held sales, returns (Phase 8.8d, PHASE-8-8D-CONTRACT §3–§10; openapi 1.21.0) ----------
+/**
+ * A till sale is an order (`created_via = 'pos'`, `channel = 'walk_in'`, `payment_method = 'pos'`) created delivered +
+ * paid (ADR 0025). Money: integer minor units of `currency`. Denominations are minor units too (`100000` = ৳ 1,000).
+ */
+
+// ----- Registers (§4, P88D-4) -----
+/** §3.1 / P88D-4 bounds (WEB Zod mirrors these). */
+export const POS_REGISTER_NAME_MAX = 40;
+export const POS_REGISTERS_MAX = 10;
+export interface PosSessionRef { id: string; opened_at: string; opened_by: UserRef }
+/** Figma "Last session" card: the register's latest closed session. */
+export interface PosLastSession {
+  id: string; closed_at: string; sales_amount: number; receipts_count: number; counted_cash_amount: number;
+  variance_amount: number; banked_amount: number; left_in_drawer_amount: number;
+}
+export interface PosRegister {
+  id: string; name: string;
+  location: { id: string; name: string; type: LocationType };
+  position: number; archived_at: string | null;
+  open_session: PosSessionRef | null;
+  last_session: PosLastSession | null;
+}
+/** POST requires `name` and `location_id` (`settings.manage`, plan `pos`); PATCH any subset. */
+export interface PosRegisterInput { name?: string; location_id?: string; position?: number }
+export interface PosRegisterListFilters { archived?: boolean }
+
+// ----- Sessions (§4, P88D-5, P88D-15) -----
+export type PosSessionStatus = 'open' | 'closed';
+/** Keys: denominations in minor units as strings; values: counts 0–10,000. */
+export type PosDenominationCounts = Record<string, number>;
+/** P88D-15: BDT list (minor units) on both open and close; non-BDT stores enter one amount. */
+export const POS_BDT_DENOMINATIONS: readonly number[] = [100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100];
+/** Notes vs coins for the "Note" / "Coin" tag (BDT: ৳ 5 and below are coins). */
+export const POS_BDT_COIN_MAX = 500;
+export const POS_DENOMINATION_COUNT_MAX = 10_000;
+export interface PosSessionTotals {
+  /** Expected = opening + cash charges − cash refunds of this session (server-computed). */
+  cash_in_drawer_amount: number;
+  cash_sales_amount: number; cash_refunds_amount: number; sales_amount: number; receipts_count: number;
+  by_method: { method: PosPaymentMethod; amount: number; count: number }[];
+  returns_count: number; returns_amount: number; discounts_amount: number;
+  /** Always 0 until part B (held sales). */
+  held_sales_count: number;
+}
+export interface PosSession {
+  id: string;
+  register: { id: string; name: string; location: { id: string; name: string } };
+  status: PosSessionStatus; currency: string;
+  opened_at: string; opened_by: UserRef; opening_cash_amount: number; opening_counts: PosDenominationCounts | null;
+  closed_at: string | null; closed_by: UserRef | null;
+  counted_cash_amount: number | null; closing_counts: PosDenominationCounts | null;
+  expected_cash_amount: number | null;
+  /** counted − expected (negative = short) */
+  variance_amount: number | null;
+  left_in_drawer_amount: number | null; banked_amount: number | null; close_note: string | null;
+  /** Variance allowed without a note (default 5000 = ৳ 50). */
+  tolerance_amount: number;
+  /** Left in drawer at the register's previous close (open hint "Matches last closing"). */
+  last_closing_left_amount: number | null;
+  totals: PosSessionTotals;
+  revision: number;
+}
+/** POST …/pos/registers/{register}/open (Idempotency-Key). Exactly one of `counts` / `opening_cash_amount` (counts win). */
+export interface OpenPosSessionInput { counts?: PosDenominationCounts; opening_cash_amount?: number; note?: string | null }
+/** POST …/pos/sessions/{session}/close (Idempotency-Key). `left_in_drawer_amount` ≤ counted; note required over tolerance. */
+export interface ClosePosSessionInput {
+  counts?: PosDenominationCounts; counted_cash_amount?: number; left_in_drawer_amount: number;
+  note?: string | null; revision: number;
+}
+export const POS_CLOSE_NOTE_MAX = 300;
+
+// ----- Catalog, lookup, quote (§5.1, §5.3) -----
+export interface PosCatalogVariant {
+  id: string;
+  /** Option values joined, e.g. "Red · M" */
+  title: string;
+  options: { name: string; value: string }[];
+  sku: string | null; barcode: string | null; price_amount: number; compare_at_amount: number | null;
+  /** on_hand − committed at the register location; null = stock not tracked */
+  available: number | null;
+}
+export interface PosCatalogItem {
+  product_id: string; name: string; image_url: string | null; currency: string; variants: PosCatalogVariant[];
+}
+export interface PosCatalogParams { register_id: string; q?: string; category_id?: string; cursor?: string }
+export interface PosLookupParams { register_id: string; code: string }
+export interface PosLineInput { variant_id: string; quantity: number }
+export const POS_LINES_MAX = 50;
+export const POS_LINE_QUANTITY_MAX = 999;
+export interface PosQuoteInput {
+  session_id: string; lines: PosLineInput[]; coupon_code?: string | null;
+  /** For per-customer coupon limits */
+  customer_phone?: string | null;
+}
+export type PosQuoteLineProblem = 'out_of_stock' | 'not_enough_stock' | 'unavailable';
+export interface PosQuoteLine {
+  variant_id: string; name: string; variant_title: string; quantity: number; unit_price_amount: number;
+  compare_at_amount: number | null; line_total_amount: number; available: number | null;
+  problem: PosQuoteLineProblem | null;
+}
+/** Printed included VAT (Q52); null when tax display is off. */
+export interface PosVatLine { rate_bps: number; amount: number }
+export interface PosQuote {
+  currency: string; lines: PosQuoteLine[]; items_count: number; subtotal_amount: number; discount_amount: number;
+  coupon_code: string | null; vat: PosVatLine | null; total_amount: number;
+}
+
+// ----- Sale (§5.2, §6, P88D-9) -----
+/** Labels Cash, bKash, Card. Split = several payments. */
+export type PosPaymentMethod = 'cash' | 'bkash_personal' | 'card';
+export const POS_PAYMENT_METHOD_LABELS: Record<PosPaymentMethod, string> = { cash: 'Cash', bkash_personal: 'bKash', card: 'Card' };
+export const POS_PAYMENTS_MAX = 4;
+export const POS_PAYMENT_REFERENCE_MAX = 32;
+export interface PosPaymentInput {
+  method: PosPaymentMethod;
+  /** Amount applied to the sale (never includes change) */
+  amount: number;
+  /** bKash TrxID or card approval code (optional; ignored for cash) */
+  reference?: string | null;
+}
+/** POST …/pos/sales (Idempotency-Key required). Omit `customer_id` and `customer` for a walk-in. */
+export interface PosSaleInput {
+  session_id: string; lines: PosLineInput[];
+  customer_id?: string | null;
+  customer?: { phone: string; name?: string | null } | null;
+  coupon_code?: string | null; expected_total_amount: number;
+  /** Σ amount = total; at most one cash entry */
+  payments: PosPaymentInput[];
+  /** Cash handed over; required with a cash payment; ≥ the cash amount */
+  tendered_cash_amount?: number | null;
+  sms_receipt: boolean;
+  /** Part B. Until then any non-null value → 422 `validation_failed`. */
+  held_sale_id?: string | null;
+  note?: string | null;
+}
+/** Data for the 80 mm print layout (P88D-11), built with the store's `receipt_80mm` template config. */
+export interface PosReceipt {
+  language: 'en' | 'bn';
+  shop: {
+    name: string;
+    /** The register location's address, else the store's */
+    address: string | null; phone: string | null;
+    /** Only when the template has show_bin */
+    bin: string | null; logo_url: string | null;
+  };
+  /** The order number */
+  number: string;
+  placed_at: string; cashier_name: string; register_name: string;
+  customer: { name: string; phone: string } | null;
+  lines: { name: string; variant_title: string | null; sku: string | null; quantity: number; line_total_amount: number }[];
+  subtotal_amount: number; discount_amount: number; coupon_code: string | null; vat: PosVatLine | null;
+  total_amount: number; payments: { method: PosPaymentMethod; amount: number }[];
+  tendered_cash_amount: number | null; change_amount: number; footer_text: string | null; currency: string;
+}
+export type PosPaidBy = PosPaymentMethod | 'split';
+export interface PosSaleSummary {
+  id: string; order_id: string; number: string; placed_at: string; register_name: string; cashier_name: string;
+  /** null = walk-in */
+  customer_name: string | null;
+  items_count: number; paid_by: PosPaidBy; total_amount: number; refunded_amount: number; currency: string;
+}
+export type PosSmsReceiptStatus = 'not_requested' | 'no_phone' | 'queued' | 'sent' | 'failed';
+export interface PosSale extends PosSaleSummary {
+  order: Order; session_id: string; tendered_cash_amount: number | null; change_amount: number;
+  sms_receipt_status: PosSmsReceiptStatus; receipt: PosReceipt;
+}
+
+// ----- History (§9, part B) -----
+export type PosSalesDateFilter = 'today' | 'yesterday' | '7d' | 'custom';
+export interface PosSaleListFilters {
+  date?: PosSalesDateFilter;
+  /** YYYY-MM-DD (custom) */
+  from?: string; to?: string;
+  register_id?: string; method?: PosPaidBy;
+  /** Order number or phone (exact) */
+  q?: string; cursor?: string;
+}
+export interface PosSaleListMeta extends CursorMeta {
+  summary: {
+    sales_amount: number; receipts_count: number; average_sale_amount: number; returns_count: number; returns_amount: number;
+  };
+}
+
+// ----- Held sales (§9, P88D-16, part B) -----
+export const POS_HELD_SALES_MAX = 20;
+export const POS_HELD_NOTE_MAX = 120;
+export interface PosHeldSale {
+  id: string; register_id: string; customer_id?: string | null; customer_name: string | null; customer_phone: string | null;
+  coupon_code: string | null; note: string | null; lines: PosLineInput[]; items_count: number;
+  /** At hold time; re-priced on resume */
+  total_amount: number;
+  currency: string; held_by: UserRef; created_at: string;
+}
+export interface PosHeldSaleInput {
+  session_id: string; lines: PosLineInput[]; customer_id?: string | null;
+  customer?: { phone: string; name?: string | null } | null; coupon_code?: string | null; note?: string | null;
+}
+
+// ----- Returns at the till (§9, P88D-17, part B) -----
+/** POST …/pos/sales/{sale}/returns (Idempotency-Key; `pos.sell` + `orders.refund`). */
+export interface PosReturnInput {
+  session_id: string; lines: { order_item_id: string; quantity: number }[]; refund_method: PosPaymentMethod;
+  reason?: string | null; note?: string | null;
+}
+export interface PosReturnResult { sale: PosSale; return_request: ReturnRequest; refund: Payment }
+
+// ----- Errors and audit (§10, P88D-23) -----
+/** `error.details` of 409 `register_already_open`. */
+export interface RegisterAlreadyOpenDetails { session_id: string }
+/** `error.details` of 422 `pos_payment_mismatch`. */
+export interface PosPaymentMismatchDetails { total_amount: number; paid_amount: number }
+/** `error.details` of 422 `close_note_required`. */
+export interface CloseNoteRequiredDetails { variance_amount: number; tolerance_amount: number }
+/** `error.details` of 409 `checkout_changed` on POST …/pos/sales: the message list and a fresh quote to show. */
+export interface PosCheckoutChangedDetails { expected_total_amount: string[]; quote: PosQuote }
+/** `error.details` of 422 `coupon_invalid` (also a free-shipping coupon at the till). */
+export interface PosCouponInvalidDetails { code: string[] }
+/** `error.details` of 404 `pos_code_not_found`: the code as sent. */
+export interface PosCodeNotFoundDetails { code: string }
+/** §10 error codes added by 8.8d (existing codes such as `out_of_stock`, `checkout_changed` keep their meaning). */
+export type PosErrorCode =
+  | 'register_name_taken' | 'register_limit_reached' | 'register_in_use' | 'register_already_open' | 'register_closed'
+  | 'register_archived' | 'pos_payment_mismatch' | 'cash_tendered_short' | 'close_note_required' | 'drawer_short'
+  | 'held_sales_limit' | 'pos_code_not_found' | 'no_phone'
+  /** existing codes with POS-specific details */
+  | 'checkout_changed' | 'coupon_invalid';
+export type PosAuditAction =
+  | 'pos_register.created' | 'pos_register.updated' | 'pos_register.archived' | 'pos_register.unarchived'
+  | 'pos_session.opened' | 'pos_session.closed' | 'pos_held_sale.deleted';
+export const POS_AUDIT_ACTIONS: readonly PosAuditAction[] = [
+  'pos_register.created', 'pos_register.updated', 'pos_register.archived', 'pos_register.unarchived',
+  'pos_session.opened', 'pos_session.closed', 'pos_held_sale.deleted',
 ];

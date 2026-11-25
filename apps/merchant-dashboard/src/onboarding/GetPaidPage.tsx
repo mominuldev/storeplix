@@ -66,7 +66,7 @@ function GetPaidForm({ initialCod, initialAdvance }: { initialCod: boolean; init
     onError: (e) => {
       if (isApiError(e) && e.code === 'launch_blocked') {
         setError(null);
-        return setBlockers(Object.entries(e.details ?? {}).map(([key, m]) => ({ key: key as LaunchItemKey, message: m[0] ?? '' })));
+        return setBlockers(Object.entries(e.fieldErrors ?? {}).map(([key, m]) => ({ key: key as LaunchItemKey, message: m[0] ?? '' })));
       }
       setBlockers([]);
       setError(errorMessage(e, 'We couldn’t publish your shop. Try again.'));

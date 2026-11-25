@@ -37,7 +37,7 @@ class InventoryMovement extends Model
 
     public const UPDATED_AT = null;
 
-    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other', 'order_shipped', 'order_returned', 'transfer_out', 'transfer_in', 'count'];
+    public const REASONS = ['initial', 'received', 'correction', 'damaged', 'lost', 'returned', 'import', 'other', 'order_shipped', 'order_returned', 'transfer_out', 'transfer_in', 'count', 'pos_sale']; // PHASE-8-8D P88D-6: + pos_sale (InventoryService::sell)
 
     /** Ledger reference types (no DB CHECK). PHASE-8-8C adds stock_transfer / stock_count (part B writes them). */
     public const REFERENCE_TYPES = ['import', 'order', 'return', 'purchase_order', 'stock_transfer', 'stock_count'];

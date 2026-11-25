@@ -116,6 +116,7 @@ class PermissionEnforcementTest extends TestCase
             'orders.view' => ['orders.view', ['GET', '/orders'], ['POST', '/orders/{pending}/confirm']],
             'orders.process' => ['orders.process', ['POST', '/orders/{pending}/confirm'], ['POST', '/orders/{delivered}/refunds', ['amount' => 100, 'method' => 'cash']]],
             'orders.refund' => ['orders.refund', ['POST', '/orders/{delivered}/refunds', ['amount' => 100, 'method' => 'cash']], ['POST', '/orders/{confirmed}/shipments', ['provider' => 'steadfast']]],
+            'pos.sell' => ['pos.sell', ['GET', '/pos/registers'], ['GET', '/fraud-guard/settings']], // PHASE-8-8D §2.1
             'fraud.manage' => ['fraud.manage', ['GET', '/fraud-guard/settings'], ['POST', '/orders/{pending}/confirm']], // PHASE-8-8 §2.1
             'shipments.manage' => ['shipments.manage', ['POST', '/orders/{confirmed}/shipments', ['provider' => 'steadfast']], ['POST', '/shipments/{shipment}/mark-cancelled']],
             'shipments.cancel' => ['shipments.cancel', ['POST', '/shipments/{shipment}/mark-cancelled'], ['GET', '/customers']],

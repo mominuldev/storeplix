@@ -60,6 +60,10 @@ class ReturnService
             $items = OrderItem::query()->where('order_id', $o->id)->get()->keyBy('id');
             $taken = $this->takenQuantities($o->id, null);
             $exchange = $input['type'] === 'exchange';
+            if ($exchange && $o->isPos()) {
+                // PHASE-8-8D P88D-17 / S205: a till sale has no delivery address; exchange = a return, then a new sale.
+                throw ValidationException::withMessages(['type' => ['Till sales are exchanged at the till: return the items, then sell the new ones.']]);
+            }
 
             $errors = [];
             $bounds = [];

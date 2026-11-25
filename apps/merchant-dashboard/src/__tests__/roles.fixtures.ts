@@ -19,6 +19,8 @@ export const catalogue: PermissionGroup[] = [
       def('orders.view', 'View & create orders', [], false, 'Orders, unfinished orders, returns'),
       def('orders.process', 'Confirm & cancel orders', ['orders.view']),
       def('orders.refund', 'Refunds & paid cancellations', ['orders.process'], true),
+      // PHASE-8-8D §2.1
+      def('pos.sell', 'Sell at the till (POS)', [], false, 'Open and close registers, sell, hold sales, sales history'),
       // PHASE-8-8 §2.1
       def('fraud.manage', 'Fake order guard', ['orders.view'], true, 'Guard rules, blocked numbers and number checks'),
     ],

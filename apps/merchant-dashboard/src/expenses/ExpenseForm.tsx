@@ -93,9 +93,9 @@ export function ExpenseForm({ editing, today, onDone, id }: { editing: Expense |
       }
       onDone();
     } catch (e) {
-      if (isApiError(e) && e.isValidation && e.details) {
+      if (isApiError(e) && e.isValidation && e.fieldErrors) {
         let mapped = false;
-        for (const [field, messages] of Object.entries(e.details)) {
+        for (const [field, messages] of Object.entries(e.fieldErrors)) {
           if (field === 'receipt_id') {
             setUploadError(messages[0] ?? 'Upload the receipt again.');
             mapped = true;

@@ -24,6 +24,7 @@ use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Notifications\OrderNotifier;
 use App\Domain\Payments\PaymentService;
+use App\Domain\Pos\PosPricing;
 use App\Domain\Pricing\CartPricer;
 use App\Domain\Pricing\LineLoader;
 use App\Domain\Shared\Http\ApiException;
@@ -50,6 +51,9 @@ use Illuminate\Validation\ValidationException;
  */
 class OrderPlacementService
 {
+    /** P88D-10: the name on a walk-in till sale (no customer row). */
+    public const WALK_IN_NAME = 'Walk-in customer';
+
     /** The pending online charge placeLocked() created (checkout only). */
     private ?Payment $lastCharge = null;
 
@@ -186,6 +190,158 @@ class OrderPlacementService
     public function notifyPlaced(Order $order, ?bool $notify): void
     {
         $this->notifier->placed($order, $notify);
+    }
+
+    /**
+     * Till sale (PHASE-8-8D §5.2 step 4–5, P88D-2, ADR 0025): an order placed directly `delivered` + `paid`, inside the
+     * CALLER's transaction (PosSaleService holds the session FOR SHARE and the store order advisory lock). Lock order
+     * continues §3.3: stock rows at the register location (InventoryService::sell, ledger `pos_sale`) → coupon →
+     * customer → counter. Prices are the server's (P88D-7); a total other than `expected_total` → 409
+     * `checkout_changed`. No order SMS / email (`notify = false`), no fake-order guard, no recipes (P88D-13/14);
+     * `order.created` fires (the caller emits `order.paid` after its payment rows).
+     *
+     * Input: lines [{variant_id, quantity}], location_id (register location), coupon_code, expected_total, user,
+     * idempotency_key, note, timeline (meta for `placed`), customer: null (walk-in) | {id?: string, phone: string (8801…),
+     * name: string} — the caller resolved the phone and name; a new phone creates the customer as manual orders do.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public function pos(Store $store, array $input): Order
+    {
+        /** @var User|null $user */
+        $user = $input['user'] ?? null;
+        $locationId = (string) $input['location_id'];
+        $walkIn = ($input['customer'] ?? null) === null;
+        $phone = $walkIn ? null : (string) $input['customer']['phone'];
+
+        // 2. Lines: active products only, server prices; stock never prices a line out (sell() decides below).
+        ['loaded' => $loaded, 'plain' => $plain] = PosPricing::load($store->id, $input['lines'], strict: true);
+
+        // 3. Stock leaves the register location in one step (P88D-6), rows locked in (variant_id, location_id) order.
+        $orderId = strtolower((string) Str::ulid());
+        $sell = [];
+        foreach ($loaded['lines'] as $i => $line) {
+            if ($line['tracked_stock']) {
+                $sell[] = ['variant_id' => $line['variant_id'], 'quantity' => (int) $line['quantity'], 'field' => "lines.{$i}.quantity"];
+            }
+        }
+        $this->inventory->sell($store->id, $locationId, $sell, $orderId, $user?->getKey());
+
+        // 4. Coupon: locked, fully validated (phone rules when there is a phone), priced and allocated.
+        ['priced' => $priced, 'coupon' => $coupon] = app(PosPricing::class)->applyCoupon($store->id, $loaded, $plain, $input['coupon_code'] ?? null, $phone, lock: true);
+        $total = (int) $priced['subtotal'] - (int) $priced['discount'];
+        if ((int) $input['expected_total'] !== $total) {
+            throw new ApiException(409, 'checkout_changed', 'The total changed. Check the sale and charge again.', [
+                'expected_total_amount' => ['The total changed to '.Money::bdt($total).'. Check the sale and charge again.'],
+            ]);
+        }
+
+        // 5. Customer (P88D-10): by phone as manual orders (created when new); walk-in has none.
+        $customer = null;
+        if (! $walkIn) {
+            $customer = $this->customer($store, [
+                'contact' => ['name' => (string) $input['customer']['name'], 'phone' => $phone, 'email' => null],
+                'customer_id' => $input['customer']['id'] ?? null,
+                'channel' => 'walk_in',
+                'source' => 'dashboard',
+                'user' => $user,
+            ], ['district' => null, 'area' => null, 'thana' => null]);
+        }
+
+        // 6. Number, order (delivered + paid at placement, all lifecycle timestamps = now), items, timeline, redemption.
+        $settings = StoreSetting::query()->where('store_id', $store->id)->first();
+        $sequence = StoreCounter::next($store->id, StoreCounter::ORDERS);
+        $now = now();
+
+        $order = new Order;
+        $order->id = $orderId;
+        $order->store_id = $store->id;
+        $order->sequence = $sequence;
+        $order->number = self::prefix($store, $settings).'-'.$sequence;
+        $order->status = Order::DELIVERED;
+        $order->payment_status = 'paid';
+        $order->payment_method = Order::VIA_POS;
+        $order->created_via = Order::VIA_POS;
+        $order->channel = 'walk_in';
+        $order->customer_id = $customer?->id;
+        $order->customer_name = $walkIn ? self::WALK_IN_NAME : mb_substr((string) $input['customer']['name'], 0, 120);
+        $order->customer_phone = $phone ?? '';
+        $order->customer_email = null;
+        $order->shipping_address = (object) []; // walk-in / till sentinels (P88D-10, S205): no address, district or zone
+        $order->district_code = '';
+        $order->currency = $store->currency ?: 'BDT';
+        $order->subtotal_amount = (int) $priced['subtotal'];
+        $order->discount_amount = (int) $priced['discount'];
+        $order->shipping_amount = 0;
+        $order->shipping_discount_amount = 0;
+        $order->tax_amount = 0;
+        $order->total_amount = $total;
+        $order->paid_amount = $total;
+        $order->coupon_id = $coupon?->id;
+        $order->coupon_code = $coupon?->code;
+        $order->shipping_zone_name = '';
+        $order->customer_note = $input['note'] ?? null;
+        $order->tags = [];
+        $order->idempotency_key = $input['idempotency_key'] ?? null;
+        $order->placed_at = $now;
+        $order->confirmed_at = $now;
+        $order->shipped_at = $now;
+        $order->delivered_at = $now;
+        $order->created_by = $user?->getKey();
+        $this->guardIdempotency(fn () => $order->save());
+
+        foreach ($priced['lines'] as $i => $line) {
+            $in = $loaded['lines'][$i];
+            /** @var ProductVariant $variant */
+            $variant = $loaded['variants'][$in['variant_id']];
+            $product = $variant->product;
+            $item = new OrderItem;
+            $item->store_id = $store->id;
+            $item->order_id = $order->id;
+            $item->product_id = $product->id;
+            $item->variant_id = $variant->id;
+            $item->product_name = $product->name;
+            $item->variant_title = $variant->title;
+            $item->option_values = $variant->optionValues(count($product->options ?? []));
+            $item->sku = $variant->sku;
+            $item->image_media_id = $variant->image_media_id ?? $product->images->first()?->media_id;
+            $item->unit_price_amount = $line['unit_price_amount'];
+            $item->compare_at_amount = $line['compare_at_amount'];
+            $item->unit_cost_amount = $variant->cost_amount;
+            $item->quantity = (int) $in['quantity'];
+            $item->subtotal_amount = $line['line_amount'];
+            $item->discount_amount = $line['discount_amount'];
+            $item->total_amount = $line['line_amount'] - $line['discount_amount'];
+            $item->tracked = (bool) $in['tracked_stock'];
+            $item->location_id = $in['tracked_stock'] ? $locationId : null; // returns restock here (P88C-16)
+            $item->position = $i;
+            $item->save();
+        }
+
+        OrderTimeline::record($order, 'placed', $user, null, ['channel' => 'walk_in', 'created_via' => Order::VIA_POS] + (array) ($input['timeline'] ?? []), null, $order->status);
+        WebhookEvents::emit(WebhookEventType::OrderCreated, $order);
+
+        if ($coupon !== null) {
+            $redemption = new CouponRedemption;
+            $redemption->store_id = $store->id;
+            $redemption->coupon_id = $coupon->id;
+            $redemption->order_id = $order->id;
+            $redemption->customer_phone = $phone ?? '';
+            $redemption->discount_amount = (int) $priced['discount'];
+            $redemption->save();
+            Coupon::query()->whereKey($coupon->id)->update(['used_count' => DB::raw('used_count + 1')]);
+        }
+
+        if ($customer !== null) {
+            // Delivered at once: the counters a delivery would add (orders_count / last_order_at came from customer()).
+            Customer::withTrashed()->whereKey($customer->id)->update([
+                'delivered_orders_count' => DB::raw('delivered_orders_count + 1'),
+                'total_spent_amount' => DB::raw('total_spent_amount + '.$total),
+            ]);
+            Attribution::orderPlaced($order); // PHASE-8-5 §5.5: a till sale by an SMS-campaign recipient still converts
+        }
+
+        return $order;
     }
 
     /**

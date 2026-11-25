@@ -114,8 +114,8 @@ export function BookShipmentDialog({ order, provider: initialProvider, onClose, 
         case 'gateway_not_connected':
           return setBanner(`${name} isn’t connected any more. Check Integrations.`);
       }
-      if (e.status === 422 && e.details) {
-        const next = Object.fromEntries(Object.entries(e.details).map(([k, m]) => [k.startsWith('area') ? 'area' : k, m[0] ?? '']));
+      if (e.status === 422 && e.fieldErrors) {
+        const next = Object.fromEntries(Object.entries(e.fieldErrors).map(([k, m]) => [k.startsWith('area') ? 'area' : k, m[0] ?? '']));
         setErrors(next);
         return setBanner(next.area && !Object.keys(next).some((k) => k !== 'area') ? null : e.message);
       }

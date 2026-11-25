@@ -8,6 +8,7 @@ use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\FraudGuard\FraudGuardServiceProvider;
 use App\Domain\Inventory\InventoryServiceProvider;
+use App\Domain\Pos\PosServiceProvider;
 use App\Domain\Purchasing\PurchasingServiceProvider;
 use App\Domain\Stores\Services\StorefrontContext;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -33,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
         // Phase 8.8b: purchasing (limiters).
         $this->app->register(PurchasingServiceProvider::class);
         $this->app->register(InventoryServiceProvider::class); // Phase 8.8c `stock-write` limiter
+        $this->app->register(PosServiceProvider::class); // Phase 8.8d `pos-write` / `pos-lookup` / `pos-sms` limiters
     }
 
     public function boot(): void

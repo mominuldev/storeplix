@@ -10,4 +10,6 @@ return [
     'order_updated' => '{shop}: Order {number} was updated. New total Tk {total}, pay Tk {due} on delivery.',
     // PHASE-8-8 P88-13: shopper checkout code (vars: shop, code).
     'checkout_otp' => '{shop}: Your checkout code is {code}. It is valid for 5 minutes. Do not share it.',
+    // PHASE-8-8D P88D-12: till SMS receipt (vars: shop, number, total, method, footer); text only, no link.
+    'pos_receipt' => '{shop}: Thank you! Receipt {number}, total Tk {total}, paid {method}. {footer}',
 ];

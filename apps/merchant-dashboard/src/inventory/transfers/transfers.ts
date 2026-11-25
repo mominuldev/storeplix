@@ -185,7 +185,7 @@ export function transferError(e: unknown, fallback: string): string | null {
     if (e.code === 'revision_mismatch' || e.code === 'revision_conflict') return 'This transfer was changed by someone else. Reload and try again.';
     if (e.code === 'invalid_state_transition') return 'This transfer has moved on. Reload to see its current status.';
     if (e.code === 'location_archived') return 'One of the locations is archived. Choose another one.';
-    if (e.status === 422) return e.details ? (Object.values(e.details)[0]?.[0] ?? e.message) : e.message || fallback;
+    if (e.status === 422) return e.fieldErrors ? (Object.values(e.fieldErrors)[0]?.[0] ?? e.message) : e.message || fallback;
   }
   return errorMessage(e, fallback);
 }
