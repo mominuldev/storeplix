@@ -19,9 +19,9 @@ class PosRlsTest extends TestCase
 {
     use PosFixtures, RefreshDatabase;
 
-    private const TABLES = ['pos_registers', 'pos_sessions', 'pos_sales'];
+    private const TABLES = ['pos_registers', 'pos_sessions', 'pos_sales', 'pos_held_sales'];
 
-    public function test_registers_sessions_and_sales_are_isolated(): void
+    public function test_registers_sessions_sales_and_held_sales_are_isolated(): void
     {
         if (! $this->rlsActive()) {
             $this->markTestSkipped('Needs TENANCY_RLS=true on Postgres as storeplix_app (CI api-rls).');
@@ -32,6 +32,7 @@ class PosRlsTest extends TestCase
             $s = $this->posShop(slug: $slug);
             $session = $this->posSession($s);
             $this->cashSale($s, $session);
+            $this->api($s['h'], 'POST', $this->pUrl($s['store'], '/held-sales'), ['session_id' => $session, 'lines' => [['variant_id' => $s['variant'], 'quantity' => 1]]])->assertCreated();
             $shops[$slug] = $s + ['session' => $session];
         }
         [$a, $b] = [$shops['alpha'], $shops['beta']];

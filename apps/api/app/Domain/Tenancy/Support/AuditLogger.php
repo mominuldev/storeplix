@@ -21,6 +21,7 @@ use App\Domain\Media\Models\Media;
 use App\Domain\Navigation\Models\StoreNavigation;
 use App\Domain\Pages\Models\StorePage;
 use App\Domain\Payments\Models\PaymentGatewayAccount;
+use App\Domain\Pos\Models\PosHeldSale;
 use App\Domain\Pos\Models\PosRegister;
 use App\Domain\Pos\Models\PosSession;
 use App\Domain\Purchasing\Models\PurchaseOrder;
@@ -77,6 +78,7 @@ class AuditLogger
         StockCount::class => 'stock_count',
         PosRegister::class => 'pos_register', // PHASE-8-8D P88D-23
         PosSession::class => 'pos_session',
+        PosHeldSale::class => 'pos_held_sale',
     ];
 
     public function __construct(
