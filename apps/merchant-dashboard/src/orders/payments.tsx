@@ -61,6 +61,8 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
   const refunds = order.payments.filter((p) => p.type === 'refund');
   const pastLinks = (order.payment_links ?? []).filter((l) => l.status === 'expired' || l.status === 'cancelled');
   const showCod = order.payment_method === 'cod' || !!cod;
+  // PHASE-8-8D §6.3: till payments (manual rows with a session) read "Till · {register}".
+  const till = order.payments.filter((p) => p.type === 'charge' && p.provider === 'manual' && !!p.pos_session_id);
   return (
     <ul className="flex flex-col gap-2">
       {online.map((p) => {
@@ -84,6 +86,20 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
           />
         );
       })}
+      {till.map((p) => (
+        <Row
+          key={p.id}
+          icon={
+            <IconTile>
+              <CreditCard aria-hidden />
+            </IconTile>
+          }
+          title={`Till · ${order.pos?.register_name ?? 'POS'}`}
+          sub={[p.method ? refundMethodLabels[p.method] : null, p.reference ? `Ref ${p.reference}` : null, p.actor?.name, dateTime(p.created_at)].filter(Boolean).join(' · ')}
+          amount={formatBdt(p.amount)}
+          state={<Badge tone="success">Paid</Badge>}
+        />
+      ))}
       {showCod && (
         <Row
           icon={

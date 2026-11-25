@@ -29,6 +29,7 @@ import { eventToEntry } from './timeline';
 import { BlockNumberDialog } from '../fraud/dialogs';
 import { orderTier } from '../fraud/fraud';
 import { DeliveryRecordCard, GuardBanner, HoldTag } from '../fraud/OrderGuard';
+import { PosTag } from './PosTag';
 import { can } from '../lib/permissions';
 
 // Figma Order detail 33:3676 (mobile 32:309). Contract §9: actions from `allowed_transitions`, Items, Payments,
@@ -136,6 +137,8 @@ function OrderView({ order }: { order: Order }) {
   const online = onlineRefundable(order.payments);
   const c = order.customer;
   const addr = order.shipping_address;
+  // PHASE-8-8D §8: a till sale has no delivery (no shipping card, no address).
+  const tillSale = order.created_via === 'pos';
   const print = usePrintJob();
   const itemsEditable = ITEM_EDIT_STATUSES.includes(order.status);
   const restockable = order.status === 'returned' && order.items.some((i) => i.quantity > i.restocked_quantity);
@@ -155,6 +158,7 @@ function OrderView({ order }: { order: Order }) {
             <h1 className="text-heading-32 text-text-primary">{order.number}</h1>
             <OrderStatusBadge status={order.status} />
             {order.guard?.hold && <HoldTag hold={order.guard.hold} />}
+            <PosTag order={order} />
             {tier && <RiskBadge tier={tier} />}
             <PaymentStatusBadge status={order.payment_status} />
             {order.return_status !== 'none' && (
@@ -300,30 +304,32 @@ function OrderView({ order }: { order: Order }) {
             <PaymentsCardBody order={order} onRefundCharge={setRefundCharge} />
           </Card>
 
-          <Card title="Shipping">
-            <dl className="grid gap-3 sm:grid-cols-3">
-              <Field label="Zone" value={`${order.shipping_zone_name}${order.delivery_min_days !== null ? ` · ${daysRange(order.delivery_min_days, order.delivery_max_days)}` : ''}`} />
-              {order.shipment?.provider === 'manual' && (
-                <>
-                  <Field label="Courier" value={order.shipment.carrier_name ?? '—'} />
-                  <Field
-                    label="Tracking"
-                    value={
-                      order.shipment.tracking_url ? (
-                        <a href={order.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="text-brand-600 hover:underline">
-                          {order.shipment.tracking_code ?? 'Open tracking'}
-                        </a>
-                      ) : (
-                        (order.shipment.tracking_code ?? '—')
-                      )
-                    }
-                  />
-                </>
-              )}
-            </dl>
-            <OrderCourierCard order={order} onBook={openBook} />
-            {order.cancel_reason && <p className="text-caption text-danger">Cancelled: {cancelReasonLabels[order.cancel_reason]}</p>}
-          </Card>
+          {!tillSale && (
+            <Card title="Shipping">
+              <dl className="grid gap-3 sm:grid-cols-3">
+                <Field label="Zone" value={`${order.shipping_zone_name}${order.delivery_min_days !== null ? ` · ${daysRange(order.delivery_min_days, order.delivery_max_days)}` : ''}`} />
+                {order.shipment?.provider === 'manual' && (
+                  <>
+                    <Field label="Courier" value={order.shipment.carrier_name ?? '—'} />
+                    <Field
+                      label="Tracking"
+                      value={
+                        order.shipment.tracking_url ? (
+                          <a href={order.shipment.tracking_url} target="_blank" rel="noopener noreferrer nofollow" className="text-brand-600 hover:underline">
+                            {order.shipment.tracking_code ?? 'Open tracking'}
+                          </a>
+                        ) : (
+                          (order.shipment.tracking_code ?? '—')
+                        )
+                      }
+                    />
+                  </>
+                )}
+              </dl>
+              <OrderCourierCard order={order} onBook={openBook} />
+              {order.cancel_reason && <p className="text-caption text-danger">Cancelled: {cancelReasonLabels[order.cancel_reason]}</p>}
+            </Card>
+          )}
 
           <Card title="Timeline" className="gap-1">
             <Timeline label="Order timeline" items={order.events.map(eventToEntry)} />
@@ -362,32 +368,38 @@ function OrderView({ order }: { order: Order }) {
                   <span className="truncate text-body-lg font-medium text-text-primary">{c.name}</span>
                 )}
                 <span className="text-caption text-text-secondary">
-                  {localPhone(c.phone)} · {c.orders_count <= 1 ? 'first order' : `${ordinal(c.orders_count)} order`}
+                  {c.phone ? `${localPhone(c.phone)} · ` : ''}{c.orders_count <= 1 ? 'first order' : `${ordinal(c.orders_count)} order`}
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <a href={`tel:+${c.phone}`} className={cn(buttonVariants(), 'gap-1.5 rounded-control font-semibold')}>
-                <Phone aria-hidden className="size-4" /> Call
-              </a>
-              <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ variant: 'secondary' }), 'gap-1.5 rounded-control font-semibold')}>
-                <MessageCircle aria-hidden className="size-4" /> WhatsApp
-              </a>
-            </div>
-            <div className="h-px bg-border-default" />
-            <div className="flex gap-2.5">
-              <MapPin aria-hidden className="size-4 shrink-0 text-text-muted" />
-              <div className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className="text-caption text-text-secondary">Delivery address</span>
-                <span className="text-body text-text-primary">{[addr.address_line, addr.area, addr.thana, addr.district].filter(Boolean).join(', ')}</span>
-                {addr.landmark && <span className="text-caption text-text-muted">{addr.landmark}</span>}
+            {c.phone && (
+              <div className="grid grid-cols-2 gap-2">
+                <a href={`tel:+${c.phone}`} className={cn(buttonVariants(), 'gap-1.5 rounded-control font-semibold')}>
+                  <Phone aria-hidden className="size-4" /> Call
+                </a>
+                <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ variant: 'secondary' }), 'gap-1.5 rounded-control font-semibold')}>
+                  <MessageCircle aria-hidden className="size-4" /> WhatsApp
+                </a>
               </div>
-              {editable && (
-                <Link to={`/orders/${order.id}/edit`} className="text-caption font-medium text-brand-600">
-                  Edit
-                </Link>
-              )}
-            </div>
+            )}
+            {!tillSale && (
+              <>
+                <div className="h-px bg-border-default" />
+                <div className="flex gap-2.5">
+                  <MapPin aria-hidden className="size-4 shrink-0 text-text-muted" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-px">
+                    <span className="text-caption text-text-secondary">Delivery address</span>
+                    <span className="text-body text-text-primary">{[addr.address_line, addr.area, addr.thana, addr.district].filter(Boolean).join(', ')}</span>
+                    {addr.landmark && <span className="text-caption text-text-muted">{addr.landmark}</span>}
+                  </div>
+                  {editable && (
+                    <Link to={`/orders/${order.id}/edit`} className="text-caption font-medium text-brand-600">
+                      Edit
+                    </Link>
+                  )}
+                </div>
+              </>
+            )}
             {order.customer_note && <p className="rounded-md bg-surface-subtle p-3 text-caption text-text-secondary">“{order.customer_note}”</p>}
             <div className="grid grid-cols-3 gap-2" aria-label="This shop only">
               <Tile label="Orders" value={formatCount(c.orders_count)} />

@@ -20,6 +20,7 @@ import { ShipOrderDialog } from './actions';
 import { useQuickTransition } from './transitions';
 import { holdLabels, orderTier } from '../fraud/fraud';
 import { HoldTag } from '../fraud/OrderGuard';
+import { PosTag } from './PosTag';
 
 // Figma Orders 7:276 (mobile Orders 31:4886, OrderCard 30:3171). Contract §9: status tabs with counts, search,
 // Payment / Source / District / date filters, Next step button, bulk Confirm / Mark packed. Not built (§11): Courier
@@ -62,6 +63,8 @@ export function OrdersPage() {
   const printedParam = PRINTED.find((p) => p.value === params.get('printed'));
   const risk = (RISK_TIERS as readonly string[]).includes(params.get('risk') ?? '') ? (params.get('risk') as RiskTier) : '';
   const heldOnly = params.get('held') === '1';
+  // PHASE-8-8D §8: "POS" quick chip (`filter[created_via]=pos`).
+  const posOnly = params.get('via') === 'pos';
   const print = usePrintJob();
   const [selected, setSelected] = useState<string[]>([]);
   const [shipping, setShipping] = useState<OrderSummary | null>(null);
@@ -77,6 +80,7 @@ export function OrdersPage() {
     ...(printedParam?.filter ?? {}),
     risk: risk ? [risk] : undefined,
     guard_hold: heldOnly || undefined,
+    created_via: posOnly ? ['pos'] : undefined,
     placed_from: placedFrom,
     q: debounced || undefined,
     page,
@@ -164,6 +168,7 @@ export function OrdersPage() {
         <span className="flex flex-col items-start gap-1">
           <OrderStatusBadge status={o.status} />
           {o.guard?.hold && <HoldTag hold={o.guard.hold} />}
+          <PosTag order={o} />
         </span>
       ),
     },
@@ -196,7 +201,7 @@ export function OrdersPage() {
     },
   ];
 
-  const filtered = !!(debounced || payment || channel || district || printedParam || risk || heldOnly || tab !== 'all');
+  const filtered = !!(debounced || payment || channel || district || printedParam || risk || heldOnly || posOnly || tab !== 'all');
   const counts = meta?.counts;
 
   const listState =
@@ -333,9 +338,14 @@ export function OrdersPage() {
             </option>
           ))}
         </FilterSelect>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-caption text-text-muted max-md:hidden">Quick:</span>
+          <Chip check={false} selected={posOnly} onClick={() => set({ via: posOnly ? null : 'pos' })} className="h-[38px] shrink-0 py-0" data-testid="orders-pos-chip">
+            POS
+          </Chip>
+        </span>
         {(heldOnly || (counts?.held ?? 0) > 0) && (
           <span className="flex shrink-0 items-center gap-2">
-            <span className="text-caption text-text-muted max-md:hidden">Quick:</span>
             <Chip
               check={false}
               selected={heldOnly}
@@ -494,7 +504,7 @@ function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; bu
       </div>
       <div className="flex flex-col gap-1.5 rounded-lg bg-surface-subtle px-3 py-2.5 text-body text-text-secondary">
         <span className="flex items-center gap-1.5">
-          <Phone aria-hidden className="size-4 shrink-0" /> {localPhone(o.customer.phone)}
+          <Phone aria-hidden className="size-4 shrink-0" /> {o.customer.phone ? localPhone(o.customer.phone) : 'Walk-in'}
         </span>
         <span className="flex items-center gap-1.5">
           <Package aria-hidden className="size-4 shrink-0" /> {o.items_count} {o.items_count === 1 ? 'item' : 'items'}
@@ -505,6 +515,7 @@ function OrderCard({ order: o, busy, onOpen, onNext }: { order: OrderSummary; bu
         <span className="flex flex-wrap items-center gap-1.5">
           <OrderStatusBadge status={o.status} />
           {o.guard?.hold && <HoldTag hold={o.guard.hold} />}
+          <PosTag order={o} />
           {tier && <RiskBadge tier={tier} />}
         </span>
         {o.guard?.hold ? (
