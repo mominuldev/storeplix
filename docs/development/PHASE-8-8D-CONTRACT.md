@@ -18,7 +18,7 @@ and returns (P5B-67/68), and ADR 0024 (per-location stock, readers classified on
 gains `pos_session_id` and method `card`), PHASE-7 §2.1 (`pos` becomes enforced), PHASE-7 §6.3 (Sales report district
 breakdown skips till sales), PHASE-8-3 §2.1 (new key `pos.sell`), PHASE-8-6 (recipes never fire on till sales),
 PHASE-8-8 §6 (own-shop record ignores till sales), PHASE-8-8C §5.3 (one new *location* reader). Machine-readable spec:
-`docs/api/openapi.yaml` **v1.21.0**. ADR **0025** (new: till sales are orders; registers and cash
+`docs/api/openapi.yaml` **v1.21.0** (part A) and **v1.22.0** (part B as built). ADR **0025** (new: till sales are orders; registers and cash
 sessions). Product defaults: OPEN-QUESTIONS **Q232–Q256**.
 
 ### Scope
@@ -198,7 +198,8 @@ the 8.4 plan-note pattern `144:41323`, "POS is on the Growth plan" + See plans).
 Sale: session row `FOR SHARE` (must be `open`) → store order advisory lock (existing) → stock rows at the register
 location in `(variant_id, location_id)` order → coupon → customer → counter (existing placement order). Close: session
 row `FOR UPDATE`, then aggregates; a sale waiting on the share lock after close sees `closed` → 409 `register_closed`.
-Return: order row `FOR UPDATE` (existing `ReturnService` / `refund`), session `FOR SHARE` for a cash refund.
+Return (as built, part B): order row `FOR UPDATE`, then the session row **`FOR UPDATE`** (not share), so two cash
+refunds on one session serialise and can't both pass the drawer check; a close waits for them and counts them.
 
 ## 4. Registers and sessions (owner API, part A; `App\Domain\Pos\*`)
 - **Registers** CRUD + `archive` / `unarchive`. List sorted by location (shops first), then position, then name; each
@@ -213,7 +214,8 @@ Return: order row `FOR UPDATE` (existing `ReturnService` / `refund`), session `F
   `returns {count, amount}`, `discounts_amount`, `held_sales_count`, `last_closing_left_amount` (for the open hint
   "Matches last closing (৳ x left on {date})").
 - **Close** `POST …/pos/sessions/{session}/close` `{counts | counted_cash_amount, left_in_drawer_amount, note?,
-  revision}` → computes expected under the lock, variance, banked; 422 `close_note_required` when |variance| >
+  revision}` → computes expected under the lock (opening + cash charges − **cash refunds** bound to the session, §6.2;
+  till refunds carry `pos_session_id`), variance, banked; 422 `close_note_required` when |variance| >
   tolerance and no note; deletes held sales of the register (count in the response and audit); → `closed`. Same
   `Idempotency-Key` replays. The response carries the Z-report figures (P88D-15) for printing.
 
@@ -263,8 +265,8 @@ Response 201 `PosSale` (order summary, lines, payments, tendered, change, `recei
   `validation_failed` on that field (S195).
 - **Plan limit**: till sales count toward `orders_per_month` (Growth is unlimited, so this only matters after a
   downgrade, where sales are already blocked by `pos`).
-- **Part A placeholders until part B**: `held_sale_id` → 422 `validation_failed` for any non-null value;
-  `PosSessionTotals.held_sales_count` is always `0`.
+- **Part A placeholders (lifted in part B, §9)**: in part A `held_sale_id` → 422 `validation_failed` for any non-null
+  value and `PosSessionTotals.held_sales_count` was always `0`.
 
 ## 6. Money
 
@@ -310,18 +312,31 @@ existing).
 ## 9. Part B — held sales, history, returns (owner API)
 - **Held**: `GET …/pos/held-sales?register_id` (newest first; customer, items, total, note, held relative time,
   held by), `POST …/pos/held-sales` (201; 409 `held_sales_limit` over 20), `GET` / `DELETE …/pos/held-sales/{held}`.
-  Plan on POST.
+  Plan on POST. As built: the coupon is validated at hold time (422 `coupon_invalid`); `total_amount` is the server
+  total at hold time; resume re-prices through the quote; the sale that completes a held sale deletes it, so a second
+  completion with the same `held_sale_id` → 422 on `held_sale_id`; re-holding a resumed sale deletes the old copy (UI
+  deletes, then holds). RLS: `pos_held_sales` makes **91** tenant tables. Audit subject `pos_held_sale`
+  (`pos_held_sale.deleted`). `PosSessionTotals.held_sales_count` = the register's held sales while the session is open.
 - **History**: `GET …/pos/sales?filter[date]=today|yesterday|7d|custom&from&to, filter[register_id],
   filter[method]=cash|bkash_personal|card|split, q` (order number or phone, exact) → `PosSaleSummary[]` (number, time,
   customer · items, paid by, total, returned amount) with `meta.summary {sales_amount, receipts_count,
-  average_sale_amount, returns_count, returns_amount}` and cursor. `GET …/pos/sales/{sale}` → `PosSale` (+ returns).
-  KPI definitions: sales = Σ till-sale totals in range − Σ till refunds in range; receipts = till sales count; average =
-  sales ÷ receipts (rounded); returns = count and Σ refunds of till returns in range.
-- **Return** `POST …/pos/sales/{sale}/returns` (Idempotency-Key required; `pos.sell` + `orders.refund`):
-  `{session_id, lines: [{order_item_id, quantity}], refund_method: cash|bkash_personal|card, reason?, note?}` →
-  P88D-17 in one transaction → 201 `PosReturnResult {sale, return_request, refund}`. Cash refund needs the session
-  open and ≤ cash in drawer (422 `drawer_short`). Lines beyond sold − returned → 422 `validation_failed` (existing
-  ReturnService messages).
+  average_sale_amount, returns_count, returns_amount}` and cursor, **50 per page**. `GET …/pos/sales/{sale}` →
+  `PosSale`; there is no returns list on it (later): returns show through `refunded_amount` and `order.return_status`.
+  Defaults (as built): no `filter[date]` = **today**; with `q` and no date the search covers every day; a custom range
+  is at most **366 days** (422 otherwise). KPI definitions (over the date range and `filter[register_id]` only —
+  `filter[method]` and `q` narrow the list, never the KPIs): sales = Σ till-sale totals in range − Σ till refunds in
+  range; receipts = till sales count; average = sales ÷ receipts (rounded); returns = count and Σ of till refunds
+  (refund rows with a `pos_session_id`) in range.
+- **Return** `POST …/pos/sales/{sale}/returns` (Idempotency-Key required; route `pos.sell`, and `orders.refund`
+  checked in the Form Request **before** the plan, so a member without it gets 403 even on a Free/Starter store, then
+  402): `{session_id, lines: [{order_item_id, quantity}], refund_method: cash|bkash_personal|card, reason?, note?}` →
+  P88D-17 in one transaction → 201 `PosReturnResult {sale, return_request, refund}`. `reason` ∈ `wrong_size | damaged
+  | wrong_item | changed_mind | refused_at_door | other` (`PosReturnReason` = the existing return reasons; default
+  `other`; the `return_requests` CHECK already limits it). `note` is stored as the return's `customer_note` and as the
+  refund's note. Cash refund needs the session open and ≤ cash in drawer (422 `drawer_short`). Lines beyond what is
+  returnable → **409 `return_not_allowed`** (existing `ReturnService` behaviour). Returnable per line = `quantity −
+  restocked_quantity`; **invariant**: till returns always restock in full (P88D-17), so restocked = returned for till
+  sales — a partial-restock path for till sales would break this and must change the formula.
 
 ## 10. Merchant API (openapi 1.21.0 binding; `routes/pos.php` + include line; merchant group; `{store}` scoped)
 
@@ -561,6 +576,8 @@ Shared-read rules: re-read `InventoryService.php`, `OrderPlacementService.php`, 
 - Receipt preview (`22:2241`) shows a barcode; not built (no new dependency allowed).
 - Variant picker (`22:1905`) colour dots are not built (variants carry no colour value); colour options show as text
   chips.
+- Sales history (`27:754`): no separate negative "Return" row; a sale with returns gets a "Return" tag and "− ৳
+  {refunded}" under its total. The detail panel has no "Loyal customer" subline.
 - Open register: `PosLastSession` has only the left-in-drawer **amount**, not its counts, so the count table is
   prefilled greedily from that amount (largest notes first) and the cashier corrects it.
 - "Open drawer", "Scanner ready", "Void receipt (manager PIN)" and the Cashier select are hidden or read-only

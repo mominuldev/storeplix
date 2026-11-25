@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 // Phase 8.8d part A (PHASE-8-8D-CONTRACT §4, §5, §7, §10): owned by API. Required from routes/api.php inside the `v1`
-// prefix (NOT inside the merchant group): this file declares its own merchant group. Part B adds GET /pos/sales (list),
-// returns and held sales here.
+// prefix (NOT inside the merchant group): this file declares its own merchant group. Part B (§9): sales history,
+// returns at the till and held sales.
 
+use App\Domain\Pos\Http\Controllers\PosHeldSaleController;
 use App\Domain\Pos\Http\Controllers\PosRegisterController;
 use App\Domain\Pos\Http\Controllers\PosSaleController;
 use Illuminate\Support\Facades\Route;
@@ -41,7 +42,17 @@ Route::middleware(['auth:sanctum', 'surface:merchant,impersonation', 'tenant', '
         Route::get('customers/lookup', [PosSaleController::class, 'customer'])->middleware('throttle:pos-lookup')->middleware($sell)->name('stores.pos.customers.lookup');
         Route::post('quote', [PosSaleController::class, 'quote'])->middleware($sell)->name('stores.pos.quote');
         Route::post('sales', [PosSaleController::class, 'store'])->middleware([$w, 'idempotent:pos.sale'])->middleware($sell)->name('stores.pos.sales.store');
+        Route::get('sales', [PosSaleController::class, 'index'])->middleware($sell)->name('stores.pos.sales.index');
         Route::get('sales/{sale}', [PosSaleController::class, 'show'])->where($sale)->middleware($sell)->name('stores.pos.sales.show');
         Route::post('sales/{sale}/sms-receipt', [PosSaleController::class, 'smsReceipt'])->where($sale)
             ->middleware([$w, 'throttle:pos-sms'])->middleware($sell)->name('stores.pos.sales.sms-receipt');
+
+        // Part B (§9): returns at the till (pos.sell here + orders.refund in the Form Request), held sales.
+        $held = ['held' => '[0-9A-Za-z]{26}'];
+        Route::post('sales/{sale}/returns', [PosSaleController::class, 'returnItems'])->where($sale)
+            ->middleware([$w, 'idempotent:pos.return'])->middleware($sell)->name('stores.pos.sales.returns.store');
+        Route::get('held-sales', [PosHeldSaleController::class, 'index'])->middleware($sell)->name('stores.pos.held-sales.index');
+        Route::post('held-sales', [PosHeldSaleController::class, 'store'])->middleware($w)->middleware($sell)->name('stores.pos.held-sales.store');
+        Route::get('held-sales/{held}', [PosHeldSaleController::class, 'show'])->where($held)->middleware($sell)->name('stores.pos.held-sales.show');
+        Route::delete('held-sales/{held}', [PosHeldSaleController::class, 'destroy'])->where($held)->middleware($w)->middleware($sell)->name('stores.pos.held-sales.destroy');
     });

@@ -17,6 +17,7 @@ use App\Domain\Orders\Notifications\SendOrderSms;
 use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Orders\OrderPlacementService;
 use App\Domain\Orders\OrderTimeline;
+use App\Domain\Pos\Models\PosHeldSale;
 use App\Domain\Pos\Models\PosRegister;
 use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\Models\PosSession;
@@ -63,6 +64,26 @@ final class PosSaleService
     }
 
     /**
+     * The held sale a sale resumes, locked FOR UPDATE: another store's, an unknown or an already completed / deleted
+     * one → 422 `held_sale_id`; one of another register of this store → 422 (S207).
+     */
+    private static function heldFor(Store $store, PosRegister $register, ?string $heldId): ?PosHeldSale
+    {
+        if ($heldId === null || $heldId === '') {
+            return null;
+        }
+        $held = PosHeldSale::query()->where('store_id', $store->id)->whereKey(strtolower($heldId))->lockForUpdate()->first();
+        if ($held === null) {
+            throw ValidationException::withMessages(['held_sale_id' => ['This held sale was already completed or deleted.']]);
+        }
+        if ($held->register_id !== $register->id) {
+            throw ValidationException::withMessages(['held_sale_id' => ['This held sale belongs to another register.']]);
+        }
+
+        return $held;
+    }
+
+    /**
      * The customer of the sale (P88D-10): `customer_id` (this store's), else `customer {phone, name?}` (normalised
      * 8801…; an existing customer keeps their name; a new phone needs a name), else walk-in (null).
      *
@@ -100,10 +121,6 @@ final class PosSaleService
     /** @param array<string, mixed> $input validated PosSaleInput */
     public function sell(Store $store, array $input, User $user, ?string $idempotencyKey): PosSale
     {
-        if (($input['held_sale_id'] ?? null) !== null) {
-            // Held sales arrive with part B (§9); until then no id can name one of this register.
-            throw ValidationException::withMessages(['held_sale_id' => ['Unknown held sale.']]);
-        }
         $customer = self::customerFor($store, $input);
         $phone = $customer['phone'] ?? null;
 
@@ -112,6 +129,8 @@ final class PosSaleService
             $session = self::openSession($store, (string) $input['session_id'], lock: true);
             /** @var PosRegister $register */
             $register = PosRegister::query()->whereKey($session->register_id)->firstOrFail();
+            // 1b. A resumed held sale (P88D-16, S207): this register's, locked so two resumes can't both complete it.
+            $held = self::heldFor($store, $register, $input['held_sale_id'] ?? null);
 
             // 2–3. Unlocked pre-check: server total vs the client's, payments vs the total.
             ['loaded' => $loaded, 'plain' => $plain] = PosPricing::load($store->id, $input['lines'], strict: true);
@@ -139,7 +158,7 @@ final class PosSaleService
                 'user' => $user,
                 'idempotency_key' => $idempotencyKey,
                 'note' => $input['note'] ?? null,
-                'timeline' => ['register_id' => $register->id, 'register_name' => $register->name, 'session_id' => $session->id],
+                'timeline' => ['register_id' => $register->id, 'register_name' => $register->name, 'session_id' => $session->id] + ($held !== null ? ['held_sale_id' => $held->id] : []),
             ]);
 
             // 6. Payment rows (P88D-9): manual, succeeded, verified, bound to the session; change is never a payment.
@@ -183,6 +202,9 @@ final class PosSaleService
             $sale->sms_receipt = (bool) $input['sms_receipt'] && $phone !== null;
             $sale->created_at = $now;
             $sale->save();
+            if ($held !== null) {
+                PosHeldSale::query()->whereKey($held->id)->delete(); // the sale completes the held one
+            }
 
             // 7. SMS receipt after commit (P88D-12): only to the sale's phone, counted in sms_per_month.
             if ($sale->sms_receipt) {

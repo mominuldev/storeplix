@@ -11,12 +11,16 @@ use App\Domain\Customers\Models\Customer;
 use App\Domain\Orders\OrderPresenter;
 use App\Domain\Pos\Http\Requests\PosPlanGate;
 use App\Domain\Pos\Http\Requests\PosQuoteRequest;
+use App\Domain\Pos\Http\Requests\PosReturnRequest;
 use App\Domain\Pos\Http\Requests\PosSaleRequest;
 use App\Domain\Pos\Models\PosRegister;
 use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\PosPresenter;
 use App\Domain\Pos\PosPricing;
+use App\Domain\Pos\PosReturnService;
 use App\Domain\Pos\PosSaleService;
+use App\Domain\Pos\PosSalesHistory;
+use App\Domain\Returns\ReturnPresenter;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Idempotency\IdempotencyGuard;
 use App\Domain\Shared\Support\Phone;
@@ -25,6 +29,7 @@ use App\Domain\Tenancy\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -142,6 +147,41 @@ class PosSaleController
         $sale = $this->sales->sell($store, $input, $request->user(), (string) $request->header(IdempotencyGuard::HEADER) ?: null);
 
         return $this->sale($store, $sale, 201);
+    }
+
+    /** Sales history (§9, part B): PosSaleSummary[] newest first + meta.summary KPIs. */
+    public function index(Request $request, Store $store, PosSalesHistory $history): JsonResponse
+    {
+        $input = $request->validate([
+            'filter' => ['sometimes', 'array:date,register_id,method'],
+            'filter.date' => ['sometimes', 'string', 'in:today,yesterday,7d,custom'],
+            'filter.register_id' => ['sometimes', 'string', 'size:26'],
+            'filter.method' => ['sometimes', 'string', 'in:cash,bkash_personal,card,split'],
+            'from' => ['required_if:filter.date,custom', 'nullable', 'date_format:Y-m-d'],
+            'to' => ['required_if:filter.date,custom', 'nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'q' => ['sometimes', 'nullable', 'string', 'max:24'],
+            'cursor' => ['sometimes', 'nullable', 'string', 'max:512'],
+        ]);
+        if (($input['filter']['date'] ?? null) === 'custom' && Carbon::parse($input['from'])->diffInDays(Carbon::parse($input['to'])) > 366) {
+            throw ValidationException::withMessages(['to' => ['Choose at most one year.']]);
+        }
+
+        return new JsonResponse($history->list($store, $input), 200, self::NO_STORE);
+    }
+
+    /** Return items at the till (§9, P88D-17): PosReturnResult. */
+    public function returnItems(PosReturnRequest $request, Store $store, string $sale, PosReturnService $returns): JsonResponse
+    {
+        $row = self::findSale($store, $sale);
+        /** @var array{session_id: string, lines: list<array{order_item_id: string, quantity: int}>, refund_method: string, reason?: string|null, note?: string|null} $input */
+        $input = $request->validated();
+        $result = $returns->return($store, $row, $input, $request->user(), (string) $request->header(IdempotencyGuard::HEADER) ?: null);
+
+        return new JsonResponse(['data' => [
+            'sale' => PosPresenter::sale($row->refresh(), $store, $this->context->permissions()),
+            'return_request' => ReturnPresenter::full($result['return']),
+            'refund' => OrderPresenter::payment($result['refund']->refresh(), $this->context->permissions()),
+        ]], 201, self::NO_STORE);
     }
 
     public function show(Store $store, string $sale): JsonResponse

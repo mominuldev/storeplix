@@ -104,6 +104,7 @@ const CountPage = lazy(() => import('./inventory/counts/CountPage'));
 const PosPage = lazy(() => import('./pos/PosPage'));
 const PosSalePage = lazy(() => import('./pos/SalePage'));
 const PosClosePage = lazy(() => import('./pos/ClosePage'));
+const PosHistoryPage = lazy(() => import('./pos/HistoryPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -245,6 +246,7 @@ export function AppRoutes() {
               <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
               <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
               <Route path="/pos" element={gated(can.sellPos, <PosPage />)} />
+              <Route path="/pos/history" element={gated(can.sellPos, <PosHistoryPage />)} />
               <Route path="/pos/:sessionId" element={gated(can.sellPos, <PosSalePage />)} />
               <Route path="/pos/:sessionId/close" element={gated(can.sellPos, <PosClosePage />)} />
               <Route path="/orders" element={gated(can.seeOrders, <OrdersPage />)} />

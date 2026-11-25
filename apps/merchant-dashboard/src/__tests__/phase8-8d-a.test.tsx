@@ -343,7 +343,8 @@ describe('PHASE-8-8D sale screen', () => {
     expect(screen.getByRole('button', { name: 'Load more products' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Panjabi' })).toBeInTheDocument();
     expect(screen.queryByText('Scanner ready')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Hold sale' })).not.toBeInTheDocument();
+    // Part B: Hold sale is shown, disabled while the cart is empty.
+    expect(screen.getByRole('button', { name: 'Hold sale' })).toBeDisabled();
     expect(screen.getByTestId('pos-charge')).toBeDisabled();
   });
 

@@ -11,6 +11,7 @@ use App\Domain\Inventory\Models\Location;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\OrderPresenter;
+use App\Domain\Pos\Models\PosHeldSale;
 use App\Domain\Pos\Models\PosRegister;
 use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\Models\PosSession;
@@ -142,25 +143,54 @@ final class PosPresenter
         $register = (string) $sale->register?->name;
         $full = OrderPresenter::full($order, $permissions);
 
-        return [
-            'id' => $sale->id,
-            'order_id' => $order->id,
-            'number' => $order->number,
-            'placed_at' => UserRef::iso($order->placed_at),
-            'register_name' => $register,
-            'cashier_name' => $cashier,
-            'customer_name' => trim($order->customer_phone) === '' ? null : $order->customer_name,
-            'items_count' => (int) $order->items->sum('quantity'),
-            'paid_by' => PosReceipts::paidBy($charges),
-            'total_amount' => (int) $order->total_amount,
-            'refunded_amount' => (int) $order->refunded_amount,
-            'currency' => $order->currency,
+        return self::summary($sale, $order, (int) $order->items->sum('quantity'), PosReceipts::paidBy($charges), $register, $cashier) + [
             'order' => $full,
             'session_id' => $sale->session_id,
             'tendered_cash_amount' => $sale->tendered_cash_amount,
             'change_amount' => (int) $sale->change_amount,
             'sms_receipt_status' => PosReceipts::smsStatus($sale, $order),
             'receipt' => PosReceipts::receipt($sale, $order, $store, $charges, $cashier, $register),
+        ];
+    }
+
+    /** @return array<string, mixed> PosSaleSummary */
+    public static function summary(PosSale $sale, Order $order, int $itemsCount, string $paidBy, string $registerName, string $cashierName): array
+    {
+        return [
+            'id' => $sale->id,
+            'order_id' => $order->id,
+            'number' => $order->number,
+            'placed_at' => UserRef::iso($order->placed_at),
+            'register_name' => $registerName,
+            'cashier_name' => $cashierName,
+            'customer_name' => trim($order->customer_phone) === '' ? null : $order->customer_name,
+            'items_count' => $itemsCount,
+            'paid_by' => $paidBy,
+            'total_amount' => (int) $order->total_amount,
+            'refunded_amount' => (int) $order->refunded_amount,
+            'currency' => $order->currency,
+        ];
+    }
+
+    /** @return array<string, mixed> PosHeldSale */
+    public static function heldSale(PosHeldSale $held): array
+    {
+        $held->loadMissing('heldBy');
+
+        return [
+            'id' => $held->id,
+            'register_id' => $held->register_id,
+            'customer_id' => $held->customer_id,
+            'customer_name' => $held->customer_name,
+            'customer_phone' => $held->customer_phone,
+            'coupon_code' => $held->coupon_code,
+            'note' => $held->note,
+            'lines' => array_map(fn (array $l) => ['variant_id' => (string) $l['variant_id'], 'quantity' => (int) $l['quantity']], $held->lines),
+            'items_count' => (int) $held->items_count,
+            'total_amount' => (int) $held->total_amount,
+            'currency' => $held->currency,
+            'held_by' => UserRef::of($held->heldBy),
+            'created_at' => UserRef::iso($held->created_at),
         ];
     }
 

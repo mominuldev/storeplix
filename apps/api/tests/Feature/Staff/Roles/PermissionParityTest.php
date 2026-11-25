@@ -222,6 +222,13 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/pos/sales' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
         'GET api/v1/stores/{store}/pos/sales/{sale}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'POST api/v1/stores/{store}/pos/sales/{sale}/sms-receipt' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        // Phase 8.8d part B: returns also need orders.refund (S 403); held sales and history pos.sell.
+        'GET api/v1/stores/{store}/pos/sales' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/sales/{sale}/returns' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/stores/{store}/pos/held-sales' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/pos/held-sales' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/pos/held-sales/{held}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/stores/{store}/pos/held-sales/{held}' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
     ];
 
     /** @var array<string, mixed> */
@@ -478,7 +485,11 @@ class PermissionParityTest extends TestCase
             'session_id' => $posSession, 'lines' => $posLines, 'customer' => ['phone' => '01711000077', 'name' => 'Till buyer'],
             'expected_total_amount' => $posTotal, 'payments' => [['method' => 'cash', 'amount' => $posTotal]], 'tendered_cash_amount' => $posTotal,
             'sms_receipt' => false,
-        ], true)->assertCreated()->json('data.id');
+        ], true)->assertCreated()->json('data');
+        $posItem = $posSale['order']['items'][0]['id'];
+        $posSale = $posSale['id'];
+        // Phase 8.8d part B: one held sale on Register 1.
+        $posHeld = $this->req($h, 'POST', "{$base}/pos/held-sales", ['session_id' => $posSession, 'lines' => $posLines, 'note' => 'Back in 5'])->assertCreated()->json('data.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -499,6 +510,7 @@ class PermissionParityTest extends TestCase
             'count' => $count, 'count_line' => $countLine, 'sku' => $sku,
             'till' => $till, 'register' => $register, 'spare_register' => $spareRegister, 'archived_register' => $archivedRegister,
             'pos_session' => $posSession, 'pos_lines' => $posLines, 'pos_total' => $posTotal, 'pos_sale' => $posSale,
+            'pos_item' => $posItem, 'pos_held' => $posHeld,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -696,6 +708,15 @@ class PermissionParityTest extends TestCase
             ], true),
             'GET api/v1/stores/{store}/pos/sales/{sale}' => $r('GET', "{$b}/pos/sales/{$s['pos_sale']}"),
             'POST api/v1/stores/{store}/pos/sales/{sale}/sms-receipt' => $r('POST', "{$b}/pos/sales/{$s['pos_sale']}/sms-receipt"),
+            // Phase 8.8d part B.
+            'GET api/v1/stores/{store}/pos/sales' => $r('GET', "{$b}/pos/sales"),
+            'POST api/v1/stores/{store}/pos/sales/{sale}/returns' => $r('POST', "{$b}/pos/sales/{$s['pos_sale']}/returns", [
+                'session_id' => $s['pos_session'], 'lines' => [['order_item_id' => $s['pos_item'], 'quantity' => 1]], 'refund_method' => 'card',
+            ], true),
+            'GET api/v1/stores/{store}/pos/held-sales' => $r('GET', "{$b}/pos/held-sales?register_id={$s['register']}"),
+            'POST api/v1/stores/{store}/pos/held-sales' => $r('POST', "{$b}/pos/held-sales", ['session_id' => $s['pos_session'], 'lines' => $s['pos_lines']]),
+            'GET api/v1/stores/{store}/pos/held-sales/{held}' => $r('GET', "{$b}/pos/held-sales/{$s['pos_held']}"),
+            'DELETE api/v1/stores/{store}/pos/held-sales/{held}' => $r('DELETE', "{$b}/pos/held-sales/{$s['pos_held']}"),
             'GET api/v1/stores/{store}/purchase-orders' => $r('GET', "{$b}/purchase-orders"),
             'GET api/v1/stores/{store}/purchase-orders/summary' => $r('GET', "{$b}/purchase-orders/summary"),
             'POST api/v1/stores/{store}/purchase-orders' => $r('POST', "{$b}/purchase-orders", ['supplier_id' => $s['supplier'], 'lines' => [['variant_id' => $s['variant'], 'quantity' => 2]]]),

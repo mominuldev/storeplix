@@ -7,6 +7,7 @@ namespace App\Domain\Pos;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Orders\Models\Payment;
+use App\Domain\Pos\Models\PosHeldSale;
 use App\Domain\Pos\Models\PosRegister;
 use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\Models\PosSession;
@@ -107,11 +108,12 @@ final class PosSessionService
             $row->close_note = $note;
             $row->revision++;
             $row->save();
-            // Held sales of the register are deleted here (P88D-15) once part B adds them; none exist in part A.
+            // P88D-15: closing the register deletes its held sales (the close screen warns about them).
+            $heldDeleted = PosHeldSale::query()->where('store_id', $store->id)->where('register_id', $row->register_id)->delete();
             $this->audit->log('pos_session.closed', $row, [
                 'register_id' => $row->register_id, 'counted_cash_amount' => $counted, 'expected_cash_amount' => $expected,
                 'variance_amount' => $variance, 'left_in_drawer_amount' => $left, 'banked_amount' => $banked, 'note' => $note,
-                'held_sales_deleted' => 0,
+                'held_sales_deleted' => $heldDeleted,
             ]);
 
             return $row;
@@ -167,7 +169,7 @@ final class PosSessionService
             'returns_count' => $refunds['count'],
             'returns_amount' => $refunds['amount'],
             'discounts_amount' => (int) ($sales->discounts ?? 0),
-            'held_sales_count' => 0, // part B (pos_held_sales)
+            'held_sales_count' => $session->isOpen() ? PosHeldSale::query()->where('store_id', $session->store_id)->where('register_id', $session->register_id)->count() : 0,
         ];
     }
 

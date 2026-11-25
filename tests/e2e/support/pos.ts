@@ -273,3 +273,38 @@ export function serverErrorsSince(mark: number): string[] {
 export function unexpectedApiErrors(seen: string[], allow: RegExp[] = []): string[] {
   return seen.filter((e) => !/^GET .* → 500$/.test(e) && !allow.some((a) => a.test(e)));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Part B (§9, §11.6, §11.7): held sales, sales history, returns at the till
+// ---------------------------------------------------------------------------------------------
+
+export const heldListRaw = (s: Session, registerId: string, as: Session = s) => call(as, 'GET', pp(s, `/held-sales?register_id=${registerId}`));
+export async function heldList(s: Session, registerId: string): Promise<Json[]> {
+  return (await ok(await heldListRaw(s, registerId), 200, 'held sales')) as unknown as Json[];
+}
+export const holdRaw = (s: Session, body: Json, as: Session = s) => call(as, 'POST', pp(s, '/held-sales'), body);
+export const heldGetRaw = (s: Session, id: string, as: Session = s) => call(as, 'GET', pp(s, `/held-sales/${id}`));
+export const heldDeleteRaw = (s: Session, id: string, as: Session = s) => call(as, 'DELETE', pp(s, `/held-sales/${id}`));
+
+export const salesListRaw = (s: Session, query = '', as: Session = s) => call(as, 'GET', pp(s, `/sales${query ? `?${query}` : ''}`));
+export async function salesList(s: Session, query = ''): Promise<{ data: Json[]; meta: Json }> {
+  const r = await salesListRaw(s, query);
+  expect(r.status, r.text.slice(0, 300)).toBe(200);
+  return { data: r.json.data as Json[], meta: r.json.meta as Json };
+}
+
+export const returnRaw = (s: Session, saleId: string, body: Json, as: Session = s, headers: Record<string, string> | null = idem()) =>
+  call(as, 'POST', pp(s, `/sales/${saleId}/returns`), body, headers ?? undefined);
+
+/** Returns `qty` of each listed order line (by variant) of a sale. */
+export async function returnByVariant(s: Session, sale: Json, sessionId: string, picks: Array<[string, number]>, method: 'cash' | 'bkash_personal' | 'card', extra: Json = {}, as: Session = s): Promise<ApiResult> {
+  const full = await ok(await saleGetRaw(s, sale.id), 200, 'sale');
+  const lines = picks.map(([variant, quantity]) => {
+    const it = (full.order.items as Json[]).find((i) => i.variant_id === variant);
+    expect(it, `order item for ${variant}`).toBeTruthy();
+    return { order_item_id: it!.id as string, quantity };
+  });
+  return returnRaw(s, sale.id, { session_id: sessionId, lines, refund_method: method, ...extra }, as);
+}
+
+export const historyUrl = (sessionId: string, extra = '') => `/pos/history?session=${sessionId}${extra}`;
