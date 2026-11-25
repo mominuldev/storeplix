@@ -144,6 +144,9 @@ describe('PHASE-8-8D money helpers (integer minor units)', () => {
     expect(r.error).toBe('Jamdani Three-Piece is out of stock here.');
     const lines = addToCart([], panjabi(), panjabi().variants[0]!).lines;
     expect(lines[0]!.variantTitle).toBe('');
+    // P88DA-QA-2: a scan lookup returns the product with only the scanned variant; its options still show.
+    const scanned = { ...item, variants: [item.variants[2]!] };
+    expect(addToCart([], scanned, scanned.variants[0]!).lines[0]!.variantTitle).toBe('Blue · M');
     expect(setQuantity(lines, 'V9', 0)).toEqual([]);
     expect(setQuantity(lines, 'V9', 99)[0]!.quantity).toBe(43);
     expect(stockCaption(jamdani())).toEqual({ text: '10 in stock', tone: 'muted' });
@@ -352,6 +355,15 @@ describe('PHASE-8-8D sale screen', () => {
     await waitFor(() => expect(screen.getAllByTestId('pos-cart-line')).toHaveLength(1));
     expect(new URL(callsTo(fetchMock, '/stores/S1/pos/lookup')[0]![0], 'http://x').searchParams.get('code')).toBe('CP-1');
     expect(screen.getByTestId('pos-search')).toHaveValue('');
+  });
+
+  it('a scanned variant shows its options on the cart line (P88DA-QA-2)', async () => {
+    signedIn('owner', saleRoutes({ 'GET /stores/S1/pos/lookup': jsonResponse(200, { data: { ...jamdani(), variants: [jamdani().variants[2]] } }) }));
+    renderApp(<AppRoutes />, { route: '/pos/PS1' });
+    await screen.findByTestId('pos-catalog');
+    await userEvent.type(screen.getByTestId('pos-search'), 'JT-BL-M{Enter}');
+    const line = await screen.findByTestId('pos-cart-line');
+    expect(line).toHaveTextContent('Blue · M · ৳ 1,650');
   });
 
   it('variant picker adds the chosen option; cart quantity and clear', async () => {

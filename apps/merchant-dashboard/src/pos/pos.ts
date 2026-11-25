@@ -249,7 +249,8 @@ export function addToCart(lines: CartLine[], item: PosCatalogItem, variant: PosC
     variantId: variant.id,
     productId: item.product_id,
     name: item.name,
-    variantTitle: item.variants.length > 1 ? variant.title : '',
+    // The variant's own options (a scanned lookup returns the product with that one variant; P88DA-QA-2).
+    variantTitle: variant.options.length ? variant.title : '',
     imageUrl: item.image_url,
     unitPrice: variant.price_amount,
     available: variant.available,
