@@ -23,7 +23,10 @@ info:
     PosSession, PosSessionStatus, PosSessionTotals, PosDenominationCounts, OpenPosSessionInput, ClosePosSessionInput,
     PosCatalogVariant, PosCatalogItem, PosLineInput, PosQuoteInput, PosQuoteLine, PosQuote, PosPaymentMethod,
     PosPaymentInput, PosSaleInput, PosSaleSummary, PosSale, PosSaleListMeta, PosReceipt, PosHeldSale, PosHeldSaleInput,
-    PosReturnInput, PosReturnResult.
+    PosReturnInput, PosReturnResult, PosCheckoutChangedDetails. ApiError.details values may now be string[], object or
+    scalar (409 checkout_changed carries details.quote). As built in part A (PHASE-8-8D §5.4): unknown ids in a body or
+    query → 422, in the path → 404; free-shipping coupons → 422 coupon_invalid; held_sale_id non-null → 422 and
+    held_sales_count 0 until part B.
     1.20.0 (2026-11-25, PHASE-8-1 amendment A1, PHASE-8-1-AMENDMENT-ADMIN-2FA.md, Q231). Switchable staff two-step
     sign-in. POST /admin/auth/login now answers AdminLoginResult (oneOf on `step`): AdminLoginStep (`totp` | `enroll`,
     login_token) while the platform setting `staff_two_factor_required` is on, or AdminLoginSignedIn (`step: signed_in` +
@@ -5391,7 +5394,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
-          description: '`coupon_*` (existing coupon errors) or `validation_failed`'
+          description: '`coupon_invalid` (details.code; a free-shipping coupon is refused at the till), or `validation_failed` (also for an unknown register/session/variant id in the body)'
           content:
             application/json:
               schema:
@@ -5545,13 +5548,21 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`register_closed`, `checkout_changed`, `idempotency_key_in_use`, `idempotency_key_mismatch`'
+          description: '`register_closed`, `checkout_changed` (details: PosCheckoutChangedDetails — show details.quote), `idempotency_key_in_use`, `idempotency_key_mismatch`'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                allOf:
+                - $ref: '#/components/schemas/ApiError'
+                - type: object
+                  properties:
+                    error:
+                      type: object
+                      properties:
+                        details:
+                          $ref: '#/components/schemas/PosCheckoutChangedDetails'
         '422':
-          description: '`out_of_stock` (details per line), `pos_payment_mismatch`, `cash_tendered_short`, `coupon_*` or `validation_failed`'
+          description: '`out_of_stock` (details per line), `pos_payment_mismatch` (details.total_amount / paid_amount), `cash_tendered_short`, `coupon_invalid` (free-shipping coupons too), or `validation_failed` (unknown ids in the body; any non-null held_sale_id until part B)'
           content:
             application/json:
               schema:
@@ -20217,10 +20228,20 @@ components:
               type: string
             details:
               type: object
+              description: Validation errors carry string[] per field. Some codes carry plain values or objects (Phase
+                8.8d, PHASE-8-8D §5.4) — e.g. 409 checkout_changed → quote (PosQuote) + expected_total_amount (string[]),
+                409 register_already_open → session_id, 422 pos_payment_mismatch → total_amount / paid_amount, 422
+                close_note_required → variance_amount / tolerance_amount, 404 pos_code_not_found → code. See the
+                per-error *Details schemas.
               additionalProperties:
-                type: array
-                items:
-                  type: string
+                oneOf:
+                - type: array
+                  items: {}
+                - type: object
+                - type: string
+                - type: number
+                - type: boolean
+                - type: 'null'
             retry_after:
               type: integer
               description: Seconds until retry is allowed. Present on every 429 (mirrors the Retry-After header).
@@ -24818,6 +24839,19 @@ components:
         revision:
           type: integer
           description: Optional; when sent and stale → 409 revision_conflict
+    PosCheckoutChangedDetails:
+      type: object
+      description: 'error.details of 409 checkout_changed on POST /pos/sales: the message list and a fresh quote'
+      required:
+      - expected_total_amount
+      - quote
+      properties:
+        expected_total_amount:
+          type: array
+          items:
+            type: string
+        quote:
+          $ref: '#/components/schemas/PosQuote'
     PosRegister:
       type: object
       description: Phase 8.8d (PHASE-8-8D §4). A till at an 8.8c location.
@@ -24980,6 +25014,7 @@ components:
           type: integer
         held_sales_count:
           type: integer
+          description: Always 0 until part B (held sales)
     PosSession:
       type: object
       description: Phase 8.8d (PHASE-8-8D §4, P88D-5, P88D-15). Money in minor units of currency.
@@ -25409,6 +25444,7 @@ components:
         sms_receipt:
           type: boolean
         held_sale_id:
+          description: Part B. Until then any non-null value → 422 validation_failed
           oneOf:
           - $ref: '#/components/schemas/Ulid'
           - type: 'null'

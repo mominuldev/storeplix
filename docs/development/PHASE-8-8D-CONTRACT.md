@@ -96,8 +96,8 @@ pool by accident.
 | P88D-9 | **Payments** (Q239): methods **Cash** (`cash`), **bKash** (`bkash_personal`, label "bKash", optional TrxID ≤ 32 as `reference`), **Card** (new `card`, external terminal, optional approval code ≤ 32), **Split** (2–4 parts, any mix, each > 0). One `payments` row per part: `provider = 'manual'`, `type = 'charge'`, `status = 'succeeded'`, `verified_at = now`, `purpose = 'order'`, `pos_session_id`, actor. Σ parts = order total exactly (422 `pos_payment_mismatch`). Cash part: `tendered_cash_amount ≥ cash part` (422 `cash_tendered_short`), change = tendered − cash part, stored on `pos_sales` | Cashier-attested money like 5b manual payments; never a gateway redirect (rule 8 untouched) |
 | P88D-10 | **Customer** (Q252): optional. Exact phone lookup (normalised `8801…`) returns `OrderCustomerSummary` (name, counts, spent, own-shop tier; Figma "Loyal" → the tier label). A new phone + name creates/links the customer exactly as manual orders do. **Walk-in** (no phone): `customer_id = null`, `customer_name = 'Walk-in customer'`, `customer_phone = ''`, `shipping_address = {}`, `district_code = ''`, `shipping_zone_name = ''` (sentinels, §3.2) | Figma "Farhana Yasmin · 01711-552211 · 6 orders · ৳ 14,700 spent · Loyal", "Walk-in customer" |
 | P88D-11 | **Receipt** (Q240): the API returns a `PosReceipt` JSON (shop name/address/phone, BIN when `show_bin`, logo when `show_logo`, language and footer from the store's `receipt_80mm` template, lines, totals, VAT, payments, tendered, change, cashier, register, time). The SPA renders an 80 mm print layout and calls the browser print dialog. No PDF render on the till path; the order's `receipt_80mm` PDF (5b documents) stays available from Orders | Fast, works with any 80 mm printer installed as a system printer; no hardware code |
-| P88D-12 | **SMS receipt** (Q241): tick "SMS receipt" (default on when the sale has a phone) → new transactional SMS event `pos_receipt` through `SendOrderSms`, counted in `sms_per_month`, text only (shop, number, total, method, footer up to the 3-segment cap; no link). Resend from history. Walk-in → tick disabled | Figma "SMS receipt sent to 01711-552211 · Resend" |
-| P88D-13 | **Notifications and automations** (Q253): till sales send **no** order-status SMS/email (`notify = false`); 8.6 recipes **never** fire on `created_via = 'pos'`; outbound webhooks `order.created` and `order.paid` **do** fire (payload `created_via: pos`) | A shopper standing at the counter needs no "order received" SMS; integrations want every sale |
+| P88D-12 | **SMS receipt** (Q241): tick "SMS receipt" (default on when the sale has a phone) → new transactional SMS template `pos_receipt` (`SmsTemplates::POS_RECEIPT`, in `COUNTED` but **not** in `EVENTS`, so it is no store SMS toggle) through `SendOrderSms`, counted in `sms_per_month`, text only (shop, number, total, method, footer up to the 3-segment cap; no link). Resend from history. Walk-in → tick disabled | Figma "SMS receipt sent to 01711-552211 · Resend" |
+| P88D-13 | **Notifications and automations** (Q253): till sales send **no** order-status SMS/email (`notify = false`); 8.6 recipes skip order, shipment and return subjects of `created_via = 'pos'` (as built; stock subjects such as the Low stock alert still fire when a till sale takes a row below its threshold); outbound webhooks `order.created` and `order.paid` **do** fire (payload `created_via: pos`) | A shopper standing at the counter needs no "order received" SMS; integrations want every sale |
 | P88D-14 | **Fake-order guard** ignores till sales (Q255): the own-shop record (delivered / returned counts per phone) excludes `created_via = 'pos'`; no risk check runs on a till sale | Staff could otherwise "whitewash" a number with fake till sales (T42) |
 | P88D-15 | **Cash drawer and close** (Q245): BDT denomination list **1000, 500, 200, 100, 50, 20, 10, 5, 2, 1** on both screens (non-BDT stores: one amount field). Opening prefilled from the last session's "left in drawer". Close: counted (from counts), expected (server), variance = counted − expected, **tolerance ৳ 50** (`config('pos.variance_tolerance_amount')` = 5000; note required above it: 422 `close_note_required`), "Leave in drawer" (composed, default = this session's opening float), banked = counted − left. Close deletes the register's held sales (warned). No paid in / paid out | Figma `25:581` / `25:829`; "Last session" card shows Banked / Left in drawer |
 | P88D-16 | **Held sales** (part B, Q242): stored on the server per register (≤ **20**), lines + customer + coupon + note (≤ 120); they **do not reserve stock**; resuming loads the lines into the cart and re-prices; the sale that completes a resumed held sale deletes it. Figma copy "Stock for held sales is reserved for 30 minutes, then released." → **"Held sales don't hold stock. Items are checked again when you resume."** | Reserving needs commit/release + an expiry job on a shop location; not worth it for a parked sale (alternative in Q242) |
@@ -184,13 +184,15 @@ the 8.4 plan-note pattern `144:41323`, "POS is on the Growth plan" + See plans).
   register_id, created_at desc)`.
 
 ### 3.2 Changed tables (`2026_12_10_000400`, part A)
-- **orders**: `orders_created_via_check` + `pos`; `orders_payment_method_check` + `pos`. Walk-in sentinels (P88D-10)
-  allowed only for `created_via = 'pos'`: new CHECK `created_via = 'pos' OR customer_phone <> ''` (Postgres). No column
-  change.
+- **orders**: `orders_created_via_check` + `pos`; `orders_payment_method_check` + `pos`. Sentinels (P88D-10) allowed
+  only for `created_via = 'pos'`: new CHECK `orders_pos_sentinels_check` = `created_via = 'pos' OR (customer_phone <> ''
+  AND district_code <> '')` (Postgres; as built — every till sale has `district_code = ''`, also with a customer phone).
+  No column change.
 - **payments**: add `pos_session_id char(26) null` FK3(pos_sessions) RESTRICT + partial index `(tenant_id, store_id,
   pos_session_id) WHERE pos_session_id IS NOT NULL`; `payments_method_check` + `card` (and `RefundMethod` + `card`).
 - **inventory_movements**: reason CHECK + `pos_sale` (`InventoryMovement::REASONS`; not in `MANUAL_REASONS`).
-- `SmsTemplates::EVENTS` + `pos_receipt` (counted); `resources/sms/{bn,en}.php` gain the template.
+- `SmsTemplates::POS_RECEIPT = 'pos_receipt'`, added to `COUNTED` (allowance) but not to `EVENTS` (store SMS toggles);
+  `resources/sms/{bn,en}.php` gain the template.
 
 ### 3.3 Locking (amends P4-12, PHASE-8-8C §3.3)
 Sale: session row `FOR SHARE` (must be `open`) → store order advisory lock (existing) → stock rows at the register
@@ -248,6 +250,22 @@ Response 201 `PosSale` (order summary, lines, payments, tendered, change, `recei
 - `GET …/pos/customers/lookup?phone` → exact normalised phone → `OrderCustomerSummary` or 404 `not_found`. Limiter
   `pos-lookup`. No list or partial search (that stays `customers.view`).
 
+### 5.4 As built in part A (2026-11-25)
+- **Coupons**: a free-shipping coupon has nothing to discount at the till → 422 `coupon_invalid` (`details.code`), as
+  every other unusable code.
+- **409 `checkout_changed`** (sale): `error.details.quote` = a fresh `PosQuote` and `details.expected_total_amount` =
+  `["The total changed to ৳ x. …"]` (message list, like validation details). Other POS errors with plain values in
+  `details`: `register_already_open` (`session_id`), `pos_payment_mismatch` (`total_amount`, `paid_amount`),
+  `close_note_required` (`variance_amount`, `tolerance_amount`), `pos_code_not_found` (`code`). `ApiError.details` is
+  widened accordingly (openapi 1.21.0, `packages/types`).
+- **Unknown ids**: an id in the **path** that isn't in this store → 404 `not_found`; an id in the **body or query**
+  (`register_id`, `session_id`, `variant_id`, `customer_id`, `location_id`, `filter[category_id]`) → 422
+  `validation_failed` on that field (S195).
+- **Plan limit**: till sales count toward `orders_per_month` (Growth is unlimited, so this only matters after a
+  downgrade, where sales are already blocked by `pos`).
+- **Part A placeholders until part B**: `held_sale_id` → 422 `validation_failed` for any non-null value;
+  `PosSessionTotals.held_sales_count` is always `0`.
+
 ## 6. Money
 
 ### 6.1 Rules
@@ -283,7 +301,11 @@ existing).
 - **Storefront** order tracking and confirmation: till sales are never found (404). Storefront availability changes only
   when the register location is the online location (expected).
 - **Exports / external API**: till sales appear with `created_via: pos`, `channel: walk_in`.
-- **Invoices & labels** bulk print: till sales excluded from label printing; invoice/receipt documents allowed.
+- **Invoices & labels**: label documents (`label_4x6`, single and bulk) refuse till sales with 422; invoice and
+  receipt documents are allowed.
+- **Returns** (5b flow and part B till returns): an `exchange` return of a till sale → 422 on `type` (P88D-17:
+  exchange = return + new sale).
+- **Fake-order guard** (as built): `ShopRecord` (a phone's own-shop delivered / returned counts) excludes till sales.
 
 ## 9. Part B — held sales, history, returns (owner API)
 - **Held**: `GET …/pos/held-sales?register_id` (newest first; customer, items, total, note, held relative time,
@@ -534,5 +556,12 @@ Shared-read rules: re-read `InventoryService.php`, `OrderPlacementService.php`, 
 - Close shows "− Cash refunds ৳ 440" while history shows a ৳ 450 return; example numbers only.
 - "Loyal" is not an existing customer label; the own-shop tier is shown (Q252).
 - Held sales copy promises a 30-minute stock reservation; changed (Q242).
+- Close (`25:829`): the counts shown total ৳ 13,910, not the "Counted ৳ 14,800" printed beside them; the screen sums
+  the counts.
+- Receipt preview (`22:2241`) shows a barcode; not built (no new dependency allowed).
+- Variant picker (`22:1905`) colour dots are not built (variants carry no colour value); colour options show as text
+  chips.
+- Open register: `PosLastSession` has only the left-in-drawer **amount**, not its counts, so the count table is
+  prefilled greedily from that amount (largest notes first) and the cashier corrects it.
 - "Open drawer", "Scanner ready", "Void receipt (manager PIN)" and the Cashier select are hidden or read-only
   (Q240, Q225, Q250, Q238).

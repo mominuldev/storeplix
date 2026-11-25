@@ -102,11 +102,7 @@ class PermissionCatalogueTest extends TestCase
 
         $this->assertSame(1, preg_match('/staff:\s*\[(.*?)\]/s', substr($ts, (int) strpos($ts, 'SYSTEM_ROLE_PERMISSIONS')), $s));
         preg_match_all("/'([a-z_.]+)'/", $s[1], $staff);
-        // Same set (PHASE-8-8D: packages/types lists `pos.sell` last, the enum keeps catalogue order).
-        $expected = SystemRole::Staff->permissions()->keys();
-        $actual = $staff[1];
-        sort($expected);
-        sort($actual);
-        $this->assertSame($expected, $actual);
+        // Same keys in catalogue order (PHASE-8-8D: `pos.sell` right after `orders.process`, as in the enum).
+        $this->assertSame(SystemRole::Staff->permissions()->keys(), $staff[1]);
     }
 }

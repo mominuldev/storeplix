@@ -2,6 +2,18 @@
 // Change here => change the Laravel resource in the same PR (see docs/api/API-CONVENTIONS.md).
 
 export interface ApiSuccess<T> { data: T; meta?: PaginationMeta | Record<string, unknown> }
+/**
+ * Value of one `error.details` key on the wire (openapi 1.21.0 `ApiError.details`). Validation errors use `string[]`
+ * per field; some codes carry plain values or objects (e.g. 409 `checkout_changed` → `quote`, 409
+ * `register_already_open` → `session_id`, 422 `pos_payment_mismatch` → amounts). Narrow with the per-error `*Details`
+ * interfaces (Zod at the trust boundary).
+ */
+export type ApiErrorDetailValue = string[] | string | number | boolean | null | { [key: string]: unknown } | unknown[];
+export type ApiErrorDetailsWire = Record<string, ApiErrorDetailValue>;
+/**
+ * `details` stays typed as `Record<string, string[]>` here until `@storeplix/api-client`'s `ApiErrorDetails` is widened
+ * (it assigns this field; PHASE-8-8D §5.4). New code reads non-validation details as `ApiErrorDetailsWire`.
+ */
 export interface ApiError { error: { code: string; message: string; details?: Record<string, string[]>; /** seconds; present on 429 (also sent as Retry-After header) */ retry_after?: number } }
 export interface PaginationMeta { current_page: number; per_page: number; total: number; last_page: number }
 
@@ -422,8 +434,8 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRoleKey, readonly PermissionK
   owner: PERMISSION_KEYS,
   admin: PERMISSION_KEYS.filter((k) => k !== 'billing.manage'),
   staff: [
-    'orders.view', 'orders.process', 'shipments.manage', 'shipments.cancel', 'products.edit',
-    'inventory.adjust', 'customers.view', 'customers.edit', 'reports.view', 'pos.sell',
+    'orders.view', 'orders.process', 'pos.sell', 'shipments.manage', 'shipments.cancel', 'products.edit',
+    'inventory.adjust', 'customers.view', 'customers.edit', 'reports.view',
   ],
 };
 
@@ -3512,7 +3524,9 @@ export interface PosSessionTotals {
   cash_in_drawer_amount: number;
   cash_sales_amount: number; cash_refunds_amount: number; sales_amount: number; receipts_count: number;
   by_method: { method: PosPaymentMethod; amount: number; count: number }[];
-  returns_count: number; returns_amount: number; discounts_amount: number; held_sales_count: number;
+  returns_count: number; returns_amount: number; discounts_amount: number;
+  /** Always 0 until part B (held sales). */
+  held_sales_count: number;
 }
 export interface PosSession {
   id: string;
@@ -3600,7 +3614,10 @@ export interface PosSaleInput {
   payments: PosPaymentInput[];
   /** Cash handed over; required with a cash payment; ≥ the cash amount */
   tendered_cash_amount?: number | null;
-  sms_receipt: boolean; held_sale_id?: string | null; note?: string | null;
+  sms_receipt: boolean;
+  /** Part B. Until then any non-null value → 422 `validation_failed`. */
+  held_sale_id?: string | null;
+  note?: string | null;
 }
 /** Data for the 80 mm print layout (P88D-11), built with the store's `receipt_80mm` template config. */
 export interface PosReceipt {
@@ -3680,13 +3697,19 @@ export interface RegisterAlreadyOpenDetails { session_id: string }
 export interface PosPaymentMismatchDetails { total_amount: number; paid_amount: number }
 /** `error.details` of 422 `close_note_required`. */
 export interface CloseNoteRequiredDetails { variance_amount: number; tolerance_amount: number }
+/** `error.details` of 409 `checkout_changed` on POST …/pos/sales: the message list and a fresh quote to show. */
+export interface PosCheckoutChangedDetails { expected_total_amount: string[]; quote: PosQuote }
+/** `error.details` of 422 `coupon_invalid` (also a free-shipping coupon at the till). */
+export interface PosCouponInvalidDetails { code: string[] }
 /** `error.details` of 404 `pos_code_not_found`: the code as sent. */
 export interface PosCodeNotFoundDetails { code: string }
 /** §10 error codes added by 8.8d (existing codes such as `out_of_stock`, `checkout_changed` keep their meaning). */
 export type PosErrorCode =
   | 'register_name_taken' | 'register_limit_reached' | 'register_in_use' | 'register_already_open' | 'register_closed'
   | 'register_archived' | 'pos_payment_mismatch' | 'cash_tendered_short' | 'close_note_required' | 'drawer_short'
-  | 'held_sales_limit' | 'pos_code_not_found' | 'no_phone';
+  | 'held_sales_limit' | 'pos_code_not_found' | 'no_phone'
+  /** existing codes with POS-specific details */
+  | 'checkout_changed' | 'coupon_invalid';
 export type PosAuditAction =
   | 'pos_register.created' | 'pos_register.updated' | 'pos_register.archived' | 'pos_register.unarchived'
   | 'pos_session.opened' | 'pos_session.closed' | 'pos_held_sale.deleted';
