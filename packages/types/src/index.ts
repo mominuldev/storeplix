@@ -3696,11 +3696,8 @@ export const POS_RETURN_REASONS: readonly PosReturnReason[] = [
  */
 export interface PosReturnInput {
   session_id: string; lines: { order_item_id: string; quantity: number }[]; refund_method: PosPaymentMethod;
-  /**
-   * One of `PosReturnReason` (API 422 otherwise). Typed `string` for now so existing callers that pass a widened
-   * string keep compiling (api-client `phase8-8d-b.test.ts`); narrow to `PosReturnReason | null` once they pass the type.
-   */
-  reason?: string | null;
+  /** One of `POS_RETURN_REASONS` (API 422 otherwise); null/omitted = `other`. */
+  reason?: PosReturnReason | null;
   note?: string | null;
 }
 export interface PosReturnResult { sale: PosSale; return_request: ReturnRequest; refund: Payment }

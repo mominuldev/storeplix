@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { POS_PAYMENT_METHOD_LABELS, type PosPaymentMethod, type PosSale } from '@storeplix/types';
+import { POS_PAYMENT_METHOD_LABELS, POS_RETURN_REASONS, type PosPaymentMethod, type PosReturnReason, type PosSale } from '@storeplix/types';
 import { Button, cn, formatBdt, formatCount, Modal } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Minus, Plus } from 'lucide-react';
@@ -12,6 +12,7 @@ import { newIdempotencyKey } from '../commerce/format';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
+import { returnReasonLabels } from '../returns/labels';
 import { variantCaption, createAttemptKeys, returnableOf, returnEstimate, returnLines } from './pos';
 import { posKeys } from './queries';
 
@@ -22,22 +23,11 @@ import { posKeys } from './queries';
 
 const methods: PosPaymentMethod[] = ['cash', 'bkash_personal', 'card'];
 
-/**
- * Return reasons the API accepts (enum, default `other`). Typed locally until `packages/types` gains it (the API
- * shipped an enum where openapi 1.21.0 has free text).
- */
-export type PosReturnReason = 'wrong_size' | 'damaged' | 'wrong_item' | 'changed_mind' | 'refused_at_door' | 'other';
-const reasonOptions: { value: PosReturnReason; label: string }[] = [
-  { value: 'wrong_size', label: 'Wrong size' },
-  { value: 'damaged', label: 'Damaged' },
-  { value: 'wrong_item', label: 'Wrong item' },
-  { value: 'changed_mind', label: 'Changed mind' },
-  { value: 'refused_at_door', label: 'Refused at door' },
-  { value: 'other', label: 'Other' },
-];
+/** Reasons from `POS_RETURN_REASONS` (API enum, default `other`) with the Returns screen's labels. */
+const reasonOptions = POS_RETURN_REASONS.map((value) => ({ value, label: returnReasonLabels[value] }));
 
 const schema = z.object({
-  reason: z.enum(['wrong_size', 'damaged', 'wrong_item', 'changed_mind', 'refused_at_door', 'other']),
+  reason: z.enum(POS_RETURN_REASONS as [PosReturnReason, ...PosReturnReason[]]),
   note: z.string().trim().max(300, 'Up to 300 characters'),
 });
 type Values = z.infer<typeof schema>;

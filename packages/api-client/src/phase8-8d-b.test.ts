@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { POS_HELD_NOTE_MAX, POS_HELD_SALES_MAX } from '@storeplix/types';
+import { POS_HELD_NOTE_MAX, POS_HELD_SALES_MAX, type PosReturnReason } from '@storeplix/types';
 import { createApiClient, isApiError, posSaleListQuery } from './index';
 
 // PHASE-8-8D part B (§9, §10, §12): pos.sales.list / returns, pos.held.*.
@@ -52,7 +52,7 @@ describe('PHASE-8-8D part B api-client', () => {
 
   it('returns send the Idempotency-Key and body', async () => {
     const { client, call } = setup(() => json(201, { data: { sale: { id: 'SALE1' } } }));
-    const input = { session_id: 'PS1', lines: [{ order_item_id: 'OI1', quantity: 1 }], refund_method: 'cash' as const, reason: 'Wrong size' };
+    const input = { session_id: 'PS1', lines: [{ order_item_id: 'OI1', quantity: 1 }], refund_method: 'cash' as const, reason: 'wrong_size' as PosReturnReason };
     await client.pos.sales.returns('S1', 'SALE1', input, 'ret-key');
     expect(call(0)).toMatchObject({ method: 'POST', body: input });
     expect(call(0).url.pathname).toBe(`${base}/sales/SALE1/returns`);
