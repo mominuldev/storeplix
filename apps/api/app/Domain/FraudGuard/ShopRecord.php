@@ -17,7 +17,8 @@ use Illuminate\Support\Carbon;
  *   delivered = orders with status `delivered`
  *   returned  = other orders with status `returned` or a `returned` shipment
  *
- * Cancelled-before-shipping orders don't count. Call inside the tenant context (tenant-scoped queries).
+ * Cancelled-before-shipping orders don't count, and till sales never do (PHASE-8-8D P88D-14, T42: staff can't
+ * "whitewash" a number with till sales). Call inside the tenant context (tenant-scoped queries).
  */
 final class ShopRecord
 {
@@ -31,6 +32,7 @@ final class ShopRecord
     {
         $msisdn = Phone::bdMsisdn($phone) ?? $phone;
         $base = fn (): Builder => Order::query()->where('orders.store_id', $storeId)->where('orders.customer_phone', $msisdn)
+            ->where('orders.created_via', '<>', Order::VIA_POS)
             ->when($excludeOrderId !== null, fn (Builder $q) => $q->whereKeyNot($excludeOrderId));
 
         $delivered = $base()->where('orders.status', Order::DELIVERED)->count();

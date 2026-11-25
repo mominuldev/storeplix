@@ -76,10 +76,16 @@ final class SalesReport
         unset($c);
         usort($channels, fn (array $a, array $b) => [$b['sales_amount'], $a['channel']] <=> [$a['sales_amount'], $b['channel']]);
 
-        // Areas over sold orders.
+        // Areas over sold orders. PHASE-8-8D P88D-22: till sales (created_via pos, walk-in sentinels) have no delivery
+        // area, so they are skipped here; shares are of the delivered-to sales (they count in totals and channels).
         $districts = [];
         $inside = 0;
+        $areaSales = 0;
         foreach ($sold as $r) {
+            if ($r->created_via === Order::VIA_POS) {
+                continue;
+            }
+            $areaSales += self::net($r);
             $code = (string) $r->district_code;
             $districts[$code] ??= ['district_code' => $code, 'district_name' => $this->geo->district($code)['name'] ?? $code,
                 'orders_count' => 0, 'sales_amount' => 0, 'share' => 0.0];
@@ -93,7 +99,7 @@ final class SalesReport
         usort($districts, fn (array $a, array $b) => [$b['orders_count'], $b['sales_amount'], $a['district_code']] <=> [$a['orders_count'], $a['sales_amount'], $b['district_code']]);
         $districts = array_slice($districts, 0, 8);
         foreach ($districts as &$d) {
-            $d['share'] = ReportMath::share($d['sales_amount'], $summary['sales_amount']);
+            $d['share'] = ReportMath::share($d['sales_amount'], $areaSales);
         }
         unset($d);
 
@@ -106,7 +112,7 @@ final class SalesReport
             'channels' => $channels,
             'top_products' => $items['top'],
             'areas' => [
-                'inside_dhaka_share' => ReportMath::ratio($inside, $summary['sales_amount']),
+                'inside_dhaka_share' => ReportMath::ratio($inside, $areaSales),
                 'districts' => $districts,
             ],
         ];
@@ -153,7 +159,7 @@ final class SalesReport
             ->where('orders.placed_at', '<', $range->endUtc())
             ->orderBy('orders.placed_at')
             ->get(['orders.id', 'orders.status', 'orders.total_amount', 'orders.refunded_amount', 'orders.cancel_reason',
-                'orders.channel', 'orders.district_code', 'orders.placed_at'])
+                'orders.channel', 'orders.district_code', 'orders.placed_at', 'orders.created_via'])
             ->all();
     }
 
