@@ -11,6 +11,8 @@ declare(strict_types=1);
 return [
     'fake' => (bool) env('FEEDS_FAKE', false),
     'queue' => env('FEEDS_QUEUE', 'feeds'),
+    // Queue connection for SyncCatalog (null = the default). Compose sets `redis-feeds` (retry_after > the 900 s job).
+    'connection' => env('FEEDS_QUEUE_CONNECTION'),
 
     // The public OAuth callback base (this API): {api_url}/api/v1/integrations/oauth/{provider}/callback.
     'api_url' => env('FEEDS_API_URL', env('APP_URL', 'http://localhost:8010')),

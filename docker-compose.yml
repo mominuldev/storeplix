@@ -197,6 +197,8 @@ x-api-env: &api-env
   BILLING_SSLCOMMERZ_STORE_PASSWD: ${BILLING_SSLCOMMERZ_STORE_PASSWD:-}
   BILLING_VAT_BIN: ${BILLING_VAT_BIN:-}
   BILLING_OPS_EMAIL: ${BILLING_OPS_EMAIL:-billing-ops@storeplix.test}
+  # Phase 8.9d (QA P89D-QA-A4): feed syncs (up to 900 s) on their own queue connection, retry_after 960 s.
+  FEEDS_QUEUE_CONNECTION: redis-feeds
   # MERCHANT_APP_URL (above) is the only billing return redirect target ({MERCHANT_APP_URL}/settings/plan?payment=…).
 
 x-api-common: &api-common
@@ -503,11 +505,11 @@ services:
       timeout: 5s
       retries: 3
 
-  # Phase 8.9d: SyncCatalog (Meta / Google product feeds; job timeout 900 s, tries 1). Concurrency 2. NOTE: the job
-  # timeout is above REDIS_QUEUE_RETRY_AFTER (360) — see docs/reviews/phase-8-9d-a-qa.md P89D-QA-A4.
+  # Phase 8.9d: SyncCatalog (Meta / Google product feeds; job timeout 900 s, tries 1). Concurrency 2. Works the
+  # `redis-feeds` connection (retry_after 960 s > the job timeout, P89D-QA-A4), not the shared 360 s one.
   queue-feeds:
     <<: *api-common
-    command: ["php", "artisan", "queue:work", "redis", "--queue=feeds", "--tries=1", "--timeout=910", "--sleep=1"]
+    command: ["php", "artisan", "queue:work", "redis-feeds", "--queue=feeds", "--tries=1", "--timeout=910", "--sleep=1"]
     deploy:
       replicas: 2
     depends_on:

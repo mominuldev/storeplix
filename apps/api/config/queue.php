@@ -73,6 +73,18 @@ return [
             'after_commit' => false,
         ],
 
+        // PHASE-8-9D (QA P89D-QA-A4): product feed syncs run up to 900 s, above the shared `redis` retry_after (360 s),
+        // so a long sync would be handed to a second worker. Feeds get their own connection whose reservation outlives
+        // the job; used when FEEDS_QUEUE_CONNECTION=redis-feeds (compose), else the default connection.
+        'redis-feeds' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => env('FEEDS_QUEUE', 'feeds'),
+            'retry_after' => (int) env('REDIS_FEEDS_RETRY_AFTER', 960),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

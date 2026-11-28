@@ -25,6 +25,10 @@ class SyncCatalog implements ShouldQueue
         public readonly ?string $runId = null,
     ) {
         $this->onQueue((string) config('feeds.queue', 'feeds'));
+        $connection = config('feeds.connection');
+        if (is_string($connection) && $connection !== '') {
+            $this->onConnection($connection); // QA P89D-QA-A4: a connection whose retry_after outlives $timeout
+        }
     }
 
     public function handle(CatalogSync $sync): void
