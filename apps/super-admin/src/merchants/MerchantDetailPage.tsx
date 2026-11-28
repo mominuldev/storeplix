@@ -33,6 +33,7 @@ import { api } from '../lib/api';
 import { formatDate, intervalLabel, money, planName } from '../lib/format';
 import { useCan } from '../lib/permissions';
 import { useToast } from '../lib/toast';
+import { AiCreditsCard, AiUsageRow } from '../ai/AiCredits';
 import { SmsCreditsCard, SmsUsageRow } from '../sms/SmsCredits';
 import { ChangePlanDialog, ExtendDialog, ReactivateDialog, SuspendDialog, extendLabel, suspensionReasons } from './dialogs';
 import { ImpersonateDialog } from './ImpersonateDialog';
@@ -447,7 +448,7 @@ function OverviewTab({
   });
   const [invoiceId, setInvoiceId] = useState<string | null>(null);
   const sub = t.subscription;
-  const usage = t.usage.filter((u) => u.key !== 'sms_per_month');
+  const usage = t.usage.filter((u) => u.key !== 'sms_per_month' && u.key !== 'ai_credits_per_month');
 
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -476,6 +477,8 @@ function OverviewTab({
             })}
             {/* PHASE-8-9A 33:5121: SMS credits row with "Adjust credits" (2095:9090). */}
             <SmsUsageRow tenant={t} />
+            {/* PHASE-8-9D §10.4: AI credits row (allowance this month + bonus) with "Adjust AI credits". */}
+            <AiUsageRow tenant={t} />
           </ul>
         </SectionCard>
 
@@ -600,6 +603,8 @@ function BillingTab({ tenant }: { tenant: AdminTenant }) {
     <div className="flex flex-col gap-5">
       {/* PHASE-8-9A §13.2: SMS credits card + ledger above the invoices. */}
       <SmsCreditsCard tenant={tenant} />
+      {/* PHASE-8-9D §10.4: AI credits card + ledger. */}
+      <AiCreditsCard tenant={tenant} />
       <Card className="overflow-hidden">
         <div className="px-5 pt-3">
           <Tabs
