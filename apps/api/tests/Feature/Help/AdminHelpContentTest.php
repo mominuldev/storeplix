@@ -6,6 +6,7 @@ namespace Tests\Feature\Help;
 
 use App\Domain\Admin\Authorization\PlatformRole;
 use App\Domain\Help\HelpArticleService;
+use App\Domain\Help\HelpDb;
 use App\Domain\Help\Models\HelpArticle;
 use App\Domain\Help\Models\HelpArticleTranslation;
 use App\Domain\Help\Models\HelpCategory;
@@ -149,10 +150,10 @@ class AdminHelpContentTest extends TestCase
         $doc = self::helpDoc('Text', [['type' => 'image', 'attrs' => ['media_id' => $ref['id'], 'alt' => 'Settings screen', 'caption' => 'Settings']]]);
         $a = $this->save($a, ['translations' => ['en' => self::helpTranslation('T', 'S', $doc)]])->assertOk()->json('data');
         $this->assertArrayHasKey($ref['id'], $a['media']);
-        HelpMedia::query()->whereKey($ref['id'])->update(['status' => 'processing']);
+        HelpDb::query(HelpMedia::class)->whereKey($ref['id'])->update(['status' => 'processing']);
         $this->admin('POST', "/help-articles/{$a['id']}/publish", ['revision' => $a['revision']])->assertStatus(422)
             ->assertJsonPath('error.code', 'help_article_media_missing')->assertJsonPath('error.details.media_ids', [$ref['id']]);
-        HelpMedia::query()->whereKey($ref['id'])->update(['status' => 'ready']);
+        HelpDb::query(HelpMedia::class)->whereKey($ref['id'])->update(['status' => 'ready']);
         $this->admin('POST', "/help-articles/{$a['id']}/publish", ['revision' => $a['revision']])->assertOk();
 
         // prune keeps referenced images, removes old unreferenced ones

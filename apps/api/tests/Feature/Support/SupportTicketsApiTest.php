@@ -58,7 +58,12 @@ class SupportTicketsApiTest extends TestCase
         $body = self::ticketBody(['order_id' => $order['id'], 'attachment_ids' => [$file], 'priority' => 'urgent']);
 
         $res = $this->api($h, 'POST', '/api/v1/help/tickets', $body)->assertCreated();
-        $res->assertJsonPath('data.reference', 'T-1001')->assertJsonPath('data.number', 1001)->assertJsonPath('data.status', 'open')
+        // Platform-wide counter from 1001; on Postgres it is written on the admin connection, outside the test's rollback,
+        // so earlier tests may have advanced it — check the format, not an exact number.
+        $number = $res->json('data.number');
+        $this->assertIsInt($number);
+        $this->assertGreaterThanOrEqual(1001, $number);
+        $res->assertJsonPath('data.reference', "T-{$number}")->assertJsonPath('data.status', 'open')
             ->assertJsonPath('data.priority', 'urgent')->assertJsonPath('data.related_order.number', $order['number'])
             ->assertJsonPath('data.order_card.id', $order['id'])->assertJsonPath('data.requester.id', $owner->id)
             ->assertJsonPath('data.files.0.id', $file)->assertJsonPath('data.can', ['reply' => true, 'resolve' => true, 'rate' => false]);
@@ -72,7 +77,7 @@ class SupportTicketsApiTest extends TestCase
         $this->assertSame($file, $messages[1]['attachments'][0]['id']);
         $this->assertTrue($this->platformQuery(AuditLog::class)->where('action', 'support_ticket.created')->where('tenant_id', $tenant->id)->exists());
 
-        $this->api($h, 'POST', '/api/v1/help/tickets', self::ticketBody())->assertCreated()->assertJsonPath('data.number', 1002);
+        $this->api($h, 'POST', '/api/v1/help/tickets', self::ticketBody())->assertCreated()->assertJsonPath('data.number', $number + 1); // next number, no gap
     }
 
     public function test_validation_and_order_rules(): void

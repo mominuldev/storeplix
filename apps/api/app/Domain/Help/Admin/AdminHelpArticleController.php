@@ -52,7 +52,7 @@ class AdminHelpArticleController
                 $like = '%'.addcslashes(mb_strtolower(trim($term)), '%_\\').'%';
                 $q->where(fn (Builder $w) => $w->whereRaw("slug LIKE ? ESCAPE '\\'", [$like])
                     ->orWhereIn('id', HelpDb::connection()->table('help_article_translations')->select('article_id')
-                        ->where(fn ($t) => $t->whereRaw("lower(title) LIKE ? ESCAPE '\\'", [$like])->orWhereRaw("lower(keywords) LIKE ? ESCAPE '\\'", [$like]))));
+                        ->where(fn ($t) => $t->whereRaw("lower(title) LIKE ? ESCAPE '\\'", [$like])->orWhereRaw("lower(CAST(keywords AS text)) LIKE ? ESCAPE '\\'", [$like])))); // jsonb on Postgres: lower(jsonb) doesn't exist
             }
             if (is_string($c = $filter['category'] ?? null) && $c !== '') {
                 $q->where('category_id', strtolower($c));
