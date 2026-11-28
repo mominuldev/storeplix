@@ -469,6 +469,60 @@ services:
       timeout: 5s
       retries: 3
 
+  # Phase 8.9d (PHASE-8-9D §12): DeliverTrackingEvent (server pixel events; job timeout 30 s, tries 1 — the retry
+  # schedule lives on the row and tracking:dispatch-due re-dispatches). Concurrency 5. Without it purchases never deliver.
+  queue-tracking:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=tracking", "--tries=1", "--timeout=40", "--sleep=1"]
+    deploy:
+      replicas: 5
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 8.9d: SyncCatalog (Meta / Google product feeds; job timeout 900 s, tries 1). Concurrency 2. NOTE: the job
+  # timeout is above REDIS_QUEUE_RETRY_AFTER (360) — see docs/reviews/phase-8-9d-a-qa.md P89D-QA-A4.
+  queue-feeds:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=feeds", "--tries=1", "--timeout=910", "--sleep=1"]
+    deploy:
+      replicas: 2
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Phase 8.9d part B: GenerateProductDescription / EditProductPhoto (job timeout 180 s, tries 1; a worker crash
+  # fails the generation and refunds its credits). Concurrency 3.
+  queue-ai:
+    <<: *api-common
+    command: ["php", "artisan", "queue:work", "redis", "--queue=ai", "--tries=1", "--timeout=190", "--sleep=1"]
+    deploy:
+      replicas: 3
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null || ps aux | grep -q '[q]ueue:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Laravel scheduler (routes/console.php). Phase 5b-2 adds payments:expire (1 min, P5B-21), payments:reconcile
   # (5 min, P5B-19) and payments:refund-status (10 min, P5B-24); without it unpaid holds never expire and a lost
   # IPN is never reconciled. Phase 6: domains:check (every minute, discovery on pgsql_admin → CheckDomainJob on
