@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Billing\Console;
 
+use App\Domain\Billing\InvoiceService;
 use App\Domain\Billing\Jobs\ProcessSubscriptionJob;
 use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\Models\Subscription;
+use App\Domain\Billing\Support\BillingLock;
+use App\Domain\Tenancy\TenantContext;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +29,34 @@ class BillingRun extends Command
             $this->option('sync') ? dispatch_sync($job) : dispatch($job);
         }
         $this->info(sprintf('billing:run: %d tenant(s).', $tenants->count()));
+        $expired = $this->expireSmsCreditInvoices();
+        if ($expired > 0) {
+            $this->info(sprintf('billing:run: %d SMS credit invoice(s) expired.', $expired));
+        }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * PHASE-8-9A §5.3 step 5: open `sms_credits` invoices past `due_at` become void (`expired`) — no reminders, no
+     * dunning, no effect on the subscription. Each void runs inside its tenant (a payment may still pay it late).
+     */
+    private function expireSmsCreditInvoices(): int
+    {
+        // cross-tenant: billing schedule — discovery of expired SMS credit invoices only.
+        $rows = BillingInvoice::withoutTenancy()->where('kind', BillingInvoice::SMS_CREDITS)->where('status', BillingInvoice::OPEN)
+            ->where('due_at', '<', now())->limit((int) config('billing.run_batch', 1000))->get(['id', 'tenant_id']);
+        $count = 0;
+        foreach ($rows as $row) {
+            $count += (int) app(TenantContext::class)->run((string) $row->tenant_id, fn () => BillingLock::run((string) $row->tenant_id,
+                fn () => DB::transaction(function () use ($row) {
+                    $invoice = BillingInvoice::query()->whereKey($row->id)->lockForUpdate()->first();
+
+                    return $invoice !== null && app(InvoiceService::class)->void($invoice, BillingInvoice::VOID_EXPIRED);
+                })));
+        }
+
+        return $count;
     }
 
     /**

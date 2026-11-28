@@ -16,9 +16,9 @@ namespace App\Domain\Tenancy\Database;
 final class RlsTables
 {
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
-    public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions'];
+    public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions', 'sms_credit_ledger'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A, 87 after Phase 8.8c, 90 after Phase 8.8d-A, 91 after Phase 8.8d) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A, 87 after Phase 8.8c, 90 after Phase 8.8d-A, 91 after Phase 8.8d, 95 after Phase 8.9a) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -59,6 +59,8 @@ final class RlsTables
         'pos_registers', 'pos_sessions', 'pos_sales',
         // Phase 8.8d-B held sales (PHASE-8-8D §3.1; 2026_12_10_000300)
         'pos_held_sales',
+        // Phase 8.9a SMS (PHASE-8-9A §3.1; credits in 2026_12_11_000100, templates 000200, sender IDs 000300)
+        'sms_credit_accounts', 'sms_credit_ledger', 'sms_templates', 'sms_sender_ids',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */

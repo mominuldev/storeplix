@@ -280,7 +280,7 @@ class CampaignsApiTest extends TestCase
         $this->api($h, 'POST', $this->cUrl($store, '/estimate'), [
             'channel' => 'sms', 'language' => 'en', 'body' => 'Hi {name}', 'audience' => $this->campaignBody()['audience'],
         ])->assertOk()->assertJsonPath('data.recipients', 3)->assertJsonPath('data.total_parts', 3)
-            ->assertJsonPath('data.allowance', ['limit' => 2, 'used' => 0, 'remaining' => 2, 'after' => -1]);
+            ->assertJsonPath('data.allowance', ['limit' => 2, 'used' => 0, 'remaining' => 2, 'after' => -1, 'credits' => 0]);
     }
 
     public function test_estimate_and_preview(): void
@@ -292,7 +292,7 @@ class CampaignsApiTest extends TestCase
         $this->assertSame('ucs2', $sms['encoding']);
         $this->assertSame(1, $sms['recipients']);
         $this->assertGreaterThanOrEqual(1, $sms['parts_per_recipient']);
-        $this->assertSame(['limit' => 1000, 'used' => 0, 'remaining' => 1000, 'after' => 1000 - $sms['total_parts']], $sms['allowance']);
+        $this->assertSame(['limit' => 1000, 'used' => 0, 'remaining' => 1000, 'after' => 1000 - $sms['total_parts'], 'credits' => 0], $sms['allowance']);
         $email = $this->api($h, 'POST', $this->cUrl($store, '/estimate'), ['channel' => 'email', 'language' => 'en', 'body' => 'Hello there', 'subject' => 'Hi', 'audience' => $audience])->assertOk()->json('data');
         $this->assertSame(['recipients' => 1, 'parts_per_recipient' => 1, 'total_parts' => 1, 'encoding' => null, 'characters' => 11], array_diff_key($email, ['allowance' => 1]));
         $this->assertSame(5000, $email['allowance']['limit']);

@@ -16,6 +16,7 @@ use App\Domain\Payments\Gateways\Verification;
 use App\Domain\Payments\PayloadScrubber;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
+use App\Domain\Sms\Credits\SmsCreditService;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -40,6 +41,7 @@ final class BillingPaymentService
         private readonly PlanChangeService $plans,
         private readonly AuditLogger $audit,
         private readonly BillingNotifier $notifier,
+        private readonly SmsCreditService $credits,
     ) {}
 
     /**
@@ -195,7 +197,13 @@ final class BillingPaymentService
             });
 
             $payment->refresh();
-            if ($result === 'paid' || $result === 'late') {
+            if (($result === 'paid' || $result === 'late') && $invoice->kind === BillingInvoice::SMS_CREDITS) {
+                RenderBillingInvoicePdf::dispatch($invoice->id)->forTenant($invoice->tenant_id)->afterCommit();
+                $this->notifier->owner(BillingMail::SMS_CREDITS_ADDED, [
+                    'number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount),
+                    'credits' => number_format((int) $invoice->sms_credits), 'balance' => number_format($this->credits->balance()),
+                ]);
+            } elseif ($result === 'paid' || $result === 'late') {
                 RenderBillingInvoicePdf::dispatch($invoice->id)->forTenant($invoice->tenant_id)->afterCommit();
                 $subscription = $this->plans->current();
                 $this->notifier->owner(BillingMail::PAYMENT_RECEIVED, [
@@ -214,13 +222,20 @@ final class BillingPaymentService
     /**
      * Invoice side of a verified payment (P7-14): open → paid; void → paid late (unless another invoice was paid since);
      * already paid (or paid-since) → the payment is a duplicate. Returns paid | late | duplicate.
+     *
+     * PHASE-8-9A §5.3 step 4: an `sms_credits` invoice has no "paid since" rule (void → paid late: the money was taken)
+     * and grants its credits in this same transaction (SmsCreditService::grantForInvoice, once per invoice); it never
+     * reaches plans->applyPaidInvoice.
      */
     private function payInvoice(BillingInvoice $invoice, BillingPayment $payment, ?Authenticatable $actor): string
     {
         $now = now();
         $late = false;
-        if ($invoice->status === BillingInvoice::VOID) {
-            $paidSince = BillingInvoice::query()->where('status', BillingInvoice::PAID)->where('paid_at', '>', $invoice->issued_at)->exists();
+        $sms = $invoice->kind === BillingInvoice::SMS_CREDITS;
+        if ($sms) {
+            $late = $invoice->status === BillingInvoice::VOID;
+        } elseif ($invoice->status === BillingInvoice::VOID) {
+            $paidSince = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::PAID)->where('paid_at', '>', $invoice->issued_at)->exists();
             $late = ! $paidSince;
         }
         $from = $late ? BillingInvoice::VOID : BillingInvoice::OPEN;
@@ -237,7 +252,11 @@ final class BillingPaymentService
         }
         $invoice->refresh();
         $this->audit->log('billing.invoice_paid', $invoice, ['number' => $invoice->number, 'late' => $late, 'payment' => $payment->id], $actor, system: $actor === null);
-        $this->plans->applyPaidInvoice($invoice, $late, $actor);
+        if ($sms) {
+            $this->credits->grantForInvoice($invoice, $actor);
+        } else {
+            $this->plans->applyPaidInvoice($invoice, $late, $actor);
+        }
 
         return $late ? 'late' : 'paid';
     }
@@ -274,7 +293,9 @@ final class BillingPaymentService
             $owner?->email,
             $owner?->phone,
             InvoiceService::billingCity(),
-            BillingQuoteService::planDescription($plan, $invoice->interval),
+            $invoice->kind === BillingInvoice::SMS_CREDITS || $plan === null
+                ? InvoiceService::smsCreditsDescription((int) $invoice->sms_credits)
+                : BillingQuoteService::planDescription($plan, (string) $invoice->interval),
             $invoice->number,
         );
     }

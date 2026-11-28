@@ -18,7 +18,9 @@ use App\Domain\Marketing\Sending\CampaignMessenger;
 use App\Domain\Marketing\Sending\CampaignSendFailed;
 use App\Domain\Marketing\Sending\DevMessageSink;
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\SmsSender;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\Support\TenantCache;
@@ -262,22 +264,39 @@ final class CampaignService
             $sms = CampaignRenderer::sms($spec, $brand, $name, $code);
             CampaignAllowance::assertFits($tenant, Campaign::SMS, $sms['parts']);
             RateLimiter::hit($limiterKey, 3600);
+            // PHASE-8-9A §4.3: the test SMS is charged like a campaign SMS (allowance, else credits; audit meta charged_from).
+            $sender = SmsSender::for($store);
+            [$message, $charge] = DB::transaction(function () use ($campaign, $store, $to, $sms, $sender) {
+                $message = SmsMessage::query()->create([
+                    'tenant_id' => $campaign->tenant_id, 'store_id' => $store->id, 'to' => $to, 'purpose' => 'campaign',
+                    'template' => 'campaign:'.$campaign->id.':test', 'status' => SmsMessage::QUEUED, 'sender_id' => $sender,
+                    'reference_type' => 'campaign', 'reference_id' => $campaign->id,
+                ]);
+
+                return [$message, app(SmsCharger::class)->charge($message, $sms['text'])];
+            });
+            if ($charge->skipped()) {
+                CampaignAllowance::assertFits($tenant, Campaign::SMS, $sms['parts']);
+
+                throw SmsCharger::exhausted($charge);
+            }
             $error = null;
             $providerId = null;
             try {
-                $providerId = $this->messenger->sms($store->id, $to, $sms['text']);
+                $providerId = $this->messenger->sms($store->id, $to, $sms['text'], $sender);
             } catch (CampaignSendFailed $e) {
                 $error = $e->errorCode;
                 report($e);
             }
-            SmsMessage::query()->create([
-                'tenant_id' => $campaign->tenant_id, 'to' => $to, 'purpose' => 'campaign', 'template' => 'campaign:'.$campaign->id.':test',
-                'provider_message_id' => $providerId, 'status' => $error === null ? 'sent' : 'failed', 'error' => $error,
-            ]);
-            if ($error !== null) {
+            if ($error === null) {
+                $message->markSent($providerId);
+            } else {
+                $message->markFailed($error);
+                app(SmsCharger::class)->refund($message);
+
                 throw new ApiException(502, 'provider_error', 'The SMS provider could not send the test message. Try again in a moment.');
             }
-            $this->audit->log('campaign.test_sent', $campaign, ['channel' => Campaign::SMS, 'parts' => $sms['parts'], 'store_id' => $store->id, 'to_masked' => MarketingAddress::mask(Campaign::SMS, $to), 'code_hash' => UnsubscribeCodes::hash($code)]);
+            $this->audit->log('campaign.test_sent', $campaign, ['channel' => Campaign::SMS, 'parts' => $sms['parts'], 'charged_from' => $charge->from, 'store_id' => $store->id, 'to_masked' => MarketingAddress::mask(Campaign::SMS, $to), 'code_hash' => UnsubscribeCodes::hash($code)]);
             DevMessageSink::record($store->id, ['channel' => Campaign::SMS, 'to' => $to, 'subject' => null, 'text' => $sms['text'],
                 'unsubscribe_url' => 'https://'.$brand->host.'/u/'.$code, 'campaign_id' => $campaign->id, 'is_test' => true]);
         } else {
@@ -326,7 +345,7 @@ final class CampaignService
             'total_parts' => $total,
             'encoding' => $encoding,
             'characters' => $characters,
-            'allowance' => CampaignAllowance::summary($tenant, $spec->channel, $total),
+            'allowance' => CampaignAllowance::summary($tenant, $spec->channel, $total) + ['credits' => CampaignAllowance::creditsFor($tenant, $spec->channel)],
         ];
     }
 

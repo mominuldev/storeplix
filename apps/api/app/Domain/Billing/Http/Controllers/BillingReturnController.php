@@ -6,6 +6,7 @@ namespace App\Domain\Billing\Http\Controllers;
 
 use App\Domain\Billing\BillingPaymentService;
 use App\Domain\Billing\BillingUrls;
+use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Tenancy\Support\PreTenantLookup;
 use App\Domain\Tenancy\TenantContext;
@@ -43,13 +44,15 @@ class BillingReturnController
             }
             $params = array_filter($request->query() + $request->post(), fn ($v, $k) => is_string($k) && is_scalar($v), ARRAY_FILTER_USE_BOTH);
             $this->payments->handleReturn($row, $params);
+            // PHASE-8-9A §5.3: an SMS credit purchase returns to the SMS page's credits tab.
+            $kind = BillingInvoice::query()->whereKey($row->invoice_id)->value('kind');
 
-            return self::redirect($row->id);
+            return self::redirect($row->id, is_string($kind) ? $kind : null);
         });
     }
 
-    private static function redirect(?string $paymentId): Response
+    private static function redirect(?string $paymentId, ?string $kind = null): Response
     {
-        return new Response('', 303, ['Location' => BillingUrls::merchantResult($paymentId), 'Cache-Control' => 'no-store', 'Referrer-Policy' => 'no-referrer']);
+        return new Response('', 303, ['Location' => BillingUrls::merchantResult($paymentId, $kind), 'Cache-Control' => 'no-store', 'Referrer-Policy' => 'no-referrer']);
     }
 }

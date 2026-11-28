@@ -82,3 +82,7 @@ Schedule::command('expenses:prune-receipts')->dailyAt('03:30')->timezone('UTC')-
 // (13 months) pruned daily. Discovery on the platform connection, work per tenant.
 Schedule::command('fraud:resolve-stale')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('fraud:prune')->dailyAt('03:50')->timezone('UTC')->withoutOverlapping();
+
+// PHASE-8-9A P89A-21 / §8.2: SMS log previews nulled after 90 days; finished sender-ID trade licences pruned after 180 days.
+Schedule::command('sms:prune-previews')->dailyAt('03:10')->timezone('Asia/Dhaka')->withoutOverlapping();
+Schedule::command('sms:prune-sender-documents')->dailyAt('03:20')->timezone('Asia/Dhaka')->withoutOverlapping();

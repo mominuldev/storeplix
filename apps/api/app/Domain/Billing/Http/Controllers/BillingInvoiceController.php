@@ -31,10 +31,15 @@ class BillingInvoiceController
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'filter.status' => ['sometimes', 'string', 'in:'.implode(',', BillingInvoice::STATUSES)],
+            // PHASE-8-9A §5.3: comma list of BillingInvoiceKind (SMS credit purchase history).
+            'filter.kind' => ['sometimes', 'string', 'regex:/^('.implode('|', BillingInvoice::KINDS).')(,('.implode('|', BillingInvoice::KINDS).'))*$/'],
         ]);
         $query = BillingInvoice::query()->orderByDesc('issued_at')->orderByDesc('id');
         if (is_string($status = $request->input('filter.status'))) {
             $query->where('status', $status);
+        }
+        if (is_string($kind = $request->input('filter.kind'))) {
+            $query->whereIn('kind', array_unique(explode(',', $kind)));
         }
         $page = $query->paginate((int) $request->input('per_page', 20));
 

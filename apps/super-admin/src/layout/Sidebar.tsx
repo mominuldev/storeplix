@@ -4,6 +4,7 @@ import { NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { useHealth } from '../lib/health';
 import { roleLabel, useCan } from '../lib/permissions';
+import { usePendingSenderIdCount } from '../sms/queries';
 import { navGroups } from './nav';
 
 function initials(name: string | undefined) {
@@ -27,6 +28,8 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
   const { user, logout } = useAuth();
   const can = useCan();
   const health = useHealth();
+  const pendingSenderIds = usePendingSenderIdCount(can('manage_domains'));
+  const badges = { sender_ids_pending: pendingSenderIds };
   const status = health.isPending
     ? { dot: 'bg-text-muted', label: 'Production · checking status' }
     : health.isError
@@ -71,7 +74,13 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   {({ isActive }) => (
                     <>
                       <Icon className={cn('size-[18px] shrink-0', !isActive && 'opacity-60')} strokeWidth={2.25} aria-hidden />
-                      <span className={cn('truncate', !isActive && 'opacity-72')}>{item.label}</span>
+                      <span className={cn('min-w-0 flex-1 truncate', !isActive && 'opacity-72')}>{item.label}</span>
+                      {item.badge && !!badges[item.badge] && (
+                        <span className="shrink-0 rounded-full bg-brand-600 px-[7px] py-px text-caption font-medium text-text-inverse tabular-nums">
+                          <span className="sr-only">, pending </span>
+                          {badges[item.badge]!.toLocaleString('en-IN')}
+                        </span>
+                      )}
                     </>
                   )}
                 </NavLink>

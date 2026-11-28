@@ -24,7 +24,9 @@ use App\Domain\Marketing\Sending\DevMessageSink;
 use App\Domain\Marketing\Suppressions;
 use App\Domain\Marketing\UnsubscribeCodes;
 use App\Domain\Orders\Models\Order;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\SmsSender;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\TenantContext;
@@ -280,6 +282,12 @@ final class AutomationEngine
             $tenant = $this->context->tenant();
             if ($tenant === null) {
                 $reason = 'allowance';
+            } elseif ($channel === 'sms') {
+                // PHASE-8-9A §4.3: SMS steps are charged after the step row exists (allowance, else credits); a 0
+                // allowance (Free) never uses credits.
+                if (CampaignAllowance::planHasNone($tenant, $channel)) {
+                    $reason = 'allowance';
+                }
             } else {
                 $summary = CampaignAllowance::summary($tenant, $channel, $rendered['parts']);
                 if ($summary['limit'] !== null && $summary['limit'] < $summary['used'] + $rendered['parts']) {
@@ -301,22 +309,46 @@ final class AutomationEngine
         }
         $error = null;
         $providerId = null;
+        $message = null;
+        $chargedFrom = null;
+        $sender = null;
+        if ($channel === 'sms') {
+            $sender = SmsSender::for($store);
+            [$message, $charge] = DB::transaction(function () use ($run, $store, $address, $automation, $sender, $rendered) {
+                $message = SmsMessage::query()->create([
+                    'tenant_id' => $run->tenant_id, 'store_id' => $store->id, 'to' => $address, 'purpose' => 'automation',
+                    'template' => 'automation:'.$automation->id, 'status' => SmsMessage::QUEUED, 'sender_id' => $sender,
+                    'reference_type' => 'automation', 'reference_id' => $automation->id,
+                ]);
+
+                return [$message, app(SmsCharger::class)->charge($message, $rendered['text'], (int) $rendered['parts'])];
+            });
+            if ($charge->skipped()) {
+                AutomationRunStep::query()->where('run_id', $run->id)->where('step_index', (int) $step['index'])->where('status', AutomationRunStep::SENDING)
+                    ->update(['status' => AutomationRunStep::SKIPPED, 'reason' => 'allowance', 'parts' => 0, 'updated_at' => now()]);
+
+                return ['status' => AutomationRunStep::SKIPPED, 'reason' => 'allowance'];
+            }
+            $chargedFrom = $charge->from;
+        }
         try {
             $providerId = $channel === 'sms'
-                ? $this->messenger->sms($store->id, $address, $rendered['text'])
+                ? $this->messenger->sms($store->id, $address, $rendered['text'], $sender)
                 : $this->messenger->email($brand, $address, (array) $rendered['email']);
         } catch (CampaignSendFailed $e) {
             $error = $e->errorCode;
         }
         AutomationRunStep::query()->where('run_id', $run->id)->where('step_index', (int) $step['index'])->where('status', AutomationRunStep::SENDING)
             ->update($error === null
-                ? ['status' => AutomationRunStep::DONE, 'provider_message_id' => $providerId, 'executed_at' => now(), 'updated_at' => now()]
+                ? ['status' => AutomationRunStep::DONE, 'provider_message_id' => $providerId, 'executed_at' => now(), 'charged_from' => $chargedFrom, 'updated_at' => now()]
                 : ['status' => AutomationRunStep::FAILED, 'reason' => $error, 'parts' => 0, 'updated_at' => now()]);
-        if ($channel === 'sms') {
-            SmsMessage::query()->create([
-                'tenant_id' => $run->tenant_id, 'to' => $address, 'purpose' => 'automation', 'template' => 'automation:'.$automation->id,
-                'provider_message_id' => $providerId, 'status' => $error === null ? 'sent' : 'failed', 'error' => $error,
-            ]);
+        if ($message !== null) {
+            if ($error === null) {
+                $message->markSent($providerId);
+            } else {
+                $message->markFailed($error);
+                app(SmsCharger::class)->refund($message);
+            }
         }
         if ($error === null) {
             DevMessageSink::record($store->id, [

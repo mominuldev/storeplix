@@ -229,6 +229,23 @@ class PermissionParityTest extends TestCase
         'POST api/v1/stores/{store}/pos/held-sales' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
         'GET api/v1/stores/{store}/pos/held-sales/{held}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'DELETE api/v1/stores/{store}/pos/held-sales/{held}' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
+        // Phase 8.9a (PHASE-8-9A §2, §10.1, P89A-25): Admin (Manager) has settings.manage, integrations.manage and
+        // billing.view → everything except the purchase; Staff has none of them. A pending sender-ID request is seeded,
+        // so a new request answers 409 sender_id_request_pending.
+        'GET api/v1/stores/{store}/sms' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/sms/test' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/sms/templates' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/sms/templates/preview' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PUT api/v1/stores/{store}/sms/templates/{key}/{language}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'DELETE api/v1/stores/{store}/sms/templates/{key}/{language}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/sms/sender-ids' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/sms/sender-ids' => ['owner' => 409, 'admin' => 409, 'staff' => 403],
+        'POST api/v1/stores/{store}/sms/sender-ids/{sender_id}/cancel' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/sms/messages' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/billing/sms-credits' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/billing/sms-credits' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/billing/sms-credits/ledger' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/billing/sms-credits/purchase' => ['owner' => 201, 'admin' => 403, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -364,6 +381,10 @@ class PermissionParityTest extends TestCase
 
         [$admin] = $this->merchant(TenantUser::ROLE_ADMIN, $tenant);
         [$staff] = $this->merchant(TenantUser::ROLE_STAFF, $tenant);
+        // Phase 8.9a: verified phones, so the test SMS reaches the provider.
+        foreach ([$owner, $admin, $staff] as $i => $member) {
+            $member->forceFill(['phone' => '88017110000'.($i + 10), 'phone_verified_at' => now()])->save();
+        }
         [$victim] = $this->merchant(TenantUser::ROLE_STAFF, $tenant);
         $victimMembership = $this->platformQuery(TenantUser::class)->where('tenant_id', $tenant->id)->where('user_id', $victim->id)->value('id');
         $invitation = $this->req($h, 'POST', '/api/v1/staff/invitations', ['email' => 'invitee@example.test', 'role' => 'staff', 'name' => 'Invitee'])
@@ -490,6 +511,11 @@ class PermissionParityTest extends TestCase
         $posSale = $posSale['id'];
         // Phase 8.8d part B: one held sale on Register 1.
         $posHeld = $this->req($h, 'POST', "{$base}/pos/held-sales", ['session_id' => $posSession, 'lines' => $posLines, 'note' => 'Back in 5'])->assertCreated()->json('data.id');
+        // Phase 8.9a: one pending sender-ID request (trade licence PDF).
+        $senderId = $this->flushHeaders()->withHeaders($h)->post("{$base}/sms/sender-ids", [
+            'sender_id' => 'ParityBD', 'business_name' => 'Parity Traders', 'uses' => ['order_updates'], 'rights_confirmed' => '1',
+            'document' => UploadedFile::fake()->createWithContent('licence.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -510,7 +536,7 @@ class PermissionParityTest extends TestCase
             'count' => $count, 'count_line' => $countLine, 'sku' => $sku,
             'till' => $till, 'register' => $register, 'spare_register' => $spareRegister, 'archived_register' => $archivedRegister,
             'pos_session' => $posSession, 'pos_lines' => $posLines, 'pos_total' => $posTotal, 'pos_sale' => $posSale,
-            'pos_item' => $posItem, 'pos_held' => $posHeld,
+            'pos_item' => $posItem, 'pos_held' => $posHeld, 'sender_id' => $senderId,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -714,6 +740,24 @@ class PermissionParityTest extends TestCase
                 'session_id' => $s['pos_session'], 'lines' => [['order_item_id' => $s['pos_item'], 'quantity' => 1]], 'refund_method' => 'card',
             ], true),
             'GET api/v1/stores/{store}/pos/held-sales' => $r('GET', "{$b}/pos/held-sales?register_id={$s['register']}"),
+            // Phase 8.9a SMS.
+            'GET api/v1/stores/{store}/sms' => $r('GET', "{$b}/sms"),
+            'POST api/v1/stores/{store}/sms/test' => $r('POST', "{$b}/sms/test", ['language' => 'en']),
+            'GET api/v1/stores/{store}/sms/templates' => $r('GET', "{$b}/sms/templates"),
+            'POST api/v1/stores/{store}/sms/templates/preview' => $r('POST', "{$b}/sms/templates/preview", ['key' => 'order_confirmed', 'language' => 'en', 'body' => '{shop}: Order {number} is confirmed!']),
+            'PUT api/v1/stores/{store}/sms/templates/{key}/{language}' => $r('PUT', "{$b}/sms/templates/order_confirmed/en", ['body' => '{shop}: Order {number} is confirmed!', 'revision' => 0]),
+            'DELETE api/v1/stores/{store}/sms/templates/{key}/{language}' => $r('DELETE', "{$b}/sms/templates/order_confirmed/en"),
+            'GET api/v1/stores/{store}/sms/sender-ids' => $r('GET', "{$b}/sms/sender-ids"),
+            'POST api/v1/stores/{store}/sms/sender-ids' => fn (array $h) => $this->flushHeaders()->withHeaders($h)->post("{$b}/sms/sender-ids", [
+                'sender_id' => 'OtherBD', 'business_name' => 'Parity Traders', 'uses' => ['otp'], 'rights_confirmed' => '1',
+                'document' => UploadedFile::fake()->createWithContent('licence.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+            ], ['Accept' => 'application/json']),
+            'POST api/v1/stores/{store}/sms/sender-ids/{sender_id}/cancel' => $r('POST', "{$b}/sms/sender-ids/{$s['sender_id']}/cancel"),
+            'GET api/v1/stores/{store}/sms/messages' => $r('GET', "{$b}/sms/messages"),
+            'GET api/v1/billing/sms-credits' => $r('GET', '/api/v1/billing/sms-credits'),
+            'PATCH api/v1/billing/sms-credits' => $r('PATCH', '/api/v1/billing/sms-credits', ['low_credit_threshold' => 500]),
+            'GET api/v1/billing/sms-credits/ledger' => $r('GET', '/api/v1/billing/sms-credits/ledger'),
+            'POST api/v1/billing/sms-credits/purchase' => $r('POST', '/api/v1/billing/sms-credits/purchase', ['pack' => 'credits_1000', 'provider' => 'bkash'], true),
             'POST api/v1/stores/{store}/pos/held-sales' => $r('POST', "{$b}/pos/held-sales", ['session_id' => $s['pos_session'], 'lines' => $s['pos_lines']]),
             'GET api/v1/stores/{store}/pos/held-sales/{held}' => $r('GET', "{$b}/pos/held-sales/{$s['pos_held']}"),
             'DELETE api/v1/stores/{store}/pos/held-sales/{held}' => $r('DELETE', "{$b}/pos/held-sales/{$s['pos_held']}"),

@@ -1,8 +1,8 @@
 import type { CourierAccount, CourierProvider, GatewayProvider, PaymentGatewayAccount } from '@storeplix/types';
-import { Badge, Button, buttonVariants, cn, ProviderLogo, Skeleton } from '@storeplix/ui';
+import { Badge, Button, buttonVariants, cn, formatCount, ProviderLogo, Skeleton } from '@storeplix/ui';
 import { Search } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock } from '../catalog/states';
@@ -16,21 +16,30 @@ import { DEVELOPER_DOCS_URL } from '../lib/links';
 import { ConnectGatewayDialog } from '../payments/ConnectGatewayDialog';
 import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, modeLabel } from '../payments/gateways';
 import { usePaymentGateways } from '../payments/queries';
+import { useSmsCredits } from '../sms/queries';
+import { canOpenSms } from '../sms/sms';
 
 // Figma Integrations 14:980 (PHASE-5B §10). Filter chips All / Connected / Couriers / Payments with counts. Payments
 // (bKash, SSLCommerz) live since 5b-2; couriers (Steadfast, Pathao, RedX) since 5b-3: status badge, capability line,
 // "Live mode · Synced 2 min ago" and Connect/Manage, which opens the courier dialog (couriers/CourierDialog).
-// Hidden (§10): Paperfly, CarryBee, Nagad, EPS, aamarPay, PayStation, Marketing & tracking, Messaging, AI.
+// Hidden (§10): Paperfly, CarryBee, Nagad, EPS, aamarPay, PayStation, Marketing & tracking, AI.
+// PHASE-8-9A §12.6 (Q271): Messaging is no longer hidden: one SMS card (platform gateway, always Active) → /integrations/sms,
+// shown to members who can open that page (settings.manage | integrations.manage | billing.view), plus a "Messaging"
+// chip. The SMS card is not counted in the All/Connected chip numbers (those count connectable accounts).
 // Phase 8.4 §7: the Developer banner 14:1441 links to /integrations/developer (only with `developers.manage`). Filter pills follow the Figma frames (selected = text-primary fill, white text; counts on All and
 // Connected only); the search box filters the cards by name. Staff see the page read-only.
 
-type Filter = 'all' | 'connected' | 'couriers' | 'payments';
+type Filter = 'all' | 'connected' | 'couriers' | 'payments' | 'messaging';
+const FILTERS: readonly Filter[] = ['all', 'connected', 'couriers', 'payments', 'messaging'];
 
 export function IntegrationsPage() {
   const scope = useStoreScope();
   const { activeTenant } = useAuth();
   const gateways = usePaymentGateways();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [params] = useSearchParams();
+  const initial = params.get('filter');
+  const [filter, setFilter] = useState<Filter>(FILTERS.includes(initial as Filter) ? (initial as Filter) : 'all');
+  const smsVisible = canOpenSms(activeTenant);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const matches = (name: string) => !q || name.toLowerCase().includes(q);
@@ -45,10 +54,12 @@ export function IntegrationsPage() {
     { value: 'connected', label: `Connected · ${connectedCount}` },
     { value: 'couriers', label: 'Couriers' },
     { value: 'payments', label: 'Payments' },
+    ...(smsVisible ? [{ value: 'messaging' as const, label: 'Messaging' }] : []),
   ];
-  const showPayments = filter !== 'couriers';
+  const showPayments = filter !== 'couriers' && filter !== 'messaging';
+  const showMessaging = smsVisible && (filter === 'all' || filter === 'connected' || filter === 'messaging') && matches('Storeplix SMS');
   const visibleGateways = GATEWAYS.filter((p) => (filter !== 'connected' || isConnected(accounts[p])) && matches(gatewayMeta[p].name));
-  const showCouriers = filter !== 'payments';
+  const showCouriers = filter !== 'payments' && filter !== 'messaging';
   const visibleCouriers = COURIERS.filter((p) => (filter !== 'connected' || courierConnected(courierAccounts[p])) && matches(courierMeta[p].name));
 
   return (
@@ -130,6 +141,12 @@ export function IntegrationsPage() {
         </Section>
       )}
 
+      {showMessaging && (
+        <Section title="Messaging" subtitle="Order updates and codes by SMS, sent through Store Plix.">
+          <SmsCard />
+        </Section>
+      )}
+
       {filter === 'all' && !q && can.manageDevelopers(activeTenant) && <DeveloperBanner />}
 
       {connecting && <ConnectGatewayDialog provider={connecting} account={accounts[connecting]} onClose={() => setConnecting(null)} />}
@@ -193,6 +210,35 @@ export function IntegrationCard({ logo, name, status, capability, footer, action
         {action}
       </div>
     </article>
+  );
+}
+
+/** PHASE-8-9A §12.6 SMS card: logo tile "SMS", Active, capability + credit balance, Manage → /integrations/sms. */
+function SmsCard() {
+  const credits = useSmsCredits();
+  const balance = credits.data ? ` · ${formatCount(credits.data.balance)} credits` : '';
+  return (
+    <IntegrationCard
+      logo={
+        <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-control bg-brand-600 text-caption font-semibold text-text-inverse">
+          SMS
+        </span>
+      }
+      name="Storeplix SMS"
+      status={
+        <Badge tone="success" dot>
+          Active
+        </Badge>
+      }
+      capability={`Order updates, checkout codes and receipts${balance}`}
+      footer="Storeplix SMS · BTRC-approved"
+      highlighted
+      action={
+        <Link to="/integrations/sms" aria-label="Manage SMS" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+          Manage
+        </Link>
+      }
+    />
   );
 }
 

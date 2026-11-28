@@ -58,7 +58,7 @@ final class CompPlanChange
                 if ($keep) {
                     [$start, $end] = [$sub->current_period_start, $sub->current_period_end];
                 }
-                $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+                $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
                 if ($open !== null) {
                     $this->invoices->void($open, BillingInvoice::VOID_SUPERSEDED, false, $actor->staff);
                 }

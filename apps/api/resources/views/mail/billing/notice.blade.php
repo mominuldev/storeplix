@@ -24,11 +24,14 @@
 @elseif ($kind === 'domain_will_detach')
 <h2>Your custom domain stops working on {{ $data['date'] }}</h2>
 <p>{{ $shop }}'s plan no longer includes all of its custom domains. Upgrade before {{ $data['date'] }} to keep them connected.</p>
+@elseif ($kind === 'sms_credits_added')
+<h2>{{ $data['credits'] }} SMS credits added</h2>
+<p>Invoice {{ $data['number'] }} ({{ $data['amount'] }}) for {{ $shop }} is paid. Your shop now has {{ $data['balance'] }} SMS credits. They are used after the monthly allowance and never expire.</p>
 @else
 <h2>Billing alert: {{ $data['event'] }}</h2>
 <p>Tenant {{ $data['tenant'] }} ({{ $shop }}), invoice {{ $data['number'] ?? '—' }}, payment {{ $data['payment'] ?? '—' }}, {{ $data['detail'] ?? '' }}. Check the provider panel and refund if needed (Q89).</p>
 @endif
 @if ($kind !== 'ops_alert')
-<p><a href="{{ $url }}" style="background:#5b53ff;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open Plan &amp; billing</a></p>
+<p><a href="{{ $url }}" style="background:#5b53ff;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">{{ $kind === 'sms_credits_added' ? 'Open SMS credits' : 'Open Plan & billing' }}</a></p>
 @endif
 </body></html>

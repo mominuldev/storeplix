@@ -216,7 +216,7 @@ final class SubscriptionProcessor
         if ($subscription->grace_ends_at->isFuture()) {
             if ($subscription->grace_ends_at->lessThanOrEqualTo(now()->addDays((int) config('billing.grace_reminder_days', 2)))
                 && DB::transaction(fn () => BillingNotifier::claimNotice($subscription, 'grace_ending:'.$subscription->grace_ends_at->getTimestamp()))) {
-                $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->first();
+                $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->first();
                 $this->notifier->owner(BillingMail::GRACE_ENDING, [
                     'plan' => $subscription->plan->name, 'number' => $open?->number, 'date' => BillingNotifier::date($subscription->grace_ends_at),
                 ]);

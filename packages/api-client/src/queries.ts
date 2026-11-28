@@ -20,6 +20,8 @@ import type {
   PosCatalogParams,
   PosRegisterListFilters,
   PosSaleListFilters,
+  SmsCreditLedgerFilters,
+  SmsLogFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -258,4 +260,21 @@ export function posSaleListQuery(f: PosSaleListFilters = {}): Query {
     q: text(f.q),
     cursor: f.cursor || undefined,
   };
+}
+
+/** PHASE-8-9A §9 SMS log: comma lists for purpose/status; dates YYYY-MM-DD (store timezone, ≤ 90 days back). */
+export function smsLogQuery(f: SmsLogFilters = {}): Query {
+  return {
+    'filter[purpose]': list(f.purpose),
+    'filter[status]': list(f.status),
+    'filter[from]': f.from || undefined,
+    'filter[to]': f.to || undefined,
+    'filter[phone]': text(f.phone),
+    cursor: f.cursor || undefined,
+  };
+}
+
+/** PHASE-8-9A §5.5 credit ledger. */
+export function smsCreditLedgerQuery(f: SmsCreditLedgerFilters = {}): Query {
+  return { 'filter[type]': list(f.type), cursor: f.cursor || undefined };
 }

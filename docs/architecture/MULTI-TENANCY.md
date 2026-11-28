@@ -184,7 +184,9 @@ existed before 5b and revokes `UPDATE, DELETE ON audit_logs` from the app role (
   `order_risk_checks`, `fraud_guard_events`, `checkout_otps`; **82 after Phase 8.8b**: + `suppliers`,
   `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments`; **83
   after Phase 8.8c part A**: + `locations`; **87 after Phase 8.8c**: + `stock_transfers`, `stock_transfer_items`,
-  `stock_counts`, `stock_count_items`; the
+  `stock_counts`, `stock_count_items`; **91 after Phase 8.8d**: + `pos_registers`, `pos_sessions`, `pos_sales`,
+  `pos_held_sales`; **95 after Phase 8.9a**: + `sms_credit_accounts`, `sms_credit_ledger` (append-only, SELECT/INSERT
+  policies only), `sms_templates`, `sms_sender_ids`; the
   `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
   tables without `tenant_id` and without RLS (`users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`,
   `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`, `tenants`, `plans`, `otp_codes`, `migrations`).

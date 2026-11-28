@@ -117,7 +117,9 @@ class PosIntegrationTest extends TestCase
         $second = $this->cashSale($s, $session, 1, ['sms_receipt' => true, 'customer' => ['phone' => '01811223344', 'name' => 'Rafi']]);
         $this->assertSame('failed', $second['sms_receipt_status']);
         $this->assertCount(1, app(SmsGateway::class)->sent);
-        $this->assertSame(1, $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->count());
+        $this->assertSame(1, $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->where('status', '<>', 'skipped')->count());
+        // PHASE-8-9A: the skipped receipt now has a log row (status skipped, no_credits).
+        $this->assertSame(1, $this->platformQuery(SmsMessage::class)->where('tenant_id', $tenant->id)->where('status', 'skipped')->where('error_code', 'no_credits')->count());
         $note = $this->platformQuery(OrderEvent::class)->where('order_id', $second['order_id'])->where('type', 'notification')->sole();
         $this->assertSame(['sms', 'pos_receipt', 'skipped'], [$note->meta['channel'], $note->meta['event'], $note->meta['status']]);
     }

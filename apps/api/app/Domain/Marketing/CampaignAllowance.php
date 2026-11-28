@@ -10,6 +10,7 @@ use App\Domain\Billing\Limit;
 use App\Domain\Marketing\Models\Campaign;
 use App\Domain\Marketing\Models\CampaignRecipient;
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Sms\Credits\SmsCreditService;
 use App\Domain\Tenancy\Models\AuditLog;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\TenantContext;
@@ -24,6 +25,9 @@ use App\Domain\Tenancy\TenantContext;
  *
  * PHASE-8-6 P86-8 (Q157): the allowance is shared with automations — automation message steps `done` / `sending` /
  * `unknown` executed this month (SMS: Σ parts; email: count) and `automation.test_sent` audit rows count too.
+ *
+ * PHASE-8-9A §4.5, P89A-6: rows paid with SMS credits (`charged_from = credits`, test sends with `meta.charged_from =
+ * credits`) never count; the schedule / send fit is `needed ≤ remaining + credits` when the plan allowance is not 0.
  */
 final class CampaignAllowance
 {
@@ -35,12 +39,13 @@ final class CampaignAllowance
     public static function used(string $channel): int
     {
         $since = FeatureGate::monthStart();
-        $q = CampaignRecipient::query()->where('channel', $channel)->whereIn('status', CampaignRecipient::COUNTED)
+        $notCredits = fn ($w) => $w->whereNull('charged_from')->orWhere('charged_from', '<>', 'credits'); // PHASE-8-9A §4.5
+        $q = CampaignRecipient::query()->where('channel', $channel)->whereIn('status', CampaignRecipient::COUNTED)->where($notCredits)
             ->where(fn ($w) => $w->where('sent_at', '>=', $since)->orWhere(fn ($x) => $x->whereNull('sent_at')->where('updated_at', '>=', $since)));
         $recipients = $channel === Campaign::SMS ? (int) $q->sum('parts') : $q->count();
 
         $steps = AutomationRunStep::query()->where('action', AutomationRunStep::SEND_MESSAGE)->where('channel', $channel)
-            ->whereIn('status', AutomationRunStep::COUNTED)->where('executed_at', '>=', $since);
+            ->whereIn('status', AutomationRunStep::COUNTED)->where($notCredits)->where('executed_at', '>=', $since);
         $automations = $channel === Campaign::SMS ? (int) $steps->sum('parts') : $steps->count();
 
         $tests = 0;
@@ -48,7 +53,7 @@ final class CampaignAllowance
             ->whereIn('action', ['campaign.test_sent', 'automation.test_sent'])->where('created_at', '>=', $since)->get(['meta']);
         foreach ($rows as $row) {
             $meta = (array) $row->meta;
-            if (($meta['channel'] ?? null) === $channel) {
+            if (($meta['channel'] ?? null) === $channel && ($meta['charged_from'] ?? null) !== 'credits') {
                 $tests += $channel === Campaign::SMS ? max(1, (int) ($meta['parts'] ?? 1)) : 1;
             }
         }
@@ -78,6 +83,10 @@ final class CampaignAllowance
         if ($used + $needed <= $limit) {
             return;
         }
+        // PHASE-8-9A P89A-6: SMS credits top up a non-zero allowance (no reservation); they never unlock a 0 allowance.
+        if ($limit > 0 && $channel === Campaign::SMS && $needed <= max(0, $limit - $used) + self::credits()) {
+            return;
+        }
         $upgrade = FeatureGate::upgradePlanForLimit($key, $used + max(1, $needed));
         $details = [$key->value => ['limit' => $limit, 'used' => $used, 'needed' => $needed]];
         if ($upgrade !== null) {
@@ -90,6 +99,22 @@ final class CampaignAllowance
                 : "Not enough campaign emails left this month: {$needed} needed, ".max(0, $limit - $used).' left.');
 
         throw new ApiException(402, 'plan_limit_reached', $message, $details);
+    }
+
+    /**
+     * PHASE-8-9A P89A-6: SMS credits usable for campaign SMS on top of the allowance (0 for email, an unlimited or a 0
+     * allowance). `CampaignEstimate.allowance.credits`.
+     */
+    public static function creditsFor(Tenant $tenant, string $channel): int
+    {
+        $limit = FeatureGate::limit($tenant, self::limitKey($channel));
+
+        return $channel === Campaign::SMS && $limit !== null && $limit > 0 ? self::credits() : 0;
+    }
+
+    private static function credits(): int
+    {
+        return app(SmsCreditService::class)->balance();
     }
 
     /** True when the plan has no allowance at all for the channel (Free, P85-13). */

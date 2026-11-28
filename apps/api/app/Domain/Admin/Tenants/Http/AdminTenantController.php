@@ -83,7 +83,8 @@ class AdminTenantController
                 ], Limit::cases()),
             ];
         });
-        $open = AdminPresenter::invoiceQuery()->where('i.tenant_id', $tenantId)->where('i.status', BillingInvoice::OPEN)->first();
+        $open = AdminPresenter::invoiceQuery()->where('i.tenant_id', $tenantId)->where('i.status', BillingInvoice::OPEN)
+            ->whereIn('i.kind', BillingInvoice::SUBSCRIPTION_KINDS)->first(); // PHASE-8-9A §5.3: the subscription's open invoice
 
         return $summary + [
             'suspension' => $row->status === Tenant::STATUS_SUSPENDED ? [

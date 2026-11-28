@@ -29,6 +29,7 @@ class RoutePermissionsTest extends TestCase
         ],
         'billing.view' => [
             'billing.invoices.index',
+            'billing.sms-credits.ledger', // PHASE-8-9A §10.1
             'billing.invoices.pdf',
             'billing.invoices.show',
             'billing.payments.show',
@@ -37,6 +38,7 @@ class RoutePermissionsTest extends TestCase
         ],
         'billing.manage' => [
             'billing.change-plan',
+            'billing.sms-credits.purchase', // PHASE-8-9A P89A-9: owner only
             'billing.invoices.pay',
             'billing.scheduled-change.destroy',
             'dev.billing.clock',
@@ -103,6 +105,10 @@ class RoutePermissionsTest extends TestCase
         ],
         'settings.manage' => [
             'stores.document-templates.update',
+            // PHASE-8-9A §10.1: template writes.
+            'stores.sms.templates.destroy',
+            'stores.sms.templates.preview',
+            'stores.sms.templates.update',
             // PHASE-8-8D P88D-18: register writes.
             'stores.pos.registers.archive',
             'stores.pos.registers.store',
@@ -179,7 +185,25 @@ class RoutePermissionsTest extends TestCase
         'marketing.manage,customers.view' => [
             'stores.campaigns.recipients',
         ],
+        // PHASE-8-9A §10.1 (P89A-25): SMS reads, test SMS, sender IDs, log and credits.
+        'settings.manage|integrations.manage|billing.view' => [
+            'stores.sms.show',
+            'stores.sms.templates.index',
+        ],
+        'settings.manage|integrations.manage' => [
+            'stores.sms.messages.index',
+            'stores.sms.sender-ids.index',
+            'stores.sms.test',
+        ],
+        'billing.view|settings.manage|integrations.manage' => [
+            'billing.sms-credits.show',
+        ],
+        'billing.manage|settings.manage' => [
+            'billing.sms-credits.update',
+        ],
         'integrations.manage' => [
+            'stores.sms.sender-ids.cancel',
+            'stores.sms.sender-ids.store',
             'stores.couriers.connect',
             'stores.couriers.disconnect',
             'stores.couriers.test',

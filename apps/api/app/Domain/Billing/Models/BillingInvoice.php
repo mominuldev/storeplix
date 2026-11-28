@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Billing\Models;
 
 use App\Domain\Tenancy\Concerns\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,8 +22,9 @@ use Illuminate\Support\Carbon;
  * @property string $number
  * @property string $kind
  * @property string $status
- * @property string $plan_id
- * @property string $interval
+ * @property string|null $plan_id null for `sms_credits` (PHASE-8-9A)
+ * @property string|null $interval null for `sms_credits`
+ * @property int|null $sms_credits credits of an `sms_credits` pack invoice
  * @property string $currency
  * @property int $subtotal_amount
  * @property int $tax_amount
@@ -59,7 +61,13 @@ class BillingInvoice extends Model
 
     public const RENEWAL = 'renewal';
 
-    public const KINDS = [self::NEW, self::UPGRADE, self::RENEWAL];
+    /** PHASE-8-9A §5.3: an SMS credit pack (no plan, no interval; never touches the subscription). */
+    public const SMS_CREDITS = 'sms_credits';
+
+    public const KINDS = [self::NEW, self::UPGRADE, self::RENEWAL, self::SMS_CREDITS];
+
+    /** Kinds of the subscription flow (one open invoice of these per tenant). */
+    public const SUBSCRIPTION_KINDS = [self::NEW, self::UPGRADE, self::RENEWAL];
 
     public const OPEN = 'open';
 
@@ -95,6 +103,7 @@ class BillingInvoice extends Model
             'total_amount' => 'integer',
             'tax_rate_bps' => 'integer',
             'credit_amount' => 'integer',
+            'sms_credits' => 'integer',
             'lines' => 'array',
             'bill_to' => 'array',
             'period_start' => 'datetime',
@@ -121,6 +130,22 @@ class BillingInvoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(BillingPayment::class, 'invoice_id');
+    }
+
+    /**
+     * PHASE-8-9A §5.3: every subscription-flow reader of open / paid invoices filters by this scope, so an SMS credit
+     * invoice never activates, extends, supersedes or dunns a subscription.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeSubscriptionKinds($query): void
+    {
+        $query->whereIn('kind', self::SUBSCRIPTION_KINDS);
+    }
+
+    public function isSmsCredits(): bool
+    {
+        return $this->kind === self::SMS_CREDITS;
     }
 
     public function isOpen(): bool

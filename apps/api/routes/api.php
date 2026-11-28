@@ -48,6 +48,7 @@ use App\Domain\Reports\Http\ReportController;
 use App\Domain\Returns\Http\ReturnController;
 use App\Domain\Shared\Http\HealthController;
 use App\Domain\Shipping\Http\ShippingController;
+use App\Domain\Sms\Http\Controllers\SmsCreditController;
 use App\Domain\Staff\Http\Controllers\InvitationAcceptanceController;
 use App\Domain\Staff\Http\Controllers\InvitationController;
 use App\Domain\Staff\Http\Controllers\StaffController;
@@ -326,12 +327,18 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('change-plan', [BillingChangeController::class, 'change'])->middleware('perm:billing.manage')->name('billing.change-plan');
                 Route::delete('scheduled-change', [BillingChangeController::class, 'cancelScheduled'])->middleware('perm:billing.manage')->name('billing.scheduled-change.destroy');
                 Route::post('invoices/{invoice}/pay', [BillingInvoiceController::class, 'pay'])->middleware('perm:billing.manage')->name('billing.invoices.pay');
+                // PHASE-8-9A §5.3: an SMS credit pack (owner only, Idempotency-Key required).
+                Route::post('sms-credits/purchase', [SmsCreditController::class, 'purchase'])->middleware('perm:billing.manage')->name('billing.sms-credits.purchase');
             });
             Route::middleware('throttle:merchant')->group(function (): void {
                 Route::get('invoices', [BillingInvoiceController::class, 'index'])->middleware('perm:billing.view')->name('billing.invoices.index');
                 Route::get('invoices/{invoice}', [BillingInvoiceController::class, 'show'])->middleware('perm:billing.view')->name('billing.invoices.show');
                 Route::get('invoices/{invoice}/pdf', [BillingInvoiceController::class, 'pdf'])->middleware('perm:billing.view')->name('billing.invoices.pdf');
                 Route::get('payments/{payment}', [BillingInvoiceController::class, 'payment'])->middleware('perm:billing.view')->name('billing.payments.show');
+                // PHASE-8-9A §5.1, §5.5, P89A-12: SMS credit account, ledger and the low-credit alert.
+                Route::get('sms-credits', [SmsCreditController::class, 'show'])->middleware('perm:billing.view|settings.manage|integrations.manage')->name('billing.sms-credits.show');
+                Route::patch('sms-credits', [SmsCreditController::class, 'update'])->middleware('perm:billing.manage|settings.manage')->name('billing.sms-credits.update');
+                Route::get('sms-credits/ledger', [SmsCreditController::class, 'ledger'])->middleware('perm:billing.view')->name('billing.sms-credits.ledger');
             });
         });
         // Phase 7 (§4.6): TESTING-ONLY billing clock (404 unless BILLING_FAKE=true; never registered in production).
@@ -371,6 +378,9 @@ Route::prefix('v1')->group(function (): void {
 
     // Phase 8.8d part A (PHASE-8-8D-CONTRACT §4–§7, §10): POS registers, sessions, sales and receipts (own group).
     require __DIR__.'/pos.php';
+
+    // Phase 8.9a (PHASE-8-9A-CONTRACT §10.1): SMS overview, test SMS, templates, sender IDs and the SMS log (own group).
+    require __DIR__.'/sms.php';
 
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
@@ -488,4 +498,5 @@ Route::prefix('v1')->group(function (): void {
     require __DIR__.'/admin-merchants.php';
     require __DIR__.'/impersonation.php';
     require __DIR__.'/admin-analytics.php'; // Phase 8.2
+    require __DIR__.'/admin-sms.php'; // Phase 8.9a
 });

@@ -104,7 +104,13 @@ export function InvoiceDrawer({ invoiceId, onClose }: { invoiceId: string; onClo
         onClose={onClose}
         width={460}
         title={inv ? inv.number : 'Invoice'}
-        description={inv ? `${inv.tenant.name} · ${planName(inv.plan_code)} · ${intervalLabel(inv.interval).toLowerCase()}` : undefined}
+        description={
+          inv
+            ? inv.kind === 'sms_credits' || !inv.plan_code
+              ? `${inv.tenant.name} · SMS credits${inv.sms_credits ? ` · ${inv.sms_credits.toLocaleString('en-IN')}` : ''}`
+              : `${inv.tenant.name} · ${planName(inv.plan_code)} · ${intervalLabel(inv.interval).toLowerCase()}`
+            : undefined
+        }
         footer={
           inv && (
             <>

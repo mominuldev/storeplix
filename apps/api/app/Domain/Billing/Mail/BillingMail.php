@@ -35,8 +35,11 @@ final class BillingMail extends Mailable implements ShouldQueue
 
     public const OPS_ALERT = 'ops_alert';
 
+    /** PHASE-8-9A §5.3: a paid SMS credit pack (instead of PAYMENT_RECEIVED). */
+    public const SMS_CREDITS_ADDED = 'sms_credits_added';
+
     public const KINDS = [self::TRIAL_ENDING, self::INVOICE_ISSUED, self::REMINDER, self::PAYMENT_RECEIVED, self::PAST_DUE,
-        self::GRACE_ENDING, self::DROPPED_TO_FREE, self::DOMAIN_WILL_DETACH, self::OPS_ALERT];
+        self::GRACE_ENDING, self::DROPPED_TO_FREE, self::DOMAIN_WILL_DETACH, self::OPS_ALERT, self::SMS_CREDITS_ADDED];
 
     /** @param array<string, string|int|null> $data plain, already formatted strings (escaped by Blade) */
     public function __construct(
@@ -60,6 +63,7 @@ final class BillingMail extends Mailable implements ShouldQueue
             self::GRACE_ENDING => "Pay by {$this->data['date']} to keep your {$plan} plan",
             self::DROPPED_TO_FREE => 'Your shop is now on the Free plan',
             self::DOMAIN_WILL_DETACH => "Your custom domain stops working on {$this->data['date']}",
+            self::SMS_CREDITS_ADDED => "{$this->data['credits']} SMS credits added",
             default => "Billing alert: {$this->data['event']}",
         };
 
@@ -72,7 +76,7 @@ final class BillingMail extends Mailable implements ShouldQueue
             'kind' => $this->kind,
             'shop' => $this->shop,
             'data' => $this->data,
-            'url' => rtrim((string) config('storeplix.merchant_app_url'), '/').'/settings/plan',
+            'url' => rtrim((string) config('storeplix.merchant_app_url'), '/').($this->kind === self::SMS_CREDITS_ADDED ? '/integrations/sms?tab=credits' : '/settings/plan'),
         ]);
     }
 }

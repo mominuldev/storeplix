@@ -27,6 +27,10 @@ use App\Domain\Pos\Models\PosSession;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\Supplier;
 use App\Domain\Purchasing\Models\SupplierPayment;
+use App\Domain\Sms\Models\SmsCreditAccount;
+use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\Models\SmsSenderId;
+use App\Domain\Sms\Models\SmsTemplate;
 use App\Domain\Staff\Models\StaffInvitation;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -79,6 +83,10 @@ class AuditLogger
         PosRegister::class => 'pos_register', // PHASE-8-8D P88D-23
         PosSession::class => 'pos_session',
         PosHeldSale::class => 'pos_held_sale',
+        SmsTemplate::class => 'sms_template', // PHASE-8-9A §11.1
+        SmsSenderId::class => 'sender_id',
+        SmsCreditAccount::class => 'sms_credit_account',
+        SmsMessage::class => 'sms_message',
     ];
 
     public function __construct(

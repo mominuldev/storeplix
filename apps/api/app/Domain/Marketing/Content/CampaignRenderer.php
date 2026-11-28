@@ -7,6 +7,7 @@ namespace App\Domain\Marketing\Content;
 use App\Domain\Marketing\Models\Campaign;
 use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Shared\Http\ApiException;
+use App\Domain\Sms\SmsSender;
 
 /**
  * PHASE-8-5 §5.2 rendering — pure functions of (message, store, recipient name, unsubscribe code); unit tested.
@@ -104,7 +105,9 @@ final class CampaignRenderer
         $shop = SmsTemplates::clean($store->name, 20);
         $body = self::merge($spec->body, $spec, $store, $customerName, false);
         $footer = ($spec->language === 'en' ? 'STOP: ' : 'বন্ধ করতে: ').$store->host.'/u/'.$code;
-        $text = $shop.': '.trim($body)."\n".$footer;
+        // PHASE-8-9A P89A-17 (amends Q145): with the shop's approved masked sender ID the "{shop}: " prefix is dropped.
+        $prefix = SmsSender::for($store->storeId) === null ? $shop.': ' : '';
+        $text = $prefix.trim($body)."\n".$footer;
         $count = SmsParts::count($text);
 
         return ['text' => $text, 'parts' => $count['parts'], 'encoding' => $count['encoding'], 'units' => $count['units']];

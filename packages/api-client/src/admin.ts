@@ -1,6 +1,15 @@
 // Phase 8.1 super admin (PHASE-8-1-CONTRACT §6; openapi 1.9.0 tag `admin`; amendment A1 adds `settings`). Every /admin/* call is account-level: no
 // X-Tenant-Id is ever sent (the admin API never reads it). Writes take a `reason` (5–500 chars, stored in the audit log).
 import type {
+  AdminApproveSenderIdInput,
+  AdminRejectSenderIdInput,
+  AdminSenderIdFilters,
+  AdminSenderIdListMeta,
+  AdminSenderIdRequest,
+  AdminSmsCreditAdjustInput,
+  AdminSmsCredits,
+  SmsCreditLedgerEntry,
+  SmsCreditLedgerFilters,
   AcceptPlatformInvitationInput,
   AdminAnalyticsOverview,
   AdminAuditEntry,
@@ -187,6 +196,11 @@ export function adminImpersonationQuery(f: AdminImpersonationFilters = {}): Quer
   };
 }
 
+/** PHASE-8-9A §10.3 sender-ID queue (default status `pending`). */
+export function adminSenderIdQuery(f: AdminSenderIdFilters = {}): Query {
+  return { 'filter[status]': f.status, 'filter[q]': blank(f.q?.trim()), page: f.page, per_page: f.per_page };
+}
+
 export function adminTeamQuery(f: AdminTeamFilters = {}): Query {
   return { 'filter[status]': f.status, 'filter[role]': f.role, 'filter[q]': blank(f.q?.trim()) };
 }
@@ -303,6 +317,40 @@ export function createAdminApi(t: AdminTransport) {
       /** 201; open `url` (merchant app, ticket in the fragment) in a new tab within 60 s. */
       impersonate: (id: string, input: CreateImpersonationInput) =>
         post<ImpersonationTicket>(`${tenant(id)}/impersonations`, { reason: input.reason, ticket_ref: input.ticket_ref || null }),
+    },
+
+    /**
+     * PHASE-8-9A §10.3 sender-ID review (`manage_domains`: super_admin, support; P89A-14). Writes take a `reason` (5–500); a
+     * rejection or revocation reason is shown to the merchant. Each is audited `sender_id.*` with
+     * `// cross-tenant` access in the API.
+     */
+    senderIds: {
+      list: (filters: AdminSenderIdFilters = {}) =>
+        list<AdminSenderIdRequest, AdminSenderIdListMeta>('/admin/sender-ids', adminSenderIdQuery(filters), { ...emptyPage(), counts: { pending: 0 } }),
+      get: (id: string) => get<AdminSenderIdRequest>(`/admin/sender-ids/${enc(id)}`),
+      /** The trade licence (attachment); audited `sender_id.document_viewed`. */
+      document: (id: string, filename?: string) => t.requestBlob(`/admin/sender-ids/${enc(id)}/document`, { fallbackName: filename ?? 'trade-licence' }),
+      /** pending → approved (the shop's previous approved ID → superseded). 409 `invalid_state_transition`, `sender_id_taken`. */
+      approve: (id: string, input: AdminApproveSenderIdInput) =>
+        post<AdminSenderIdRequest>(`/admin/sender-ids/${enc(id)}/approve`, { provider_registered: input.provider_registered, reason: input.reason }),
+      /** pending → rejected. */
+      reject: (id: string, input: AdminRejectSenderIdInput) => post<AdminSenderIdRequest>(`/admin/sender-ids/${enc(id)}/reject`, { reason: input.reason }),
+      /** approved → revoked (the shop falls back to the shared sender). */
+      revoke: (id: string, reason: string) => post<AdminSenderIdRequest>(`/admin/sender-ids/${enc(id)}/revoke`, { reason }),
+    },
+
+    /** PHASE-8-9A §10.3 merchant SMS credits (read `view_merchants`; adjust `manage_billing`). */
+    smsCredits: {
+      get: (tenantId: string) => get<AdminSmsCredits>(`${tenant(tenantId)}/sms-credits`),
+      ledger: (tenantId: string, filters: SmsCreditLedgerFilters = {}) =>
+        list<SmsCreditLedgerEntry, CursorMeta>(
+          `${tenant(tenantId)}/sms-credits/ledger`,
+          { 'filter[type]': filters.type?.length ? filters.type.join(',') : undefined, cursor: filters.cursor || undefined },
+          emptyCursor(),
+        ),
+      /** Grant (+) or deduct (−). `idempotencyKey` once per dialog open. 422 `sms_credits_insufficient`. */
+      adjust: (tenantId: string, input: AdminSmsCreditAdjustInput, idempotencyKey: string) =>
+        post<AdminSmsCredits>(`${tenant(tenantId)}/sms-credits/adjust`, { credits: input.credits, reason: input.reason }, { 'Idempotency-Key': idempotencyKey }),
     },
 
     invoices: {

@@ -16,7 +16,9 @@ use App\Domain\Marketing\Models\CampaignRecipient;
 use App\Domain\Marketing\Sending\CampaignMessenger;
 use App\Domain\Marketing\Sending\CampaignSendFailed;
 use App\Domain\Marketing\Sending\DevMessageSink;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\SmsSender;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Support\TenantCache;
 use App\Domain\Tenancy\TenantContext;
@@ -76,7 +78,9 @@ final class CampaignPipeline
                 return;
             }
             $summary = CampaignAllowance::summary($tenant, $campaign->channel, $needed);
-            if ($summary['limit'] !== null && $summary['limit'] < $summary['used'] + $needed) {
+            // PHASE-8-9A §4.3: fails `limit` only when the allowance left plus the SMS credits can't cover it (no reservation).
+            if ($summary['limit'] !== null && $summary['limit'] < $summary['used'] + $needed
+                && $needed > (int) $summary['remaining'] + CampaignAllowance::creditsFor($tenant, $campaign->channel)) {
                 CampaignRecipient::query()->where('campaign_id', $campaign->id)->where('status', CampaignRecipient::QUEUED)
                     ->update(['status' => CampaignRecipient::SKIPPED, 'skip_reason' => 'plan', 'updated_at' => now()]);
                 $this->fail($campaign, 'limit');
@@ -195,11 +199,32 @@ final class CampaignPipeline
         $parts = 0;
         $providerId = null;
         $error = null;
+        $message = null;
+        $chargedFrom = null;
         try {
             if ($campaign->isSms()) {
                 $sms = CampaignRenderer::sms($spec, $brand, $customer->name, $code);
                 $parts = $sms['parts'];
-                $providerId = $this->messenger->sms($campaign->store_id, $recipient->address, $sms['text']);
+                // PHASE-8-9A §4.3: the log row exists (queued) and is charged before the provider call; the claimed
+                // recipient's snapshot parts are already in the allowance usage ($selfUnits).
+                $sender = SmsSender::for($campaign->store_id);
+                [$message, $charge] = DB::transaction(function () use ($campaign, $recipient, $sms, $sender) {
+                    $message = SmsMessage::query()->create([
+                        'tenant_id' => $campaign->tenant_id, 'store_id' => $campaign->store_id, 'to' => $recipient->address,
+                        'purpose' => 'campaign', 'template' => 'campaign:'.$campaign->id, 'status' => SmsMessage::QUEUED,
+                        'sender_id' => $sender, 'reference_type' => 'campaign', 'reference_id' => $campaign->id,
+                    ]);
+
+                    return [$message, app(SmsCharger::class)->charge($message, $sms['text'], (int) $recipient->parts)];
+                });
+                if ($charge->skipped()) {
+                    CampaignRecipient::query()->whereKey($recipient->id)->where('status', CampaignRecipient::SENDING)
+                        ->update(['status' => CampaignRecipient::SKIPPED, 'skip_reason' => 'plan', 'updated_at' => now()]);
+
+                    return;
+                }
+                $chargedFrom = $charge->from;
+                $providerId = $this->messenger->sms($campaign->store_id, $recipient->address, $sms['text'], $sender);
                 $this->sink($campaign, $recipient->address, null, $sms['text'], 'https://'.$brand->host.'/u/'.$code);
             } else {
                 $email = CampaignRenderer::email($spec, $brand, $customer->name, $code);
@@ -212,18 +237,15 @@ final class CampaignPipeline
         }
 
         CampaignRecipient::query()->whereKey($recipient->id)->where('status', CampaignRecipient::SENDING)->update($error === null
-            ? ['status' => CampaignRecipient::SENT, 'sent_at' => now(), 'parts' => $parts, 'provider_message_id' => $providerId, 'unsubscribe_code_hash' => $hash, 'updated_at' => now()]
+            ? ['status' => CampaignRecipient::SENT, 'sent_at' => now(), 'parts' => $parts, 'provider_message_id' => $providerId, 'unsubscribe_code_hash' => $hash, 'charged_from' => $chargedFrom, 'updated_at' => now()]
             : ['status' => CampaignRecipient::FAILED, 'error_code' => $error, 'parts' => 0, 'updated_at' => now()]);
-        if ($campaign->isSms()) {
-            SmsMessage::query()->create([
-                'tenant_id' => $campaign->tenant_id,
-                'to' => $recipient->address,
-                'purpose' => 'campaign',
-                'template' => 'campaign:'.$campaign->id,
-                'provider_message_id' => $providerId,
-                'status' => $error === null ? 'sent' : 'failed',
-                'error' => $error,
-            ]);
+        if ($message !== null) {
+            if ($error === null) {
+                $message->markSent($providerId);
+            } else {
+                $message->markFailed($error);
+                app(SmsCharger::class)->refund($message);
+            }
         }
     }
 

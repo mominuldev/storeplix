@@ -10,6 +10,7 @@ use App\Domain\Customers\Models\Customer;
 use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Developer\Webhooks\WebhookEventType;
 use App\Domain\Identity\Models\User;
+use App\Domain\Marketing\Content\SmsParts;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Notifications\OrderNotifier;
@@ -23,7 +24,10 @@ use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\Models\PosSession;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
+use App\Domain\Sms\Charging\SmsCharger;
+use App\Domain\Sms\SmsPurposes;
 use App\Domain\Stores\Models\Store;
+use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -228,7 +232,10 @@ final class PosSaleService
         if (trim($order->customer_phone) === '') {
             throw new ApiException(422, 'no_phone', 'This sale has no phone number to send a receipt to.');
         }
-        FeatureGate::assertWithin($this->context->tenant(), Limit::SmsPerMonth);
+        // PHASE-8-9A §4.3: 402 only when neither the allowance nor the SMS credits cover the receipt.
+        if (! app(SmsCharger::class)->canAfford(SmsPurposes::TRANSACTIONAL, self::receiptParts($order))) {
+            FeatureGate::assertWithin($this->context->tenant(), Limit::SmsPerMonth);
+        }
         DB::transaction(function () use ($order, $sale) {
             if (! $sale->sms_receipt) {
                 PosSale::query()->whereKey($sale->id)->update(['sms_receipt' => true]);
@@ -237,6 +244,16 @@ final class PosSaleService
         });
 
         return $sale->refresh();
+    }
+
+    /** SMS parts of the receipt as it would be sent now (store template + sender). */
+    private static function receiptParts(Order $order): int
+    {
+        $store = Store::query()->with('primaryDomain')->findOrFail($order->store_id);
+        $language = StoreSetting::query()->where('store_id', $store->id)->value('sms_language') === 'en' ? 'en' : 'bn';
+        $vars = SmsTemplates::varsFor($order, $store) + PosReceipts::smsVars($order, $language);
+
+        return SmsParts::partsOf(SmsTemplates::render(SmsTemplates::POS_RECEIPT, $language, $vars, $store));
     }
 
     private static function queueReceipt(Order $order, string $ref): void

@@ -41,8 +41,9 @@ final class BillingPresenter
         $bill = (array) $invoice->bill_to;
 
         return self::invoiceSummary($invoice) + [
-            'plan_code' => $invoice->plan->code,
+            'plan_code' => $invoice->plan?->code, // null for sms_credits (PHASE-8-9A)
             'interval' => $invoice->interval,
+            'sms_credits' => $invoice->sms_credits,
             'subtotal_amount' => $invoice->subtotal_amount,
             'tax_amount' => $invoice->tax_amount,
             'tax_rate_bps' => $invoice->tax_rate_bps,

@@ -25,12 +25,12 @@ class RevesmsGateway implements SmsGateway
      */
     public function __construct(private readonly array $config) {}
 
-    public function send(string $msisdn, string $text): SmsResult
+    public function send(string $msisdn, string $text, ?string $senderId = null): SmsResult
     {
         $payload = $this->post('/sendtext', [
             'apikey' => (string) $this->config['api_key'],
             'secretkey' => (string) $this->config['secret_key'],
-            'callerID' => (string) $this->config['caller_id'],
+            'callerID' => $senderId ?? (string) $this->config['caller_id'], // PHASE-8-9A P89A-17: approved masked ID
             'toUser' => $msisdn,
             'messageContent' => $text,
         ]);

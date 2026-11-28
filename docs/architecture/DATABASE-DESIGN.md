@@ -1211,6 +1211,60 @@ only among this count's lines (literal match, no `LIKE` wildcards).
 - `audit_logs` action catalogue gains `stock_transfer.created|updated|sent|received|cancelled|deleted` and
   `stock_count.started|finished|cancelled` (`packages/types`).
 
+## 5.12 Phase 8.9a SMS integration (PHASE-8-9A-CONTRACT §3, ADR 0026, migrations `2026_12_11_*`)
+(§5.11 is reserved for the Phase 8.8d POS tables, PHASE-8-8D §3 / §12.) Four new RLS tables (`RlsTables::TENANT` 95
+after Phase 8.9a), `database/sql/rls-emergency-off.sql`. Charging lock: the tenant's `sms_credit_accounts` row `FOR
+UPDATE` first (§3.3 of the contract). No plan feature; allowances unchanged.
+
+### sms_credit_accounts [T] (`000100`)
+id PK · tenant_id **U** FK tenants CASCADE · balance bigint default 0 CHECK `>= 0` · purchased_total bigint default 0 ·
+low_credit_threshold smallint null CHECK `IN (100,200,500)` · low_alert_sent_at timestamptz null (null = armed) ·
+last_purchase_at null · timestamps. Created lazily (`INSERT … ON CONFLICT (tenant_id) DO NOTHING`).
+
+### sms_credit_ledger [T] (`000100`; append-only — RLS SELECT/INSERT policies only, no UPDATE/DELETE grant)
+id PK · tenant_id · type varchar(16) `CHECK IN ('purchase','consume','refund','admin_adjust')` · credits int signed
+(CHECK sign per type: purchase/refund > 0, consume < 0, admin_adjust ≠ 0) · balance_after bigint `>= 0` ·
+sms_message_id char(26) null (soft ref) · billing_invoice_id null FK (tenant_id, billing_invoice_id) →
+billing_invoices(tenant_id, id) RESTRICT · reason varchar(500) null · actor_type `CHECK IN ('system','user',
+'platform')` · actor_user_id null FK users SET NULL · idempotency_key varchar(100) null · request_hash char(64) null ·
+created_at. Partial U(sms_message_id, type) WHERE sms_message_id IS NOT NULL · partial U(billing_invoice_id) WHERE type
+= 'purchase' · partial U(tenant_id, idempotency_key) WHERE type = 'admin_adjust' · IX(tenant_id, created_at DESC, id
+DESC) · IX(tenant_id, type, created_at). Invariant: `balance` = Σ credits (tested).
+
+### sms_templates [S] (`000200`)
+id PK · tenant_id · store_id · key varchar(24) `CHECK IN ('order_placed','order_confirmed','order_shipped',
+'order_cancelled','order_updated','payment_link','pos_receipt')` · language char(2) `CHECK IN ('bn','en')` · body text
+CHECK `char_length BETWEEN 1 AND 480` · revision int default 1 · updated_by null FK users SET NULL · timestamps.
+**U(store_id, key, language)**. Only custom bodies; defaults stay in `resources/sms/{bn,en}.php`.
+
+### sms_sender_ids [S] (`000300`)
+id PK · tenant_id · store_id · sender_id varchar(11) · business_name varchar(120) · uses jsonb (1–3 of `order_updates`,
+`otp`, `pos_receipts`) · note varchar(300) null · status varchar(12) `CHECK IN ('pending','approved','rejected',
+'cancelled','superseded','revoked')` · document_media_id char(26) **U** FK (tenant_id, document_media_id) →
+media(tenant_id, id) RESTRICT · rights_confirmed_at · requested_by null FK users SET NULL · requested_at · reviewed_by
+null FK users SET NULL · reviewed_at null · decision_reason varchar(500) null · approved_at null · ended_at null ·
+timestamps. Partial U(store_id) WHERE status = 'pending' · partial U(store_id) WHERE status = 'approved' · partial
+**U(lower(sender_id)) WHERE status IN ('pending','approved')** (global across tenants by design) · IX(tenant_id,
+store_id, requested_at DESC) · IX(status, requested_at) (admin queue on `pgsql_admin`). `media.purpose` gains
+`sender_id_document` (private, `expense_receipt` rules).
+
+### Changes to existing tables
+- **sms_messages** (`000400`, platform model, RLS policy unchanged): + store_id null (FK (tenant_id, store_id) →
+  stores), kind `CHECK IN ('transactional','marketing')` null, parts smallint null, charged_from `CHECK IN
+  ('allowance','credits')` null, credits_charged int default 0, sender_id varchar(11) null, body_preview varchar(160)
+  null (never for `checkout_otp` / `otp_*`; nulled after 90 days), error_code varchar(32) null, sent_at null,
+  reference_type `CHECK IN ('order','pos_sale','campaign','automation')` null, reference_id char(26) null; status CHECK
+  `IN ('queued','sent','failed','skipped')`. Back-fill store_id (one store per tenant), kind, sent_at, campaign /
+  automation references. IX(tenant_id, store_id, created_at DESC, id DESC) · IX(tenant_id, store_id, to, created_at
+  DESC).
+- **billing_invoices** (`000500`): kind + `sms_credits`; plan_id and interval nullable; + sms_credits int null; CHECK
+  `(kind = 'sms_credits') = (plan_id IS NULL AND interval IS NULL AND sms_credits > 0)`; the one-open-invoice partial
+  unique becomes two: U(tenant_id) WHERE status = 'open' AND kind <> 'sms_credits', and U(tenant_id) WHERE status =
+  'open' AND kind = 'sms_credits'.
+- **campaign_recipients**, **automation_run_steps** (`000600`): + charged_from varchar(10) null (null = allowance).
+- Allowance usage (`sms_per_month`, `campaign_sms_per_month`) excludes `charged_from = 'credits'` and `skipped` rows.
+- `audit_logs` action catalogue gains `SMS_AUDIT_ACTIONS` (`packages/types`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1227,7 +1281,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Locations / transfers / stock count (26:2146 Inventory) | `locations`, `inventories.location_id` (U(tenant_id, store_id, variant_id, location_id)), `inventory_movements.location_id`, `order_items.location_id`, `purchase_orders`/`purchase_receipts.location_id` — **specified in 8.8c part A (§5.10, PHASE-8-8C §3.1, ADR 0024)**; `stock_transfers`, `stock_transfer_items`, `stock_counts`, `stock_count_items` — **specified in 8.8c part B (§5.10 part B, PHASE-8-8C §3.2)** | 8.8c |
 | Invoice & label templates (44:16156) | `document_templates`, `documents` — **built in 5b-4 (§5.2)** | 5 ✅ |
 | Fake-order guard (41:12365) | `fraud_guard_settings`, `blocked_phones`, `order_risk_checks`, `fraud_guard_events`, `checkout_otps`, `orders.guard_hold` (no `customers.risk_flags`, no courier provider rows) — **specified in 8.8a (§5.8, PHASE-8-8 §4, ADR 0022)** | 8.8a |
-| Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Other integrations (marketing, messaging, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8 |
+| Integrations (32:5329–5331) | Payments and couriers built in 5b as `payment_gateway_accounts` + `courier_accounts` (§5.2). Messaging/SMS on the platform gateway: `sms_credit_accounts`, `sms_credit_ledger`, `sms_templates`, `sms_sender_ids` — **specified in 8.9a (§5.12, PHASE-8-9A §3, ADR 0026)**. Other integrations (marketing, AI): `integrations(tenant_id, provider, credentials enc, settings jsonb, status)` | 5 ✅ / 8.9a / 8 |
 
 ## 7. Migration & operations rules
 - One migration per table/change; forward-only after merge; zero-downtime pattern (add nullable → backfill job → constrain).

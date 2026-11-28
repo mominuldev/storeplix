@@ -993,6 +993,49 @@ BEGIN
 END
 $$;
 
+-- table: sms_credit_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.sms_credit_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "sms_credit_accounts";
+    ALTER TABLE "sms_credit_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "sms_credit_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: sms_credit_ledger
+DO $$
+BEGIN
+  IF to_regclass('public.sms_credit_ledger') IS NOT NULL THEN
+    DROP POLICY IF EXISTS sms_credit_ledger_select ON "sms_credit_ledger";
+    DROP POLICY IF EXISTS sms_credit_ledger_insert ON "sms_credit_ledger";
+    DROP POLICY IF EXISTS tenant_isolation ON "sms_credit_ledger";
+    ALTER TABLE "sms_credit_ledger" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "sms_credit_ledger" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: sms_templates
+DO $$
+BEGIN
+  IF to_regclass('public.sms_templates') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "sms_templates";
+    ALTER TABLE "sms_templates" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "sms_templates" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: sms_sender_ids
+DO $$
+BEGIN
+  IF to_regclass('public.sms_sender_ids') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "sms_sender_ids";
+    ALTER TABLE "sms_sender_ids" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "sms_sender_ids" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'storeplix_app') THEN

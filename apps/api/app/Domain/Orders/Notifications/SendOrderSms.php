@@ -2,23 +2,23 @@
 
 namespace App\Domain\Orders\Notifications;
 
-use App\Domain\Billing\FeatureGate;
-use App\Domain\Billing\Limit;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderEvent;
 use App\Domain\Orders\OrderTimeline;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Payments\PaymentUrls;
+use App\Domain\Pos\Models\PosSale;
 use App\Domain\Pos\PosReceipts;
 use App\Domain\Shared\Support\Money;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Sms\Models\SmsMessage;
 use App\Domain\Sms\SmsGateway;
+use App\Domain\Sms\SmsSender;
 use App\Domain\Sms\SmsSendFailed;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Queue\TenantAware;
-use App\Domain\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -35,6 +35,11 @@ use Illuminate\Support\Str;
  * - sms_messages gets the template name only, never the body; "SMS sent" goes on the timeline only after the
  *   provider accepted it. A provider failure marks the message failed and throws, so the queue retries with
  *   backoff; after the last try the timeline says "SMS not sent".
+ *
+ * PHASE-8-9A §4.3: in the same order-locked transaction the row is created with its store and reference, the text is
+ * rendered from the store's template and sender (§4.4) and SmsCharger pays it (allowance, else SMS credits, else the
+ * row stays `skipped` and the timeline says "SMS not sent: monthly SMS allowance and SMS credits used up"). The send
+ * carries the masked sender ID; a provider failure refunds the credits of that attempt (each retry is a new row).
  */
 class SendOrderSms implements ShouldQueue
 {
@@ -52,7 +57,7 @@ class SendOrderSms implements ShouldQueue
         public readonly ?string $ref = null,
     ) {}
 
-    public function handle(SmsGateway $gateway, TenantContext $context): void
+    public function handle(SmsGateway $gateway, SmsCharger $charger): void
     {
         $order = Order::query()->find($this->orderId); // tenant-scoped: another tenant's order is "not found" (S18)
         if ($order === null) {
@@ -66,19 +71,19 @@ class SendOrderSms implements ShouldQueue
         }
 
         try {
-            $this->sendOnce($order, $gateway, $context);
+            $this->sendOnce($order, $gateway, $charger);
         } finally {
             $lock->release();
         }
     }
 
-    private function sendOnce(Order $order, SmsGateway $gateway, TenantContext $context): void
+    private function sendOnce(Order $order, SmsGateway $gateway, SmsCharger $charger): void
     {
         $store = Store::query()->with('primaryDomain')->find($order->store_id);
         $settings = StoreSetting::query()->where('store_id', $order->store_id)->first();
         $language = $settings?->sms_language === 'en' ? 'en' : 'bn';
 
-        $planned = DB::transaction(function () use ($order, $store, $language, $context) {
+        $planned = DB::transaction(function () use ($order, $store, $language, $charger) {
             /** @var Order $locked */
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             if (self::alreadySent($locked->id, $this->event, $this->ref)) {
@@ -86,15 +91,6 @@ class SendOrderSms implements ShouldQueue
             }
             if ($locked->status === Order::CANCELLED && $this->event !== 'order_cancelled') {
                 OrderTimeline::record($locked, 'notification', null, 'SMS not sent: the order was cancelled', [
-                    'channel' => 'sms', 'event' => $this->event, 'status' => 'skipped',
-                ]);
-
-                return null;
-            }
-            $tenant = $context->tenant();
-            $limit = FeatureGate::limit($tenant, Limit::SmsPerMonth);
-            if ($limit !== null && FeatureGate::usage($tenant, Limit::SmsPerMonth) >= $limit) {
-                OrderTimeline::record($locked, 'notification', null, 'SMS not sent: monthly SMS allowance used', [
                     'channel' => 'sms', 'event' => $this->event, 'status' => 'skipped',
                 ]);
 
@@ -116,26 +112,41 @@ class SendOrderSms implements ShouldQueue
                 }
                 $vars += ['amount' => Money::plain((int) $link->amount), 'url' => PaymentUrls::linkUrl($store, PaymentPresenter::linkToken($link))];
             }
+            $sender = $store !== null ? SmsSender::for($store) : null;
+            $pos = $this->event === SmsTemplates::POS_RECEIPT ? PosSale::query()->where('order_id', $locked->id)->value('id') : null;
             $message = SmsMessage::query()->create([
                 'tenant_id' => $locked->tenant_id,
+                'store_id' => $locked->store_id,
                 'to' => $locked->customer_phone,
                 'purpose' => $this->event,
                 'template' => "{$this->event}.{$language}",
-                'status' => 'queued',
+                'status' => SmsMessage::QUEUED,
+                'sender_id' => $sender,
+                'reference_type' => $pos !== null ? 'pos_sale' : 'order',
+                'reference_id' => $pos ?? $locked->id,
             ]);
+            $text = SmsTemplates::render($this->event, $language, $vars, $store);
+            if ($charger->charge($message, $text)->skipped()) {
+                OrderTimeline::record($locked, 'notification', null, 'SMS not sent: monthly SMS allowance and SMS credits used up', [
+                    'channel' => 'sms', 'event' => $this->event, 'status' => 'skipped', 'sms_message_id' => $message->id,
+                ]);
 
-            return [$message, SmsTemplates::render($this->event, $language, $vars)];
+                return null;
+            }
+
+            return [$message, $text, $sender];
         });
         if ($planned === null) {
             return;
         }
 
         /** @var SmsMessage $message */
-        [$message, $text] = $planned;
+        [$message, $text, $sender] = $planned;
         try {
-            $result = $gateway->send($message->to, $text);
+            $result = $gateway->send($message->to, $text, $sender);
         } catch (SmsSendFailed $e) {
-            $message->update(['status' => 'failed', 'error' => Str::limit($e->getMessage(), 250)]);
+            $message->markFailed(Str::limit($e->getMessage(), 250));
+            $charger->refund($message);
             Log::warning('order.sms_failed', ['order_id' => $order->id, 'event' => $this->event, 'attempt' => $this->attempts()]);
             if ($this->attempts() < $this->tries) {
                 throw $e; // retried with backoff; nothing was recorded as sent
@@ -147,7 +158,7 @@ class SendOrderSms implements ShouldQueue
             return;
         }
 
-        $message->update(['status' => 'sent', 'provider_message_id' => $result->message_id]);
+        $message->markSent($result->message_id);
         OrderTimeline::record($order, 'notification', null, 'SMS sent: '.SmsTemplates::LABELS[$this->event], [
             'channel' => 'sms', 'event' => $this->event, 'status' => 'sent', 'sms_message_id' => $message->id, 'language' => $language,
         ] + ($this->ref !== null ? ['ref' => $this->ref] : []));

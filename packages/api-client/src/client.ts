@@ -1,4 +1,23 @@
 import type {
+  SmsCreditAccount,
+  SmsCreditLedgerEntry,
+  SmsCreditLedgerFilters,
+  SmsCreditPurchase,
+  SmsCreditPurchaseInput,
+  SmsLogEntry,
+  SmsLogFilters,
+  SmsOverview,
+  SmsSenderIdList,
+  SmsSenderIdRequest,
+  SmsSenderIdRequestInput,
+  SmsTemplate,
+  SmsTemplateKey,
+  SmsTemplatePreview,
+  SmsTemplatePreviewInput,
+  SmsTestInput,
+  SmsTestResult,
+  UpdateSmsCreditSettingsInput,
+  UpdateSmsTemplateInput,
   ClosePosSessionInput,
   OpenPosSessionInput,
   OrderCustomerSummary,
@@ -172,6 +191,7 @@ import type {
   ReturnListMeta,
   BillingInvoice,
   BillingInvoiceListMeta,
+  BillingInvoiceKind,
   BillingInvoiceStatus,
   BillingInvoiceSummary,
   BillingPayment,
@@ -314,7 +334,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1284,10 +1304,11 @@ export function createApiClient(options: ApiClientOptions) {
         }),
       /** "Keep {plan}": drops a scheduled downgrade/cancel. 404 when nothing is scheduled. */
       cancelScheduledChange: () => request<Subscription>('/billing/scheduled-change', { method: 'DELETE' }),
-      invoices: async (filters: { page?: number; per_page?: number; status?: BillingInvoiceStatus } = {}): Promise<{ data: BillingInvoiceSummary[]; meta: BillingInvoiceListMeta }> =>
+      /** `kind` (1.23.0): e.g. `['sms_credits']` for the SMS purchase history (PHASE-8-9A §12.5). */
+      invoices: async (filters: { page?: number; per_page?: number; status?: BillingInvoiceStatus; kind?: BillingInvoiceKind[] } = {}): Promise<{ data: BillingInvoiceSummary[]; meta: BillingInvoiceListMeta }> =>
         listOf<BillingInvoiceSummary, BillingInvoiceListMeta>(
           '/billing/invoices',
-          { page: filters.page, per_page: filters.per_page, 'filter[status]': filters.status },
+          { page: filters.page, per_page: filters.per_page, 'filter[status]': filters.status, 'filter[kind]': filters.kind?.length ? filters.kind.join(',') : undefined },
           { ...emptyPage(), providers: [] },
         ),
       invoice: (id: string) => request<BillingInvoice>(`/billing/invoices/${enc(id)}`),
@@ -1300,6 +1321,29 @@ export function createApiClient(options: ApiClientOptions) {
           headers: { 'Idempotency-Key': idempotencyKey },
         }),
       payment: (id: string, opts?: Pick<RequestOptions, 'signal'>) => request<BillingPayment>(`/billing/payments/${enc(id)}`, { signal: opts?.signal }),
+      /**
+       * PHASE-8-9A §5 SMS credits (tenant-level). Reads: `billing.view | settings.manage | integrations.manage`;
+       * ledger `billing.view`; alert threshold `billing.manage | settings.manage`; purchase owner only (`billing.manage`).
+       */
+      smsCredits: {
+        get: () => request<SmsCreditAccount>('/billing/sms-credits'),
+        /** Low-credit email threshold (100 / 200 / 500 / null = off). */
+        update: (input: UpdateSmsCreditSettingsInput) =>
+          request<SmsCreditAccount>('/billing/sms-credits', { method: 'PATCH', body: { low_credit_threshold: input.low_credit_threshold } }),
+        ledger: (filters: SmsCreditLedgerFilters = {}) =>
+          listOf<SmsCreditLedgerEntry, CursorMeta>('/billing/sms-credits/ledger', smsCreditLedgerQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
+        /**
+         * 201 open `sms_credits` invoice + pending payment with `redirect_url` (go there). `idempotencyKey`: one per
+         * "Buy" click, reused on retry. Credits arrive only after server-side verification. 422
+         * `billing_gateway_unavailable`, 502 `provider_unavailable`, 409 `idempotency_key_mismatch`.
+         */
+        purchase: (input: SmsCreditPurchaseInput, idempotencyKey: string) =>
+          request<SmsCreditPurchase>('/billing/sms-credits/purchase', {
+            method: 'POST',
+            body: { pack: input.pack, provider: input.provider },
+            headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+      },
     },
 
     /**
@@ -1830,6 +1874,60 @@ export function createApiClient(options: ApiClientOptions) {
         create: (storeId: string, input: PosHeldSaleInput) => request<PosHeldSale>(`${store(storeId)}/pos/held-sales`, { method: 'POST', body: input }),
         delete: (storeId: string, id: string) => request<void>(`${store(storeId)}/pos/held-sales/${enc(id)}`, { method: 'DELETE' }),
       },
+    },
+
+    /**
+     * PHASE-8-9A SMS integration page (`/integrations/sms`). Store-scoped; see each call for its permission.
+     * Credits and purchases live under `billing.smsCredits` (tenant-level).
+     */
+    sms: {
+      /** §6.1 `settings.manage | integrations.manage | billing.view`. */
+      overview: (storeId: string) => request<SmsOverview>(`${store(storeId)}/sms`),
+      /**
+       * §6.2 send a test SMS to the signed-in member's verified phone (`settings.manage | integrations.manage`;
+       * 5/hour). 422 `phone_not_verified`, 402 `sms_credits_exhausted`, 502 `provider_error`, 429.
+       */
+      sendTest: (storeId: string, input: SmsTestInput = {}) =>
+        request<SmsTestResult>(`${store(storeId)}/sms/test`, { method: 'POST', body: { language: input.language ?? null } }),
+      templates: {
+        /** §7 every key × bn/en, with previews (`settings.manage | integrations.manage | billing.view`). */
+        list: (storeId: string) => request<SmsTemplate[]>(`${store(storeId)}/sms/templates`),
+        /** `settings.manage`. 422 `sms_template_*`, 409 `revision_conflict`. A body equal to the default resets. */
+        update: (storeId: string, key: SmsTemplateKey, language: 'bn' | 'en', input: UpdateSmsTemplateInput) =>
+          request<SmsTemplate>(`${store(storeId)}/sms/templates/${enc(key)}/${enc(language)}`, {
+            method: 'PUT',
+            body: { body: input.body, revision: input.revision },
+          }),
+        /** Reset to default (`settings.manage`); idempotent. */
+        reset: (storeId: string, key: SmsTemplateKey, language: 'bn' | 'en') =>
+          request<SmsTemplate>(`${store(storeId)}/sms/templates/${enc(key)}/${enc(language)}`, { method: 'DELETE' }),
+        /** Live preview while editing (`settings.manage`; 60/min); same 422s as update, nothing saved. */
+        preview: (storeId: string, input: SmsTemplatePreviewInput, opts?: Pick<RequestOptions, 'signal'>) =>
+          request<SmsTemplatePreview>(`${store(storeId)}/sms/templates/preview`, { method: 'POST', body: input, signal: opts?.signal }),
+      },
+      senderIds: {
+        /** §8 `settings.manage | integrations.manage`. */
+        list: (storeId: string) => request<SmsSenderIdList>(`${store(storeId)}/sms/sender-ids`),
+        /**
+         * Multipart (`integrations.manage`; 5/day per shop) → 201. 409 `sender_id_request_pending` / `sender_id_taken`,
+         * 422 `sender_id_reserved` / `sender_id_unchanged` / `validation_failed` (bad file).
+         */
+        request: (storeId: string, input: SmsSenderIdRequestInput, opts?: UploadOptions) => {
+          const form = new FormData();
+          form.append('sender_id', input.sender_id);
+          form.append('business_name', input.business_name);
+          for (const use of input.uses) form.append('uses[]', use);
+          form.append('rights_confirmed', input.rights_confirmed ? '1' : '0');
+          if (input.note) form.append('note', input.note);
+          form.append('document', input.document, input.filename ?? (input.document instanceof File ? input.document.name : 'trade-licence'));
+          return uploadForm<SmsSenderIdRequest>(`${store(storeId)}/sms/sender-ids`, form, opts);
+        },
+        /** pending → cancelled (`integrations.manage`); 409 `invalid_state_transition` otherwise. */
+        cancel: (storeId: string, id: string) => request<SmsSenderIdRequest>(`${store(storeId)}/sms/sender-ids/${enc(id)}/cancel`, { method: 'POST' }),
+      },
+      /** §9 SMS log, last 90 days, newest first, 50 per page (`settings.manage | integrations.manage`). */
+      messages: (storeId: string, filters: SmsLogFilters = {}) =>
+        listOf<SmsLogEntry, CursorMeta>(`${store(storeId)}/sms/messages`, smsLogQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
     },
 
     /** PHASE-8-8B §7 and §8.1 purchasing helpers. */

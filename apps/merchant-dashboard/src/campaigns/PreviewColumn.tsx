@@ -129,7 +129,10 @@ export function AllowanceCard({
   const used = estimate ? estimate.allowance.used : (allowance?.used ?? 0);
   const remaining = limit === null ? null : Math.max(0, limit - used);
   const after = estimate ? estimate.allowance.after : remaining === null || total === null ? null : remaining - total;
-  const over = after !== null && after < 0;
+  // PHASE-8-9A P89A-6: SMS credits cover what the allowance doesn't (the campaign fits when total ≤ remaining + credits).
+  const credits = sms ? (estimate?.allowance.credits ?? 0) : 0;
+  const fromCredits = after !== null && after < 0 ? Math.min(-after, credits) : 0;
+  const over = after !== null && after + credits < 0;
   const noun = sms ? 'Campaign SMS' : 'Campaign emails';
   return (
     <section aria-label="Allowance" className="flex flex-col gap-2.5 rounded-card border border-border-default bg-surface-card p-5 shadow-elevation-1">
@@ -145,9 +148,20 @@ export function AllowanceCard({
           {noun} left this month {formatCount(remaining)} → {after === null ? '—' : formatCount(Math.max(0, after))} after
         </p>
       ) : null}
+      {credits > 0 && (
+        <p data-testid="credits-row" className="rounded-md bg-surface-subtle px-3 py-2.5 text-caption font-medium text-text-secondary">
+          SMS credits {formatCount(credits)}
+          {fromCredits > 0 ? ` → ${formatCount(credits - fromCredits)} after (${formatCount(fromCredits)} paid from credits)` : ' · used after the allowance'}
+        </p>
+      )}
       {over && (
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md bg-danger-bg px-3 py-2.5 text-caption font-medium text-danger">
-          <span className="min-w-0 flex-1">Not enough left this month: you need {formatCount(total ?? 0)} and have {formatCount(remaining ?? 0)}.</span>
+          <span className="min-w-0 flex-1">Not enough left this month: you need {formatCount(total ?? 0)} and have {formatCount((remaining ?? 0) + credits)}.</span>
+          {sms && limit !== 0 && (
+            <Link to="/integrations/sms?tab=credits" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+              Buy SMS credits
+            </Link>
+          )}
           {canSeePlans && (
             <Link to="/settings/plan" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
               See plans

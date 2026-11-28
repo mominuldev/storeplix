@@ -8,6 +8,7 @@ const kindLabel: Record<string, string> = {
   new: 'New',
   upgrade: 'Upgrade',
   renewal: 'Renewal',
+  sms_credits: 'SMS credits',
 };
 
 // Billing 34:859 invoice table: Invoice (number + period line), Shop (name + slug), Plan, Amount ৳ (end-aligned),
@@ -38,7 +39,8 @@ export function InvoicesTable({
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-body font-medium text-text-primary">{i.number}</span>
           <span className="truncate text-caption text-text-muted">
-            {kindLabel[i.kind] ?? i.kind} · {intervalLabel(i.billing_interval).toLowerCase()}
+            {kindLabel[i.kind] ?? i.kind}
+            {i.billing_interval ? ` · ${intervalLabel(i.billing_interval).toLowerCase()}` : ''}
           </span>
         </span>
       ),
@@ -62,7 +64,8 @@ export function InvoicesTable({
       key: 'plan',
       header: 'Plan',
       width: 96,
-      cell: (i) => <span className="text-body text-text-primary">{planName(i.plan_code)}</span>,
+      // PHASE-8-9A: `sms_credits` invoices have no plan.
+      cell: (i) => <span className="text-body text-text-primary">{i.kind === 'sms_credits' ? 'SMS credits' : planName(i.plan_code)}</span>,
     },
     {
       key: 'amount',

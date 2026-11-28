@@ -30,8 +30,13 @@ final class CampaignMessenger
 {
     public function __construct(private readonly SmsGateway $sms) {}
 
-    /** @return string|null provider message id @throws CampaignSendFailed */
-    public function sms(string $storeId, string $msisdn, string $text): ?string
+    /**
+     * @param  string|null  $senderId  PHASE-8-9A P89A-17: the store's approved masked sender ID (null = platform caller ID)
+     * @return string|null provider message id
+     *
+     * @throws CampaignSendFailed
+     */
+    public function sms(string $storeId, string $msisdn, string $text, ?string $senderId = null): ?string
     {
         if (app()->environment('production') && ($this->sms instanceof LogSmsGateway || $this->sms instanceof FakeSmsGateway)) {
             throw new CampaignSendFailed('provider_error', 'Campaign SMS refuse the log/fake driver in production.');
@@ -39,7 +44,7 @@ final class CampaignMessenger
         $this->slot(app(TenantCache::class)->key('campaigns-sms:'.$storeId), (int) config('campaigns.sms_rate_per_second', 10));
         $this->slot('campaigns-sms:platform', (int) config('campaigns.platform_sms_rate_per_second', 50));
         try {
-            $result = $this->sms->send($msisdn, $text);
+            $result = $this->sms->send($msisdn, $text, $senderId);
         } catch (SmsSendFailed $e) {
             throw new CampaignSendFailed('provider_error', $e->getMessage());
         }

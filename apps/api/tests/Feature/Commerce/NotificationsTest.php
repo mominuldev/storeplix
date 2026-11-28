@@ -106,7 +106,7 @@ class NotificationsTest extends TestCase
         $id = $this->manual($h, $store, $this->manualBody($variant))->assertCreated()->json('data.id');
         $this->assertCount(0, $this->sms());
         $this->api($h, 'GET', "/api/v1/stores/{$store->id}/orders/{$id}")
-            ->assertJsonPath('data.events.0.body', 'SMS not sent: monthly SMS allowance used')->assertJsonPath('data.events.0.meta.status', 'skipped');
+            ->assertJsonPath('data.events.0.body', 'SMS not sent: monthly SMS allowance and SMS credits used up')->assertJsonPath('data.events.0.meta.status', 'skipped');
     }
 
     #[Group('security')]

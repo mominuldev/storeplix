@@ -41,6 +41,7 @@ class AdminOverviewController
             ->sortBy('plan_code')->values()->all();
 
         $pastDueAmount = (int) $db->table('billing_invoices as i')->where('i.status', BillingInvoice::OPEN)
+            ->whereIn('i.kind', BillingInvoice::SUBSCRIPTION_KINDS) // PHASE-8-9A §5.3
             ->whereExists(fn ($e) => $e->from('subscriptions as s')->whereColumn('s.tenant_id', 'i.tenant_id')->where('s.status', Subscription::PAST_DUE))
             ->sum('i.total_amount');
 

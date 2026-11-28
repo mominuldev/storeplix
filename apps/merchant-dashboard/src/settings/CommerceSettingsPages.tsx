@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { CreditCard, LifeBuoy, Mail, ReceiptText, Shield, Truck } from 'lucide-react';
 import { Link } from 'react-router';
 import { useState, type ReactNode } from 'react';
+import { useAuth } from '../auth/AuthProvider';
 import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage } from '../catalog/states';
 import { api } from '../lib/api';
@@ -13,6 +14,8 @@ import { toast } from '../online-store/components/Toast';
 import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, isUsable, modeLabel } from '../payments/gateways';
 import { usePaymentGateways, usePaymentInvalidate } from '../payments/queries';
 import { FormAlert } from '../onboarding/AuthShell';
+import { useSmsTemplates } from '../sms/queries';
+import { canOpenSms } from '../sms/sms';
 import { smsPreview, useSaveSettings, useStoreSettings, vatIncluded } from './commerceSettings';
 import { SettingsCard, SettingsToggleRow } from './SettingsLayout';
 
@@ -231,10 +234,15 @@ const SMS_EVENTS: { key: CustomerSmsEvent; title: string; hint: string; status: 
 /**
  * Notifications 60:15863: "Alerts for you" (new-order email only; the in-app/push/SMS matrix is not built) and
  * "Customer messages" in the Figma two-column layout: SMS tab, status list (330 px) with per-event toggles, and the
- * selected event's language chips + phone preview. Templates are fixed (no editor, variables, test SMS, WhatsApp).
+ * selected event's language chips + phone preview. PHASE-8-9A §12.6: the preview is the server's template preview
+ * (`sms.templates.list`, custom texts included) with an "Edit text" link to Integrations › SMS › Templates; the client
+ * `smsPreview` is only the fallback for members without template read access (or while it loads).
  */
 export function NotificationsSettingsPage() {
   const { canManageSettings, store } = useStoreScope();
+  const { activeTenant } = useAuth();
+  const templatesAllowed = canOpenSms(activeTenant);
+  const templates = useSmsTemplates({ enabled: templatesAllowed });
   const save = useSaveSettings('Notification settings saved.');
   const [previewEvent, setPreviewEvent] = useState<CustomerSmsEvent>('order_placed');
   return (
@@ -325,8 +333,13 @@ export function NotificationsSettingsPage() {
                       className={cn('rounded-t-card rounded-br-card rounded-bl-[4px] bg-surface-card px-3.5 py-3 text-body-lg text-text-primary', n.sms_language === 'bn' && 'font-bangla leading-[26px]')}
                       data-testid="sms-preview"
                     >
-                      {smsPreview(previewEvent, n.sms_language, shop)}
+                      {templates.data?.find((t) => t.key === previewEvent && t.language === n.sms_language)?.preview.text ?? smsPreview(previewEvent, n.sms_language, shop)}
                     </p>
+                    {templatesAllowed && (
+                      <Link to={`/integrations/sms?tab=templates&key=${previewEvent}`} className="self-start text-body font-medium text-brand-600 hover:underline">
+                        Edit text
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>

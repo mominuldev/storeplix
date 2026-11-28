@@ -77,7 +77,7 @@ final class PlanChangeService
         $target = self::targetPlan($planCode);
 
         return BillingLock::run($tenant->id, fn () => DB::transaction(function () use ($tenant, $target, $interval, $idempotencyKey, $user) {
-            $existing = BillingInvoice::query()->where('idempotency_key', $idempotencyKey)->first();
+            $existing = BillingInvoice::query()->where('idempotency_key', $idempotencyKey)->first(); // an SMS-credit invoice with this key → mismatch (plan null)
             if ($existing !== null) {
                 if ($existing->plan_id !== $target->id || $existing->interval !== $interval) {
                     throw new ApiException(409, 'idempotency_key_mismatch', 'This Idempotency-Key was used for a different request.');
@@ -114,7 +114,7 @@ final class PlanChangeService
             SubscriptionStateMachine::move($subscription, $subscription->status, $subscription->status, [
                 'scheduled_plan_id' => $target->id, 'scheduled_interval' => $scheduledInterval,
             ]);
-            $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+            $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
             if ($open !== null) {
                 $this->invoices->void($open, BillingInvoice::VOID_SUPERSEDED, system: false);
             }
@@ -216,7 +216,7 @@ final class PlanChangeService
     public function expireToFree(Tenant $tenant, Subscription $subscription, string $reason, ?Authenticatable $actor = null): Subscription
     {
         $now = now();
-        $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+        $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
         if ($open !== null) {
             $this->invoices->void($open, $reason === Subscription::ENDED_UNPAID ? BillingInvoice::VOID_UNPAID : BillingInvoice::VOID_CANCELLED, system: $actor === null);
         }

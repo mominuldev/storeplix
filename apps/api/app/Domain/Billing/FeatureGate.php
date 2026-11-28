@@ -10,8 +10,7 @@ use App\Domain\Catalog\Models\Product;
 use App\Domain\Couriers\Models\CourierAccount;
 use App\Domain\Marketing\CampaignAllowance;
 use App\Domain\Orders\Models\Order;
-use App\Domain\Orders\Notifications\SmsTemplates;
-use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Staff\SeatCounter;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreDomain;
@@ -57,8 +56,8 @@ final class FeatureGate
             Limit::StaffSeats => app(SeatCounter::class)->used($tenant),
             Limit::Products => app(TenantContext::class)->run($tenant, fn () => Product::query()->count()),
             Limit::OrdersPerMonth => app(TenantContext::class)->run($tenant, fn () => Order::query()->where('placed_at', '>=', self::monthStart())->count()),
-            Limit::SmsPerMonth => app(TenantContext::class)->run($tenant, fn () => SmsMessage::query()->where('tenant_id', $tenant->getKey())
-                ->whereIn('purpose', SmsTemplates::COUNTED)->where('status', '<>', 'failed')->where('created_at', '>=', self::monthStart())->count()),
+            // PHASE-8-9A §4.5: queued|sent rows of the counted purposes not paid with SMS credits (skipped rows never count).
+            Limit::SmsPerMonth => app(TenantContext::class)->run($tenant, fn () => SmsCharger::transactionalUsed()),
             // 5b-3 (P5B-31): connected (or erroring) courier accounts; disconnected rows don't count.
             Limit::CourierConnections => app(TenantContext::class)->run($tenant, fn () => CourierAccount::query()
                 ->whereIn('status', [CourierAccount::CONNECTED, CourierAccount::ERROR])->count()),

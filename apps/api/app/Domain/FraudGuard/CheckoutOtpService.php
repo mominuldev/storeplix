@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\FraudGuard;
 
-use App\Domain\Billing\FeatureGate;
-use App\Domain\Billing\Limit;
 use App\Domain\FraudGuard\Jobs\SendCheckoutOtp;
 use App\Domain\FraudGuard\Models\CheckoutOtp;
+use App\Domain\Marketing\Content\SmsParts;
 use App\Domain\Marketing\Sending\DevMessageSink;
 use App\Domain\Orders\Notifications\SmsTemplates;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Phone;
+use App\Domain\Sms\Charging\SmsCharger;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\SmsPurposes;
+use App\Domain\Sms\SmsSender;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Support\TenantCache;
@@ -32,6 +34,7 @@ class CheckoutOtpService
         private readonly GuardSettings $settings,
         private readonly TenantContext $context,
         private readonly TenantCache $cache,
+        private readonly SmsCharger $charger,
     ) {}
 
     /**
@@ -53,8 +56,9 @@ class CheckoutOtpService
             $wait = max(1, $resend - (int) $last->sent_at->diffInSeconds(now(), true));
             throw new ApiException(429, 'rate_limited', 'Wait a moment before asking for a new code.', null, $wait);
         }
-        if ($this->allowanceUsed()) {
-            return $none; // fail open (P88-13): the order is placed and held for a call
+        $language = StoreSetting::query()->where('store_id', $store->id)->value('sms_language') === 'en' ? 'en' : 'bn';
+        if ($this->allowanceUsed($store, $language)) {
+            return $none; // fail open (P88-13): the order is placed and held for a call (PHASE-8-9A: allowance + credits)
         }
 
         $code = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);
@@ -75,15 +79,27 @@ class CheckoutOtpService
             return $otp;
         });
 
-        $language = StoreSetting::query()->where('store_id', $store->id)->value('sms_language') === 'en' ? 'en' : 'bn';
-        $message = SmsMessage::query()->create([
-            'tenant_id' => $this->context->requireId(),
-            'to' => $phone,
-            'purpose' => SmsTemplates::CHECKOUT_OTP,
-            'template' => SmsTemplates::CHECKOUT_OTP.'.'.$language,
-            'status' => 'queued',
-        ]);
-        $text = SmsTemplates::render(SmsTemplates::CHECKOUT_OTP, $language, ['shop' => SmsTemplates::clean($store->name, 40), 'code' => $code]);
+        // PHASE-8-9A §4.3: the row is charged when it is created (allowance, else SMS credits); `body_preview` stays null.
+        $text = self::text($store, $language, $code);
+        $charged = DB::transaction(function () use ($store, $phone, $language, $text) {
+            $message = SmsMessage::query()->create([
+                'tenant_id' => $this->context->requireId(),
+                'store_id' => $store->id,
+                'to' => $phone,
+                'purpose' => SmsTemplates::CHECKOUT_OTP,
+                'template' => SmsTemplates::CHECKOUT_OTP.'.'.$language,
+                'status' => SmsMessage::QUEUED,
+                'sender_id' => SmsSender::for($store),
+            ]);
+
+            return $this->charger->charge($message, $text)->skipped() ? null : $message;
+        });
+        if ($charged === null) {
+            CheckoutOtp::query()->whereKey($otp->id)->update(['expires_at' => now()]);
+
+            return $none; // lost the last allowance / credit to a parallel send: fail open
+        }
+        $message = $charged;
         dispatch((new SendCheckoutOtp($message->id, $store->id, $text))->forTenant($this->context->requireId()))->afterResponse();
         // Testing-only sink (never in production): e2e reads the code from here; no API response carries it.
         DevMessageSink::record($store->id, ['channel' => 'sms', 'to' => $phone, 'subject' => null, 'text' => $text,
@@ -140,7 +156,8 @@ class CheckoutOtpService
     /** Fail-open reasons (P88-13): the monthly SMS allowance is used up, or the last code for this number failed to send. */
     public function unavailableReason(Store $store, string $phone): ?string
     {
-        if ($this->allowanceUsed()) {
+        $language = StoreSetting::query()->where('store_id', $store->id)->value('sms_language') === 'en' ? 'en' : 'bn';
+        if ($this->allowanceUsed($store, $language)) {
             return 'sms_allowance';
         }
 
@@ -152,15 +169,25 @@ class CheckoutOtpService
         $this->cache->put(self::failureKey($storeId, $phone), 1, now()->addMinutes((int) config('fraud_guard.otp.failure_minutes', 30)));
     }
 
-    private function allowanceUsed(): bool
+    /** PHASE-8-9A §4.3: true when neither the `sms_per_month` allowance nor the SMS credits cover one code. */
+    private function allowanceUsed(Store $store, string $language): bool
     {
-        $tenant = $this->context->tenant();
-        if ($tenant === null) {
+        if ($this->context->tenant() === null) {
             return true;
         }
-        $limit = FeatureGate::limit($tenant, Limit::SmsPerMonth);
 
-        return $limit !== null && FeatureGate::usage($tenant, Limit::SmsPerMonth) >= $limit;
+        return ! $this->charger->canAfford(SmsPurposes::TRANSACTIONAL, SmsParts::partsOf(self::text($store, $language, '000000')));
+    }
+
+    /** The checkout code SMS (read-only template, store sender / prefix rule). */
+    private static function text(Store $store, string $language, string $code): string
+    {
+        $body = SmsTemplates::defaultBody(SmsTemplates::CHECKOUT_OTP, $language);
+        if (SmsSender::for($store) !== null) {
+            $body = SmsTemplates::dropShopPrefix($body);
+        }
+
+        return SmsTemplates::renderBody($body, ['shop' => SmsTemplates::clean($store->name, 40), 'code' => $code]);
     }
 
     public static function hash(string $storeId, string $phone, string $code): string

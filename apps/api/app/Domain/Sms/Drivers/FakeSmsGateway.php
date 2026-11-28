@@ -9,12 +9,12 @@ use App\Domain\Sms\SmsSendFailed;
 /** Tests: records messages in memory. */
 class FakeSmsGateway implements SmsGateway
 {
-    /** @var list<array{to: string, text: string}> */
+    /** @var list<array{to: string, text: string, sender_id: string|null}> */
     public array $sent = [];
 
     public bool $failNext = false;
 
-    public function send(string $msisdn, string $text): SmsResult
+    public function send(string $msisdn, string $text, ?string $senderId = null): SmsResult
     {
         if ($this->failNext) {
             $this->failNext = false;
@@ -22,7 +22,7 @@ class FakeSmsGateway implements SmsGateway
             throw new SmsSendFailed('Fake failure.');
         }
 
-        $this->sent[] = ['to' => $msisdn, 'text' => $text];
+        $this->sent[] = ['to' => $msisdn, 'text' => $text, 'sender_id' => $senderId];
 
         return new SmsResult('fake-'.count($this->sent), true, ['driver' => 'fake']);
     }

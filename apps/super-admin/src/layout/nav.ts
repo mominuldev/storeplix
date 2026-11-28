@@ -1,5 +1,5 @@
 import type { PlatformPermission } from '@storeplix/types';
-import { BarChart3, Building, Clock, CreditCard, Eye, Globe, LayoutDashboard, Settings, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Building, Clock, CreditCard, Eye, Globe, LayoutDashboard, Settings, Shield, Users, type LucideIcon } from 'lucide-react';
 
 export interface NavEntry {
   label: string;
@@ -7,6 +7,8 @@ export interface NavEntry {
   icon: LucideIcon;
   /** Hidden unless the signed-in staff member has this permission (Revenue reports: `view_analytics`, PHASE-8-2 §2.1). */
   permission?: PlatformPermission;
+  /** Count pill next to the label (Figma 2087:8230): which live count to show. */
+  badge?: 'sender_ids_pending';
 }
 
 // Figma Platform Admin – Desktop · PlatformSidebar 15:2 (groups, order and icons as designed). Phase 8.1 §7.1: items
@@ -29,6 +31,8 @@ export const navGroups: { heading: string; items: NavEntry[] }[] = [
     heading: 'Operations',
     items: [
       { label: 'Domains', to: '/domains', icon: Globe },
+      // PHASE-8-9A §13.1 (2087:8227): pending count badge; `manage_domains` only.
+      { label: 'Sender ID requests', to: '/sender-ids', icon: Shield, permission: 'manage_domains', badge: 'sender_ids_pending' },
       { label: 'Impersonations', to: '/impersonations', icon: Eye },
     ],
   },

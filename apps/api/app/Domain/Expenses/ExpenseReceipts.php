@@ -36,12 +36,12 @@ final class ExpenseReceipts
     /**
      * §5.1: MIME from the bytes only. The client name / Content-Type never make a file acceptable, but a claim of the
      * other kind (a JPEG named `.pdf`, a PDF sent as an image) is refused as an extension trick.
+     * PHASE-8-9A P89A-16: the same rules check a sender-ID trade licence (`$purpose` SenderIdDocument).
      *
      * @return array{mime: string, width: int, height: int}|string the inspected file, or the 422 message
      */
-    public function inspect(UploadedFile $file): array|string
+    public function inspect(UploadedFile $file, MediaPurpose $purpose = MediaPurpose::ExpenseReceipt): array|string
     {
-        $purpose = MediaPurpose::ExpenseReceipt;
         if ((int) $file->getSize() > $purpose->maxBytes()) {
             return sprintf('The file may not be larger than %d MB.', $purpose->maxBytes() / 1024 / 1024);
         }

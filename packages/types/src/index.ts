@@ -1460,7 +1460,8 @@ export interface FeatureAccess {
   grace_ends_at: string | null; domain_grace_ends_at: string | null;
 }
 
-export type BillingInvoiceKind = 'new' | 'upgrade' | 'renewal';
+/** PHASE-8-9A P89A-9: `sms_credits` = an SMS credit pack (no plan, interval or subscription; `sms_credits` > 0). */
+export type BillingInvoiceKind = 'new' | 'upgrade' | 'renewal' | 'sms_credits';
 export type BillingInvoiceStatus = 'open' | 'paid' | 'void';
 export type BillingVoidReason = 'superseded' | 'expired' | 'unpaid' | 'cancelled' | 'manual';
 export interface BillingInvoiceLine {
@@ -1484,7 +1485,10 @@ export interface BillingPayment {
   created_at: string; expires_at: string; verified_at: string | null;
 }
 export interface BillingInvoice extends BillingInvoiceSummary {
-  plan_code: string; interval: BillingInterval;
+  /** null for `kind = 'sms_credits'` (PHASE-8-9A P89A-9); always set for subscription kinds. */
+  plan_code: string | null; interval: BillingInterval | null;
+  /** PHASE-8-9A: credits granted when paid; null unless `kind = 'sms_credits'`. */
+  sms_credits?: number | null;
   subtotal_amount: number; tax_amount: number; tax_rate_bps: number; credit_amount: number;
   lines: BillingInvoiceLine[]; bill_to: BillingBillTo;
   period_start: string | null; period_end: string | null;
@@ -1661,8 +1665,10 @@ export interface AdminDomain {
   last_checked_at: string | null; created_at: string;
 }
 export interface AdminInvoiceSummary {
-  id: string; number: string; tenant: AdminShopRef; kind: string; status: BillingInvoiceStatus; plan_code: string;
-  billing_interval: BillingInterval; total_amount: number; currency: 'BDT'; provider: string | null;
+  id: string; number: string; tenant: AdminShopRef; kind: string; status: BillingInvoiceStatus;
+  /** null for `kind = 'sms_credits'` (PHASE-8-9A) */
+  plan_code: string | null;
+  billing_interval: BillingInterval | null; total_amount: number; currency: 'BDT'; provider: string | null;
   issued_at: string; due_at: string | null; paid_at: string | null;
 }
 export interface AdminInvoice extends BillingInvoice {
@@ -2095,7 +2101,14 @@ export interface CampaignEstimateInput {
 export interface CampaignEstimate {
   recipients: number; parts_per_recipient: number; total_parts: number; encoding: SmsEncoding | null; characters: number;
   /** the channel's monthly allowance (`campaign_sms_per_month` parts / `campaign_emails_per_month`); null limit = unlimited */
-  allowance: { limit: number | null; used: number; remaining: number | null; after: number | null };
+  allowance: {
+    limit: number | null; used: number; remaining: number | null; after: number | null;
+    /**
+     * PHASE-8-9A P89A-6 (1.23.0): SMS credits usable after the allowance (0 for email, a 0-allowance plan, or unlimited).
+     * The campaign fits when `total_parts ≤ remaining + credits`; optional for older servers.
+     */
+    credits?: number;
+  };
 }
 
 export type CampaignRecipientStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped' | 'unknown';
@@ -3729,3 +3742,303 @@ export const POS_AUDIT_ACTIONS: readonly PosAuditAction[] = [
   'pos_register.created', 'pos_register.updated', 'pos_register.archived', 'pos_register.unarchived',
   'pos_session.opened', 'pos_session.closed', 'pos_held_sale.deleted',
 ];
+
+// ---------- SMS integration: credits, templates, sender IDs, SMS log (Phase 8.9a, PHASE-8-9A-CONTRACT §3–§9; openapi 1.23.0) ----------
+/**
+ * One gateway for every shop: the platform's REVE SMS account (no merchant gateway, no Disconnect, P89A-1). A message
+ * is paid from the monthly plan allowance first (`sms_per_month` for transactional, `campaign_sms_per_month` for
+ * marketing), then from the tenant's purchased SMS credits (1 credit = 1 SMS part, never expire), else it is skipped
+ * (P89A-3 – P89A-6, ADR 0026). Credits never unlock a feature the plan lacks (a 0 allowance stays 0).
+ */
+
+// ----- Purposes, kinds, statuses (§3.4, P89A-4) -----
+/** `sms_messages.purpose` values a merchant can see (account sign-in codes `otp_*` are never listed, P89A-21). */
+export type SmsPurpose =
+  | 'order_placed' | 'order_confirmed' | 'order_shipped' | 'order_cancelled' | 'order_updated' | 'payment_link'
+  | 'pos_receipt' | 'checkout_otp' | 'campaign' | 'automation' | 'sms_test';
+export const SMS_PURPOSES: readonly SmsPurpose[] = [
+  'order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link',
+  'pos_receipt', 'checkout_otp', 'campaign', 'automation', 'sms_test',
+];
+export const SMS_PURPOSE_LABELS: Record<SmsPurpose, string> = {
+  order_placed: 'Order received', order_confirmed: 'Order confirmed', order_shipped: 'Shipped',
+  order_cancelled: 'Order cancelled', order_updated: 'Order updated', payment_link: 'Payment link',
+  pos_receipt: 'POS receipt', checkout_otp: 'Checkout code', campaign: 'Campaign', automation: 'Automation',
+  sms_test: 'Test SMS',
+};
+/** transactional = `sms_per_month` purposes (+ `sms_test`); marketing = `campaign_sms_per_month` (campaign, automation). */
+export type SmsKind = 'transactional' | 'marketing';
+/** `skipped` (8.9a) = not sent because the allowance and the credits were both used up (`error_code: no_credits`). */
+export type SmsMessageStatus = 'queued' | 'sent' | 'failed' | 'skipped';
+export type SmsChargedFrom = 'allowance' | 'credits';
+/** Never the provider's raw text (P89A-21). */
+export type SmsErrorCode = 'provider_error' | 'no_credits';
+
+// ----- Overview (§6.1, GET /stores/{store}/sms) -----
+/** none = never bought and 0 left; empty = 0 left after a purchase; low = below the alert threshold (or < 100 with the alert off). */
+export type SmsCreditStatus = 'none' | 'healthy' | 'low' | 'empty';
+/** P89A-12 low-credit alert thresholds; null = off. */
+export type SmsLowCreditThreshold = 100 | 200 | 500;
+export const SMS_LOW_CREDIT_THRESHOLDS: readonly SmsLowCreditThreshold[] = [100, 200, 500];
+export interface SmsAllowanceUsage {
+  /** null = unlimited (Growth transactional) */
+  limit: number | null; used: number; remaining: number | null;
+  /** transactional counts messages; marketing counts SMS parts (unchanged from P5-26 / P85-13) */
+  unit: 'messages' | 'parts';
+}
+export interface SmsSenderSummary {
+  /** shared = the platform sender with the "{Shop}: " prefix; masked = the shop's approved sender ID, no prefix (P89A-17) */
+  type: 'shared' | 'masked';
+  sender_id: string | null;
+  pending_request: SmsSenderIdRequest | null;
+}
+export interface SmsMonthStats {
+  /** status `sent` this calendar month (store timezone), every listed purpose */
+  messages_sent: number; messages_failed: number; messages_skipped: number;
+  /** sent / (sent + failed); null when both are 0. Figma "Delivered" → "Sent successfully" (no delivery reports, P89A-22) */
+  sent_success_rate: number | null;
+  /** credits consumed − credits refunded this month */
+  credits_used: number;
+  /** checkout codes sent this month */
+  otp_sent: number;
+}
+export interface SmsCreditsSummary {
+  balance: number; status: SmsCreditStatus;
+  /** floor(balance / average daily credits used over the last 30 days); null when nothing was used */
+  estimated_days_left: number | null;
+  low_credit_threshold: SmsLowCreditThreshold | null;
+}
+export interface SmsCapabilities {
+  /** settings.manage */
+  edit_templates: boolean;
+  /** settings.manage | integrations.manage */
+  send_test: boolean; view_log: boolean; view_sender_ids: boolean;
+  /** integrations.manage */
+  request_sender_id: boolean;
+  /** billing.view */
+  view_credit_history: boolean;
+  /** billing.manage (owner) */
+  buy_credits: boolean;
+  /** billing.manage | settings.manage */
+  edit_low_credit_alert: boolean;
+}
+export interface SmsOverview {
+  gateway: {
+    provider: 'revesms'; name: string;
+    /** always `connected`: the platform gateway (P89A-1) */
+    status: 'connected';
+    /** first `sent` SMS of this store; null = none yet */
+    active_since: string | null; last_sent_at: string | null;
+  };
+  sender: SmsSenderSummary;
+  /** `store_settings.sms_language` (same field as Settings → Notifications) */
+  language: 'bn' | 'en';
+  allowance: { transactional: SmsAllowanceUsage; marketing: SmsAllowanceUsage };
+  credits: SmsCreditsSummary;
+  this_month: SmsMonthStats;
+  /** PHASE-8-5 P85-15 quiet hours (fixed, read-only; marketing only) */
+  quiet_hours: { from: string; to: string; timezone: string };
+  can: SmsCapabilities;
+}
+
+// ----- Send test SMS (§6.2, POST /stores/{store}/sms/test) -----
+/** To the acting member's verified phone; 5 per hour per member; counts like any transactional SMS. */
+export interface SmsTestInput { language?: 'bn' | 'en' | null }
+export interface SmsTestResult {
+  sms_message_id: string; to_masked: string; status: 'sent'; charged_from: SmsChargedFrom; parts: number;
+}
+
+// ----- Templates (§7, P89A-7 – P89A-11) -----
+/** Editable order SMS (+ POS receipt). `checkout_otp` is listed read-only. */
+export type SmsTemplateEvent = CustomerSmsEvent | 'pos_receipt';
+export type SmsTemplateKey = SmsTemplateEvent | 'checkout_otp';
+export const SMS_TEMPLATE_EVENTS: readonly SmsTemplateEvent[] = [
+  'order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link', 'pos_receipt',
+];
+export type SmsMergeField =
+  | 'first_name' | 'shop' | 'number' | 'total' | 'due' | 'carrier' | 'track_url' | 'amount' | 'url' | 'method' | 'footer' | 'code';
+export const SMS_MERGE_FIELD_LABELS: Record<SmsMergeField, string> = {
+  first_name: 'Customer first name', shop: 'Shop name', number: 'Order number', total: 'Order total',
+  due: 'Amount to pay on delivery', carrier: 'Courier', track_url: 'Tracking link', amount: 'Amount to pay',
+  url: 'Payment link', method: 'Payment method', footer: 'Receipt footer', code: 'Checkout code',
+};
+/** P89A-8: body 1–480 characters; the rendered sample must fit 3 SMS parts. */
+export const SMS_TEMPLATE_BODY_MAX = 480;
+export const SMS_TEMPLATE_MAX_PARTS = 3;
+export interface SmsTemplatePreview { text: string; parts: number; encoding: SmsEncoding; characters: number }
+export interface SmsTemplate {
+  key: SmsTemplateKey; language: 'bn' | 'en'; label: string;
+  /** Effective body (custom, else the default) with `{merge_field}` tags */
+  body: string; default_body: string; is_custom: boolean;
+  /** false only for `checkout_otp` */
+  editable: boolean;
+  /**
+   * The Settings → Notifications toggle (`store_settings.customer_sms[key]`, one source of truth, P89A-10); null for
+   * `pos_receipt` (cashier tick) and `checkout_otp` (Fake order guard rule).
+   */
+  enabled: boolean | null;
+  merge_fields: SmsMergeField[];
+  /** Merge fields the body must keep (`payment_link`: `url`) */
+  required_fields: SmsMergeField[];
+  /** Rendered with sample values and the shop's current sender (prefix dropped with a masked sender ID) */
+  preview: SmsTemplatePreview;
+  updated_at: string | null; updated_by: UserRef | null;
+  /** 0 while not custom */
+  revision: number;
+}
+/** PUT /stores/{store}/sms/templates/{key}/{language}. A body equal to the default resets it. */
+export interface UpdateSmsTemplateInput { body: string; revision?: number }
+/** POST /stores/{store}/sms/templates/preview (no save; same validation as PUT). */
+export interface SmsTemplatePreviewInput { key: SmsTemplateKey; language: 'bn' | 'en'; body: string }
+/** `error.details` of 422 `sms_template_too_long`. */
+export interface SmsTemplateTooLongDetails { parts: number; max_parts: number }
+/** `error.details` of 422 `sms_template_unknown_merge_field` / `sms_template_missing_merge_field`. */
+export interface SmsTemplateFieldsDetails { fields: string[] }
+
+// ----- Sender ID (§8, P89A-13 – P89A-17) -----
+export type SmsSenderIdStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'superseded' | 'revoked';
+/** 3–11 letters and digits, at least one letter (BTRC masking rule). */
+export const SMS_SENDER_ID_PATTERN = /^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$/;
+export const SMS_SENDER_ID_NOTE_MAX = 300;
+/** Trade licence: JPG/PNG/WebP/PDF ≤ 5 MB, sniffed, private (same rules as expense receipts). */
+export const SMS_SENDER_ID_DOCUMENT_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
+export type SmsSenderIdDocumentMime = (typeof SMS_SENDER_ID_DOCUMENT_MIMES)[number];
+export const SMS_SENDER_ID_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;
+export interface SmsSenderIdDocument { mime: SmsSenderIdDocumentMime; size_bytes: number; filename: string }
+/** What the sender ID will carry (BTRC asks); promotions are not offered in 8.9a (Q263). */
+export type SmsSenderIdUse = 'order_updates' | 'otp' | 'pos_receipts';
+export const SMS_SENDER_ID_USES: readonly SmsSenderIdUse[] = ['order_updates', 'otp', 'pos_receipts'];
+export const SMS_SENDER_ID_USE_LABELS: Record<SmsSenderIdUse, string> = { order_updates: 'Order updates', otp: 'OTP codes', pos_receipts: 'POS receipts' };
+export interface SmsSenderIdRequest {
+  id: string; sender_id: string; status: SmsSenderIdStatus;
+  /** Business name as on the trade licence (2–120) */
+  business_name: string;
+  uses: SmsSenderIdUse[];
+  note: string | null;
+  document: SmsSenderIdDocument;
+  requested_by: UserRef | null; requested_at: string;
+  reviewed_at: string | null;
+  /** Rejection or revocation reason written by Store Plix staff (shown to the merchant); null otherwise */
+  decision_reason: string | null;
+}
+export interface SmsSenderIdList {
+  /** The approved sender ID in use, else null (shared sender) */
+  active: SmsSenderIdRequest | null;
+  pending: SmsSenderIdRequest | null;
+  /** Newest first, at most 20, every status */
+  history: SmsSenderIdRequest[];
+}
+/**
+ * POST /stores/{store}/sms/sender-ids (multipart `sender_id`, `business_name`, `uses[]`, `rights_confirmed`, `document`,
+ * `note`). `rights_confirmed` = the "This name belongs to my business and I have the right to use it." tick (required).
+ */
+export interface SmsSenderIdRequestInput {
+  sender_id: string; business_name: string; uses: SmsSenderIdUse[]; rights_confirmed: true;
+  document: Blob; filename?: string; note?: string | null;
+}
+
+// ----- SMS log (§9, P89A-19 – P89A-21) -----
+export const SMS_LOG_WINDOW_DAYS = 90;
+export const SMS_LOG_PER_PAGE = 50;
+export type SmsReferenceType = 'order' | 'campaign' | 'automation' | 'pos_sale';
+export interface SmsLogEntry {
+  id: string; created_at: string;
+  /** e.g. "01711-•••211" */
+  to_masked: string;
+  purpose: SmsPurpose; kind: SmsKind; status: SmsMessageStatus;
+  /** null on rows sent before 8.9a or skipped */
+  parts: number | null; charged_from: SmsChargedFrom | null;
+  /** masked sender used; null = shared sender */
+  sender_id: string | null;
+  /** ≤ 160 characters, links shown as "[link]"; always null for checkout codes; null after 90 days */
+  body_preview: string | null;
+  error_code: SmsErrorCode | null;
+  reference: { type: SmsReferenceType; id: string; label: string } | null;
+}
+export interface SmsLogFilters {
+  purpose?: SmsPurpose[]; status?: SmsMessageStatus[];
+  /** YYYY-MM-DD, store timezone, within the last 90 days */
+  from?: string; to?: string;
+  /** Exact phone (any local format; normalised to 8801…) */
+  phone?: string;
+  cursor?: string;
+}
+
+// ----- Credits (§5, P89A-3 – P89A-6, P89A-9, P89A-12) -----
+export type SmsCreditPackCode = 'credits_1000' | 'credits_5000' | 'credits_10000';
+/** Prices from `config/sms.php` (BDT paisa, VAT included); defaults ৳350 / ৳1,600 / ৳3,000. */
+export interface SmsCreditPack { code: SmsCreditPackCode; credits: number; price_amount: number; currency: 'BDT' }
+export interface SmsCreditAccount extends SmsCreditsSummary {
+  packs: SmsCreditPack[];
+  /** Configured platform gateways (as `BillingInvoiceListMeta.providers`) */
+  providers: GatewayProvider[];
+  /** The open `sms_credits` invoice (≤ 1 per tenant; expires after 24 h) */
+  open_invoice: BillingInvoiceSummary | null;
+  last_purchase_at: string | null;
+}
+/** PATCH /billing/sms-credits */
+export interface UpdateSmsCreditSettingsInput { low_credit_threshold: SmsLowCreditThreshold | null }
+/** POST /billing/sms-credits/purchase (Idempotency-Key). Owner only. */
+export interface SmsCreditPurchaseInput { pack: SmsCreditPackCode; provider: GatewayProvider }
+export interface SmsCreditPurchase { invoice: BillingInvoice; payment: BillingPayment }
+export type SmsCreditLedgerType = 'purchase' | 'consume' | 'refund' | 'admin_adjust';
+export interface SmsCreditLedgerEntry {
+  id: string; type: SmsCreditLedgerType;
+  /** signed: + purchase / refund / grant, − consume / deduction */
+  credits: number; balance_after: number; created_at: string;
+  invoice: { id: string; number: string } | null;
+  sms_message_id: string | null;
+  /** admin_adjust only (shown to the merchant) */
+  reason: string | null;
+}
+/** Ledger list: newest first; `filter[type]` optional; consume rows of one day are NOT grouped (raw ledger). */
+export interface SmsCreditLedgerFilters { type?: SmsCreditLedgerType[]; cursor?: string }
+
+// ----- Errors and audit (§10, §11) -----
+/** `error.details` of 402 `sms_credits_exhausted` (test SMS). */
+export interface SmsCreditsExhaustedDetails { allowance_remaining: number | null; credits: number; needed: number }
+/** `error.details` of 409 `sender_id_request_pending`. */
+export interface SenderIdRequestPendingDetails { request_id: string }
+export type SmsErrorCodeName =
+  | 'sms_credits_exhausted' | 'phone_not_verified' | 'provider_error'
+  | 'sms_template_read_only' | 'sms_template_unknown_merge_field' | 'sms_template_missing_merge_field'
+  | 'sms_template_link_not_allowed' | 'sms_template_too_long'
+  | 'sender_id_request_pending' | 'sender_id_taken' | 'sender_id_reserved' | 'sender_id_unchanged'
+  | 'sms_credits_insufficient';
+export type SmsAuditAction =
+  | 'sms.test_sent' | 'sms_template.updated' | 'sms_template.reset'
+  | 'sender_id.requested' | 'sender_id.cancelled' | 'sender_id.approved' | 'sender_id.rejected' | 'sender_id.revoked'
+  | 'sender_id.document_viewed' | 'sms_credits.purchased' | 'sms_credits.adjusted' | 'sms_credits.alert_updated';
+export const SMS_AUDIT_ACTIONS: readonly SmsAuditAction[] = [
+  'sms.test_sent', 'sms_template.updated', 'sms_template.reset',
+  'sender_id.requested', 'sender_id.cancelled', 'sender_id.approved', 'sender_id.rejected', 'sender_id.revoked',
+  'sender_id.document_viewed', 'sms_credits.purchased', 'sms_credits.adjusted', 'sms_credits.alert_updated',
+];
+
+// ----- Super admin (§10.3, P89A-14, P89A-18) -----
+export interface AdminSenderIdRequest extends SmsSenderIdRequest {
+  tenant: AdminShopRef;
+  requested_by_email: string | null;
+  reviewed_by: { id: string; name: string } | null;
+  /** The shop's currently approved sender ID (replaced on approval), else null */
+  current_sender_id: string | null;
+}
+export interface AdminSenderIdFilters {
+  /** default `pending` */
+  status?: SmsSenderIdStatus;
+  /** sender ID or shop name, ≥ 2 characters */
+  q?: string;
+  page?: number; per_page?: number;
+}
+export interface AdminSenderIdListMeta extends PaginationMeta { counts: { pending: number } }
+/** Review needs platform permission `manage_domains` (super_admin, support; P89A-14). `provider_registered` must be true: staff confirm the ID is registered on the REVE SMS account. */
+export interface AdminApproveSenderIdInput { provider_registered: true; reason: string }
+/** `reason` is shown to the merchant. */
+export interface AdminRejectSenderIdInput { reason: string }
+export interface AdminSmsCredits {
+  balance: number; status: SmsCreditStatus; low_credit_threshold: SmsLowCreditThreshold | null;
+  used_this_month: number; purchased_total: number; last_purchase_at: string | null;
+}
+/** ± credits, never 0, |credits| ≤ 1,000,000; a deduction can't take the balance below 0 (422 `sms_credits_insufficient`). */
+export interface AdminSmsCreditAdjustInput { credits: number; reason: string }
+export const SMS_CREDIT_ADJUST_MAX = 1_000_000;

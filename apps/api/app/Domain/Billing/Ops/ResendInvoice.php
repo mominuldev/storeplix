@@ -10,6 +10,7 @@ use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\PlanChangeService;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
+use App\Domain\Sms\Credits\SmsCreditService;
 use App\Domain\Tenancy\TenantContext;
 
 /**
@@ -33,6 +34,16 @@ final class ResendInvoice
                 throw new ApiException(409, 'invoice_not_open', "{$invoice->number} is void.");
             }
             $paid = $invoice->status === BillingInvoice::PAID;
+            if ($invoice->kind === BillingInvoice::SMS_CREDITS) { // PHASE-8-9A: no plan; the pack's own mails
+                $this->notifier->owner($paid ? BillingMail::SMS_CREDITS_ADDED : BillingMail::REMINDER, [
+                    'number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount), 'plan' => 'SMS credits',
+                    'credits' => number_format((int) $invoice->sms_credits), 'balance' => number_format(app(SmsCreditService::class)->balance()),
+                    'date' => BillingNotifier::date($invoice->due_at),
+                ]);
+                $actor->audit('billing.invoice_resent', $invoice, ['number' => $invoice->number, 'reason' => $actor->reason]);
+
+                return $invoice;
+            }
             $date = $paid ? ($invoice->period_end ?? PlanChangeService::periodEndsAt($this->plans->current())) : $invoice->due_at;
             $this->notifier->owner($paid ? BillingMail::PAYMENT_RECEIVED : BillingMail::REMINDER, [
                 'number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount), 'plan' => $invoice->plan->name,

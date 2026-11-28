@@ -43,7 +43,7 @@ final class InvoiceService
         ?string $createdBy = null,
         ?string $idempotencyKey = null,
     ): BillingInvoice {
-        $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+        $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
         if ($open !== null) {
             $this->void($open, BillingInvoice::VOID_SUPERSEDED);
         }
@@ -77,6 +77,62 @@ final class InvoiceService
         ], system: $createdBy === null);
 
         return $invoice;
+    }
+
+    /**
+     * PHASE-8-9A §5.3 step 2: an SMS credit pack invoice (`kind sms_credits`, no plan / interval, `sms_credits` = pack
+     * credits, one line "SMS credits · 5,000", VAT-inclusive split, due in 24 h). Voids an older open `sms_credits`
+     * invoice (`superseded`) and never touches subscription invoices. Under BillingLock, in a transaction, in the tenant.
+     *
+     * @param  array{credits: int, price_amount: int}  $pack
+     */
+    public function issueSmsCredits(Subscription $subscription, array $pack, ?string $createdBy = null, ?string $idempotencyKey = null): BillingInvoice
+    {
+        $open = BillingInvoice::query()->where('kind', BillingInvoice::SMS_CREDITS)->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+        if ($open !== null) {
+            $this->void($open, BillingInvoice::VOID_SUPERSEDED, system: $createdBy === null);
+        }
+        $now = now();
+        $total = (int) $pack['price_amount'];
+        $credits = (int) $pack['credits'];
+        $invoice = new BillingInvoice;
+        $invoice->forceFill(VatCalculator::split($total) + [
+            'subscription_id' => $subscription->id,
+            'number' => InvoiceNumberAllocator::next((int) $now->format('Y')),
+            'kind' => BillingInvoice::SMS_CREDITS,
+            'status' => BillingInvoice::OPEN,
+            'plan_id' => null,
+            'interval' => null,
+            'sms_credits' => $credits,
+            'currency' => 'BDT',
+            'total_amount' => $total,
+            'credit_amount' => 0,
+            'lines' => [[
+                'description' => self::smsCreditsDescription($credits), 'plan_code' => null, 'interval' => null,
+                'period_start' => null, 'period_end' => null, 'quantity' => 1, 'unit_amount' => $total, 'amount' => $total,
+            ]],
+            'bill_to' => self::billTo(),
+            'period_start' => null,
+            'period_end' => null,
+            'issued_at' => $now,
+            'due_at' => $now->copy()->addHours((int) config('sms.invoice_hours', 24)),
+            'reminders' => [],
+            'created_by' => $createdBy,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+        $invoice->save();
+
+        $this->audit->log('billing.invoice_issued', $invoice, [
+            'number' => $invoice->number, 'kind' => BillingInvoice::SMS_CREDITS, 'sms_credits' => $credits, 'total_amount' => $total,
+        ], system: $createdBy === null);
+
+        return $invoice;
+    }
+
+    /** "SMS credits · 5,000" (invoice line, PDF, provider description). */
+    public static function smsCreditsDescription(int $credits): string
+    {
+        return 'SMS credits · '.number_format($credits);
     }
 
     /**

@@ -40,7 +40,7 @@ final class PlanPresenter
     public static function subscription(Subscription $subscription, bool $withInvoice = true): array
     {
         $scheduled = $subscription->scheduled_plan_id !== null ? ($subscription->scheduledPlan ?? Plan::query()->find($subscription->scheduled_plan_id)) : null;
-        $open = $withInvoice ? BillingInvoice::query()->where('status', BillingInvoice::OPEN)->first() : null;
+        $open = $withInvoice ? BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->first() : null;
 
         return [
             'id' => $subscription->id,

@@ -54,7 +54,7 @@ final class SchedulePlanChange
             SubscriptionStateMachine::move($subscription, $subscription->status, $subscription->status, [
                 'scheduled_plan_id' => $target->id, 'scheduled_interval' => $scheduledInterval,
             ]);
-            $open = BillingInvoice::query()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
+            $open = BillingInvoice::query()->subscriptionKinds()->where('status', BillingInvoice::OPEN)->lockForUpdate()->first();
             if ($open !== null) {
                 $this->invoices->void($open, BillingInvoice::VOID_SUPERSEDED, false, $actor->staff);
             }

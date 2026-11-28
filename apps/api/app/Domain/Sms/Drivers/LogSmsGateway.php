@@ -10,9 +10,9 @@ use Illuminate\Support\Str;
 /** Local development: writes the SMS to the log, sends nothing. */
 class LogSmsGateway implements SmsGateway
 {
-    public function send(string $msisdn, string $text): SmsResult
+    public function send(string $msisdn, string $text, ?string $senderId = null): SmsResult
     {
-        Log::info('sms.log_driver', ['to' => $msisdn, 'text' => $text]);
+        Log::info('sms.log_driver', ['to' => $msisdn, 'text' => $text, 'sender_id' => $senderId]);
 
         return new SmsResult('log-'.Str::lower((string) Str::ulid()), true, ['driver' => 'log']);
     }

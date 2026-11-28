@@ -85,8 +85,9 @@ final class AdminPresenter
             'tenant' => $shops[$tenantId] ?? ['id' => $tenantId, 'name' => '', 'slug' => ''],
             'kind' => (string) $row->kind,
             'status' => (string) $row->status,
-            'plan_code' => (string) ($row->plan_code ?? Plan::FREE),
-            'billing_interval' => (string) $row->interval,
+            // PHASE-8-9A: an SMS credit invoice has no plan and no interval.
+            'plan_code' => $row->kind === 'sms_credits' ? null : (string) ($row->plan_code ?? Plan::FREE),
+            'billing_interval' => $row->interval !== null ? (string) $row->interval : null,
             'total_amount' => (int) $row->total_amount,
             'currency' => 'BDT',
             'provider' => $row->paid_provider ?? null,

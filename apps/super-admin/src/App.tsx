@@ -15,6 +15,7 @@ import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './settings/SettingsPage';
+import { SenderIdsPage } from './sms/SenderIdsPage';
 import { TeamPage } from './team/TeamPage';
 
 function NotFound() {
@@ -44,6 +45,7 @@ export function AppRoutes() {
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/revenue" element={<RevenuePage />} />
           <Route path="/domains" element={<DomainsPage />} />
+          <Route path="/sender-ids" element={<SenderIdsPage />} />
           <Route path="/impersonations" element={<ImpersonationsPage />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />

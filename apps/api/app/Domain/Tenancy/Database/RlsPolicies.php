@@ -26,6 +26,7 @@ final class RlsPolicies
     public const NAMES = [
         'tenant_users' => ['tenant_users_membership', 'tenant_users_select', 'tenant_users_insert', 'tenant_users_update', 'tenant_users_delete'],
         'audit_logs' => ['audit_logs_select', 'audit_logs_insert'],
+        'sms_credit_ledger' => ['sms_credit_ledger_select', 'sms_credit_ledger_insert'],
         'sms_messages' => ['sms_messages_select', 'sms_messages_insert', 'sms_messages_update'],
         'roles' => ['roles_select', 'roles_insert', 'roles_update', 'roles_delete'],
         'role_permissions' => ['role_permissions_select', 'role_permissions_insert', 'role_permissions_update', 'role_permissions_delete'],
@@ -70,6 +71,11 @@ final class RlsPolicies
             'audit_logs' => [
                 $db->statement("CREATE POLICY audit_logs_select ON {$t} FOR SELECT TO {$target} USING (tenant_id = {$tenant})"),
                 $db->statement("CREATE POLICY audit_logs_insert ON {$t} FOR INSERT TO {$target} WITH CHECK (tenant_id IS NULL OR tenant_id = {$tenant})"),
+            ],
+            // PHASE-8-9A §3.1: the SMS credit ledger is append-only like audit_logs (no UPDATE / DELETE policy or grant).
+            'sms_credit_ledger' => [
+                $db->statement("CREATE POLICY sms_credit_ledger_select ON {$t} FOR SELECT TO {$target} USING (tenant_id = {$tenant})"),
+                $db->statement("CREATE POLICY sms_credit_ledger_insert ON {$t} FOR INSERT TO {$target} WITH CHECK (tenant_id = {$tenant})"),
             ],
             // Account-level OTP SMS (tenant_id null) are written before any tenant exists and their status is
             // updated by the SendSms job without a tenant. Postgres applies the SELECT policy to an UPDATE's WHERE,

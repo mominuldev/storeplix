@@ -33,6 +33,7 @@ import { api } from '../lib/api';
 import { formatDate, intervalLabel, money, planName } from '../lib/format';
 import { useCan } from '../lib/permissions';
 import { useToast } from '../lib/toast';
+import { SmsCreditsCard, SmsUsageRow } from '../sms/SmsCredits';
 import { ChangePlanDialog, ExtendDialog, ReactivateDialog, SuspendDialog, extendLabel, suspensionReasons } from './dialogs';
 import { ImpersonateDialog } from './ImpersonateDialog';
 
@@ -222,7 +223,7 @@ export function MerchantDetailPage() {
         ]}
       />
       {tab === 'overview' && <OverviewTab tenant={t} metrics={metrics} onTab={setTab} onChangePlan={can('manage_billing') ? () => setDialog('plan') : undefined} />}
-      {tab === 'billing' && <BillingTab tenantId={t.id} />}
+      {tab === 'billing' && <BillingTab tenant={t} />}
       {tab === 'domains' && <DomainsTab tenantId={t.id} />}
       {tab === 'staff' && <StaffTab tenantId={t.id} />}
       {tab === 'audit' && <AuditTab tenantId={t.id} />}
@@ -452,29 +453,30 @@ function OverviewTab({
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="flex min-w-0 flex-col gap-5">
         <SectionCard title="Usage vs plan limits" subtitle={`${planName(t.plan_code)} plan`}>
-          {usage.length === 0 ? (
-            <Empty title="No usage data" description="Limits appear once the shop has a subscription." />
-          ) : (
-            <ul className="flex flex-col gap-4 px-5 pb-5">
-              {usage.map((u) => {
-                const pct = u.limit ? Math.min(100, Math.round((u.used / u.limit) * 100)) : 0;
-                return (
-                  <li key={u.key} className="flex flex-col gap-1.5">
-                    <span className="flex justify-between gap-3 text-body">
-                      <span className="text-text-primary">{usageLabels[u.key] ?? u.key}</span>
-                      <span className="font-medium text-text-primary tabular-nums">
-                        {formatCount(u.used)} / {u.limit === null ? 'Unlimited' : formatCount(u.limit)}
-                      </span>
-                    </span>
-                    <ProgressBar value={u.limit === null ? 0 : pct / 100} label={usageLabels[u.key] ?? u.key} />
-                    <span className={`text-caption ${pct >= 90 ? 'text-warning' : 'text-text-muted'}`}>
-                      {u.limit === null ? `No limit on ${planName(t.plan_code)}` : `${pct}% used`}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+          {usage.length === 0 && (
+            <p className="px-5 pb-3 text-caption text-text-muted">Limits appear once the shop has a subscription.</p>
           )}
+          <ul className="flex flex-col gap-4 px-5 pb-5">
+            {usage.map((u) => {
+              const pct = u.limit ? Math.min(100, Math.round((u.used / u.limit) * 100)) : 0;
+              return (
+                <li key={u.key} className="flex flex-col gap-1.5">
+                  <span className="flex justify-between gap-3 text-body">
+                    <span className="text-text-primary">{usageLabels[u.key] ?? u.key}</span>
+                    <span className="font-medium text-text-primary tabular-nums">
+                      {formatCount(u.used)} / {u.limit === null ? 'Unlimited' : formatCount(u.limit)}
+                    </span>
+                  </span>
+                  <ProgressBar value={u.limit === null ? 0 : pct / 100} label={usageLabels[u.key] ?? u.key} />
+                  <span className={`text-caption ${pct >= 90 ? 'text-warning' : 'text-text-muted'}`}>
+                    {u.limit === null ? `No limit on ${planName(t.plan_code)}` : `${pct}% used`}
+                  </span>
+                </li>
+              );
+            })}
+            {/* PHASE-8-9A 33:5121: SMS credits row with "Adjust credits" (2095:9090). */}
+            <SmsUsageRow tenant={t} />
+          </ul>
         </SectionCard>
 
         <GmvCard metrics={metrics} />
@@ -572,7 +574,8 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function BillingTab({ tenantId }: { tenantId: string }) {
+function BillingTab({ tenant }: { tenant: AdminTenant }) {
+  const tenantId = tenant.id;
   const [params, setParams] = useSearchParams();
   const [status, setStatus] = useState<'all' | BillingInvoiceStatus>('all');
   const [page, setPage] = useState(1);
@@ -594,51 +597,55 @@ function BillingTab({ tenantId }: { tenantId: string }) {
     setParams(next, { replace: true });
   };
   return (
-    <Card className="overflow-hidden">
-      <div className="px-5 pt-3">
-        <Tabs
-          aria-label="Invoice status"
-          value={status}
-          onChange={(v) => {
-            setStatus(v);
-            setPage(1);
-          }}
-          items={[
-            { value: 'all', label: 'All' },
-            { value: 'open', label: 'Open' },
-            { value: 'paid', label: 'Paid' },
-            { value: 'void', label: 'Void' },
-          ]}
+    <div className="flex flex-col gap-5">
+      {/* PHASE-8-9A §13.2: SMS credits card + ledger above the invoices. */}
+      <SmsCreditsCard tenant={tenant} />
+      <Card className="overflow-hidden">
+        <div className="px-5 pt-3">
+          <Tabs
+            aria-label="Invoice status"
+            value={status}
+            onChange={(v) => {
+              setStatus(v);
+              setPage(1);
+            }}
+            items={[
+              { value: 'all', label: 'All' },
+              { value: 'open', label: 'Open' },
+              { value: 'paid', label: 'Paid' },
+              { value: 'void', label: 'Void' },
+            ]}
+          />
+        </div>
+        <InvoicesTable
+          showShop={false}
+          rows={list.data?.data ?? []}
+          onOpen={(i) => setInvoice(i.id)}
+          state={
+            list.isPending ? (
+              <LoadingRows label="Loading invoices" />
+            ) : list.isError ? (
+              <ErrorState error={list.error} onRetry={() => void list.refetch()} />
+            ) : list.data.data.length === 0 ? (
+              <Empty title="No invoices" description="Nothing in this tab." />
+            ) : undefined
+          }
+          footer={
+            list.data && list.data.meta.total > 0 ? (
+              <Pagination
+                page={list.data.meta.current_page}
+                perPage={list.data.meta.per_page}
+                total={list.data.meta.total}
+                lastPage={list.data.meta.last_page}
+                noun="invoices"
+                onPage={setPage}
+              />
+            ) : undefined
+          }
         />
-      </div>
-      <InvoicesTable
-        showShop={false}
-        rows={list.data?.data ?? []}
-        onOpen={(i) => setInvoice(i.id)}
-        state={
-          list.isPending ? (
-            <LoadingRows label="Loading invoices" />
-          ) : list.isError ? (
-            <ErrorState error={list.error} onRetry={() => void list.refetch()} />
-          ) : list.data.data.length === 0 ? (
-            <Empty title="No invoices" description="Nothing in this tab." />
-          ) : undefined
-        }
-        footer={
-          list.data && list.data.meta.total > 0 ? (
-            <Pagination
-              page={list.data.meta.current_page}
-              perPage={list.data.meta.per_page}
-              total={list.data.meta.total}
-              lastPage={list.data.meta.last_page}
-              noun="invoices"
-              onPage={setPage}
-            />
-          ) : undefined
-        }
-      />
-      {invoiceId && <InvoiceDrawer invoiceId={invoiceId} onClose={() => setInvoice(null)} />}
-    </Card>
+        {invoiceId && <InvoiceDrawer invoiceId={invoiceId} onClose={() => setInvoice(null)} />}
+      </Card>
+    </div>
   );
 }
 

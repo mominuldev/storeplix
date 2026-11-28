@@ -60,6 +60,8 @@ const ShipmentDetailPage = lazy(() => import('./shipments/ShipmentDetailPage'));
 const PrintPage = lazy(() => import('./documents/PrintPage'));
 const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
 const DeveloperPage = lazy(() => import('./developer/DeveloperPage'));
+// PHASE-8-9A SMS integration (Integrations › Messaging › SMS)
+const SmsPage = lazy(() => import('./sms/SmsPage'));
 const CouponsPage = lazy(() => import('./coupons/CouponsPage'));
 const CouponEditorPage = lazy(() => import('./coupons/CouponEditorPage'));
 // Phase 8.5 marketing campaigns (code-split).
@@ -262,6 +264,7 @@ export function AppRoutes() {
               <Route path="/orders/:orderId/edit" element={gated(can.processOrders, <OrderEditPage />)} />
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
               <Route path="/integrations/developer" element={gated(can.manageDevelopers, <DeveloperPage />)} />
+              <Route path="/integrations/sms" element={lazyEl(<SmsPage />)} />
               <Route path="/marketing" element={<MarketingIndex />} />
               <Route path="/marketing/campaigns" element={gated(can.manageMarketing, <CampaignsPage />)} />
               <Route path="/marketing/campaigns/new" element={gated(can.manageMarketing, <CampaignComposerPage />)} />

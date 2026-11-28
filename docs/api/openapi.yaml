@@ -1,8 +1,27 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.22.0
+  version: 1.23.0
   description: |
+    1.23.0 (2026-11-28, Phase 8.9a SMS integration, PHASE-8-9A-CONTRACT.md, ADR 0026; Q257–Q272 defaults accepted). New
+    tag sms. Store-scoped /stores/{store}/sms (overview), POST /sms/test (test SMS to the member's verified phone),
+    /sms/templates (+ /preview, PUT|DELETE /{key}/{language}), /sms/sender-ids (multipart request with trade licence,
+    /{sender_id}/cancel), /sms/messages (90-day log, masked phones, cursor). Tenant-level /billing/sms-credits (GET,
+    PATCH low-credit alert), /billing/sms-credits/ledger, POST /billing/sms-credits/purchase (owner; issues a billing
+    invoice kind sms_credits and starts a platform payment; credits only after server-side verification). Admin
+    /admin/sender-ids (list, detail, document, approve, reject, revoke; platform permission manage_domains) and
+    /admin/tenants/{tenant}/sms-credits (GET, /ledger, POST /adjust with manage_billing). BillingInvoiceKind gains
+    sms_credits; BillingInvoice.plan_code and .interval become nullable (null for sms_credits) and BillingInvoice gains
+    sms_credits; AdminInvoiceSummary.plan_code / billing_interval nullable. GET /billing/invoices gains filter[kind].
+    SmsSenderIdRequest gains business_name and uses (new SmsSenderIdUse); the request form gains business_name, uses[],
+    rights_confirmed. CampaignEstimate.allowance gains optional credits (schedule/send fit = remaining + credits). POST
+    /pos/sales/{sale}/sms-receipt 402 plan_limit_reached now only when the allowance and the SMS credits are both used up. New schemas SmsPurpose, SmsKind,
+    SmsMessageStatus, SmsChargedFrom, SmsCreditStatus, SmsLowCreditThreshold, SmsAllowanceUsage, SmsCreditsSummary,
+    SmsOverview, SmsTestResult, SmsCreditsExhaustedDetails, SmsTemplateKey, SmsMergeField, SmsTemplatePreview,
+    SmsTemplate, UpdateSmsTemplateInput, SmsTemplatePreviewInput, SmsSenderIdStatus, SmsSenderIdRequest,
+    SmsSenderIdList, SenderIdRequestPendingDetails, SmsLogEntry, SmsCreditPackCode, SmsCreditPack, SmsCreditAccount,
+    UpdateSmsCreditSettingsInput, SmsCreditPurchaseInput, SmsCreditPurchase, SmsCreditLedgerType, SmsCreditLedgerEntry,
+    SmsSenderIdUse, AdminSenderIdRequest, AdminSenderIdListMeta, AdminSmsCredits, AdminSmsCreditAdjustInput.
     1.22.0 (2026-11-25, Phase 8.8d part B as built, PHASE-8-8D §9). PosReturnInput.reason is now PosReturnReason
     (wrong_size | damaged | wrong_item | changed_mind | refused_at_door | other, default other; was free text); note is
     stored as the return's customer_note and the refund note. POST /pos/sales/{sale}/returns: 403 (orders.refund,
@@ -306,6 +325,8 @@ tags:
   description: 'Phase 8.8b: suppliers, purchase orders, receiving, supplier payments and reorder suggestions (PHASE-8-8B §8)'
 - name: pos
   description: 'Phase 8.8d: POS registers, cash sessions, till sales, held sales and returns at the till (PHASE-8-8D §10)'
+- name: sms
+  description: 'Phase 8.9a: SMS integration — overview, test SMS, templates, sender IDs, SMS log (PHASE-8-9A §6–§9); credits are under billing'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -5660,7 +5681,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '402':
-          description: '`feature_not_in_plan` (pos) or `plan_limit_reached` (sms_per_month)'
+          description: '`feature_not_in_plan` (pos) or `plan_limit_reached` (sms_per_month used up and no SMS credits, 1.23.0)'
           content:
             application/json:
               schema:
@@ -11851,6 +11872,11 @@ paths:
         name: filter[status]
         schema:
           $ref: '#/components/schemas/BillingInvoiceStatus'
+      - in: query
+        name: filter[kind]
+        schema:
+          type: string
+        description: 'Comma list of BillingInvoiceKind (1.23.0; e.g. sms_credits for the SMS purchase history, PHASE-8-9A §12.5)'
       responses:
         '200':
           description: Invoices
@@ -19606,8 +19632,1165 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms:
+    get:
+      tags:
+      - sms
+      summary: SMS overview
+      operationId: getSmsOverview
+      description: 'PHASE-8-9A §6.1. `settings.manage | integrations.manage | billing.view`. Gateway (always the platform REVE SMS, connected), sender (shared or masked), sending language, monthly allowances, credit summary, this month’s stats (sent, failed, skipped, sent-successfully rate, credits used, checkout codes), fixed quiet hours, and `can` flags for the tabs.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsOverview'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/test:
+    post:
+      tags:
+      - sms
+      summary: Send a test SMS
+      operationId: sendSmsTest
+      description: 'PHASE-8-9A §6.2. `settings.manage | integrations.manage`. Sends a fixed test text to the signed-in member’s verified phone (never another number), synchronously. Charged like any transactional SMS (allowance, else credits). Limiter `sms-test` 5/hour per member and store. Audited `sms.test_sent`. Impersonation → 403 `impersonation_read_only`.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                language:
+                  oneOf:
+                  - type: string
+                    enum:
+                    - bn
+                    - en
+                  - type: 'null'
+                  description: 'Default: the store’s sms_language'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsTestResult'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`sms_credits_exhausted` (no allowance left this month and no credits; details SmsCreditsExhaustedDetails)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`phone_not_verified` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_error` (nothing charged: a credit charge is refunded)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/sms/templates:
+    get:
+      tags:
+      - sms
+      summary: List SMS templates
+      operationId: listSmsTemplates
+      description: 'PHASE-8-9A §7. `settings.manage | integrations.manage | billing.view`. Every key (7 editable + checkout_otp read-only) × bn/en (16 rows, SMS_TEMPLATE_EVENTS order then checkout_otp; bn before en), each with its preview rendered from sample values and the current sender.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SmsTemplate'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/templates/preview:
+    post:
+      tags:
+      - sms
+      summary: Preview an SMS template body
+      operationId: previewSmsTemplate
+      description: 'PHASE-8-9A §7.3. `settings.manage`. Same validation as PUT; nothing is saved. Limiter `sms-template-preview` 60/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmsTemplatePreviewInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsTemplatePreview'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`sms_template_read_only` | `sms_template_unknown_merge_field` | `sms_template_missing_merge_field` | `sms_template_link_not_allowed` | `sms_template_too_long` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/templates/{key}/{language}:
+    parameters:
+    - $ref: '#/components/parameters/SmsTemplateKeyPath'
+    - $ref: '#/components/parameters/SmsLanguagePath'
+    put:
+      tags:
+      - sms
+      summary: Save an SMS template
+      operationId: updateSmsTemplate
+      description: 'PHASE-8-9A §7.2. `settings.manage`. Body rules P89A-8: 1–480 characters after trim; only the key’s merge fields; required fields kept (payment_link: url); no typed links (http, https, www.); the sample render must fit 3 parts. A body equal to the default deletes the custom row (is_custom false). Stale `revision` → 409. Audited `sms_template.updated`.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSmsTemplateInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsTemplate'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`sms_template_read_only` (checkout_otp) | `sms_template_unknown_merge_field` | `sms_template_missing_merge_field` | `sms_template_link_not_allowed` | `sms_template_too_long` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - sms
+      summary: Reset an SMS template to the default
+      operationId: resetSmsTemplate
+      description: 'PHASE-8-9A §7.2. `settings.manage`. Idempotent; answers the default template. Audited `sms_template.reset` when a custom row existed.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsTemplate'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`sms_template_read_only`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/sender-ids:
+    get:
+      tags:
+      - sms
+      summary: Sender ID requests
+      operationId: listSmsSenderIds
+      description: 'PHASE-8-9A §8. `settings.manage | integrations.manage`. Active (approved) sender ID, the pending request, and the last 20 requests.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsSenderIdList'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - sms
+      summary: Request a masked sender ID
+      operationId: requestSmsSenderId
+      description: 'PHASE-8-9A §8.2. `integrations.manage`. Multipart. One pending request per store; the sender ID is unique (case-insensitive) across pending and approved requests of every shop. Document: trade licence, JPG/PNG/WebP/PDF ≤ 5 MB, sniffed, stored privately under the tenant prefix (media purpose sender_id_document); images are re-encoded. Limiter `sms-sender-id` 5/day per store. Audited `sender_id.requested`.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - sender_id
+              - business_name
+              - uses[]
+              - rights_confirmed
+              - document
+              properties:
+                sender_id:
+                  type: string
+                  pattern: '^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$'
+                  description: '3–11 letters and digits, at least one letter; stored as typed, compared case-insensitively'
+                business_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                  description: Business name exactly as on the trade licence
+                uses[]:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    $ref: '#/components/schemas/SmsSenderIdUse'
+                rights_confirmed:
+                  type: string
+                  enum:
+                  - '1'
+                  - 'true'
+                  description: '“This name belongs to my business and I have the right to use it.” Must be ticked (else 422); stored in the audit meta'
+                note:
+                  type: string
+                  maxLength: 300
+                document:
+                  type: string
+                  format: binary
+                  description: 'Trade licence (JPG/PNG/WebP/PDF ≤ 5 MB)'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsSenderIdRequest'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`sender_id_request_pending` (details SenderIdRequestPendingDetails) | `sender_id_taken`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`sender_id_reserved` | `sender_id_unchanged` (same as the active ID) | `validation_failed` (sender_id, business_name, uses, rights_confirmed, document, note)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/sender-ids/{sender_id}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/SmsSenderIdPath'
+    post:
+      tags:
+      - sms
+      summary: Withdraw a pending sender ID request
+      operationId: cancelSmsSenderId
+      description: 'PHASE-8-9A §8.2. `integrations.manage`. pending → cancelled. Audited `sender_id.cancelled`.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsSenderIdRequest'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/sms/messages:
+    get:
+      tags:
+      - sms
+      summary: SMS log
+      operationId: listSmsMessages
+      description: 'PHASE-8-9A §9. `settings.manage | integrations.manage`. This store’s SMS of the last 90 days (store timezone), newest first, 50 per page, cursor. Account sign-in codes (`otp_*`) are never listed. Phones are masked; checkout-code rows never carry a body.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: 'filter[purpose]'
+        schema:
+          type: string
+        description: Comma list of SmsPurpose
+      - in: query
+        name: 'filter[status]'
+        schema:
+          type: string
+        description: Comma list of SmsMessageStatus
+      - in: query
+        name: 'filter[from]'
+        schema:
+          type: string
+          format: date
+        description: 'Store-local date, ≥ today − 90 days (else 422)'
+      - in: query
+        name: 'filter[to]'
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: 'filter[phone]'
+        schema:
+          type: string
+          maxLength: 20
+        description: 'Exact phone in any BD format (normalised to 8801…); invalid → 422'
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SmsLogEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/sms-credits:
+    get:
+      tags:
+      - billing
+      summary: SMS credit account
+      operationId: getSmsCredits
+      description: 'PHASE-8-9A §5. Tenant-level. `billing.view | settings.manage | integrations.manage`. Balance, status, estimate, low-credit threshold, packs, configured platform providers, the open sms_credits invoice.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsCreditAccount'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - billing
+      summary: Set the low-credit alert
+      operationId: updateSmsCredits
+      description: 'PHASE-8-9A P89A-12. `billing.manage | settings.manage`. Changing the threshold re-arms the alert. Audited `sms_credits.alert_updated`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSmsCreditSettingsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsCreditAccount'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/sms-credits/ledger:
+    get:
+      tags:
+      - billing
+      summary: SMS credit ledger
+      operationId: listSmsCreditLedger
+      description: 'PHASE-8-9A §5.5. `billing.view`. Append-only ledger, newest first, 50 per page, cursor.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: 'filter[type]'
+        schema:
+          type: string
+        description: Comma list of SmsCreditLedgerType
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SmsCreditLedgerEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/sms-credits/purchase:
+    post:
+      tags:
+      - billing
+      summary: Buy an SMS credit pack
+      operationId: purchaseSmsCredits
+      description: 'PHASE-8-9A §5.3. Owner only (`billing.manage`). Issues an open billing invoice kind sms_credits (voids an older open sms_credits invoice as superseded; never touches subscription invoices) and starts a platform gateway payment; the browser goes to `payment.redirect_url`. Credits are granted only after server-side verification (rule 8), once per invoice. After the return the browser lands on /integrations/sms?tab=credits&payment={id}. Same Idempotency-Key → same invoice and payment. Limiter `billing`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmsCreditPurchaseInput'
+      responses:
+        '201':
+          description: 'Invoice issued, payment started'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsCreditPurchase'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch` | `idempotency_key_in_use`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`billing_gateway_unavailable` | `validation_failed` (pack, provider)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable` (the invoice stays open; pay it later from Plan & billing)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /admin/sender-ids:
+    get:
+      tags:
+      - admin
+      summary: Sender ID requests
+      operationId: listAdminSenderIds
+      description: 'PHASE-8-9A §10.3. Platform permission `manage_domains` (super_admin, support; P89A-14). Cross-tenant list, oldest pending first for `pending`, newest first otherwise.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: 'filter[status]'
+        schema:
+          $ref: '#/components/schemas/SmsSenderIdStatus'
+        description: Default pending
+      - in: query
+        name: 'filter[q]'
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 100
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSenderIdRequest'
+                  meta:
+                    $ref: '#/components/schemas/AdminSenderIdListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sender-ids/{sender_id}:
+    parameters:
+    - $ref: '#/components/parameters/AdminSenderIdPath'
+    get:
+      tags:
+      - admin
+      summary: Sender ID request
+      operationId: getAdminSenderId
+      description: 'PHASE-8-9A. Platform permission `manage_domains`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSenderIdRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sender-ids/{sender_id}/document:
+    parameters:
+    - $ref: '#/components/parameters/AdminSenderIdPath'
+    get:
+      tags:
+      - admin
+      summary: Download the trade licence
+      operationId: getAdminSenderIdDocument
+      description: 'PHASE-8-9A. Platform permission `manage_domains`. Streams the private file as an attachment (`nosniff`, CSP `sandbox; default-src ''none''`, `no-store`). Audited `sender_id.document_viewed`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: File
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`document_processing` (image still being re-encoded)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sender-ids/{sender_id}/approve:
+    parameters:
+    - $ref: '#/components/parameters/AdminSenderIdPath'
+    post:
+      tags:
+      - admin
+      summary: Approve a sender ID
+      operationId: approveAdminSenderId
+      description: 'PHASE-8-9A §8.3. Platform permission `manage_domains`. pending → approved; the shop’s previous approved ID → superseded; the shop’s SMS use it from the next message and drop the “{Shop}: ” prefix. Owner emailed. Audited `sender_id.approved`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - provider_registered
+              - reason
+              properties:
+                provider_registered:
+                  type: boolean
+                  const: true
+                  description: Staff confirm the ID is registered on the REVE SMS account
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: 'Why (stored in the audit log, PHASE-8-1 conventions).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSenderIdRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` | `sender_id_taken`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sender-ids/{sender_id}/reject:
+    parameters:
+    - $ref: '#/components/parameters/AdminSenderIdPath'
+    post:
+      tags:
+      - admin
+      summary: Reject a sender ID request
+      operationId: rejectAdminSenderId
+      description: 'PHASE-8-9A §8.3. Platform permission `manage_domains`. pending → rejected; `reason` is shown to the merchant and emailed to the owner. Audited `sender_id.rejected`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: 'Why (stored in the audit log, PHASE-8-1 conventions).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSenderIdRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sender-ids/{sender_id}/revoke:
+    parameters:
+    - $ref: '#/components/parameters/AdminSenderIdPath'
+    post:
+      tags:
+      - admin
+      summary: Revoke an approved sender ID
+      operationId: revokeAdminSenderId
+      description: 'PHASE-8-9A §8.3. Platform permission `manage_domains`. approved → revoked; the shop falls back to the shared sender. `reason` shown to the merchant. Audited `sender_id.revoked`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: 'Why (stored in the audit log, PHASE-8-1 conventions).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSenderIdRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/sms-credits:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    get:
+      tags:
+      - admin
+      summary: Merchant SMS credits
+      operationId: getAdminSmsCredits
+      description: 'PHASE-8-9A §10.3. Platform permission `view_merchants`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSmsCredits'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/sms-credits/ledger:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    get:
+      tags:
+      - admin
+      summary: Merchant SMS credit ledger
+      operationId: listAdminSmsCreditLedger
+      description: 'PHASE-8-9A. Platform permission `view_merchants`. Newest first, 50 per page.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: 'filter[type]'
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SmsCreditLedgerEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/sms-credits/adjust:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    post:
+      tags:
+      - admin
+      summary: Grant or deduct SMS credits
+      operationId: adjustAdminSmsCredits
+      description: 'PHASE-8-9A §5.4. Platform permission `manage_billing`. One admin_adjust ledger row; a deduction can’t take the balance below 0. Same Idempotency-Key → same result. Audited `sms_credits.adjusted` (platform actor, `// cross-tenant`).'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSmsCreditAdjustInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSmsCredits'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`sms_credits_insufficient` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
+    SmsTemplateKeyPath:
+      in: path
+      name: key
+      required: true
+      schema:
+        $ref: '#/components/schemas/SmsTemplateKey'
+    SmsLanguagePath:
+      in: path
+      name: language
+      required: true
+      schema:
+        type: string
+        enum:
+        - bn
+        - en
+    SmsSenderIdPath:
+      in: path
+      name: sender_id
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: 'sms_sender_ids.id of this store, else 404'
+    AdminSenderIdPath:
+      in: path
+      name: sender_id
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
     BlockedNumberPath:
       in: path
       name: entry
@@ -31460,7 +32643,8 @@ components:
       - new
       - upgrade
       - renewal
-      description: Clients must tolerate new values (e.g. sms_credits later, Q84)
+      - sms_credits
+      description: Clients must tolerate new values. sms_credits (1.23.0, PHASE-8-9A P89A-9) = an SMS credit pack; no plan, interval or subscription
     BillingInvoiceStatus:
       type: string
       enum:
@@ -31646,9 +32830,20 @@ components:
         can_pay:
           type: boolean
         plan_code:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: null for kind sms_credits (1.23.0)
         interval:
-          $ref: '#/components/schemas/BillingInterval'
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
+          description: null for kind sms_credits (1.23.0)
+        sms_credits:
+          type:
+          - integer
+          - 'null'
+          description: Credits granted when paid; null unless kind sms_credits (1.23.0, optional)
         subtotal_amount:
           type: integer
         tax_amount:
@@ -32491,7 +33686,7 @@ components:
       - manage_team
       - view_analytics
       - manage_settings
-      description: manage_settings (1.20.0, amendment A1) = platform settings, super_admin only.
+      description: manage_settings (1.20.0, amendment A1) = platform settings, super_admin only. manage_domains also covers the SMS sender-ID review queue (1.23.0, PHASE-8-9A P89A-14).
     AuditActorType:
       type: string
       description: 'automation (1.14.0) = a store automation; actor.id = automation id, actor.name = its name (P86-20)'
@@ -33858,9 +35053,14 @@ components:
         status:
           $ref: '#/components/schemas/BillingInvoiceStatus'
         plan_code:
-          type: string
+          type:
+          - string
+          - 'null'
+          description: null for kind sms_credits (1.23.0)
         billing_interval:
-          $ref: '#/components/schemas/BillingInterval'
+          oneOf:
+          - $ref: '#/components/schemas/BillingInterval'
+          - type: 'null'
         total_amount:
           type: integer
           description: Paisa
@@ -35796,6 +36996,10 @@ components:
               type:
               - integer
               - 'null'
+            credits:
+              type: integer
+              minimum: 0
+              description: 'SMS credits available after the allowance (1.23.0, PHASE-8-9A P89A-6; 0 for email, for a plan with no SMS allowance and when unlimited). Schedule/send fits when total_parts ≤ remaining + credits. Optional for older servers'
           description: campaign_sms_per_month (parts) or campaign_emails_per_month this month; null limit = unlimited
     CampaignRecipientStatus:
       type: string
@@ -39189,3 +40393,820 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReorderSuggestionItem'
+    SmsPurpose:
+      type: string
+      enum:
+      - order_placed
+      - order_confirmed
+      - order_shipped
+      - order_cancelled
+      - order_updated
+      - payment_link
+      - pos_receipt
+      - checkout_otp
+      - campaign
+      - automation
+      - sms_test
+    SmsKind:
+      type: string
+      enum:
+      - transactional
+      - marketing
+    SmsMessageStatus:
+      type: string
+      enum:
+      - queued
+      - sent
+      - failed
+      - skipped
+    SmsChargedFrom:
+      type: string
+      enum:
+      - allowance
+      - credits
+    SmsCreditStatus:
+      type: string
+      enum:
+      - none
+      - healthy
+      - low
+      - empty
+    SmsLowCreditThreshold:
+      type: integer
+      enum:
+      - 100
+      - 200
+      - 500
+    SmsAllowanceUsage:
+      type: object
+      required:
+      - limit
+      - used
+      - remaining
+      - unit
+      properties:
+        limit:
+          type:
+          - integer
+          - 'null'
+        used:
+          type: integer
+        remaining:
+          type:
+          - integer
+          - 'null'
+        unit:
+          type: string
+          enum:
+          - messages
+          - parts
+    SmsCreditsSummary:
+      type: object
+      required:
+      - balance
+      - status
+      - estimated_days_left
+      - low_credit_threshold
+      properties:
+        balance:
+          type: integer
+        status:
+          $ref: '#/components/schemas/SmsCreditStatus'
+        estimated_days_left:
+          type:
+          - integer
+          - 'null'
+        low_credit_threshold:
+          oneOf:
+          - $ref: '#/components/schemas/SmsLowCreditThreshold'
+          - type: 'null'
+    SmsOverview:
+      type: object
+      required:
+      - gateway
+      - sender
+      - language
+      - allowance
+      - credits
+      - this_month
+      - quiet_hours
+      - can
+      properties:
+        gateway:
+          type: object
+          required:
+          - provider
+          - name
+          - status
+          - active_since
+          - last_sent_at
+          properties:
+            provider:
+              type: string
+              const: revesms
+            name:
+              type: string
+            status:
+              type: string
+              const: connected
+            active_since:
+              type:
+              - string
+              - 'null'
+              format: date-time
+            last_sent_at:
+              type:
+              - string
+              - 'null'
+              format: date-time
+        sender:
+          type: object
+          required:
+          - type
+          - sender_id
+          - pending_request
+          properties:
+            type:
+              type: string
+              enum:
+              - shared
+              - masked
+            sender_id:
+              type:
+              - string
+              - 'null'
+            pending_request:
+              oneOf:
+              - $ref: '#/components/schemas/SmsSenderIdRequest'
+              - type: 'null'
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        allowance:
+          type: object
+          required:
+          - transactional
+          - marketing
+          properties:
+            transactional:
+              $ref: '#/components/schemas/SmsAllowanceUsage'
+            marketing:
+              $ref: '#/components/schemas/SmsAllowanceUsage'
+        credits:
+          $ref: '#/components/schemas/SmsCreditsSummary'
+        this_month:
+          type: object
+          required:
+          - messages_sent
+          - messages_failed
+          - messages_skipped
+          - sent_success_rate
+          - credits_used
+          - otp_sent
+          properties:
+            messages_sent:
+              type: integer
+            messages_failed:
+              type: integer
+            messages_skipped:
+              type: integer
+            sent_success_rate:
+              type:
+              - number
+              - 'null'
+              minimum: 0
+              maximum: 1
+            credits_used:
+              type: integer
+            otp_sent:
+              type: integer
+        quiet_hours:
+          type: object
+          required:
+          - from
+          - to
+          - timezone
+          properties:
+            from:
+              type: string
+              example: '21:00'
+            to:
+              type: string
+              example: '09:00'
+            timezone:
+              type: string
+        can:
+          type: object
+          required:
+          - edit_templates
+          - send_test
+          - view_log
+          - view_sender_ids
+          - request_sender_id
+          - view_credit_history
+          - buy_credits
+          - edit_low_credit_alert
+          properties:
+            edit_templates:
+              type: boolean
+            send_test:
+              type: boolean
+            view_log:
+              type: boolean
+            view_sender_ids:
+              type: boolean
+            request_sender_id:
+              type: boolean
+            view_credit_history:
+              type: boolean
+            buy_credits:
+              type: boolean
+            edit_low_credit_alert:
+              type: boolean
+    SmsTestResult:
+      type: object
+      required:
+      - sms_message_id
+      - to_masked
+      - status
+      - charged_from
+      - parts
+      properties:
+        sms_message_id:
+          $ref: '#/components/schemas/Ulid'
+        to_masked:
+          type: string
+        status:
+          type: string
+          const: sent
+        charged_from:
+          $ref: '#/components/schemas/SmsChargedFrom'
+        parts:
+          type: integer
+    SmsCreditsExhaustedDetails:
+      type: object
+      required:
+      - allowance_remaining
+      - credits
+      - needed
+      properties:
+        allowance_remaining:
+          type:
+          - integer
+          - 'null'
+        credits:
+          type: integer
+        needed:
+          type: integer
+    SmsTemplateKey:
+      type: string
+      enum:
+      - order_placed
+      - order_confirmed
+      - order_shipped
+      - order_cancelled
+      - order_updated
+      - payment_link
+      - pos_receipt
+      - checkout_otp
+    SmsMergeField:
+      type: string
+      enum:
+      - first_name
+      - shop
+      - number
+      - total
+      - due
+      - carrier
+      - track_url
+      - amount
+      - url
+      - method
+      - footer
+      - code
+    SmsTemplatePreview:
+      type: object
+      required:
+      - text
+      - parts
+      - encoding
+      - characters
+      properties:
+        text:
+          type: string
+        parts:
+          type: integer
+        encoding:
+          type: string
+          enum:
+          - gsm7
+          - ucs2
+        characters:
+          type: integer
+    SmsTemplate:
+      type: object
+      required:
+      - key
+      - language
+      - label
+      - body
+      - default_body
+      - is_custom
+      - editable
+      - enabled
+      - merge_fields
+      - required_fields
+      - preview
+      - updated_at
+      - updated_by
+      - revision
+      properties:
+        key:
+          $ref: '#/components/schemas/SmsTemplateKey'
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        label:
+          type: string
+        body:
+          type: string
+        default_body:
+          type: string
+        is_custom:
+          type: boolean
+        editable:
+          type: boolean
+        enabled:
+          type:
+          - boolean
+          - 'null'
+          description: 'store_settings.customer_sms[key]; null for pos_receipt and checkout_otp'
+        merge_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMergeField'
+        required_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMergeField'
+        preview:
+          $ref: '#/components/schemas/SmsTemplatePreview'
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        revision:
+          type: integer
+    UpdateSmsTemplateInput:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 480
+        revision:
+          type: integer
+    SmsTemplatePreviewInput:
+      type: object
+      required:
+      - key
+      - language
+      - body
+      properties:
+        key:
+          $ref: '#/components/schemas/SmsTemplateKey'
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        body:
+          type: string
+          minLength: 1
+          maxLength: 480
+    SmsSenderIdStatus:
+      type: string
+      enum:
+      - pending
+      - approved
+      - rejected
+      - cancelled
+      - superseded
+      - revoked
+    SmsSenderIdUse:
+      type: string
+      enum:
+      - order_updates
+      - otp
+      - pos_receipts
+    SmsSenderIdRequest:
+      type: object
+      required:
+      - id
+      - sender_id
+      - status
+      - business_name
+      - uses
+      - note
+      - document
+      - requested_by
+      - requested_at
+      - reviewed_at
+      - decision_reason
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        sender_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/SmsSenderIdStatus'
+        business_name:
+          type: string
+          description: Business name as on the trade licence (PHASE-8-9A §8.2)
+        uses:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsSenderIdUse'
+          description: What the ID will carry (BTRC asks); promotions are not offered (Q263)
+        note:
+          type:
+          - string
+          - 'null'
+        document:
+          type: object
+          required:
+          - mime
+          - size_bytes
+          - filename
+          properties:
+            mime:
+              type: string
+              enum:
+              - image/jpeg
+              - image/png
+              - image/webp
+              - application/pdf
+            size_bytes:
+              type: integer
+            filename:
+              type: string
+        requested_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        requested_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        decision_reason:
+          type:
+          - string
+          - 'null'
+    SmsSenderIdList:
+      type: object
+      required:
+      - active
+      - pending
+      - history
+      properties:
+        active:
+          oneOf:
+          - $ref: '#/components/schemas/SmsSenderIdRequest'
+          - type: 'null'
+        pending:
+          oneOf:
+          - $ref: '#/components/schemas/SmsSenderIdRequest'
+          - type: 'null'
+        history:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/SmsSenderIdRequest'
+    SenderIdRequestPendingDetails:
+      type: object
+      required:
+      - request_id
+      properties:
+        request_id:
+          $ref: '#/components/schemas/Ulid'
+    SmsLogEntry:
+      type: object
+      required:
+      - id
+      - created_at
+      - to_masked
+      - purpose
+      - kind
+      - status
+      - parts
+      - charged_from
+      - sender_id
+      - body_preview
+      - error_code
+      - reference
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        created_at:
+          type: string
+          format: date-time
+        to_masked:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/SmsPurpose'
+        kind:
+          $ref: '#/components/schemas/SmsKind'
+        status:
+          $ref: '#/components/schemas/SmsMessageStatus'
+        parts:
+          type:
+          - integer
+          - 'null'
+        charged_from:
+          oneOf:
+          - $ref: '#/components/schemas/SmsChargedFrom'
+          - type: 'null'
+        sender_id:
+          type:
+          - string
+          - 'null'
+        body_preview:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+          description: 'Links shown as [link]; always null for checkout_otp; null after 90 days'
+        error_code:
+          oneOf:
+          - type: string
+            enum:
+            - provider_error
+            - no_credits
+          - type: 'null'
+        reference:
+          oneOf:
+          - type: object
+            required:
+            - type
+            - id
+            - label
+            properties:
+              type:
+                type: string
+                enum:
+                - order
+                - campaign
+                - automation
+                - pos_sale
+              id:
+                $ref: '#/components/schemas/Ulid'
+              label:
+                type: string
+          - type: 'null'
+    SmsCreditPackCode:
+      type: string
+      enum:
+      - credits_1000
+      - credits_5000
+      - credits_10000
+    SmsCreditPack:
+      type: object
+      required:
+      - code
+      - credits
+      - price_amount
+      - currency
+      properties:
+        code:
+          $ref: '#/components/schemas/SmsCreditPackCode'
+        credits:
+          type: integer
+        price_amount:
+          type: integer
+          description: 'BDT paisa, VAT included'
+        currency:
+          type: string
+          const: BDT
+    SmsCreditAccount:
+      allOf:
+      - $ref: '#/components/schemas/SmsCreditsSummary'
+      - type: object
+        required:
+        - packs
+        - providers
+        - open_invoice
+        - last_purchase_at
+        properties:
+          packs:
+            type: array
+            items:
+              $ref: '#/components/schemas/SmsCreditPack'
+          providers:
+            type: array
+            items:
+              $ref: '#/components/schemas/GatewayProvider'
+          open_invoice:
+            oneOf:
+            - $ref: '#/components/schemas/BillingInvoiceSummary'
+            - type: 'null'
+          last_purchase_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+    UpdateSmsCreditSettingsInput:
+      type: object
+      required:
+      - low_credit_threshold
+      properties:
+        low_credit_threshold:
+          oneOf:
+          - $ref: '#/components/schemas/SmsLowCreditThreshold'
+          - type: 'null'
+    SmsCreditPurchaseInput:
+      type: object
+      required:
+      - pack
+      - provider
+      properties:
+        pack:
+          $ref: '#/components/schemas/SmsCreditPackCode'
+        provider:
+          $ref: '#/components/schemas/GatewayProvider'
+    SmsCreditPurchase:
+      type: object
+      required:
+      - invoice
+      - payment
+      properties:
+        invoice:
+          $ref: '#/components/schemas/BillingInvoice'
+        payment:
+          $ref: '#/components/schemas/BillingPayment'
+    SmsCreditLedgerType:
+      type: string
+      enum:
+      - purchase
+      - consume
+      - refund
+      - admin_adjust
+    SmsCreditLedgerEntry:
+      type: object
+      required:
+      - id
+      - type
+      - credits
+      - balance_after
+      - created_at
+      - invoice
+      - sms_message_id
+      - reason
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          $ref: '#/components/schemas/SmsCreditLedgerType'
+        credits:
+          type: integer
+          description: Signed
+        balance_after:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        invoice:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - number
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              number:
+                type: string
+          - type: 'null'
+        sms_message_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        reason:
+          type:
+          - string
+          - 'null'
+    AdminSenderIdRequest:
+      allOf:
+      - $ref: '#/components/schemas/SmsSenderIdRequest'
+      - type: object
+        required:
+        - tenant
+        - requested_by_email
+        - reviewed_by
+        - current_sender_id
+        properties:
+          tenant:
+            type: object
+            required:
+            - id
+            - name
+            - slug
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              slug:
+                type: string
+          requested_by_email:
+            type:
+            - string
+            - 'null'
+          reviewed_by:
+            oneOf:
+            - type: object
+              required:
+              - id
+              - name
+              properties:
+                id:
+                  $ref: '#/components/schemas/Ulid'
+                name:
+                  type: string
+            - type: 'null'
+          current_sender_id:
+            type:
+            - string
+            - 'null'
+    AdminSenderIdListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - pending
+            properties:
+              pending:
+                type: integer
+    AdminSmsCredits:
+      type: object
+      required:
+      - balance
+      - status
+      - low_credit_threshold
+      - used_this_month
+      - purchased_total
+      - last_purchase_at
+      properties:
+        balance:
+          type: integer
+        status:
+          $ref: '#/components/schemas/SmsCreditStatus'
+        low_credit_threshold:
+          oneOf:
+          - $ref: '#/components/schemas/SmsLowCreditThreshold'
+          - type: 'null'
+        used_this_month:
+          type: integer
+        purchased_total:
+          type: integer
+        last_purchase_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdminSmsCreditAdjustInput:
+      type: object
+      required:
+      - credits
+      - reason
+      properties:
+        credits:
+          type: integer
+          minimum: -1000000
+          maximum: 1000000
+          not:
+            const: 0
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: 'Why (stored in the audit log, PHASE-8-1 conventions).'

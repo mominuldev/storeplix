@@ -22,6 +22,8 @@ export function ReasonDialog<T>({
   description,
   confirmLabel,
   tone = 'primary',
+  reasonLabel,
+  reasonHint,
   children,
   onSubmit,
   onDone,
@@ -31,6 +33,9 @@ export function ReasonDialog<T>({
   description?: ReactNode;
   confirmLabel: string;
   tone?: 'primary' | 'danger';
+  /** Override the "Internal reason" label/hint when the reason is shown to the merchant (sender-ID revoke). */
+  reasonLabel?: string;
+  reasonHint?: string;
   children?: ReactNode;
   onSubmit: (reason: string) => Promise<T>;
   onDone: (result: T) => void;
@@ -61,7 +66,7 @@ export function ReasonDialog<T>({
     >
       <form id={formId} noValidate onSubmit={handleSubmit(({ reason }) => mutation.mutate(reason.trim()))} className="flex flex-col gap-4">
         {children}
-        <ReasonField error={formState.errors.reason?.message} {...register('reason')} />
+        <ReasonField label={reasonLabel} hint={reasonHint} error={formState.errors.reason?.message} {...register('reason')} />
         {mutation.isError && (
           <p role="alert" className="rounded-md bg-danger-bg px-3 py-2 text-body text-danger">
             {errorMessage(mutation.error)}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Billing;
 
+use App\Domain\Billing\Models\BillingInvoice;
 use App\Domain\Billing\Models\BillingPayment;
 use App\Domain\Payments\PaymentUrls;
 use Illuminate\Http\Request;
@@ -46,9 +47,14 @@ final class BillingUrls
         return URL::hasValidSignature(Request::create($path.'?expires='.$expires.'&signature='.$signature), absolute: false);
     }
 
-    public static function merchantResult(?string $paymentId): string
+    /** PHASE-8-9A §5.3: `sms_credits` invoices return to `/integrations/sms?tab=credits&payment={id}`. */
+    public static function merchantResult(?string $paymentId, ?string $kind = null): string
     {
-        $base = rtrim((string) config('storeplix.merchant_app_url'), '/').'/settings/plan';
+        $app = rtrim((string) config('storeplix.merchant_app_url'), '/');
+        if ($paymentId !== null && $kind === BillingInvoice::SMS_CREDITS) {
+            return $app.'/integrations/sms?tab=credits&payment='.$paymentId;
+        }
+        $base = $app.'/settings/plan';
 
         return $paymentId !== null ? $base.'?payment='.$paymentId : $base.'?payment_error=1';
     }

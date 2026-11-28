@@ -13,6 +13,11 @@ const byCode: Record<string, string> = {
   feature_not_in_plan: 'Not included in the shop’s plan.',
   plan_limit_reached: 'Not included in the shop’s plan.',
   network_error: 'Unable to reach the server. Check your connection.',
+  sender_id_taken: 'Another shop already uses or requested this sender ID. Reject this request instead.',
+  sms_credits_insufficient: 'The shop doesn’t have that many purchased credits to deduct.',
+  document_processing: 'The licence is still being processed. Try again in a minute.',
+  idempotency_key_mismatch: 'This change was already submitted with different values. Close the dialog and start again.',
+  idempotency_key_in_use: 'This change is still being saved. Wait a moment.',
 };
 
 /** One readable sentence for any mutation/query error. */

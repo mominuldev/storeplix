@@ -269,6 +269,16 @@ reason), browser-printed 80 mm receipt + SMS receipt, new permission `pos.sell`,
 (`25:581`, `22:1737`, `22:1905`, `22:2073`, `22:2241`, `22:2409`, `27:754`, `25:829`). Out: Inbox and AI integrations
 (Q1), offline mode, hardware integration (drawer kick, silent printing), void with manager PIN, one-step exchange,
 manual discounts, paid in / out, per-person register / location access (Q119, Q248), held-sale stock reservation (Q242, Q256).
+**8.9a** contract: `docs/development/PHASE-8-9A-CONTRACT.md` (accepted 2026-11-28; branch `feat/phase-8-9a-sms`;
+openapi 1.23.0; ADR 0026; Q257–Q272 defaults accepted), one PR: `SmsCharger` (allowance first, then SMS credits —
+1 credit = 1 part — else skipped with a log row) used by every shop-paid sender (order SMS, payment links, checkout OTP,
+POS receipt, campaigns, automations, test SMS); append-only credit ledger; credit packs 1,000 / 5,000 / 10,000 bought
+by the owner as platform billing invoices `sms_credits` (credits after server-verified payment); per-store bn/en
+templates (defaults = today's texts); masked sender IDs with a private trade licence, reviewed under `manage_domains`
+(prefix dropped when approved); 90-day SMS log with masked phones and no OTP text; low-credit alert; admin credit
+adjustments; four RLS tables (95), SECURITY T43 (S208–S219). Out: delivery reports, merchant-own gateway,
+promotional sender IDs, credit expiry/refunds, auto top-up, editable OTP text and quiet hours, WhatsApp (Q272); help
+center and other 8.9 integrations.
 | # | Task | Owner | AC |
 |---|---|---|---|
 | 8.1 | Super-admin: tenants, stores, domains, subscriptions, impersonation (5:189); platform staff with TOTP, suspension, audit log | API/WEB/SF | Read-only impersonation audited; PHASE-8-1 §14 |
@@ -283,7 +293,9 @@ manual discounts, paid in / out, per-person register / location access (Q119, Q2
 | 8.8c | Locations + per-location stock (part A: 11:589 selector 11:842, Warehouses 11:808, Receive at 35:6644/36:6615/36:7118), stock transfers (part B: 153:34425) and stock count (part B: 153:35246); `multi_warehouse` enforced. Part A ✅ merged (PR #17); part B ✅ merged (PR #18) | API/WEB | A merchant keeps stock in more than one place, sees how much is where, moves stock between places with a transfer that takes it out on send and puts it in on receive, and corrects stock with a count; online orders keep selling from one chosen location; a single-location shop sees no change; PHASE-8-8C §16 |
 | 8.8d | POS (page 22:1736: open register 25:581, sale 22:1737, variant picker 22:1905, payment 22:2073, sale complete 22:2241, held sales 22:2409, sales history 27:754, close register 25:829; overview 26:2147): registers + cash sessions, till sales as orders, stock out at the register location, receipts, held sales, history, returns at the till, `pos.sell`, `pos` enforced. Contract accepted 2026-11-25 (Q233–Q256 defaults accepted); part A ✅ merged (PR #20); part B in progress (`feat/phase-8-8d-pos-b`). Inbox (141:48129) later (Q232) | API/WEB | A shop opens a register with a counted float, sells with cash/bKash/card/split, prints or texts a receipt, parks and resumes sales, takes returns at the till and closes with an explained cash difference; every till sale is an order in Orders, reports and Profit & loss; stock leaves the register's location through the ledger; PHASE-8-8D §16 |
 | 8.8e | Inbox (141:48129) | API/WEB | Scoped after PO (product owner) confirms (OPEN-QUESTIONS Q1, Q232) |
-| 8.9 | Help center (71:21271), Payments/tracking/messaging/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |
+| 8.9a | SMS integration (Integrations › Messaging › SMS: overview 31:5120, templates 2075:50213, sender ID 2075:50625, SMS log 2075:51037, buy credits 2075:51449; mobile 2081:1197, 2081:1561; admin sender-ID requests 2087:7872): SMS credits after the monthly allowance (packs bought as platform billing invoices `sms_credits`), per-store bn/en templates, masked sender ID requests reviewed by staff, 90-day SMS log, test SMS, low-credit alert, admin credit adjustments. Contract accepted 2026-11-28 (Q257–Q272 defaults accepted); in progress (`feat/phase-8-9a-sms`) | API/WEB/ADMIN | A merchant sees how SMS are paid and how they went, edits order SMS texts in Bangla and English, requests their own sender ID, and buys credits that keep SMS going after the allowance; staff review sender IDs and adjust credits; a shop that does none of this sees no change; PHASE-8-9A §17 |
+| 8.9b | Platform SMS provider (super-admin `/settings/sms`: provider 2098:8460, message types 2098:8963, template editor 2098:9466, broadcasts 2098:9969 + confirm 2103:9134, SMS log 2098:10472): platform gateway settings and key rotation, platform-to-merchant SMS for registration, invoices/billing, login/2-step codes (locked) and promotional broadcasts (opt-out, 9 AM–9 PM, promotional mask, STOP footer). Designed 2026-11-28; replaces Figma card 46:7167. Not scoped (Q273) | API/ADMIN | Scoped after 8.9a ships |
+| 8.9 | Help center (71:21271), Payments/tracking/marketing/AI integrations (32:5331) | WEB/API | Scoped after PO confirms |
 
 ## Phase 9 — Production readiness
 | # | Task | Owner | AC |
