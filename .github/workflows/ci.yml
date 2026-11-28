@@ -1074,7 +1074,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The full job (25 phase groups + 36 race tests) takes ~24 min on a normal runner and ~2x that on a slow one;
+    # 30 min cancelled run 46148021829 mid-way with every finished step green. Split the job before raising further.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/api
