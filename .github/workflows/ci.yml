@@ -394,6 +394,22 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'platform-sms'"; exit 1; }
           exit $status
 
+      # Phase 8.9d (PHASE-8-9D-CONTRACT §16, S330–S349, §17 AC 8): the `integrations`, `tracking`, `feeds`, `nagad` and `ai`
+      # groups (every §13 route: happy, validation, authz, impersonation, plan, isolation; pasted-code vectors; purchase
+      # trigger + dedupe; GTM guard; feed OAuth/sync/claim; Nagad verify/mismatch; AI charge/refund/exhaustion) must exist
+      # and pass on sqlite. Races run on Postgres only.
+      - name: phase 8.9d groups (integrations, tracking, feeds, nagad, ai)
+        run: |
+          mkdir -p build
+          rc=0
+          for g in integrations tracking feeds nagad ai; do
+            php artisan test --group=$g --exclude-group perf --exclude-group race --log-junit build/$g.xml || rc=1
+            ran=$(grep -o 'tests="[0-9]*"' build/$g.xml | head -1 | grep -o '[0-9]*' || echo 0)
+            echo "$g tests executed: ${ran}"
+            [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group '$g'"; rc=1; }
+          done
+          exit $rc
+
       # Phase 8.8e (PHASE-8-8E-CONTRACT §14.2 S234–S247, §16, §17 AC 7): the `inbox` group (every §13 route: happy, validation,
       # authz matrix O/A/S/C for inbox.manage / settings.manage / orders.view / customers.view / customers.delete,
       # impersonation 403 on writes + attachment links, isolation incl. cross-tenant/cross-store 404 (S234, S235); status /
@@ -683,6 +699,24 @@ jobs:
           echo "platform-sms tests executed (postgres): ${ran}"
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'platform-sms' on Postgres"; exit 1; }
           exit $status
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
+      # Phase 8.9d (§3): store_integrations, tracking_events / daily stats, order_tracking_contexts, catalog runs/items,
+      # ai_credit_accounts / ledger, ai_generations and the nagad payment check exist on Postgres; the five groups must pass
+      # there too and must not be empty.
+      - name: phase 8.9d groups (postgres)
+        run: |
+          mkdir -p build
+          rc=0
+          for g in integrations tracking feeds nagad ai; do
+            php artisan test --group=$g --exclude-group perf --exclude-group race --log-junit build/$g-pg.xml || rc=1
+            ran=$(grep -o 'tests="[0-9]*"' build/$g-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
+            echo "$g tests executed (postgres): ${ran}"
+            [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group '$g' on Postgres"; rc=1; }
+          done
+          exit $rc
         env:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
