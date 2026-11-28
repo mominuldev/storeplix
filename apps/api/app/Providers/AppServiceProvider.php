@@ -155,6 +155,8 @@ class AppServiceProvider extends ServiceProvider
         DevCommands::artisan('queue:listen --queue=campaigns --tries=1 --timeout=250', 'queue-campaigns');
         // Phase 8.6: automations (PHASE-8-6 P86-23; tries=1: never repeat an automation message).
         DevCommands::artisan('queue:listen --queue=automations --tries=1 --timeout=250', 'queue-automations');
+        // Phase 8.8e: Inbox reply SMS (PHASE-8-8E §9.5, mirrors compose `queue-sms`).
+        DevCommands::artisan('queue:listen --queue=sms --tries=1 --timeout=60', 'queue-sms');
         // Phase 8.9d: server tracking events, product feed syncs and AI generations (mirror compose queue-tracking /
         // queue-feeds / queue-ai; one listener each locally).
         DevCommands::artisan('queue:listen --queue=tracking --tries=1 --timeout=40', 'queue-tracking');
