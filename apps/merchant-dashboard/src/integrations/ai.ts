@@ -185,7 +185,12 @@ export function creditsLevel(c: AiCreditsSummary): 'ok' | 'low' | 'out' {
   return 'ok';
 }
 
-export const resetsText = (iso: string) => `resets ${formatDate(iso, { short: true })}`;
+/**
+ * Credits reset at midnight in the store's timezone (the API sends UTC); show that calendar day whatever the browser's
+ * zone is. Asia/Dhaka is the API's fallback before a store exists.
+ */
+export const AI_CREDITS_DEFAULT_TZ = 'Asia/Dhaka';
+export const resetsText = (iso: string, timeZone?: string | null) => `resets ${formatDate(iso, { short: true, timeZone: timeZone || AI_CREDITS_DEFAULT_TZ })}`;
 
 export function exhaustedDetails(e: unknown): AiCreditsExhaustedDetails | null {
   if (!isApiError(e) || e.code !== 'ai_credits_exhausted') return null;
@@ -194,8 +199,8 @@ export function exhaustedDetails(e: unknown): AiCreditsExhaustedDetails | null {
   return { needed: num(d.needed), available: num(d.available), resets_at: typeof d.resets_at === 'string' ? d.resets_at : '' };
 }
 
-export function exhaustedText(d: Pick<AiCreditsExhaustedDetails, 'needed' | 'available' | 'resets_at'>): string {
-  const reset = d.resets_at ? ` Your credits reset on ${formatDate(d.resets_at)}.` : '';
+export function exhaustedText(d: Pick<AiCreditsExhaustedDetails, 'needed' | 'available' | 'resets_at'>, timeZone?: string | null): string {
+  const reset = d.resets_at ? ` Your credits reset on ${formatDate(d.resets_at, { timeZone: timeZone || AI_CREDITS_DEFAULT_TZ })}.` : '';
   return `You need ${creditWord(d.needed)} and have ${d.available.toLocaleString('en-US')} left.${reset} AI tools pause until then — the rest of your shop keeps working.`;
 }
 

@@ -39,11 +39,12 @@ export function invalidatePlanState(qc: QueryClient) {
 export const money = (paisa: number | null | undefined) => formatBdt(paisa);
 
 /** "1 Dec 2026" (Figma date style); `short` drops the year ("1 Dec"). */
-export function formatDate(iso: string | null | undefined, { short = false }: { short?: boolean } = {}): string {
+/** `timeZone` (IANA): show the calendar day in that zone (e.g. the store's) instead of the browser's. */
+export function formatDate(iso: string | null | undefined, { short = false, timeZone }: { short?: boolean; timeZone?: string } = {}): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(short ? {} : { year: 'numeric' }) });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(short ? {} : { year: 'numeric' }), ...(timeZone ? { timeZone } : {}) });
 }
 
 export const intervalWord = (i: BillingInterval) => (i === 'year' ? 'year' : 'month');

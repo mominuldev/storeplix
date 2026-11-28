@@ -13,6 +13,8 @@ import {
   parseKeyPoints,
   photoEditInput,
   variantToDoc,
+  exhaustedText as aiExhaustedText,
+  resetsText as aiResetsText,
 } from '../integrations/ai';
 import { capabilitiesOf, nagadFieldProblem, nagadInput } from '../payments/nagad';
 import { callsTo, jsonResponse, renderApp, signedIn } from '../test/utils';
@@ -393,5 +395,16 @@ describe('PHASE-8-9D AI photos in the product editor (2135:55033)', () => {
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(byMethod(fetchMock, '/stores/S1/ai/photo-edits/G9/undo', 'POST')).toHaveLength(1));
     await waitFor(() => expect(callsTo(fetchMock, '/stores/S1/products/P1').length).toBeGreaterThanOrEqual(3));
+  });
+});
+
+describe('PHASE-8-9D AI credit reset date (store timezone, not the browser\'s)', () => {
+  // The API sends UTC: midnight 1 Dec in Dhaka is 30 Nov 18:00Z. CI runs in UTC, merchants anywhere.
+  const resets = '2026-11-30T18:00:00Z';
+  it('shows the store-local day whatever the machine timezone is', () => {
+    expect(aiResetsText(resets, 'Asia/Dhaka')).toBe('resets 1 Dec');
+    expect(aiResetsText(resets)).toBe('resets 1 Dec'); // Asia/Dhaka fallback before a store exists
+    expect(aiExhaustedText({ needed: 1, available: 0, resets_at: resets }, 'Asia/Dhaka')).toMatch(/reset on 1 Dec 2026\./);
+    expect(aiResetsText(resets, 'UTC')).toBe('resets 30 Nov');
   });
 });

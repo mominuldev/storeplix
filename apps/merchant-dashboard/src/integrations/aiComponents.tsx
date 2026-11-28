@@ -2,6 +2,7 @@ import { AI_CREDIT_COSTS, AI_PHOTO_BACKGROUNDS, type AiCreditsSummary, type AiGe
 import { Badge, Button, Chip, cn, Skeleton, Spinner } from '@storeplix/ui';
 import { AlertTriangle, ChevronLeft, ChevronRight, ImageOff, Sparkles, Undo2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
+import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock } from '../catalog/states';
 import { formatDate } from '../plan/billing';
 import {
@@ -55,6 +56,7 @@ export function AiTile({ provider, size = 'lg' }: { provider: AiIntegrationProvi
 /** Right-column "AI credits" (shared with Claude and AI photos, resets monthly). */
 export function AiCreditsCard() {
   const credits = useAiCredits();
+  const tz = useStoreScope().store?.timezone;
   if (credits.isPending) return <Skeleton className="h-48 rounded-card" />;
   if (credits.isError) {
     return (
@@ -68,7 +70,7 @@ export function AiCreditsCard() {
   const level = creditsLevel(c);
   const pct = limit ? Math.max(0, Math.min(100, ((c.allowance.remaining ?? 0) / limit) * 100)) : 100;
   return (
-    <Panel title="AI credits" description={`Shared by Claude and AI product photos · ${resetsText(c.allowance.resets_at)}`}>
+    <Panel title="AI credits" description={`Shared by Claude and AI product photos · ${resetsText(c.allowance.resets_at, tz)}`}>
       <p className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-display font-semibold text-text-primary" data-testid="ai-credits-available">
           {c.available.toLocaleString('en-US')}
@@ -107,13 +109,14 @@ export function AiCreditsCard() {
 
 /** Danger banner when credits ran out, warning when ≤ 10 % is left. */
 export function CreditsBanner({ credits, needed }: { credits: AiCreditsSummary; needed?: number }) {
+  const tz = useStoreScope().store?.timezone;
   const out = credits.available <= 0 || (needed !== undefined && credits.available < needed);
   return (
     <p role={out ? 'alert' : 'status'} className={cn('flex items-start gap-2 rounded-control px-3.5 py-2.5 text-caption font-medium', out ? 'bg-danger-bg text-danger' : 'bg-warning-bg text-warning')}>
       <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
       <span>
         {out
-          ? exhaustedText({ needed: needed ?? 1, available: credits.available, resets_at: credits.allowance.resets_at })
+          ? exhaustedText({ needed: needed ?? 1, available: credits.available, resets_at: credits.allowance.resets_at }, tz)
           : `Running low: ${creditWord(credits.available)} left. AI tools pause when credits run out; the rest of your shop keeps working.`}
       </span>
     </p>
