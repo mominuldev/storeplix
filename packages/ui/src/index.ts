@@ -98,3 +98,6 @@ export { BarChart, ChartLegend, chartToneClass, DonutMeter, Heatmap, HeatmapScal
 export type { BarDatum, BarSegment, ChartSeries, ChartTone, HeatmapRow, LineChartProps, MeterSegment } from './components/Charts';
 export { RiskBadge, riskTierMeta } from './components/RiskBadge';
 export type { RiskTierValue } from './components/RiskBadge';
+export { HelpArticleBody } from './help/HelpArticleBody';
+export { helpHeadingAnchor, isExternalHelpHref, isInternalHelpHref } from './help/helpLinks';
+export type { HelpArticleBodyDoc, HelpArticleBodyMark, HelpArticleBodyMedia, HelpArticleBodyNode, HelpArticleBodyProps } from './help/HelpArticleBody';

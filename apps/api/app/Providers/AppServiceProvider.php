@@ -7,11 +7,13 @@ use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
 use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\FraudGuard\FraudGuardServiceProvider;
+use App\Domain\Help\HelpServiceProvider;
 use App\Domain\Inbox\InboxServiceProvider;
 use App\Domain\Inventory\InventoryServiceProvider;
 use App\Domain\Pos\PosServiceProvider;
 use App\Domain\Purchasing\PurchasingServiceProvider;
 use App\Domain\Stores\Services\StorefrontContext;
+use App\Domain\Support\SupportServiceProvider;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
@@ -37,6 +39,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->register(InventoryServiceProvider::class); // Phase 8.8c `stock-write` limiter
         $this->app->register(PosServiceProvider::class); // Phase 8.8d `pos-write` / `pos-lookup` / `pos-sms` limiters
         $this->app->register(InboxServiceProvider::class); // Phase 8.8e Inbox limiters, inbox:prune, unassign hooks
+        $this->app->register(HelpServiceProvider::class); // Phase 8.9c help center limiters + commands
+        $this->app->register(SupportServiceProvider::class); // Phase 8.9c support limiters, commands, staff unassign hook
     }
 
     public function boot(): void

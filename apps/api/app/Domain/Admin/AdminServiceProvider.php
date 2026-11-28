@@ -44,6 +44,10 @@ final class AdminServiceProvider extends ServiceProvider
 
         // P8-19: every authenticated /admin/* request, 120/min per staff user; writes also 30/min per staff user.
         RateLimiter::for('admin', fn (Request $r) => Limit::perMinute(120)->by('admin:'.$user($r)));
-        RateLimiter::for('admin-write', fn (Request $r) => Limit::perMinute(30)->by('admin-write:'.$user($r)));
+        // PHASE-8-9C §7.1 / §9: the help editor autosaves (2 s debounce) and support staff answer many tickets, so writes
+        // on /admin/help-* and /admin/support/* have their own 120/min bucket (the route-level limiters still apply).
+        RateLimiter::for('admin-write', fn (Request $r) => $r->routeIs('admin.help-articles.*', 'admin.help-categories.*', 'admin.help-media.*', 'admin.support.*')
+            ? Limit::perMinute(120)->by('admin-write-help:'.$user($r))
+            : Limit::perMinute(30)->by('admin-write:'.$user($r)));
     }
 }

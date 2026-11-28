@@ -7,7 +7,7 @@ namespace App\Domain\Tenancy\Authorization;
 /**
  * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * 28 grantable keys plus the owner-only `billing.manage` (PHASE-8-8E §2 added `inbox.manage`; PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
+ * 29 grantable keys plus the owner-only `billing.manage` (PHASE-8-9C §2.1 added `support.manage`; PHASE-8-8E §2 added `inbox.manage`; PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
  * `expenses.manage`, PHASE-8-8 §2.1 `fraud.manage`, PHASE-8-8B §2.1 `purchasing.manage`, PHASE-8-8D §2.1 `pos.sell`). Case order = UI order = catalogue order of
  * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
  * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
@@ -39,6 +39,7 @@ enum Permission: string
     case IntegrationsManage = 'integrations.manage';
     case DomainsManage = 'domains.manage';
     case DevelopersManage = 'developers.manage'; // PHASE-8-4 §2.1
+    case SupportManage = 'support.manage'; // PHASE-8-9C §2.1 (P89C-13)
     case StaffManage = 'staff.manage';
     case AuditView = 'audit.view';
     case BillingView = 'billing.view';
@@ -63,7 +64,7 @@ enum Permission: string
             self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust, self::PurchasingManage => 'products',
             self::CustomersView, self::CustomersEdit, self::CustomersDelete, self::InboxManage => 'customers',
             self::CostsView, self::ReportsView, self::ExpensesManage, self::DataExport, self::DataImport => 'money',
-            self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage, self::DevelopersManage => 'store',
+            self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage, self::DevelopersManage, self::SupportManage => 'store',
             self::StaffManage, self::AuditView, self::BillingView, self::BillingManage => 'team',
         };
     }
@@ -126,6 +127,7 @@ enum Permission: string
             self::IntegrationsManage => 'Connect payments & couriers',
             self::DomainsManage => 'Manage domains',
             self::DevelopersManage => 'Manage API keys & webhooks',
+            self::SupportManage => 'Contact Store Plix support',
             self::StaffManage => 'Manage staff & roles',
             self::AuditView => 'View activity log',
             self::BillingView => 'View plan & invoices',
@@ -155,6 +157,7 @@ enum Permission: string
             self::DataExport => 'CSV export of products and customers',
             self::SettingsManage => 'Delivery charges, checkout, themes, pages, publish',
             self::IntegrationsManage => 'API keys and credentials',
+            self::SupportManage => 'Open and reply to support tickets for this shop',
             self::StaffManage => 'Invite, remove, change roles',
             self::BillingManage => 'Owner only',
             default => null,

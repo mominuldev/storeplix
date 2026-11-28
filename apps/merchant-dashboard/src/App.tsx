@@ -111,6 +111,12 @@ const PosHistoryPage = lazy(() => import('./pos/HistoryPage'));
 // PHASE-8-8E Inbox (code-split).
 const InboxPage = lazy(() => import('./inbox/InboxPage'));
 const SavedRepliesPage = lazy(() => import('./inbox/SavedRepliesPage'));
+// PHASE-8-9C Help & support (code-split).
+const HelpPage = lazy(() => import('./help/HelpHomePage'));
+const HelpCategoryPage = lazy(() => import('./help/HelpCategoryPage'));
+const HelpArticlePage = lazy(() => import('./help/HelpArticlePage'));
+const TicketsPage = lazy(() => import('./help/TicketsPage'));
+const TicketPage = lazy(() => import('./help/TicketPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -314,7 +320,12 @@ export function AppRoutes() {
                 .map((r) => (
                   <Route key={r.to} path={r.to} element={<PlaceholderPage title={r.label} />} />
                 ))}
-              <Route path="/help" element={<PlaceholderPage title="Help & support" />} />
+              <Route path="/help" element={lazyEl(<HelpPage />)} />
+              <Route path="/help/categories/:slug" element={lazyEl(<HelpCategoryPage />)} />
+              <Route path="/help/topics/:slug" element={lazyEl(<HelpCategoryPage />)} />
+              <Route path="/help/articles/:slug" element={lazyEl(<HelpArticlePage />)} />
+              <Route path="/help/tickets" element={lazyEl(<TicketsPage />)} />
+              <Route path="/help/tickets/:ticketId" element={lazyEl(<TicketPage />)} />
               <Route path="/more" element={<MorePage />} />
               <Route path="*" element={<PlaceholderPage title="Page not found" />} />
             </Route>

@@ -39,6 +39,18 @@ const byCode: Record<string, string> = {
   broadcast_empty_audience: 'Nobody in this audience can receive the broadcast.',
   export_too_large: 'Too many rows to export. Narrow the dates or filters (max 50,000 rows).',
   revision_conflict: 'Someone else changed this. Reload and try again.',
+  // PHASE-8-9C §11.3 help center and support
+  help_article_not_found: 'This article no longer exists.',
+  help_category_not_found: 'This category no longer exists.',
+  help_slug_taken: 'Another article already uses this slug. Pick a different one.',
+  help_category_slug_taken: 'Another category already uses this slug.',
+  help_category_not_empty: 'Move or archive this category’s articles before deleting it.',
+  help_category_limit_reached: 'You can have up to 30 categories.',
+  help_article_incomplete: 'Fill in the title, summary and article before publishing.',
+  help_article_media_missing: 'An image is still processing or failed. Wait a moment or replace it.',
+  support_ticket_closed: 'This ticket is closed. The merchant has to open a new ticket.',
+  support_assignee_invalid: 'This person can’t be assigned support tickets.',
+  support_attachment_processing: 'The file is still being processed. Try again in a moment.',
   impersonation_read_only: 'Read-only session. Changes are disabled.',
 };
 

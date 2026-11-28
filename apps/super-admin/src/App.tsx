@@ -6,6 +6,8 @@ import { GuestRoute, ProtectedRoute } from './auth/ProtectedRoute';
 import { BillingPage } from './billing/BillingPage';
 import { Empty } from './components/States';
 import { DomainsPage } from './domains/DomainsPage';
+import { HelpArticleEditorPage } from './help-articles/HelpArticleEditorPage';
+import { HelpArticlesPage } from './help-articles/HelpArticlesPage';
 import { ImpersonationsPage } from './impersonations/ImpersonationsPage';
 import { AppShell } from './layout/AppShell';
 import { PageHeader } from './layout/PageHeader';
@@ -16,6 +18,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { SenderIdsPage } from './sms/SenderIdsPage';
+import { SupportPage } from './support/SupportPage';
 import { TeamPage } from './team/TeamPage';
 
 function NotFound() {
@@ -46,6 +49,12 @@ export function AppRoutes() {
           <Route path="/revenue" element={<RevenuePage />} />
           <Route path="/domains" element={<DomainsPage />} />
           <Route path="/sender-ids" element={<SenderIdsPage />} />
+          {/* PHASE-8-9C §14: support queue (`manage_support`) and help content (`manage_help_content`). */}
+          <Route path="/support" element={<SupportPage />} />
+          <Route path="/support/:id" element={<SupportPage />} />
+          <Route path="/help-articles" element={<HelpArticlesPage />} />
+          <Route path="/help-articles/new" element={<HelpArticlesPage startNew />} />
+          <Route path="/help-articles/:id" element={<HelpArticleEditorPage />} />
           <Route path="/impersonations" element={<ImpersonationsPage />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />

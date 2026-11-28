@@ -265,14 +265,14 @@ describe('super-admin sign-in (Phase 8.1 §3.1)', () => {
     renderApp(<AppRoutes />, { route: '/' });
     expect(await screen.findByRole('heading', { name: 'Platform overview' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation');
-    for (const label of ['Dashboard', 'Merchants', 'Billing', 'Revenue reports', 'Domains', 'Impersonations', 'Team & roles', 'Audit log', 'Platform settings']) {
+    // PHASE-8-9C §2.2: Support tickets and Help articles return to the sidebar.
+    for (const label of ['Dashboard', 'Merchants', 'Billing', 'Revenue reports', 'Domains', 'Support tickets', 'Help articles', 'Impersonations', 'Team & roles', 'Audit log', 'Platform settings']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
     expect(within(nav).getByRole('link', { name: 'Revenue reports' })).toHaveAttribute('href', '/revenue');
     for (const label of [
       'Integration health',
       'Risk network',
-      'Support tickets',
       'Announcements',
       'Plans & features',
       'Themes & templates',

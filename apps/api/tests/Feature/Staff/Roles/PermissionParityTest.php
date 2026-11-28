@@ -11,6 +11,9 @@ use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Customers\Models\CustomerNote;
 use App\Domain\Developer\Webhooks\Sending\HostResolver;
 use App\Domain\Documents\TemplateConfig;
+use App\Domain\Help\HelpArticleService;
+use App\Domain\Help\HelpCategoryService;
+use App\Domain\Identity\Models\User;
 use App\Domain\Inbox\ConversationService;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Stores\Models\Store;
@@ -273,6 +276,23 @@ class PermissionParityTest extends TestCase
         'GET api/v1/stores/{store}/inbox/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
         'PATCH api/v1/stores/{store}/inbox/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/inbox/settings/email-address/rotate' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.9c (PHASE-8-9C §2.1, P89C-13): guides for every member; tickets need support.manage (Owner, Admin).
+        'GET api/v1/help/home' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/help/categories' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/help/categories/{slug}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/help/articles' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/help/articles/{slug}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PUT api/v1/help/articles/{slug}/feedback' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/help/articles/{slug}/feedback' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
+        'GET api/v1/help/tickets' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/help/tickets' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/help/tickets/{ticket}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/help/tickets/{ticket}/messages' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/help/tickets/{ticket}/messages' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'POST api/v1/help/tickets/{ticket}/resolve' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PUT api/v1/help/tickets/{ticket}/rating' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/help/attachments' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
+        'GET api/v1/help/attachments/{attachment}/link' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -559,6 +579,25 @@ class PermissionParityTest extends TestCase
         ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
         $savedReply = $this->req($h, 'POST', "{$base}/inbox/saved-replies", ['title' => 'Parity', 'shortcut' => 'parity', 'body' => 'Hi {customer_name}', 'attachment_id' => $inboxFile])
             ->assertCreated()->json('data.id');
+        // Phase 8.9c: one published guide in one topic; an open ticket with a PDF and a resolved one (for the rating).
+        $author = User::factory()->create();
+        $author->forceFill(['platform_role' => 'support'])->save();
+        $helpCategory = app(HelpCategoryService::class)->create($author, ['slug' => 'parity-topic', 'name_en' => 'Parity topic', 'icon' => 'box']);
+        $articles = app(HelpArticleService::class);
+        $article = $articles->create($author, 'parity-guide', $helpCategory->id, 'Parity guide');
+        $article = $articles->update($article->id, $author, ['revision' => $article->revision, 'translations' => ['en' => [
+            'title' => 'Parity guide', 'summary' => 'Parity summary', 'keywords' => [],
+            'body' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Parity body text']]]]],
+        ]]]);
+        $articles->publish($article->id, $author, $article->revision, null);
+        $ticketFile = $this->flushHeaders()->withHeaders($h)->post('/api/v1/help/attachments', [
+            'file' => UploadedFile::fake()->createWithContent('proof.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $ticket = $this->req($h, 'POST', '/api/v1/help/tickets', ['category' => 'bug', 'subject' => 'Parity ticket', 'description' => 'Parity ticket description text.',
+            'attachment_ids' => [$ticketFile], 'client_id' => (string) Str::uuid()])->assertCreated()->json('data.id');
+        $solved = $this->req($h, 'POST', '/api/v1/help/tickets', ['category' => 'bug', 'subject' => 'Parity solved', 'description' => 'Parity solved description text.',
+            'client_id' => (string) Str::uuid()])->assertCreated()->json('data.id');
+        $this->req($h, 'POST', "/api/v1/help/tickets/{$solved}/resolve")->assertOk();
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -581,6 +620,7 @@ class PermissionParityTest extends TestCase
             'pos_session' => $posSession, 'pos_lines' => $posLines, 'pos_total' => $posTotal, 'pos_sale' => $posSale,
             'pos_item' => $posItem, 'pos_held' => $posHeld, 'sender_id' => $senderId,
             'conversation' => $conversation, 'inbox_message' => $inboxMessage, 'inbox_file' => $inboxFile, 'saved_reply' => $savedReply,
+            'ticket' => $ticket, 'solved_ticket' => $solved, 'ticket_file' => $ticketFile,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -826,6 +866,25 @@ class PermissionParityTest extends TestCase
             'GET api/v1/stores/{store}/inbox/settings' => $r('GET', "{$b}/inbox/settings"),
             'PATCH api/v1/stores/{store}/inbox/settings' => $r('PATCH', "{$b}/inbox/settings", ['revision' => 2, 'widget_reply_time' => 'hour']),
             'POST api/v1/stores/{store}/inbox/settings/email-address/rotate' => $r('POST', "{$b}/inbox/settings/email-address/rotate"),
+            // --- Phase 8.9c help center + tickets ---
+            'GET api/v1/help/home' => $r('GET', '/api/v1/help/home'),
+            'GET api/v1/help/categories' => $r('GET', '/api/v1/help/categories'),
+            'GET api/v1/help/categories/{slug}' => $r('GET', '/api/v1/help/categories/parity-topic'),
+            'GET api/v1/help/articles' => $r('GET', '/api/v1/help/articles?q=parity'),
+            'GET api/v1/help/articles/{slug}' => $r('GET', '/api/v1/help/articles/parity-guide'),
+            'PUT api/v1/help/articles/{slug}/feedback' => $r('PUT', '/api/v1/help/articles/parity-guide/feedback', ['helpful' => true, 'language' => 'en']),
+            'DELETE api/v1/help/articles/{slug}/feedback' => $r('DELETE', '/api/v1/help/articles/parity-guide/feedback'),
+            'GET api/v1/help/tickets' => $r('GET', '/api/v1/help/tickets'),
+            'POST api/v1/help/tickets' => fn (array $h) => $this->req($h, 'POST', '/api/v1/help/tickets', ['category' => 'other', 'subject' => 'Parity new', 'description' => 'Parity new ticket description.', 'client_id' => (string) Str::uuid()]),
+            'GET api/v1/help/tickets/{ticket}' => $r('GET', "/api/v1/help/tickets/{$s['ticket']}"),
+            'GET api/v1/help/tickets/{ticket}/messages' => $r('GET', "/api/v1/help/tickets/{$s['ticket']}/messages"),
+            'POST api/v1/help/tickets/{ticket}/messages' => fn (array $h) => $this->req($h, 'POST', "/api/v1/help/tickets/{$s['ticket']}/messages", ['body' => 'Parity reply', 'client_id' => (string) Str::uuid()]),
+            'POST api/v1/help/tickets/{ticket}/resolve' => $r('POST', "/api/v1/help/tickets/{$s['ticket']}/resolve"),
+            'PUT api/v1/help/tickets/{ticket}/rating' => $r('PUT', "/api/v1/help/tickets/{$s['solved_ticket']}/rating", ['rating' => 5]),
+            'POST api/v1/help/attachments' => fn (array $h) => $this->flushHeaders()->withHeaders($h)->post('/api/v1/help/attachments', [
+                'file' => UploadedFile::fake()->createWithContent('p.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+            ], ['Accept' => 'application/json']),
+            'GET api/v1/help/attachments/{attachment}/link' => $r('GET', "/api/v1/help/attachments/{$s['ticket_file']}/link"),
             'GET api/v1/billing/sms-credits' => $r('GET', '/api/v1/billing/sms-credits'),
             'PATCH api/v1/billing/sms-credits' => $r('PATCH', '/api/v1/billing/sms-credits', ['low_credit_threshold' => 500]),
             'GET api/v1/billing/sms-credits/ledger' => $r('GET', '/api/v1/billing/sms-credits/ledger'),

@@ -23,6 +23,8 @@ import type {
   SmsCreditLedgerFilters,
   SmsLogFilters,
   InboxListFilters,
+  HelpSearchFilters,
+  SupportTicketFilters,
   InboxMessagesQuery,
   InboxSavedReplyFilters,
 } from '@storeplix/types';
@@ -302,4 +304,20 @@ export function inboxMessagesQuery(q: InboxMessagesQuery = {}): Query {
 /** PHASE-8-8E §8.1 saved replies list. */
 export function inboxSavedReplyQuery(f: InboxSavedReplyFilters = {}): Query {
   return { q: text(f.q), 'filter[chip]': f.chip ? 1 : undefined, 'filter[attachment]': f.attachment ? 1 : undefined };
+}
+
+/** PHASE-8-9C §6 help search: `q` trimmed (2–100), `language` both|en|bn (default both server-side), category slug. */
+export function helpSearchQuery(f: HelpSearchFilters): Query {
+  return {
+    q: text(f.q),
+    language: f.language && f.language !== 'both' ? f.language : undefined,
+    category: text(f.category),
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** PHASE-8-9C §8.2 My tickets: tab (default all), q = subject or `T-1234` / `1234`. */
+export function supportTicketQuery(f: SupportTicketFilters = {}): Query {
+  return { 'filter[tab]': f.tab && f.tab !== 'all' ? f.tab : undefined, 'filter[q]': text(f.q), page: f.page, per_page: f.per_page };
 }

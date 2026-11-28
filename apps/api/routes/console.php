@@ -93,3 +93,10 @@ Schedule::command('sms:prune-broadcast-recipients')->dailyAt('03:30')->timezone(
 
 // Phase 8.8e (PHASE-8-8E P88E-18): Inbox retention — conversations > 24 months, expired chat sessions / links, stale uploads.
 Schedule::command('inbox:prune')->dailyAt('03:40')->timezone('UTC')->withoutOverlapping();
+
+// Phase 8.9c help center + support tickets (PHASE-8-9C §7.1, §7.3, P89C-16, P89C-22).
+Schedule::command('help:publish-scheduled')->everyMinute()->withoutOverlapping();
+Schedule::command('help:prune-media')->dailyAt('03:15')->timezone('UTC')->withoutOverlapping();
+Schedule::command('help:prune-views')->dailyAt('03:25')->timezone('UTC')->withoutOverlapping();
+Schedule::command('support:close-resolved')->hourly()->withoutOverlapping();
+Schedule::command('support:prune')->dailyAt('03:45')->timezone('UTC')->withoutOverlapping();

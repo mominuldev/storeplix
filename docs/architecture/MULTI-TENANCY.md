@@ -188,7 +188,7 @@ existed before 5b and revokes `UPDATE, DELETE ON audit_logs` from the app role (
   `pos_held_sales`; **95 after Phase 8.9a**: + `sms_credit_accounts`, `sms_credit_ledger` (append-only, SELECT/INSERT
   policies only), `sms_templates`, `sms_sender_ids`; **103 after Phase 8.8e**: + `inbox_settings`, `inbox_conversations`,
   `inbox_messages`, `inbox_attachments`, `inbox_reads`, `inbox_saved_replies`, `inbox_widget_sessions`,
-  `inbox_magic_links` (inbound email is routed cross-tenant only in `Inbox\Support\InboundRouter`); the
+  `inbox_magic_links` (inbound email is routed cross-tenant only in `Inbox\Support\InboundRouter`); **106 after Phase 8.9c**: + `support_tickets`, `support_ticket_messages`, `support_ticket_attachments` (the platform support queue reads across tenants only in `Support\Admin\SupportQueue` on `pgsql_admin`; help content tables are platform tables without RLS); the
   `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
   tables without `tenant_id` and without RLS (`users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`,
   `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`, `tenants`, `plans`, `otp_codes`, `migrations`).

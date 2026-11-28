@@ -45,6 +45,14 @@ class RoutePermissionsTest extends TestCase
         ],
         'base' => [
             'features.index',
+            // PHASE-8-9C §2.1: guides are readable (and votable) by every member.
+            'help.articles.feedback.destroy',
+            'help.articles.feedback.update',
+            'help.articles.index',
+            'help.articles.show',
+            'help.categories.index',
+            'help.categories.show',
+            'help.home',
             'media.index',
             'media.show',
             'page-templates.index',
@@ -239,6 +247,18 @@ class RoutePermissionsTest extends TestCase
             'stores.orders.show',
         ],
         // PHASE-8-4 §6.1
+        // PHASE-8-9C §2.1 (P89C-13): tickets, replies, ratings and attachments.
+        'support.manage' => [
+            'help.attachments.link',
+            'help.attachments.store',
+            'help.tickets.index',
+            'help.tickets.messages.index',
+            'help.tickets.messages.store',
+            'help.tickets.rating',
+            'help.tickets.resolve',
+            'help.tickets.show',
+            'help.tickets.store',
+        ],
         'developers.manage' => [
             'api-keys.destroy',
             'api-keys.index',

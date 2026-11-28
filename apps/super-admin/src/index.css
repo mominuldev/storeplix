@@ -1,3 +1,14 @@
 @import 'tailwindcss';
 @import '@storeplix/config/tokens.css';
 @source '../../../packages/ui/src';
+
+/* PHASE-8-9C help article editor (Tiptap content, allowed nodes only). */
+@layer components {
+  .sp-helpdoc h2 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 12px 0 4px; }
+  .sp-helpdoc h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 8px 0 2px; }
+  .sp-helpdoc p { margin: 4px 0; }
+  .sp-helpdoc ul { list-style: disc; padding-left: 20px; }
+  .sp-helpdoc ol { list-style: decimal; padding-left: 20px; }
+  .sp-helpdoc blockquote { border-left: 3px solid var(--color-border-strong); padding-left: 10px; color: var(--color-text-secondary); }
+  .sp-helpdoc a { color: var(--color-brand-600); text-decoration: underline; }
+}

@@ -1,4 +1,24 @@
 import type {
+  CreateSupportTicketInput,
+  HelpArticle,
+  HelpCategory,
+  HelpCategoryPage,
+  HelpFeedbackInput,
+  HelpHome,
+  HelpMyVote,
+  HelpSearchFilters,
+  HelpSearchMeta,
+  HelpSearchResult,
+  HelpLanguage,
+  RateSupportTicketInput,
+  ReplySupportTicketInput,
+  SupportAttachment,
+  SupportAttachmentLink,
+  SupportTicket,
+  SupportTicketFilters,
+  SupportTicketListMeta,
+  SupportTicketMessage,
+  SupportTicketSummary,
   AssignInboxConversationInput,
   Conditional,
   InboxAssignee,
@@ -369,7 +389,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, inboxConversationQuery, inboxMessagesQuery, inboxSavedReplyQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, inboxConversationQuery, inboxMessagesQuery, inboxSavedReplyQuery, helpSearchQuery, supportTicketQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -437,6 +457,8 @@ export interface UploadOptions {
   /** 0..1 fraction of bytes sent. */
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /** No X-Tenant-Id (super-admin uploads, PHASE-8-9C §15). */
+  noTenant?: boolean;
 }
 
 const API_PREFIX = '/api/v1';
@@ -640,7 +662,7 @@ export function createApiClient(options: ApiClientOptions) {
 
   async function sendUpload<T>(path: string, form: FormData, opts: UploadOptions, retried: boolean, csrfHeader: Record<string, string>): Promise<T> {
     const url = buildUrl(path);
-    const headers = { Accept: 'application/json', ...options.headers, ...tenantHeaders({}), ...csrfHeader };
+    const headers = { Accept: 'application/json', ...options.headers, ...tenantHeaders({ noTenant: opts.noTenant }), ...csrfHeader };
     const retry = async (error: unknown): Promise<T> => {
       if (csrf && !retried && isCsrfMismatch(error)) {
         await ensureCsrf(true);
@@ -811,7 +833,7 @@ export function createApiClient(options: ApiClientOptions) {
     ensureCsrf,
 
     /** Phase 8.1 super admin (`/admin/*`, see ./admin.ts). Never sends X-Tenant-Id. */
-    admin: createAdminApi({ request, requestEnvelope, requestBlob }),
+    admin: createAdminApi({ request, requestEnvelope, requestBlob, uploadForm }),
 
     health: (opts?: RequestOptions) => request<HealthStatus>('/health', { anonymous: true, ...opts }),
 
@@ -2114,6 +2136,85 @@ export function createApiClient(options: ApiClientOptions) {
         rotateEmailAddress: (storeId: string) =>
           request<InboxSettings>(`${store(storeId)}/inbox/settings/email-address/rotate`, { method: 'POST' }),
       },
+    },
+
+    /**
+     * PHASE-8-9C Help center (`/help`). Tenant-level (X-Tenant-Id, no store). Guides: any member. Tickets, replies,
+     * ratings and attachments: `support.manage`. Impersonation: writes → 403 `impersonation_read_only`.
+     */
+    help: {
+      /** §4 categories with published articles, popular (7 days), `can_contact_support`. */
+      home: (language: HelpLanguage = 'en') => request<HelpHome>('/help/home', { query: { language } }),
+      categories: (language: HelpLanguage = 'en') => request<HelpCategory[]>('/help/categories', { query: { language } }),
+      /** 404 `help_category_not_found`. */
+      category: (slug: string, language: HelpLanguage = 'en') =>
+        request<HelpCategoryPage>(`/help/categories/${enc(slug)}`, { query: { language } }),
+      /** §6 search, 20 per page; 422 when `q` is shorter than 2. */
+      search: (filters: HelpSearchFilters) =>
+        listOf<HelpSearchResult, HelpSearchMeta>('/help/articles', helpSearchQuery(filters), {
+          current_page: 1, per_page: 20, total: 0, last_page: 1, query: filters.q, counts_by_category: [],
+        }),
+      /** §5 `fallback` = বাংলা requested but English served; `slug` ≠ requested → replace the URL. 404 `help_article_not_found`. */
+      article: (slug: string, language: HelpLanguage = 'en') =>
+        request<HelpArticle>(`/help/articles/${enc(slug)}`, { query: { language } }),
+      /** One vote per member per article (changeable). `reason`/`note` only when not helpful. */
+      vote: (slug: string, input: HelpFeedbackInput) =>
+        request<HelpMyVote>(`/help/articles/${enc(slug)}/feedback`, {
+          method: 'PUT',
+          body: {
+            helpful: input.helpful,
+            language: input.language,
+            reason: input.helpful ? null : (input.reason ?? null),
+            note: input.helpful ? null : (input.note ?? null),
+          },
+        }),
+      /** Undo → 204. */
+      unvote: (slug: string) => request<void>(`/help/articles/${enc(slug)}/feedback`, { method: 'DELETE' }),
+      tickets: {
+        /** §8.2 tabs All / Open / Waiting on you / Solved with counts + stats. */
+        list: (filters: SupportTicketFilters = {}) =>
+          listOf<SupportTicketSummary, SupportTicketListMeta>('/help/tickets', supportTicketQuery(filters), {
+            current_page: 1, per_page: 20, total: 0, last_page: 1,
+            counts: { all: 0, open: 0, waiting_on_you: 0, solved: 0 },
+            stats: { open: 0, waiting_on_you: 0, solved_this_month: 0, avg_first_reply_seconds: null, csat_average: null, csat_count: 0 },
+          }),
+        /** 201 (200 on a `client_id` replay). 422 `support_ticket_limit_reached`; `order_id` needs `orders.view`. */
+        create: (input: CreateSupportTicketInput) =>
+          request<SupportTicket>('/help/tickets', {
+            method: 'POST',
+            body: {
+              category: input.category,
+              subject: input.subject,
+              description: input.description,
+              priority: input.priority ?? 'normal',
+              order_id: input.order_id ?? null,
+              attachment_ids: input.attachment_ids ?? [],
+              client_id: input.client_id,
+            },
+          }),
+        get: (id: string) => request<SupportTicket>(`/help/tickets/${enc(id)}`),
+        /** Merchant, staff and system rows only (never internal notes), oldest first. */
+        messages: (id: string) => request<SupportTicketMessage[]>(`/help/tickets/${enc(id)}/messages`),
+        /** 201; reopens a resolved ticket; 409 `support_ticket_closed`. */
+        reply: (id: string, input: ReplySupportTicketInput) =>
+          request<SupportTicketMessage>(`/help/tickets/${enc(id)}/messages`, {
+            method: 'POST',
+            body: { body: input.body, attachment_ids: input.attachment_ids ?? [], client_id: input.client_id },
+          }),
+        /** Mark as solved. 409 `support_ticket_closed`. */
+        resolve: (id: string) => request<SupportTicket>(`/help/tickets/${enc(id)}/resolve`, { method: 'POST' }),
+        /** 1–5 within 14 days of resolve; 409 `support_rating_unavailable`. */
+        rate: (id: string, input: RateSupportTicketInput) =>
+          request<SupportTicket>(`/help/tickets/${enc(id)}/rating`, { method: 'PUT', body: { rating: input.rating, comment: input.comment ?? null } }),
+      },
+      /** §8.2 JPG/PNG/PDF ≤ 10 MB → 201; attach with `attachment_ids` within 24 h. */
+      uploadAttachment: (input: { file: Blob; filename?: string }, opts?: UploadOptions) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'attachment'));
+        return uploadForm<SupportAttachment>('/help/attachments', form, opts);
+      },
+      /** Signed 5-minute URL. 409 `support_attachment_processing`, 403 `impersonation_attachment_hidden`. */
+      attachmentLink: (attachmentId: string) => request<SupportAttachmentLink>(`/help/attachments/${enc(attachmentId)}/link`),
     },
 
     /** PHASE-8-8B §7 and §8.1 purchasing helpers. */

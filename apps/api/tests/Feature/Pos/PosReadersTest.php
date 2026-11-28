@@ -54,6 +54,7 @@ class PosReadersTest extends TestCase
         'app/Domain/Shipping/ShippingPresenter.php' => 'zones (no orders)',
         'app/Domain/Shipping/ShippingService.php' => 'zones (no orders)',
         'app/Domain/Shipping/ZoneResolver.php' => 'zones (no orders)',
+        'app/Domain/Support/Admin/SupportOrderCard.php' => 'support order card (walk-in sales: no address, falls back to [])',
     ];
 
     protected function setUp(): void

@@ -1,6 +1,29 @@
 // Phase 8.1 super admin (PHASE-8-1-CONTRACT §6; openapi 1.9.0 tag `admin`; amendment A1 adds `settings`). Every /admin/* call is account-level: no
 // X-Tenant-Id is ever sent (the admin API never reads it). Writes take a `reason` (5–500 chars, stored in the audit log).
 import type {
+  AdminHelpArticle,
+  AdminHelpArticleFilters,
+  AdminHelpArticleListMeta,
+  AdminHelpArticleSummary,
+  AdminHelpCategory,
+  AdminHelpCategoryInput,
+  AdminHelpFeedbackEntry,
+  AdminSupportAssignInput,
+  AdminSupportAssignee,
+  AdminSupportFilters,
+  AdminSupportListMeta,
+  AdminSupportMessage,
+  AdminSupportReplyInput,
+  AdminSupportStatusInput,
+  AdminSupportTicket,
+  AdminSupportTicketSummary,
+  CreateAdminHelpArticleInput,
+  HelpMediaRef,
+  PublishAdminHelpArticleInput,
+  SupportAttachment,
+  UpdateAdminHelpArticleInput,
+  UpdateAdminHelpCategoryInput,
+  UpdateAdminSupportTicketInput,
   AdminApproveSenderIdInput,
   AdminRejectSenderIdInput,
   AdminSenderIdFilters,
@@ -96,7 +119,7 @@ import type {
   UpdatePlatformSmsTemplateInput,
   UpdateSmsProviderInput,
 } from '@storeplix/types';
-import type { DownloadedFile, RequestOptions } from './client';
+import type { DownloadedFile, RequestOptions, UploadOptions } from './client';
 
 type Query = Record<string, string | number | undefined>;
 
@@ -105,6 +128,8 @@ export interface AdminTransport {
   request<T>(path: string, opts?: RequestOptions): Promise<T>;
   requestEnvelope<T>(path: string, opts?: RequestOptions): Promise<ApiSuccess<T> | undefined>;
   requestBlob(path: string, opts: Pick<RequestOptions, 'query' | 'signal'> & { fallbackName: string }): Promise<DownloadedFile>;
+  /** PHASE-8-9C: multipart uploads (help images, ticket attachments); always called with `noTenant`. */
+  uploadForm<T>(path: string, form: FormData, opts?: UploadOptions): Promise<T>;
 }
 
 export interface AdminTenantFilters {
@@ -252,6 +277,33 @@ export function platformSmsBroadcastQuery(f: PlatformSmsBroadcastFilters = {}): 
   return { 'filter[status]': f.status?.length ? f.status.join(',') : undefined, page: f.page, per_page: f.per_page };
 }
 
+/** PHASE-8-9C §7.1 help articles list (default tab `all` excludes archived). */
+export function adminHelpArticleQuery(f: AdminHelpArticleFilters = {}): Query {
+  return {
+    'filter[tab]': f.tab && f.tab !== 'all' ? f.tab : undefined,
+    'filter[q]': blank(f.q?.trim()),
+    'filter[category]': blank(f.category),
+    'filter[language]': f.language,
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
+/** PHASE-8-9C §9 support queue (comma lists; default status `open,awaiting_support` server-side; sort `waiting`). */
+export function adminSupportQuery(f: AdminSupportFilters = {}): Query {
+  return {
+    'filter[status]': f.status?.length ? f.status.join(',') : undefined,
+    'filter[assignee]': blank(f.assignee),
+    'filter[priority]': f.priority?.length ? f.priority.join(',') : undefined,
+    'filter[category]': f.category?.length ? f.category.join(',') : undefined,
+    'filter[q]': blank(f.q?.trim()),
+    sort: f.sort,
+    page: f.page,
+    per_page: f.per_page,
+  };
+}
+
 export function adminTeamQuery(f: AdminTeamFilters = {}): Query {
   return { 'filter[status]': f.status, 'filter[role]': f.role, 'filter[q]': blank(f.q?.trim()) };
 }
@@ -275,6 +327,8 @@ export function createAdminApi(t: AdminTransport) {
   const invoice = (id: string) => `/admin/invoices/${enc(id)}`;
   const domain = (id: string) => `/admin/domains/${enc(id)}`;
   const member = (id: string) => `/admin/team/members/${enc(id)}`;
+  const helpArticle = (id: string) => `/admin/help-articles/${enc(id)}`;
+  const supportTicket = (id: string) => `/admin/support/tickets/${enc(id)}`;
 
   return {
     /** §3.1 sign-in. Pre-auth routes need CSRF but no session; wrong credentials → the same 422 on `email`. */
@@ -553,6 +607,98 @@ export function createAdminApi(t: AdminTransport) {
       /** CSV (masked, codes hidden), same filters; 5/hour; audited `platform_sms.log_exported`. */
       exportMessages: (filters: Omit<PlatformSmsLogFilters, 'cursor'> = {}) =>
         t.requestBlob('/admin/sms/messages/export', { query: platformSmsLogQuery(filters), fallbackName: 'platform-sms-log.csv' }),
+    },
+
+    /** PHASE-8-9C §7 help content. Platform permission `manage_help_content` (super_admin, support). */
+    help: {
+      articles: {
+        list: (filters: AdminHelpArticleFilters = {}) =>
+          list<AdminHelpArticleSummary, AdminHelpArticleListMeta>('/admin/help-articles', adminHelpArticleQuery(filters), {
+            ...emptyPage(),
+            counts: { all: 0, published: 0, draft: 0, scheduled: 0, archived: 0, missing_bn: 0 },
+            stats: { published: 0, drafts: 0, missing_bn: 0, helpful_percent_30d: null },
+          }),
+        /** 201 draft with an empty English body. 409 `help_slug_taken`. */
+        create: (input: CreateAdminHelpArticleInput) =>
+          post<AdminHelpArticle>('/admin/help-articles', { slug: input.slug, category_id: input.category_id, title_en: input.title_en }),
+        get: (id: string) => get<AdminHelpArticle>(helpArticle(id)),
+        /** Draft fields only (autosave). 409 `revision_conflict` / `help_slug_taken`; 422 doc errors. */
+        update: (id: string, input: UpdateAdminHelpArticleInput) =>
+          t.request<AdminHelpArticle>(helpArticle(id), { method: 'PATCH', body: input, noTenant: true }),
+        /** Publish now, or schedule with `scheduled_at`. 422 `help_article_incomplete` / `help_article_media_missing`. */
+        publish: (id: string, input: PublishAdminHelpArticleInput) =>
+          post<AdminHelpArticle>(`${helpArticle(id)}/publish`, { revision: input.revision, scheduled_at: input.scheduled_at ?? null }),
+        unpublish: (id: string) => post<AdminHelpArticle>(`${helpArticle(id)}/unpublish`),
+        /** Old links show the merchant 404 state. */
+        archive: (id: string, reason?: string) => post<AdminHelpArticle>(`${helpArticle(id)}/archive`, { reason: reason ?? null }),
+        restore: (id: string) => post<AdminHelpArticle>(`${helpArticle(id)}/restore`),
+        /** Never-published drafts only (409 `invalid_state_transition`). */
+        delete: (id: string) => t.request<void>(helpArticle(id), { method: 'DELETE', noTenant: true }),
+        feedback: (id: string, filters: { helpful?: boolean; page?: number } = {}) =>
+          list<AdminHelpFeedbackEntry, PaginationMeta>(
+            `${helpArticle(id)}/feedback`,
+            { 'filter[helpful]': filters.helpful === undefined ? undefined : filters.helpful ? 1 : 0, page: filters.page },
+            emptyPage(),
+          ),
+      },
+      categories: {
+        list: () => get<AdminHelpCategory[]>('/admin/help-categories'),
+        /** 409 `help_category_slug_taken`, 422 `help_category_limit_reached`. */
+        create: (input: AdminHelpCategoryInput) => post<AdminHelpCategory>('/admin/help-categories', input),
+        update: (id: string, input: UpdateAdminHelpCategoryInput) =>
+          t.request<AdminHelpCategory>(`/admin/help-categories/${enc(id)}`, { method: 'PATCH', body: input, noTenant: true }),
+        /** 409 `help_category_not_empty`. */
+        delete: (id: string) => t.request<void>(`/admin/help-categories/${enc(id)}`, { method: 'DELETE', noTenant: true }),
+        /** All ids in the new order. */
+        reorder: (ids: string[]) => post<AdminHelpCategory[]>('/admin/help-categories/reorder', { ids }),
+      },
+      /** PNG/JPEG/WebP ≤ 5 MB → 201 (processing → ready). Reference by `media_id` in an image block. */
+      uploadMedia: (input: { file: Blob; filename?: string; alt?: string }, opts: UploadOptions = {}) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'image'));
+        if (input.alt) form.append('alt', input.alt);
+        return t.uploadForm<HelpMediaRef>('/admin/help-media', form, { ...opts, noTenant: true });
+      },
+    },
+
+    /** PHASE-8-9C §9 support queue. Platform permission `manage_support` (super_admin, support, billing). */
+    support: {
+      list: (filters: AdminSupportFilters = {}) =>
+        list<AdminSupportTicketSummary, AdminSupportListMeta>('/admin/support/tickets', adminSupportQuery(filters), {
+          ...emptyPage(),
+          counts: { open: 0, awaiting_merchant: 0, awaiting_support: 0, resolved: 0, closed: 0, mine: 0, unassigned: 0 },
+          stats: { median_first_reply_seconds_7d: null, csat_average_30d: null, csat_count_30d: 0 },
+        }),
+      /** `order_card` is a limited, audited cross-tenant read (null once closed). */
+      get: (id: string) => get<AdminSupportTicket>(supportTicket(id)),
+      /** Every kind incl. internal notes. */
+      messages: (id: string) => get<AdminSupportMessage[]>(`${supportTicket(id)}/messages`),
+      /** Reply (emails the merchant; default next status `awaiting_merchant`) or internal note (staff only). */
+      reply: (id: string, input: AdminSupportReplyInput) =>
+        post<AdminSupportMessage>(`${supportTicket(id)}/messages`, {
+          kind: input.kind,
+          body: input.body,
+          attachment_ids: input.attachment_ids ?? [],
+          client_id: input.client_id,
+          status: input.kind === 'reply' ? (input.status ?? 'awaiting_merchant') : null,
+        }),
+      /** null = Unassigned. 422 `support_assignee_invalid`. */
+      assign: (id: string, input: AdminSupportAssignInput) => post<AdminSupportTicket>(`${supportTicket(id)}/assign`, input),
+      /** 409 `invalid_state_transition`. */
+      setStatus: (id: string, input: AdminSupportStatusInput) => post<AdminSupportTicket>(`${supportTicket(id)}/status`, input),
+      update: (id: string, input: UpdateAdminSupportTicketInput) =>
+        t.request<AdminSupportTicket>(supportTicket(id), { method: 'PATCH', body: input, noTenant: true }),
+      /** JPG/PNG/PDF ≤ 10 MB → 201, stored in the ticket tenant's private media. */
+      uploadAttachment: (id: string, input: { file: Blob; filename?: string }, opts: UploadOptions = {}) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'attachment'));
+        return t.uploadForm<SupportAttachment>(`${supportTicket(id)}/attachments`, form, { ...opts, noTenant: true });
+      },
+      /** Streams the file (image inline, PDF as attachment). */
+      downloadAttachment: (id: string, attachmentId: string) =>
+        t.requestBlob(`${supportTicket(id)}/attachments/${enc(attachmentId)}`, { fallbackName: 'attachment' }),
+      /** Active staff with `manage_support`, you first. */
+      assignees: () => get<AdminSupportAssignee[]>('/admin/support/assignees'),
     },
 
     team: {

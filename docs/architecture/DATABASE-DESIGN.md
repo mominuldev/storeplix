@@ -1382,6 +1382,71 @@ days) · created_at.
 - Permission catalogue (code): `inbox.manage` (Owner, Admin, Staff).
 - `audit_logs` action catalogue gains `INBOX_AUDIT_ACTIONS` (`packages/types`).
 
+## 5.15 Phase 8.9c Help center (PHASE-8-9C-CONTRACT §3, ADR 0029, migrations `2026_12_14_*`)
+Seven **platform** help tables (no `tenant_id` owner, no RLS; app role SELECT on content tables, SELECT/INSERT/UPDATE
+(/DELETE for feedback) on `help_article_feedback` and `help_article_daily_views`; staff writes on the platform
+connection) and three `[T]` RLS support tables (`RlsTables::TENANT` **106 after Phase 8.9c**),
+`database/sql/rls-emergency-off.sql`. Locking: ticket row `FOR UPDATE` first; article row `FOR UPDATE` for publish
+(+ advisory lock `help-slugs` on slug changes). Retention: closed tickets deleted 24 months after `closed_at`
+(`support:prune`); daily views after 13 months; unreferenced help images after 7 days. No plan feature.
+
+### help_categories (`000100`, platform)
+id · slug varchar(60) **U** · name_en varchar(60) · name_bn null · description_en / description_bn varchar(160) null ·
+icon varchar(16) CHECK fixed set · position int · created_by / updated_by null FK users SET NULL · revision · timestamps.
+
+### help_media (`000100`, platform)
+id · disk · path (`platform/help/{id}/…`, public CDN) · mime CHECK `IN ('image/png','image/jpeg','image/webp')` ·
+size_bytes CHECK `<= 5242880` · width · height · variants jsonb (`w640`, `w1024`, `w1600` webp) · status CHECK `IN
+('processing','ready','failed')` · alt null · uploaded_by null FK users SET NULL · timestamps.
+
+### help_articles · help_article_translations · help_article_redirects (`000200`, platform)
+- **help_articles**: id · slug varchar(80) **U** · category_id FK RESTRICT · status CHECK `IN ('draft','published',
+  'scheduled','archived')` · scheduled_at null (required when scheduled) · related_article_ids jsonb (≤ 5) ·
+  helpful_yes / helpful_no int · first_published_at · last_published_at · last_published_by · archived_at ·
+  archived_by · created_by / updated_by · revision · timestamps. IX(status, category_id); IX(status, last_published_at
+  DESC).
+- **help_article_translations**: id · article_id FK CASCADE · language CHECK `IN ('en','bn')` · draft `title`,
+  `summary`, `body` jsonb (`HelpArticleDoc`), `keywords` jsonb, `draft_hash` · published snapshot `published_title`,
+  `published_summary`, `published_body`, `published_keywords`, `published_hash`, `published_at` · `body_text` (plain
+  text of the published body) · word_count · read_minutes · `search_vector tsvector` (pgsql; `simple`, weights A title
+  / B keywords / C summary / D body). **U(article_id, language)**; GIN(search_vector), GIN(published_title
+  gin_trgm_ops).
+- **help_article_redirects**: slug PK · article_id FK CASCADE · created_at (old slugs of live articles).
+
+### help_article_feedback · help_article_daily_views (`000300`, platform)
+- **help_article_feedback**: id · article_id FK CASCADE · user_id FK users CASCADE · tenant_id null FK tenants SET NULL
+  (context only) · language · helpful bool · reason null CHECK `IN ('steps_mismatch','hard_to_follow','out_of_date',
+  'not_my_question')` (only when not helpful) · note varchar(500) null · timestamps. **U(article_id, user_id)**.
+- **help_article_daily_views**: article_id FK CASCADE · day date · views int · **PK(article_id, day)**.
+
+### support_tickets [T] (`000400`)
+id · tenant_id · store_id null FK (tenant_id, store_id) → stores SET NULL · number bigint **U** (sequence
+`support_ticket_number_seq` from 1001; shown `T-{number}`) · requester_id null FK users SET NULL · category varchar(24)
+CHECK (9 values) · subject varchar(150) · priority CHECK `IN ('low','normal','high','urgent')` · status CHECK `IN
+('open','awaiting_merchant','awaiting_support','resolved','closed')` · order_id null FK (tenant_id, order_id) → orders
+SET NULL (order_id) · order_number snapshot · assignee_id null FK users SET NULL (platform staff) · client_id
+varchar(36) · messages_count · last_message_at · last_merchant_reply_at · first_staff_reply_at · last_staff_reply_at ·
+waiting_since · resolved_at · resolved_by_type CHECK `IN ('merchant','staff')` · closed_at · reopened_count ·
+csat_rating CHECK 1–5 · csat_comment varchar(500) · csat_rated_at · revision · timestamps. **U(tenant_id, client_id)** ·
+IX(tenant_id, status, last_message_at DESC) · IX(status, waiting_since) · IX(assignee_id, status) · IX(closed_at).
+
+### support_ticket_messages · support_ticket_attachments [T] (`000500`)
+- **support_ticket_messages** (immutable): id · tenant_id · ticket_id FK (tenant_id, ticket_id) CASCADE · kind CHECK
+  `IN ('merchant','staff','note','system')` · author_user_id null FK users SET NULL · body text null (≤ 5000; null only
+  for system) · system_event CHECK (created, assigned, unassigned, status_changed, priority_changed, category_changed,
+  reopened, rated, auto_closed) · system_meta jsonb · client_id null · created_at. **U(ticket_id, client_id) WHERE
+  client_id IS NOT NULL** · IX(tenant_id, ticket_id, id).
+- **support_ticket_attachments**: id · tenant_id · ticket_id null FK CASCADE · message_id null FK (tenant_id,
+  message_id) CASCADE · media_id **U** FK (tenant_id, media_id) → media RESTRICT · uploaded_by_type CHECK `IN
+  ('merchant','staff')` · uploaded_by_user_id null · filename varchar(160) · mime CHECK `IN ('image/jpeg','image/png',
+  'application/pdf')` · size_bytes CHECK `<= 10485760` · created_at. IX(tenant_id, ticket_id).
+
+### Changes to existing tables
+- **media** (`000600`): purpose `support_attachment` (private, JPG/PNG/PDF ≤ 10 MB, no variants, never library).
+- Permission catalogue (code): `support.manage` (Owner, Admin). Platform permissions (code): `manage_help_content`
+  (super_admin, support), `manage_support` (super_admin, support, billing).
+- `audit_logs` action catalogue gains `HELP_AUDIT_ACTIONS` and `SUPPORT_AUDIT_ACTIONS` (`packages/types`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1392,6 +1457,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns`, `campaign_recipients`, `campaign_conversions`, `marketing_suppressions` — **specified in 8.5 (§5.5, PHASE-8-5 §7, ADR 0019)** | 5 / 8.5 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
 | Inbox (141:48129) | Own channels: `inbox_settings`, `inbox_conversations`, `inbox_messages`, `inbox_attachments`, `inbox_reads`, `inbox_saved_replies`, `inbox_widget_sessions`, `inbox_magic_links` — **specified in 8.8e (§5.14, PHASE-8-8E §3, ADR 0028)**. External channels (Messenger/WhatsApp/Instagram: `channel` values + external thread ids) and AI draft → `orders.source='inbox'` in 8.8f | 8.8e / 8.8f |
+| Help center + support tickets (71:21271, 39:15432) | Platform: `help_categories`, `help_media`, `help_articles`, `help_article_translations`, `help_article_redirects`, `help_article_feedback`, `help_article_daily_views`; tenant: `support_tickets`, `support_ticket_messages`, `support_ticket_attachments` — **specified in 8.9c (§5.15, PHASE-8-9C §3, ADR 0029)** | 8.9c |
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing (26:2146 Inventory) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments` — **specified in 8.8b (§5.9, PHASE-8-8B §3, ADR 0023)** | 8.8b |

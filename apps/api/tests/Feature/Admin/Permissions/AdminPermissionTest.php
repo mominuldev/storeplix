@@ -182,9 +182,9 @@ class AdminPermissionTest extends TestCase
     public function test_permission_matrix_matches_the_contract(): void
     {
         $expected = [
-            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics', 'manage_settings'], // + amendment A1-4
-            'billing' => ['view_merchants', 'manage_billing', 'view_analytics'], // + PHASE-8-2 §2.1
-            'support' => ['view_merchants', 'impersonate', 'manage_domains'],
+            'super_admin' => ['view_merchants', 'impersonate', 'manage_billing', 'manage_domains', 'suspend', 'manage_team', 'view_analytics', 'manage_settings', 'manage_help_content', 'manage_support'], // + amendment A1-4, + PHASE-8-9C §2.2
+            'billing' => ['view_merchants', 'manage_billing', 'view_analytics', 'manage_support'], // + PHASE-8-2 §2.1, + PHASE-8-9C §2.2
+            'support' => ['view_merchants', 'impersonate', 'manage_domains', 'manage_help_content', 'manage_support'], // + PHASE-8-9C §2.2
             'read_only' => ['view_merchants', 'view_analytics'],
         ];
         foreach (PlatformRole::cases() as $role) {

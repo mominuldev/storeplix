@@ -1115,6 +1115,36 @@ BEGIN
   END IF;
 END
 $$;
+-- table: support_tickets
+DO $$
+BEGIN
+  IF to_regclass('public.support_tickets') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "support_tickets";
+    ALTER TABLE "support_tickets" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "support_tickets" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: support_ticket_messages
+DO $$
+BEGIN
+  IF to_regclass('public.support_ticket_messages') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "support_ticket_messages";
+    ALTER TABLE "support_ticket_messages" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "support_ticket_messages" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: support_ticket_attachments
+DO $$
+BEGIN
+  IF to_regclass('public.support_ticket_attachments') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "support_ticket_attachments";
+    ALTER TABLE "support_ticket_attachments" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "support_ticket_attachments" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

@@ -29,6 +29,10 @@ class RlsBypassArchTest extends TestCase
         // PHASE-8-8E §11.2 step 3: inbound email routing before any tenant is known (RLS off: the explicit opt-out;
         // RLS on: the definer function sp_inbox_route).
         '#^app/Domain/Inbox/Support/InboundRouter\.php$#',
+        // PHASE-8-9C §3: help tables are platform content; staff writes and the feedback counters run on the platform
+        // connection (HelpDb). The support queue and its staff jobs read across tenants (SupportQueue, S256).
+        '#^app/Domain/Help/#',
+        '#^app/Domain/Support/Admin/#',
     ];
 
     public function test_without_tenancy_and_the_admin_connection_are_used_only_in_allowlisted_places(): void

@@ -18,13 +18,13 @@ class PermissionCatalogueTest extends TestCase
         'orders.view', 'orders.process', 'orders.refund', 'pos.sell', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
         'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
         'inbox.manage', 'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
-        'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
+        'integrations.manage', 'domains.manage', 'developers.manage', 'support.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
     ];
 
-    public function test_29_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
+    public function test_30_keys_in_catalogue_order_with_only_billing_manage_not_grantable(): void
     {
         $this->assertSame(self::KEYS, Permission::values());
-        $this->assertCount(28, Permission::grantableCases()); // PHASE-8-8E §2: + inbox.manage; PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage; PHASE-8-8B §2.1: + purchasing.manage; PHASE-8-8D §2.1: + pos.sell
+        $this->assertCount(29, Permission::grantableCases()); // PHASE-8-9C §2.1: + support.manage; PHASE-8-8E §2: + inbox.manage; PHASE-8-7 §2.1: + expenses.manage; PHASE-8-8 §2.1: + fraud.manage; PHASE-8-8B §2.1: + purchasing.manage; PHASE-8-8D §2.1: + pos.sell
         $this->assertSame([Permission::BillingManage], array_values(array_filter(Permission::cases(), fn (Permission $p) => ! $p->grantable())));
         foreach (Permission::cases() as $p) {
             $this->assertMatchesRegularExpression('/^[a-z]+\.[a-z_]+$/', $p->value); // the DB CHECK

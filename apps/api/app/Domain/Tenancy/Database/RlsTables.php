@@ -18,7 +18,7 @@ final class RlsTables
     /** Tables with a special policy instead of tenant_isolation (§2.3). */
     public const SPECIAL = ['tenant_users', 'audit_logs', 'sms_messages', 'roles', 'role_permissions', 'sms_credit_ledger'];
 
-    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A, 87 after Phase 8.8c, 90 after Phase 8.8d-A, 91 after Phase 8.8d, 95 after Phase 8.9a, 103 after Phase 8.8e) */
+    /** @var list<string> every table with a tenant_id column (40 after Phase 5a, 45 after 5b-4/5b-5, 48 after 5b-2, 52 after 5b-3, 54 after Phase 7, 55 after Phase 8.2, 57 after Phase 8.3, 61 after Phase 8.4, 65 after Phase 8.5, 69 after Phase 8.6, 71 after Phase 8.7, 76 after Phase 8.8a, 82 after Phase 8.8b, 83 after Phase 8.8c-A, 87 after Phase 8.8c, 90 after Phase 8.8d-A, 91 after Phase 8.8d, 95 after Phase 8.9a, 103 after Phase 8.8e, 106 after Phase 8.9c) */
     public const TENANT = [
         'tenant_users', 'audit_logs', 'stores', 'store_domains', 'store_settings', 'media', 'staff_invitations',
         'subscriptions', 'sms_messages', 'store_themes', 'store_pages', 'store_navigation', 'categories', 'products',
@@ -65,6 +65,8 @@ final class RlsTables
         // reads 000400, saved replies 000500, widget sessions + magic links 000600)
         'inbox_settings', 'inbox_conversations', 'inbox_messages', 'inbox_attachments', 'inbox_reads', 'inbox_saved_replies',
         'inbox_widget_sessions', 'inbox_magic_links',
+        // Phase 8.9c support tickets (PHASE-8-9C §3.1; tickets 2026_12_14_000400, messages + attachments 000500)
+        'support_tickets', 'support_ticket_messages', 'support_ticket_attachments',
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */
@@ -73,10 +75,12 @@ final class RlsTables
     /**
      * PHASE-8-9B §3.1: platform tables whose `tenant_id` names the SUBJECT (the merchant a platform row is about), not an
      * RLS owner. No RLS, no grant to the app role (only `pgsql_admin` reads and writes them). Excluded from TENANT.
+     * PHASE-8-9C §3.1: `help_article_feedback.tenant_id` is the voter's shop (context for staff stats); the app role
+     * writes its own vote rows (user id checked in code).
      *
      * @var list<string>
      */
-    public const PLATFORM_SUBJECT = ['platform_sms_broadcast_recipients'];
+    public const PLATFORM_SUBJECT = ['platform_sms_broadcast_recipients', 'help_article_feedback'];
 
     /** @var list<string> platform tables: no tenant_id, no RLS */
     public const PLATFORM = [
@@ -91,5 +95,8 @@ final class RlsTables
         // Phase 8.9b (PHASE-8-9B §3.1; providers/types/templates: app role SELECT only; broadcasts: no grant)
         'sms_providers', 'platform_sms_message_types', 'platform_sms_templates', 'platform_sms_broadcasts',
         'platform_sms_broadcast_recipients',
+        // Phase 8.9c help center (PHASE-8-9C §3.1; app role SELECT, feedback + daily views also written by the app role)
+        'help_categories', 'help_media', 'help_articles', 'help_article_translations', 'help_article_redirects',
+        'help_article_feedback', 'help_article_daily_views',
     ];
 }

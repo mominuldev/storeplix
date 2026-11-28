@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { useHealth } from '../lib/health';
 import { roleLabel, useCan } from '../lib/permissions';
 import { usePendingSenderIdCount } from '../sms/queries';
+import { useSupportWaitingCount } from '../support/queries';
 import { navGroups } from './nav';
 
 function initials(name: string | undefined) {
@@ -29,7 +30,8 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
   const can = useCan();
   const health = useHealth();
   const pendingSenderIds = usePendingSenderIdCount(can('manage_domains'));
-  const badges = { sender_ids_pending: pendingSenderIds };
+  const supportWaiting = useSupportWaitingCount(can('manage_support'));
+  const badges = { sender_ids_pending: pendingSenderIds, support_waiting: supportWaiting };
   const status = health.isPending
     ? { dot: 'bg-text-muted', label: 'Production · checking status' }
     : health.isError
@@ -77,7 +79,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                       <span className={cn('min-w-0 flex-1 truncate', !isActive && 'opacity-72')}>{item.label}</span>
                       {item.badge && !!badges[item.badge] && (
                         <span className="shrink-0 rounded-full bg-brand-600 px-[7px] py-px text-caption font-medium text-text-inverse tabular-nums">
-                          <span className="sr-only">, pending </span>
+                          <span className="sr-only">{item.badge === 'support_waiting' ? ', waiting ' : ', pending '}</span>
                           {badges[item.badge]!.toLocaleString('en-IN')}
                         </span>
                       )}

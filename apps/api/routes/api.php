@@ -62,6 +62,7 @@ use App\Domain\Stores\Http\Controllers\StorefrontConfigController;
 use App\Domain\Stores\Http\Controllers\StorefrontPageController;
 use App\Domain\Stores\Http\Controllers\StorefrontProductController;
 use App\Domain\Stores\Http\Controllers\StoreSettingsController;
+use App\Domain\Support\Http\Controllers\SupportAttachmentController;
 use App\Domain\Themes\Http\Controllers\StoreThemeController;
 use App\Domain\Themes\Http\Controllers\ThemeCatalogController;
 use Illuminate\Support\Facades\Route;
@@ -386,6 +387,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.8e (PHASE-8-8E-CONTRACT §13): Inbox — merchant, storefront chat / order messages and inbound email (own groups).
     require __DIR__.'/inbox.php';
 
+    // Phase 8.9c (PHASE-8-9C-CONTRACT §11.1): Help center guides and support tickets (tenant-level merchant group).
+    require __DIR__.'/help.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
@@ -498,6 +502,10 @@ Route::prefix('v1')->group(function (): void {
     Route::get('inbox-attachments/{attachment}/download', [InboxAttachmentController::class, 'download'])->where('attachment', '[0-9A-Za-z]{26}')
         ->middleware(['signed', 'throttle:60,1,inbox-attachments.download'])->name('inbox-attachments.download');
 
+    // Phase 8.9c (PHASE-8-9C P89C-15, S255): signed 5-minute support attachment download (no session; tenant from the signature).
+    Route::get('support-attachments/{attachment}/download', [SupportAttachmentController::class, 'download'])->where('attachment', '[0-9A-Za-z]{26}')
+        ->middleware(['signed', 'throttle:60,1,support-attachments.download'])->name('support-attachments.download');
+
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])
         ->middleware(['signed', 'throttle:60,1,exports.download'])->name('exports.download');
@@ -508,4 +516,6 @@ Route::prefix('v1')->group(function (): void {
     require __DIR__.'/admin-analytics.php'; // Phase 8.2
     require __DIR__.'/admin-sms.php'; // Phase 8.9a (+ 8.9b platform SMS)
     require __DIR__.'/platform-sms.php'; // Phase 8.9b: account SMS preferences + public opt-out
+    require __DIR__.'/admin-help.php'; // Phase 8.9c help content
+    require __DIR__.'/admin-support.php'; // Phase 8.9c support queue
 });

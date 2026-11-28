@@ -1,8 +1,17 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.25.0
+  version: 1.26.0
   description: |
+    1.26.0 (2026-11-28, Phase 8.9c Help center, PHASE-8-9C-CONTRACT.md, ADR 0029; Q306–Q323 and Q327–Q329 defaults
+    accepted). New tag help (any member): /help/home, /help/categories (+ /{slug}), /help/articles (search) and
+    /{slug} (published only, English fallback), PUT/DELETE /{slug}/feedback. New tag support (permission support.manage):
+    /help/tickets (+ /{ticket}, /messages, /resolve, /rating), /help/attachments (+ /{attachment}/link) and public signed
+    /support-attachments/{attachment}/download. New tag admin-help (platform permission manage_help_content):
+    /admin/help-articles (+ publish, unpublish, archive, restore, feedback), /admin/help-categories (+ reorder),
+    /admin/help-media. New tag admin-support (platform permission manage_support): /admin/support/tickets (+ messages
+    incl. internal notes, assign, status, attachments), /admin/support/assignees. PermissionKey gains support.manage;
+    PlatformPermission gains manage_help_content and manage_support. Help bodies are HelpArticleDoc JSON (never HTML).
     1.25.0 (2026-11-28, Phase 8.8e Inbox on own channels, PHASE-8-8E-CONTRACT.md, ADR 0028; Q287–Q302 defaults
     accepted). New tag inbox (permission inbox.manage): /stores/{store}/inbox/summary and /conversations (conditional GETs
     with ETag / If-None-Match → 304), /conversations/{conversation} (GET, DELETE with customers.delete), /messages (GET
@@ -376,6 +385,14 @@ tags:
   description: 'Phase 8.9b: the signed-in user''s own settings (SMS preferences) and the public promotional SMS opt-out (PHASE-8-9B §7.6)'
 - name: inbox
   description: 'Phase 8.8e: Inbox on own channels — website chat, order messages, email replies; conversations, notes, attachments, saved replies, channel settings (PHASE-8-8E §4–§13)'
+- name: help
+  description: 'Phase 8.9c: help center guides, search and feedback (PHASE-8-9C §4–§6); any member'
+- name: support
+  description: 'Phase 8.9c: merchant support tickets (PHASE-8-9C §8); support.manage'
+- name: admin-help
+  description: 'Phase 8.9c: help articles, categories and images for platform staff (PHASE-8-9C §7); manage_help_content'
+- name: admin-support
+  description: 'Phase 8.9c: cross-tenant support queue for platform staff (PHASE-8-9C §9); manage_support'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -24111,8 +24128,1965 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /help/home:
+    get:
+      tags:
+      - help
+      summary: Help center home
+      operationId: getHelpHome
+      description: PHASE-8-9C §4. Any member. Categories with published guides, popular (7 days), can_contact_support.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: language
+        schema:
+          $ref: '#/components/schemas/HelpLanguage'
+        required: false
+        description: Default en
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HelpHome'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/categories:
+    get:
+      tags:
+      - help
+      summary: Help topics
+      operationId: listHelpCategories
+      description: PHASE-8-9C §4. Any member.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: language
+        schema:
+          $ref: '#/components/schemas/HelpLanguage'
+        required: false
+        description: Default en
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HelpCategory'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/categories/{slug}:
+    parameters:
+    - $ref: '#/components/parameters/HelpCategorySlugPath'
+    get:
+      tags:
+      - help
+      summary: Help topic
+      operationId: getHelpCategory
+      description: PHASE-8-9C §4. 404 `help_category_not_found`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: language
+        schema:
+          $ref: '#/components/schemas/HelpLanguage'
+        required: false
+        description: Default en
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HelpCategoryPage'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/articles:
+    get:
+      tags:
+      - help
+      summary: Search guides
+      operationId: searchHelpArticles
+      description: PHASE-8-9C §6, P89C-8. Published snapshots only, rank then newest, 20 per page. Limiter `help-search` 60/min
+        per member.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 100
+        required: true
+      - in: query
+        name: language
+        schema:
+          $ref: '#/components/schemas/HelpSearchLanguage'
+        required: false
+        description: Default both
+      - in: query
+        name: category
+        schema:
+          type: string
+        required: false
+        description: Category slug
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        required: false
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HelpSearchResult'
+                  meta:
+                    $ref: '#/components/schemas/HelpSearchMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/articles/{slug}:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleSlugPath'
+    get:
+      tags:
+      - help
+      summary: Read a guide
+      operationId: getHelpArticle
+      description: 'PHASE-8-9C §5. Published only; draft, scheduled and archived → 404 `help_article_not_found`. Falls back
+        to English when বাংলা is missing (`fallback: true`). A redirected slug answers with the canonical `slug`. Counts a view
+        (once per member per day).'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: language
+        schema:
+          $ref: '#/components/schemas/HelpLanguage'
+        required: false
+        description: Default en
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HelpArticle'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/articles/{slug}/feedback:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleSlugPath'
+    put:
+      tags:
+      - help
+      summary: Vote on a guide
+      operationId: voteHelpArticle
+      description: PHASE-8-9C P89C-9. One vote per member per article (upsert). `reason`/`note` only when not helpful. Limiter
+        `help-feedback`. Impersonation → 403.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpFeedbackInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HelpMyVote'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - help
+      summary: Remove my vote (Undo)
+      operationId: unvoteHelpArticle
+      description: PHASE-8-9C P89C-9.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/tickets:
+    get:
+      tags:
+      - support
+      summary: My tickets
+      operationId: listSupportTickets
+      description: PHASE-8-9C §8.2. `support.manage`. Tenant-level (the single store is implicit).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: filter[tab]
+        schema:
+          $ref: '#/components/schemas/SupportTicketTab'
+        required: false
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+        required: false
+        description: Subject or T-number
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        required: false
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupportTicketSummary'
+                  meta:
+                    $ref: '#/components/schemas/SupportTicketListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - support
+      summary: Open a ticket
+      operationId: createSupportTicket
+      description: PHASE-8-9C §8.2, P89C-14. `support.manage`; `order_id` needs `orders.view` and must belong to the tenant.
+        Replay with the same client_id → 200. 422 `support_ticket_limit_reached`. Limiter `support-ticket-create` 10/h per tenant.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupportTicketInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportTicket'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/tickets/{ticket}:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    get:
+      tags:
+      - support
+      summary: Ticket
+      operationId: getSupportTicket
+      description: PHASE-8-9C §8.2. `support.manage`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportTicket'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/tickets/{ticket}/messages:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    get:
+      tags:
+      - support
+      summary: Ticket thread
+      operationId: listSupportTicketMessages
+      description: PHASE-8-9C §8.2. Merchant, staff and system rows only — internal notes are never returned (S251).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupportTicketMessage'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - support
+      summary: Reply on a ticket
+      operationId: replySupportTicket
+      description: PHASE-8-9C §8.2, P89C-16. Reopens a resolved ticket; 409 `support_ticket_closed`. Limiter `support-reply`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplySupportTicketInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportTicketMessage'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/tickets/{ticket}/resolve:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    post:
+      tags:
+      - support
+      summary: Mark as solved
+      operationId: resolveSupportTicket
+      description: PHASE-8-9C §8.2. 409 `support_ticket_closed`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportTicket'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/tickets/{ticket}/rating:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    put:
+      tags:
+      - support
+      summary: Rate support (CSAT)
+      operationId: rateSupportTicket
+      description: PHASE-8-9C P89C-17. Within 14 days of resolve; 409 `support_rating_unavailable`.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateSupportTicketInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportTicket'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/attachments:
+    post:
+      tags:
+      - support
+      summary: Upload a ticket attachment
+      operationId: uploadSupportAttachment
+      description: PHASE-8-9C P89C-15. JPG/PNG/PDF ≤ 10 MB, sniffed, private. Limiter `support-upload` 30/min.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportAttachment'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /help/attachments/{attachment}/link:
+    parameters:
+    - $ref: '#/components/parameters/SupportAttachmentPath'
+    get:
+      tags:
+      - support
+      summary: Signed attachment link
+      operationId: getSupportAttachmentLink
+      description: PHASE-8-9C §8.2. Signed 5-minute URL; 409 `support_attachment_processing`; impersonation → 403 `impersonation_attachment_hidden`;
+        note attachments → 404.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportAttachmentLink'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /support-attachments/{attachment}/download:
+    parameters:
+    - $ref: '#/components/parameters/SupportAttachmentPath'
+    - in: query
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - support
+      summary: Download a ticket attachment (signed, 5 minutes)
+      operationId: downloadSupportAttachment
+      description: PHASE-8-9C P89C-15. Public signed URL; images inline, PDF as attachment; `nosniff`, `Content-Security-Policy
+        sandbox; default-src 'none'`, `private, no-store`.
+      security: []
+      responses:
+        '200':
+          description: File
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Bad or expired signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles:
+    get:
+      tags:
+      - admin-help
+      summary: Help articles
+      operationId: listAdminHelpArticles
+      description: PHASE-8-9C §7.1. Platform permission `manage_help_content` (super_admin, support).
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[tab]
+        schema:
+          type: string
+          enum:
+          - all
+          - published
+          - draft
+          - scheduled
+          - archived
+          - missing_bn
+        required: false
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+          minLength: 2
+        required: false
+      - in: query
+        name: filter[category]
+        schema:
+          $ref: '#/components/schemas/Ulid'
+        required: false
+      - in: query
+        name: filter[language]
+        schema:
+          $ref: '#/components/schemas/HelpLanguage'
+        required: false
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - updated
+          - title
+          - helpful
+          - views
+        required: false
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        required: false
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminHelpArticleSummary'
+                  meta:
+                    $ref: '#/components/schemas/AdminHelpArticleListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - admin-help
+      summary: Create a draft article
+      operationId: createAdminHelpArticle
+      description: PHASE-8-9C §7.1. 409 `help_slug_taken`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminHelpArticleInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    get:
+      tags:
+      - admin-help
+      summary: Help article (editor)
+      operationId: getAdminHelpArticle
+      description: PHASE-8-9C §7.1.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - admin-help
+      summary: Save draft
+      operationId: updateAdminHelpArticle
+      description: 'PHASE-8-9C §7.1. Draft fields only; `translations.bn: null` deletes the বাংলা draft. Bodies validated as
+        HelpArticleDoc (S252). 409 `revision_conflict` / `help_slug_taken`.'
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminHelpArticleInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - admin-help
+      summary: Delete a never-published draft
+      operationId: deleteAdminHelpArticle
+      description: PHASE-8-9C §7.1. 409 `invalid_state_transition` once published.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '204':
+          description: No content
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}/publish:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    post:
+      tags:
+      - admin-help
+      summary: Publish or schedule
+      operationId: publishAdminHelpArticle
+      description: PHASE-8-9C §7.1. Copies drafts to the published snapshot (or schedules a not-yet-live article). 422 `help_article_incomplete`
+        (details HelpArticleIncompleteDetails), `help_article_media_missing`; 409 `revision_conflict`, `invalid_state_transition`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishAdminHelpArticleInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}/unpublish:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    post:
+      tags:
+      - admin-help
+      summary: Unpublish
+      operationId: unpublishAdminHelpArticle
+      description: PHASE-8-9C §7.1. published | scheduled → draft.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}/archive:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    post:
+      tags:
+      - admin-help
+      summary: Archive
+      operationId: archiveAdminHelpArticle
+      description: PHASE-8-9C §7.1. Any → archived; merchants get 404.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                reason:
+                  type:
+                  - string
+                  - 'null'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}/restore:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    post:
+      tags:
+      - admin-help
+      summary: Restore
+      operationId: restoreAdminHelpArticle
+      description: PHASE-8-9C §7.1. archived → draft.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpArticle'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-articles/{article}/feedback:
+    parameters:
+    - $ref: '#/components/parameters/HelpArticleIdPath'
+    get:
+      tags:
+      - admin-help
+      summary: Article feedback
+      operationId: listAdminHelpFeedback
+      description: PHASE-8-9C §7.1.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[helpful]
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+        required: false
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        required: false
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminHelpFeedbackEntry'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-categories:
+    get:
+      tags:
+      - admin-help
+      summary: Help categories
+      operationId: listAdminHelpCategories
+      description: PHASE-8-9C §7.2.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminHelpCategory'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - admin-help
+      summary: Create a category
+      operationId: createAdminHelpCategory
+      description: PHASE-8-9C §7.2. 409 `help_category_slug_taken`; 422 `help_category_limit_reached`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminHelpCategoryInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpCategory'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-categories/{category}:
+    parameters:
+    - $ref: '#/components/parameters/HelpCategoryIdPath'
+    patch:
+      tags:
+      - admin-help
+      summary: Update a category
+      operationId: updateAdminHelpCategory
+      description: PHASE-8-9C §7.2.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminHelpCategoryInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminHelpCategory'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - admin-help
+      summary: Delete a category
+      operationId: deleteAdminHelpCategory
+      description: PHASE-8-9C §7.2. 409 `help_category_not_empty`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '204':
+          description: No content
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-categories/reorder:
+    post:
+      tags:
+      - admin-help
+      summary: Reorder categories
+      operationId: reorderAdminHelpCategories
+      description: PHASE-8-9C §7.2. All ids.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminHelpCategory'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/help-media:
+    post:
+      tags:
+      - admin-help
+      summary: Upload a help image
+      operationId: uploadAdminHelpMedia
+      description: PHASE-8-9C P89C-6. PNG/JPEG/WebP ≤ 5 MB, sniffed, re-encoded, public CDN under platform/help/. SVG rejected.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                alt:
+                  type: string
+                  maxLength: 200
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HelpMediaRef'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets:
+    get:
+      tags:
+      - admin-support
+      summary: Support queue
+      operationId: listAdminSupportTickets
+      description: PHASE-8-9C §9. Platform permission `manage_support` (super_admin, support, billing). Cross-tenant on pgsql_admin.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        required: false
+        description: Comma list; default open,awaiting_support
+      - in: query
+        name: filter[assignee]
+        schema:
+          type: string
+        required: false
+        description: me | unassigned | staff id
+      - in: query
+        name: filter[priority]
+        schema:
+          type: string
+        required: false
+        description: Comma list
+      - in: query
+        name: filter[category]
+        schema:
+          type: string
+        required: false
+        description: Comma list
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+          minLength: 2
+        required: false
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - waiting
+          - newest
+          - updated
+          - priority
+        required: false
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        required: false
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSupportTicketSummary'
+                  meta:
+                    $ref: '#/components/schemas/AdminSupportListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/assignees:
+    get:
+      tags:
+      - admin-support
+      summary: Assignable staff
+      operationId: listAdminSupportAssignees
+      description: PHASE-8-9C §9.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSupportAssignee'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    get:
+      tags:
+      - admin-support
+      summary: Support ticket
+      operationId: getAdminSupportTicket
+      description: PHASE-8-9C §9. `order_card` = limited live read of the related order while not closed, audited `support_ticket.order_viewed`
+        (P89C-20).
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSupportTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - admin-support
+      summary: Change priority or category
+      operationId: updateAdminSupportTicket
+      description: PHASE-8-9C §9. System row; 409 `revision_conflict`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminSupportTicketInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSupportTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}/messages:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    get:
+      tags:
+      - admin-support
+      summary: Ticket thread (incl. notes)
+      operationId: listAdminSupportMessages
+      description: PHASE-8-9C §9.
+      security:
+      - sessionCookie: []
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSupportMessage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - admin-support
+      summary: Reply or internal note
+      operationId: replyAdminSupportTicket
+      description: PHASE-8-9C §9. Reply emails the merchant and moves the ticket (default awaiting_merchant); note is staff-only.
+        Idempotent by client_id.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportReplyInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSupportMessage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}/assign:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    post:
+      tags:
+      - admin-support
+      summary: Assign
+      operationId: assignAdminSupportTicket
+      description: PHASE-8-9C P89C-18. 422 `support_assignee_invalid`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportAssignInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSupportTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}/status:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    post:
+      tags:
+      - admin-support
+      summary: Set status
+      operationId: setAdminSupportTicketStatus
+      description: PHASE-8-9C P89C-16. 409 `invalid_state_transition`.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportStatusInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminSupportTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict (see description for codes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}/attachments:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    post:
+      tags:
+      - admin-support
+      summary: Upload a staff attachment
+      operationId: uploadAdminSupportAttachment
+      description: PHASE-8-9C P89C-15. Stored in the ticket tenant's private media.
+      security:
+      - sessionCookie: []
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SupportAttachment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/support/tickets/{ticket}/attachments/{attachment}:
+    parameters:
+    - $ref: '#/components/parameters/SupportTicketPath'
+    - $ref: '#/components/parameters/SupportAttachmentPath'
+    get:
+      tags:
+      - admin-support
+      summary: Stream a ticket attachment
+      operationId: downloadAdminSupportAttachment
+      description: PHASE-8-9C §9. Same headers as the merchant download.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: File
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   parameters:
+    HelpArticleSlugPath:
+      in: path
+      name: slug
+      required: true
+      schema:
+        type: string
+        maxLength: 80
+    HelpCategorySlugPath:
+      in: path
+      name: slug
+      required: true
+      schema:
+        type: string
+        maxLength: 60
+    HelpArticleIdPath:
+      in: path
+      name: article
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    HelpCategoryIdPath:
+      in: path
+      name: category
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    SupportTicketPath:
+      in: path
+      name: ticket
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    SupportAttachmentPath:
+      in: path
+      name: attachment
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
     InboxConversationPath:
       in: path
       name: conversation
@@ -24789,6 +26763,1868 @@ components:
           schema:
             $ref: '#/components/schemas/ApiError'
   schemas:
+    HelpLanguage:
+      type: string
+      enum:
+      - en
+      - bn
+    HelpSearchLanguage:
+      type: string
+      enum:
+      - both
+      - en
+      - bn
+    HelpArticleStatus:
+      type: string
+      enum:
+      - draft
+      - published
+      - scheduled
+      - archived
+    HelpCategoryIcon:
+      type: string
+      enum:
+      - rocket
+      - box
+      - cart
+      - truck
+      - card
+      - palette
+      - megaphone
+      - globe
+      - users
+      - chart
+      - settings
+      - message
+    HelpFeedbackReason:
+      type: string
+      enum:
+      - steps_mismatch
+      - hard_to_follow
+      - out_of_date
+      - not_my_question
+    HelpArticleDoc:
+      type: object
+      description: 'PHASE-8-9C P89C-5: RichTextDoc blocks plus `image` {attrs: media_id, alt (1–200), caption?} and `callout`
+        {attrs: tone info|warning|tip; content: paragraphs}. ≤ 200 blocks, ≤ 64 KB. Never HTML or Markdown.'
+      required:
+      - type
+      - content
+      properties:
+        type:
+          const: doc
+        content:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required:
+            - type
+            properties:
+              type:
+                type: string
+                enum:
+                - paragraph
+                - heading
+                - bulletList
+                - orderedList
+                - blockquote
+                - image
+                - callout
+            additionalProperties: true
+    HelpMediaRef:
+      type: object
+      required:
+      - id
+      - status
+      - url
+      - width
+      - height
+      - variants
+      - alt
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+          - processing
+          - ready
+          - failed
+        url:
+          type:
+          - string
+          - 'null'
+        width:
+          type:
+          - integer
+          - 'null'
+        height:
+          type:
+          - integer
+          - 'null'
+        variants:
+          type: object
+          additionalProperties:
+            type: string
+        alt:
+          type:
+          - string
+          - 'null'
+    HelpTocEntry:
+      type: object
+      required:
+      - id
+      - text
+      - level
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        level:
+          type: integer
+          enum:
+          - 2
+          - 3
+    HelpCategoryRef:
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+    HelpCategory:
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - description
+      - icon
+      - article_count
+      - position
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        icon:
+          $ref: '#/components/schemas/HelpCategoryIcon'
+        article_count:
+          type: integer
+        position:
+          type: integer
+    HelpArticleLink:
+      type: object
+      required:
+      - id
+      - slug
+      - title
+      - summary
+      - language
+      - category
+      - read_minutes
+      - updated_at
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        category:
+          $ref: '#/components/schemas/HelpCategoryRef'
+        read_minutes:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+    HelpHome:
+      type: object
+      required:
+      - categories
+      - total_articles
+      - popular
+      - can_contact_support
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpCategory'
+        total_articles:
+          type: integer
+        popular:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpArticleLink'
+        can_contact_support:
+          type: boolean
+    HelpCategoryPage:
+      type: object
+      required:
+      - category
+      - articles
+      properties:
+        category:
+          $ref: '#/components/schemas/HelpCategory'
+        articles:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpArticleLink'
+    HelpMyVote:
+      type: object
+      required:
+      - helpful
+      - reason
+      - note
+      - updated_at
+      properties:
+        helpful:
+          type: boolean
+        reason:
+          oneOf:
+          - $ref: '#/components/schemas/HelpFeedbackReason'
+          - type: 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        updated_at:
+          type: string
+          format: date-time
+    HelpArticle:
+      type: object
+      required:
+      - id
+      - slug
+      - language
+      - requested_language
+      - fallback
+      - available_languages
+      - title
+      - summary
+      - body
+      - toc
+      - media
+      - category
+      - read_minutes
+      - updated_at
+      - helpful
+      - related
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        requested_language:
+          $ref: '#/components/schemas/HelpLanguage'
+        fallback:
+          type: boolean
+        available_languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpLanguage'
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          $ref: '#/components/schemas/HelpArticleDoc'
+        toc:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpTocEntry'
+        media:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/HelpMediaRef'
+        category:
+          $ref: '#/components/schemas/HelpCategoryRef'
+        read_minutes:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+        helpful:
+          type: object
+          required:
+          - yes_count
+          - my_vote
+          properties:
+            yes_count:
+              type: integer
+            my_vote:
+              oneOf:
+              - $ref: '#/components/schemas/HelpMyVote'
+              - type: 'null'
+        related:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpArticleLink'
+    HelpFeedbackInput:
+      type: object
+      required:
+      - helpful
+      - language
+      properties:
+        helpful:
+          type: boolean
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        reason:
+          oneOf:
+          - $ref: '#/components/schemas/HelpFeedbackReason'
+          - type: 'null'
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    HelpSearchResult:
+      type: object
+      required:
+      - article_id
+      - slug
+      - language
+      - title
+      - snippet
+      - category
+      - read_minutes
+      properties:
+        article_id:
+          type: string
+        slug:
+          type: string
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        title:
+          type: string
+        snippet:
+          type: string
+          maxLength: 200
+          description: Plain text; no HTML highlights
+        category:
+          $ref: '#/components/schemas/HelpCategoryRef'
+        read_minutes:
+          type: integer
+    HelpSearchMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - query
+        - counts_by_category
+        properties:
+          query:
+            type: string
+          counts_by_category:
+            type: array
+            items:
+              type: object
+              required:
+              - category
+              - count
+              properties:
+                category:
+                  $ref: '#/components/schemas/HelpCategoryRef'
+                count:
+                  type: integer
+    SupportTicketStatus:
+      type: string
+      enum:
+      - open
+      - awaiting_merchant
+      - awaiting_support
+      - resolved
+      - closed
+    SupportTicketTab:
+      type: string
+      enum:
+      - all
+      - open
+      - waiting_on_you
+      - solved
+    SupportTicketPriority:
+      type: string
+      enum:
+      - low
+      - normal
+      - high
+      - urgent
+      description: low is staff-only
+    SupportTicketCategory:
+      type: string
+      enum:
+      - orders_payments
+      - shipping_couriers
+      - products_inventory
+      - storefront_domain
+      - billing_plan
+      - sms_marketing
+      - account_access
+      - bug
+      - other
+    SupportMessageKind:
+      type: string
+      enum:
+      - merchant
+      - staff
+      - note
+      - system
+    SupportSystemEvent:
+      type: string
+      enum:
+      - created
+      - assigned
+      - unassigned
+      - status_changed
+      - priority_changed
+      - category_changed
+      - reopened
+      - rated
+      - auto_closed
+    SupportAttachment:
+      type: object
+      required:
+      - id
+      - filename
+      - mime
+      - size_bytes
+      - kind
+      - status
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        mime:
+          type: string
+          enum:
+          - image/jpeg
+          - image/png
+          - application/pdf
+        size_bytes:
+          type: integer
+          maximum: 10485760
+        kind:
+          type: string
+          enum:
+          - image
+          - pdf
+        status:
+          type: string
+          enum:
+          - processing
+          - ready
+    SupportAttachmentLink:
+      type: object
+      required:
+      - url
+      - expires_at
+      properties:
+        url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    SupportPerson:
+      type: object
+      required:
+      - id
+      - name
+      - is_staff
+      properties:
+        id:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        is_staff:
+          type: boolean
+    SupportTicketOrderRef:
+      type: object
+      required:
+      - id
+      - number
+      properties:
+        id:
+          type:
+          - string
+          - 'null'
+        number:
+          type: string
+    SupportRating:
+      type: object
+      required:
+      - rating
+      - comment
+      - rated_at
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type:
+          - string
+          - 'null'
+        rated_at:
+          type: string
+          format: date-time
+    SupportTicketSummary:
+      type: object
+      required:
+      - id
+      - number
+      - reference
+      - subject
+      - category
+      - priority
+      - status
+      - related_order
+      - requester
+      - last_reply
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+        number:
+          type: integer
+        reference:
+          type: string
+        subject:
+          type: string
+        category:
+          $ref: '#/components/schemas/SupportTicketCategory'
+        priority:
+          $ref: '#/components/schemas/SupportTicketPriority'
+        status:
+          $ref: '#/components/schemas/SupportTicketStatus'
+        related_order:
+          oneOf:
+          - $ref: '#/components/schemas/SupportTicketOrderRef'
+          - type: 'null'
+        requester:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        last_reply:
+          oneOf:
+          - type: object
+            required:
+            - author
+            - at
+            properties:
+              author:
+                $ref: '#/components/schemas/SupportPerson'
+              at:
+                type: string
+                format: date-time
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SupportTicketOrderCard:
+      type: object
+      required:
+      - id
+      - number
+      - status
+      - total_amount
+      - currency
+      - placed_at
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        total_amount:
+          type: integer
+        currency:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+    SupportTicket:
+      allOf:
+      - $ref: '#/components/schemas/SupportTicketSummary'
+      - type: object
+        required:
+        - assignee_name
+        - order_card
+        - shop
+        - first_staff_reply_at
+        - first_reply_seconds
+        - resolved_at
+        - resolution_seconds
+        - closed_at
+        - rating
+        - files
+        - can
+        - revision
+        properties:
+          assignee_name:
+            type:
+            - string
+            - 'null'
+          order_card:
+            oneOf:
+            - $ref: '#/components/schemas/SupportTicketOrderCard'
+            - type: 'null'
+          shop:
+            type: object
+            required:
+            - name
+            - domain
+            properties:
+              name:
+                type: string
+              domain:
+                type:
+                - string
+                - 'null'
+          first_staff_reply_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          first_reply_seconds:
+            type:
+            - integer
+            - 'null'
+          resolved_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          resolution_seconds:
+            type:
+            - integer
+            - 'null'
+          closed_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          rating:
+            oneOf:
+            - $ref: '#/components/schemas/SupportRating'
+            - type: 'null'
+          files:
+            type: array
+            items:
+              $ref: '#/components/schemas/SupportAttachment'
+          can:
+            type: object
+            required:
+            - reply
+            - resolve
+            - rate
+            properties:
+              reply:
+                type: boolean
+              resolve:
+                type: boolean
+              rate:
+                type: boolean
+          revision:
+            type: integer
+    SupportTicketMessage:
+      type: object
+      required:
+      - id
+      - kind
+      - body
+      - author
+      - attachments
+      - system
+      - created_at
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - merchant
+          - staff
+          - system
+          description: Never note
+        body:
+          type:
+          - string
+          - 'null'
+        author:
+          oneOf:
+          - $ref: '#/components/schemas/SupportPerson'
+          - type: 'null'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportAttachment'
+        system:
+          oneOf:
+          - type: object
+            required:
+            - event
+            properties:
+              event:
+                $ref: '#/components/schemas/SupportSystemEvent'
+              status:
+                oneOf:
+                - $ref: '#/components/schemas/SupportTicketStatus'
+                - type: 'null'
+              actor_name:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    SupportTicketListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - stats
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - open
+            - waiting_on_you
+            - solved
+            properties:
+              all:
+                type: integer
+              open:
+                type: integer
+              waiting_on_you:
+                type: integer
+              solved:
+                type: integer
+          stats:
+            type: object
+            required:
+            - open
+            - waiting_on_you
+            - solved_this_month
+            - avg_first_reply_seconds
+            - csat_average
+            - csat_count
+            properties:
+              open:
+                type: integer
+              waiting_on_you:
+                type: integer
+              solved_this_month:
+                type: integer
+              avg_first_reply_seconds:
+                type:
+                - integer
+                - 'null'
+              csat_average:
+                type:
+                - number
+                - 'null'
+              csat_count:
+                type: integer
+    CreateSupportTicketInput:
+      type: object
+      required:
+      - category
+      - subject
+      - description
+      - client_id
+      properties:
+        category:
+          $ref: '#/components/schemas/SupportTicketCategory'
+        subject:
+          type: string
+          minLength: 5
+          maxLength: 150
+        description:
+          type: string
+          minLength: 20
+          maxLength: 5000
+        priority:
+          type: string
+          enum:
+          - normal
+          - high
+          - urgent
+        order_id:
+          type:
+          - string
+          - 'null'
+        attachment_ids:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Ulid'
+        client_id:
+          type: string
+          format: uuid
+    ReplySupportTicketInput:
+      type: object
+      required:
+      - body
+      - client_id
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        attachment_ids:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Ulid'
+        client_id:
+          type: string
+          format: uuid
+    RateSupportTicketInput:
+      type: object
+      required:
+      - rating
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+    AdminHelpCategory:
+      type: object
+      required:
+      - id
+      - slug
+      - name_en
+      - name_bn
+      - description_en
+      - description_bn
+      - icon
+      - position
+      - article_counts
+      - updated_at
+      - revision
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name_en:
+          type: string
+        name_bn:
+          type:
+          - string
+          - 'null'
+        description_en:
+          type:
+          - string
+          - 'null'
+        description_bn:
+          type:
+          - string
+          - 'null'
+        icon:
+          $ref: '#/components/schemas/HelpCategoryIcon'
+        position:
+          type: integer
+        article_counts:
+          type: object
+          required:
+          - published
+          - total
+          properties:
+            published:
+              type: integer
+            total:
+              type: integer
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    AdminHelpCategoryInput:
+      type: object
+      required:
+      - slug
+      - name_en
+      - icon
+      properties:
+        slug:
+          type: string
+          maxLength: 60
+        name_en:
+          type: string
+          maxLength: 60
+        name_bn:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        description_en:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+        description_bn:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+        icon:
+          $ref: '#/components/schemas/HelpCategoryIcon'
+    UpdateAdminHelpCategoryInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        slug:
+          type: string
+        name_en:
+          type: string
+        name_bn:
+          type:
+          - string
+          - 'null'
+        description_en:
+          type:
+          - string
+          - 'null'
+        description_bn:
+          type:
+          - string
+          - 'null'
+        icon:
+          $ref: '#/components/schemas/HelpCategoryIcon'
+    HelpTranslationInput:
+      type: object
+      required:
+      - title
+      - summary
+      - body
+      - keywords
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        summary:
+          type: string
+          maxLength: 160
+        body:
+          $ref: '#/components/schemas/HelpArticleDoc'
+        keywords:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+            maxLength: 40
+    AdminHelpTranslation:
+      allOf:
+      - $ref: '#/components/schemas/HelpTranslationInput'
+      - type: object
+        required:
+        - language
+        - complete
+        - published
+        - has_unpublished_changes
+        - published_at
+        - word_count
+        - read_minutes
+        properties:
+          language:
+            $ref: '#/components/schemas/HelpLanguage'
+          complete:
+            type: boolean
+          published:
+            type: boolean
+          has_unpublished_changes:
+            type: boolean
+          published_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          word_count:
+            type: integer
+          read_minutes:
+            type: integer
+    AdminHelpFeedbackSummary:
+      type: object
+      required:
+      - 'yes'
+      - 'no'
+      - helpful_percent_30d
+      - votes_30d
+      - top_reasons
+      properties:
+        'yes':
+          type: integer
+        'no':
+          type: integer
+        helpful_percent_30d:
+          type:
+          - number
+          - 'null'
+        votes_30d:
+          type: integer
+        top_reasons:
+          type: array
+          items:
+            type: object
+            required:
+            - reason
+            - count
+            properties:
+              reason:
+                $ref: '#/components/schemas/HelpFeedbackReason'
+              count:
+                type: integer
+    AdminHelpArticleSummary:
+      type: object
+      required:
+      - id
+      - slug
+      - title
+      - category
+      - languages
+      - status
+      - scheduled_at
+      - has_unpublished_changes
+      - helpful
+      - views_7d
+      - updated_at
+      - updated_by
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        title:
+          type: string
+        category:
+          type: object
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        languages:
+          type: object
+          required:
+          - en
+          - bn
+          properties:
+            en:
+              type: string
+              enum:
+              - missing
+              - draft
+              - published
+            bn:
+              type: string
+              enum:
+              - missing
+              - draft
+              - published
+        status:
+          $ref: '#/components/schemas/HelpArticleStatus'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        has_unpublished_changes:
+          type: boolean
+        helpful:
+          type: object
+          required:
+          - percent
+          - votes
+          properties:
+            percent:
+              type:
+              - number
+              - 'null'
+            votes:
+              type: integer
+        views_7d:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+    AdminHelpArticle:
+      type: object
+      required:
+      - id
+      - slug
+      - status
+      - scheduled_at
+      - category_id
+      - related_article_ids
+      - related
+      - translations
+      - media
+      - feedback
+      - views_7d
+      - merchant_path
+      - first_published_at
+      - last_published_at
+      - last_published_by
+      - archived_at
+      - created_at
+      - updated_at
+      - updated_by
+      - revision
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/HelpArticleStatus'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        category_id:
+          type: string
+        related_article_ids:
+          type: array
+          items:
+            type: string
+        related:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - slug
+            - title
+            - status
+            properties:
+              id:
+                type: string
+              slug:
+                type: string
+              title:
+                type: string
+              status:
+                $ref: '#/components/schemas/HelpArticleStatus'
+        translations:
+          type: object
+          required:
+          - en
+          - bn
+          properties:
+            en:
+              $ref: '#/components/schemas/AdminHelpTranslation'
+            bn:
+              oneOf:
+              - $ref: '#/components/schemas/AdminHelpTranslation'
+              - type: 'null'
+        media:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/HelpMediaRef'
+        feedback:
+          $ref: '#/components/schemas/AdminHelpFeedbackSummary'
+        views_7d:
+          type: integer
+        merchant_path:
+          type: string
+        first_published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_published_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        archived_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        revision:
+          type: integer
+    AdminHelpArticleListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - stats
+        properties:
+          counts:
+            type: object
+            required:
+            - all
+            - published
+            - draft
+            - scheduled
+            - archived
+            - missing_bn
+            properties:
+              all:
+                type: integer
+              published:
+                type: integer
+              draft:
+                type: integer
+              scheduled:
+                type: integer
+              archived:
+                type: integer
+              missing_bn:
+                type: integer
+          stats:
+            type: object
+            required:
+            - published
+            - drafts
+            - missing_bn
+            - helpful_percent_30d
+            properties:
+              published:
+                type: integer
+              drafts:
+                type: integer
+              missing_bn:
+                type: integer
+              helpful_percent_30d:
+                type:
+                - number
+                - 'null'
+    CreateAdminHelpArticleInput:
+      type: object
+      required:
+      - slug
+      - category_id
+      - title_en
+      properties:
+        slug:
+          type: string
+          maxLength: 80
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+        category_id:
+          $ref: '#/components/schemas/Ulid'
+        title_en:
+          type: string
+          maxLength: 120
+    UpdateAdminHelpArticleInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        slug:
+          type: string
+        category_id:
+          $ref: '#/components/schemas/Ulid'
+        related_article_ids:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Ulid'
+        translations:
+          type: object
+          required: []
+          properties:
+            en:
+              $ref: '#/components/schemas/HelpTranslationInput'
+            bn:
+              oneOf:
+              - $ref: '#/components/schemas/HelpTranslationInput'
+              - type: 'null'
+    PublishAdminHelpArticleInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdminHelpFeedbackEntry:
+      type: object
+      required:
+      - id
+      - helpful
+      - reason
+      - note
+      - language
+      - tenant
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+        helpful:
+          type: boolean
+        reason:
+          oneOf:
+          - $ref: '#/components/schemas/HelpFeedbackReason'
+          - type: 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        tenant:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    HelpArticleIncompleteDetails:
+      type: object
+      required:
+      - language
+      - fields
+      properties:
+        language:
+          $ref: '#/components/schemas/HelpLanguage'
+        fields:
+          type: array
+          items:
+            type: string
+            enum:
+            - title
+            - summary
+            - body
+    AdminSupportShop:
+      type: object
+      required:
+      - tenant_id
+      - tenant_name
+      - store_name
+      - domain
+      - plan
+      - tenant_status
+      properties:
+        tenant_id:
+          type: string
+        tenant_name:
+          type: string
+        store_name:
+          type:
+          - string
+          - 'null'
+        domain:
+          type:
+          - string
+          - 'null'
+        plan:
+          type:
+          - string
+          - 'null'
+        tenant_status:
+          type: string
+    AdminSupportOrderCard:
+      type: object
+      description: 'PHASE-8-9C P89C-20: limited live card; no phone, email or street; null once the ticket is closed.'
+      required:
+      - id
+      - number
+      - placed_at
+      - status
+      - payment_status
+      - payment_method
+      - total_amount
+      - paid_amount
+      - due_amount
+      - currency
+      - items_count
+      - first_item_name
+      - courier
+      - customer
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        payment_status:
+          type: string
+        payment_method:
+          type:
+          - string
+          - 'null'
+        total_amount:
+          type: integer
+        paid_amount:
+          type: integer
+        due_amount:
+          type: integer
+        currency:
+          type: string
+        items_count:
+          type: integer
+        first_item_name:
+          type:
+          - string
+          - 'null'
+        courier:
+          oneOf:
+          - type: object
+            required:
+            - provider
+            - status
+            properties:
+              provider:
+                type: string
+              status:
+                type:
+                - string
+                - 'null'
+          - type: 'null'
+        customer:
+          type: object
+          required:
+          - first_name
+          - district
+          properties:
+            first_name:
+              type:
+              - string
+              - 'null'
+            district:
+              type:
+              - string
+              - 'null'
+    AdminSupportTicketSummary:
+      type: object
+      required:
+      - id
+      - number
+      - reference
+      - subject
+      - category
+      - priority
+      - status
+      - shop
+      - requester
+      - assignee
+      - related_order
+      - waiting_since
+      - first_reply_seconds
+      - last_message_at
+      - last_reply
+      - messages_count
+      - created_at
+      properties:
+        id:
+          type: string
+        number:
+          type: integer
+        reference:
+          type: string
+        subject:
+          type: string
+        category:
+          $ref: '#/components/schemas/SupportTicketCategory'
+        priority:
+          $ref: '#/components/schemas/SupportTicketPriority'
+        status:
+          $ref: '#/components/schemas/SupportTicketStatus'
+        shop:
+          $ref: '#/components/schemas/AdminSupportShop'
+        requester:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        assignee:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        related_order:
+          oneOf:
+          - $ref: '#/components/schemas/SupportTicketOrderRef'
+          - type: 'null'
+        waiting_since:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        first_reply_seconds:
+          type:
+          - integer
+          - 'null'
+        last_message_at:
+          type: string
+          format: date-time
+        last_reply:
+          oneOf:
+          - type: object
+            required:
+            - author_name
+            - is_staff
+            - at
+            properties:
+              author_name:
+                type: string
+              is_staff:
+                type: boolean
+              at:
+                type: string
+                format: date-time
+          - type: 'null'
+        messages_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    AdminSupportTicket:
+      allOf:
+      - $ref: '#/components/schemas/AdminSupportTicketSummary'
+      - type: object
+        required:
+        - requester_email
+        - order_card
+        - first_staff_reply_at
+        - last_staff_reply_at
+        - last_merchant_reply_at
+        - resolved_at
+        - resolution_seconds
+        - closed_at
+        - reopened_count
+        - rating
+        - files
+        - can
+        - revision
+        properties:
+          requester_email:
+            type:
+            - string
+            - 'null'
+          order_card:
+            oneOf:
+            - $ref: '#/components/schemas/AdminSupportOrderCard'
+            - type: 'null'
+          first_staff_reply_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          last_staff_reply_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          last_merchant_reply_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          resolved_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          resolution_seconds:
+            type:
+            - integer
+            - 'null'
+          closed_at:
+            type:
+            - string
+            - 'null'
+            format: date-time
+          reopened_count:
+            type: integer
+          rating:
+            oneOf:
+            - $ref: '#/components/schemas/SupportRating'
+            - type: 'null'
+          files:
+            type: array
+            items:
+              $ref: '#/components/schemas/SupportAttachment'
+          can:
+            type: object
+            required:
+            - reply
+            - assign
+            - set_status
+            properties:
+              reply:
+                type: boolean
+              assign:
+                type: boolean
+              set_status:
+                type: boolean
+          revision:
+            type: integer
+    AdminSupportMessage:
+      type: object
+      required:
+      - id
+      - kind
+      - body
+      - author
+      - attachments
+      - system
+      - created_at
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: '#/components/schemas/SupportMessageKind'
+        body:
+          type:
+          - string
+          - 'null'
+        author:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - is_staff
+            - platform_role
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              is_staff:
+                type: boolean
+              platform_role:
+                oneOf:
+                - $ref: '#/components/schemas/PlatformRole'
+                - type: 'null'
+          - type: 'null'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportAttachment'
+        system:
+          oneOf:
+          - type: object
+            required:
+            - event
+            - meta
+            properties:
+              event:
+                $ref: '#/components/schemas/SupportSystemEvent'
+              meta:
+                type: object
+                additionalProperties: true
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    AdminSupportListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - counts
+        - stats
+        properties:
+          counts:
+            type: object
+            required:
+            - open
+            - awaiting_merchant
+            - awaiting_support
+            - resolved
+            - closed
+            - mine
+            - unassigned
+            properties:
+              open:
+                type: integer
+              awaiting_merchant:
+                type: integer
+              awaiting_support:
+                type: integer
+              resolved:
+                type: integer
+              closed:
+                type: integer
+              mine:
+                type: integer
+              unassigned:
+                type: integer
+          stats:
+            type: object
+            required:
+            - median_first_reply_seconds_7d
+            - csat_average_30d
+            - csat_count_30d
+            properties:
+              median_first_reply_seconds_7d:
+                type:
+                - integer
+                - 'null'
+              csat_average_30d:
+                type:
+                - number
+                - 'null'
+              csat_count_30d:
+                type: integer
+    AdminSupportReplyInput:
+      type: object
+      required:
+      - kind
+      - body
+      - client_id
+      properties:
+        kind:
+          type: string
+          enum:
+          - reply
+          - note
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        attachment_ids:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Ulid'
+        client_id:
+          type: string
+          format: uuid
+        status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - awaiting_merchant
+          - awaiting_support
+          - resolved
+          - null
+    AdminSupportAssignInput:
+      type: object
+      required:
+      - assignee_id
+      properties:
+        assignee_id:
+          type:
+          - string
+          - 'null'
+        revision:
+          type: integer
+    AdminSupportStatusInput:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          $ref: '#/components/schemas/SupportTicketStatus'
+        revision:
+          type: integer
+    UpdateAdminSupportTicketInput:
+      type: object
+      required:
+      - revision
+      properties:
+        priority:
+          $ref: '#/components/schemas/SupportTicketPriority'
+        category:
+          $ref: '#/components/schemas/SupportTicketCategory'
+        revision:
+          type: integer
+    AdminSupportAssignee:
+      type: object
+      required:
+      - user
+      - platform_role
+      - open_count
+      - is_you
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRef'
+        platform_role:
+          $ref: '#/components/schemas/PlatformRole'
+        open_count:
+          type: integer
+        is_you:
+          type: boolean
     Ulid:
       type: string
       pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
@@ -25852,7 +29688,8 @@ components:
         inventory.adjust; owner and admin; grantable; sensitive; requires costs.view). Phase 8.8d adds pos.sell
         (group orders, after orders.refund in catalogue order; owner, admin and staff; grantable; not sensitive; requires
         nothing). Phase 8.8e adds inbox.manage (group customers, after customers.delete; owner, admin and staff;
-        grantable; not sensitive; requires nothing).
+        grantable; not sensitive; requires nothing). Phase 8.9c adds support.manage (group store, after developers.manage;
+        owner and admin; grantable; not sensitive; requires nothing).
       enum:
       - orders.view
       - orders.process
@@ -25877,6 +29714,7 @@ components:
       - integrations.manage
       - domains.manage
       - developers.manage
+      - support.manage
       - staff.manage
       - audit.view
       - billing.view
@@ -37106,7 +40944,9 @@ components:
       - manage_team
       - view_analytics
       - manage_settings
-      description: manage_settings (1.20.0, amendment A1) = platform settings, super_admin only. manage_domains also covers the SMS sender-ID review queue (1.23.0, PHASE-8-9A P89A-14).
+      - manage_help_content
+      - manage_support
+      description: manage_help_content (1.26.0, PHASE-8-9C) = super_admin, support; manage_support (1.26.0) = super_admin, support, billing. manage_settings (1.20.0, amendment A1) = platform settings, super_admin only. manage_domains also covers the SMS sender-ID review queue (1.23.0, PHASE-8-9A P89A-14).
     AuditActorType:
       type: string
       description: 'automation (1.14.0) = a store automation; actor.id = automation id, actor.name = its name (P86-20)'

@@ -111,6 +111,8 @@ export const can = {
   sellPos: (m: PermissionHolder) => hasPermission(m, 'pos.sell'),
   /** PHASE-8-8E §2 `inbox.manage`: Inbox page, replies, notes, assignment, saved replies (sidebar badge too). */
   manageInbox: (m: PermissionHolder) => hasPermission(m, 'inbox.manage'),
+  /** PHASE-8-9C §2.1 `support.manage`: support tickets, replies, ratings and uploads (guides need no key). */
+  manageSupport: (m: PermissionHolder) => hasPermission(m, 'support.manage'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

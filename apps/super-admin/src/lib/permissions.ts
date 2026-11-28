@@ -47,4 +47,13 @@ export const permissionMeta: Record<PlatformPermission, { label: string; hint: s
     label: 'Platform settings',
     hint: 'Staff two-step sign-in and other platform-wide settings',
   },
+  // PHASE-8-9C §2.2 (P89C-12); labels only, added with the contract so the app keeps type-checking.
+  manage_help_content: {
+    label: 'Help articles',
+    hint: 'Write, publish and archive help guides and categories',
+  },
+  manage_support: {
+    label: 'Support tickets',
+    hint: 'Answer, assign and close merchant support tickets',
+  },
 };

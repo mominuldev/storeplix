@@ -26,13 +26,13 @@ export function openImpersonation(url: string) {
 // Impersonate reason dialog — composed from the Suspend/Change-plan dialog pattern (45:8866, 45:4989; §7.1):
 // reason textarea, optional ticket ref, "Read-only · 15 minutes · audited" note. P8-9: the 201 answers a 60-second
 // single-use ticket URL; we open it in a new tab and keep a fallback link here in case the browser blocked the tab.
-export function ImpersonateDialog({ tenant, onClose }: { tenant: { id: string; name: string }; onClose: () => void }) {
+export function ImpersonateDialog({ tenant, onClose, ticketRef = '' }: { tenant: { id: string; name: string }; onClose: () => void; /** Prefilled support ticket reference (PHASE-8-9C §14: `T-n`). */ ticketRef?: string }) {
   const formId = useId();
   const queryClient = useQueryClient();
   const [ticket, setTicket] = useState<ImpersonationTicket | null>(null);
   const { register, handleSubmit, formState } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { reason: '', ticket_ref: '' },
+    defaultValues: { reason: '', ticket_ref: ticketRef },
   });
   const mutation = useMutation({
     mutationFn: (v: Values) =>

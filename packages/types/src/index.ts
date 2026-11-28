@@ -409,7 +409,9 @@ export type PermissionKey =
   /** Phase 8.8d (PHASE-8-8D §2.1) */
   | 'pos.sell'
   /** Phase 8.8e (PHASE-8-8E §2, P88E-3) */
-  | 'inbox.manage';
+  | 'inbox.manage'
+  /** Phase 8.9c (PHASE-8-9C §2.1, P89C-13) */
+  | 'support.manage';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
 
 /**
@@ -423,13 +425,15 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
  * Phase 8.8d (PHASE-8-8D §2.1, P88D-18): `pos.sell` (group `orders`, not sensitive, requires nothing) after
  * `orders.refund`; owner + admin + staff.
  * Phase 8.8e (PHASE-8-8E §2, P88E-3): `inbox.manage` (group `customers`, not sensitive, requires nothing) after
- * `customers.delete`; owner + admin + staff. 28 grantable keys + owner-only `billing.manage`.
+ * `customers.delete`; owner + admin + staff.
+ * Phase 8.9c (PHASE-8-9C §2.1, P89C-13): `support.manage` (group `store`, not sensitive, requires nothing) after
+ * `developers.manage`; owner + admin, never staff. 29 grantable keys + owner-only `billing.manage`.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'orders.view', 'orders.process', 'orders.refund', 'pos.sell', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
   'inbox.manage', 'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
-  'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
+  'integrations.manage', 'domains.manage', 'developers.manage', 'support.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
 ];
 
 /** §2.2 — mirrors App\Domain\Tenancy\Authorization\SystemRole. */
@@ -1606,7 +1610,11 @@ export type PlatformPermission =
   /** Phase 8.2 (PHASE-8-2 §2.1): super_admin, billing, read_only */
   | 'view_analytics'
   /** Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA A1-4): super_admin only — platform settings (`/admin/settings/*`) */
-  | 'manage_settings';
+  | 'manage_settings'
+  /** Phase 8.9c (PHASE-8-9C §2.2, P89C-12): super_admin, support — `/admin/help-*` */
+  | 'manage_help_content'
+  /** Phase 8.9c (PHASE-8-9C §2.2, P89C-12): super_admin, support, billing — `/admin/support/*` */
+  | 'manage_support';
 export type SuspensionReasonCode = 'unpaid' | 'fraud' | 'terms_violation' | 'merchant_request' | 'other';
 export type AdminPlanChangeEffective = 'now' | 'next_renewal';
 export type ImpersonationStatus = 'pending' | 'active' | 'ended' | 'expired';
@@ -4804,3 +4812,429 @@ export const INBOX_AUDIT_ACTIONS: readonly InboxAuditAction[] = [
 
 /** Result of a conditional GET (ETag / If-None-Match, P88E-17). */
 export type Conditional<T> = { status: 'not_modified'; etag: string } | { status: 'ok'; data: T; etag: string | null };
+
+// ---------- Help center: guides, feedback, support tickets (Phase 8.9c, PHASE-8-9C-CONTRACT §3–§12; openapi 1.26.0) ----------
+/**
+ * Platform-authored guides in English + বাংলা sharing one slug (P89C-2), served only when published (P89C-3) from a
+ * published snapshot (P89C-4). Bodies are `HelpArticleDoc` JSON — never HTML or Markdown (P89C-5). Tickets are tenant
+ * data (RLS) filed by members with `support.manage` (P89C-13) and worked by platform staff with `manage_support`.
+ */
+
+// ----- Guides: enums and constants -----
+export type HelpLanguage = 'en' | 'bn';
+export const HELP_LANGUAGES: readonly HelpLanguage[] = ['en', 'bn'];
+export const HELP_LANGUAGE_LABELS: Record<HelpLanguage, string> = { en: 'English', bn: 'বাংলা' };
+/** Search language chips Both / English / বাংলা. */
+export type HelpSearchLanguage = 'both' | HelpLanguage;
+export type HelpArticleStatus = 'draft' | 'published' | 'scheduled' | 'archived';
+export const HELP_ARTICLE_STATUSES: readonly HelpArticleStatus[] = ['draft', 'published', 'scheduled', 'archived'];
+/** Fixed icon set for topic cards (P89C-7); no uploaded icons or SVG. */
+export type HelpCategoryIcon =
+  | 'rocket' | 'box' | 'cart' | 'truck' | 'card' | 'palette' | 'megaphone' | 'globe' | 'users' | 'chart' | 'settings' | 'message';
+export const HELP_CATEGORY_ICONS: readonly HelpCategoryIcon[] = [
+  'rocket', 'box', 'cart', 'truck', 'card', 'palette', 'megaphone', 'globe', 'users', 'chart', 'settings', 'message',
+];
+/** "Was this helpful? → No" reasons (`2130:965`). */
+export type HelpFeedbackReason = 'steps_mismatch' | 'hard_to_follow' | 'out_of_date' | 'not_my_question';
+export const HELP_FEEDBACK_REASONS: readonly HelpFeedbackReason[] = ['steps_mismatch', 'hard_to_follow', 'out_of_date', 'not_my_question'];
+export const HELP_FEEDBACK_REASON_LABELS: Record<HelpFeedbackReason, string> = {
+  steps_mismatch: 'Steps didn’t match my screen', hard_to_follow: 'Hard to follow', out_of_date: 'Out of date', not_my_question: 'Not my question',
+};
+export const HELP_LIMITS = {
+  title: 120, summary: 160, keywords: 12, keyword: 40, related: 5, blocks: 200, bodyBytes: 65_536, imageAlt: 200,
+  slug: 80, categories: 30, categoryName: 60, categoryDescription: 160, feedbackNote: 500,
+  searchMin: 2, searchMax: 100, searchPerPage: 20, imageBytes: 5 * 1024 * 1024,
+  /** "n sellers found this helpful" is shown from this many yes votes (P89C-9). */
+  helpfulCountMin: 3,
+} as const;
+export const HELP_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// ----- Article body (P89C-5): RichTextDoc + image + callout -----
+export type HelpCalloutTone = 'info' | 'warning' | 'tip';
+export interface HelpImageBlock { type: 'image'; attrs: { media_id: string; alt: string; caption?: string | null } }
+export interface HelpCalloutBlock { type: 'callout'; attrs: { tone: HelpCalloutTone }; content: RichTextParagraph[] }
+export type HelpArticleBlock = RichTextBlock | HelpImageBlock | HelpCalloutBlock;
+export interface HelpArticleDoc { type: 'doc'; content: HelpArticleBlock[] }
+/** Platform help image (P89C-6); `url` is the largest ready variant on the CDN. */
+export interface HelpMediaRef {
+  id: string; status: 'processing' | 'ready' | 'failed';
+  url: string | null; width: number | null; height: number | null;
+  /** `w640` / `w1024` / `w1600` → URL */
+  variants: Partial<Record<'w640' | 'w1024' | 'w1600', string>>;
+  alt: string | null;
+}
+/** On this page: H2/H3 anchors computed by the server (`{index}-{kebab text}`). */
+export interface HelpTocEntry { id: string; text: string; level: 2 | 3 }
+
+// ----- Merchant reads (§4–§6) -----
+export interface HelpCategoryRef { id: string; slug: string; name: string }
+export interface HelpCategory {
+  id: string; slug: string; name: string; description: string | null; icon: HelpCategoryIcon;
+  /** published articles */
+  article_count: number;
+  position: number;
+}
+export interface HelpArticleLink {
+  id: string; slug: string; title: string; summary: string;
+  /** language served for this link (English when বাংলা is missing) */
+  language: HelpLanguage;
+  category: HelpCategoryRef; read_minutes: number; updated_at: string;
+}
+export interface HelpHome {
+  categories: HelpCategory[];
+  total_articles: number;
+  /** ≤ 8, most viewed in 7 days; hero chips use the first 4 (Q325) */
+  popular: HelpArticleLink[];
+  /** member holds `support.manage` (New ticket vs "Ask your shop owner") */
+  can_contact_support: boolean;
+}
+export interface HelpCategoryPage { category: HelpCategory; articles: HelpArticleLink[] }
+export interface HelpMyVote { helpful: boolean; reason: HelpFeedbackReason | null; note: string | null; updated_at: string }
+export interface HelpArticle {
+  id: string;
+  /** canonical slug; differs from the requested one after a rename (replace the URL) */
+  slug: string;
+  language: HelpLanguage;
+  requested_language: HelpLanguage;
+  /** true = বাংলা requested but not published, English served with a note (P89C-2) */
+  fallback: boolean;
+  available_languages: HelpLanguage[];
+  title: string; summary: string;
+  body: HelpArticleDoc;
+  toc: HelpTocEntry[];
+  /** media_id → image */
+  media: Record<string, HelpMediaRef>;
+  category: HelpCategoryRef;
+  read_minutes: number;
+  /** published_at of the served translation */
+  updated_at: string;
+  helpful: { yes_count: number; my_vote: HelpMyVote | null };
+  related: HelpArticleLink[];
+}
+export interface HelpFeedbackInput {
+  helpful: boolean; language: HelpLanguage;
+  /** only with helpful = false */
+  reason?: HelpFeedbackReason | null;
+  note?: string | null;
+}
+export interface HelpSearchFilters {
+  q: string; language?: HelpSearchLanguage;
+  /** category slug */
+  category?: string;
+  page?: number; per_page?: number;
+}
+export interface HelpSearchResult {
+  article_id: string; slug: string; language: HelpLanguage; title: string;
+  /** plain text ≤ 200 chars around the first hit; the UI bolds query terms (no HTML) */
+  snippet: string;
+  category: HelpCategoryRef; read_minutes: number;
+}
+export interface HelpSearchMeta extends PaginationMeta {
+  query: string;
+  counts_by_category: { category: HelpCategoryRef; count: number }[];
+}
+
+// ----- Support tickets (§8) -----
+export type SupportTicketStatus = 'open' | 'awaiting_merchant' | 'awaiting_support' | 'resolved' | 'closed';
+export const SUPPORT_TICKET_STATUSES: readonly SupportTicketStatus[] = ['open', 'awaiting_merchant', 'awaiting_support', 'resolved', 'closed'];
+/** Merchant pill labels (§18). */
+export const SUPPORT_TICKET_STATUS_LABELS: Record<SupportTicketStatus, string> = {
+  open: 'Open', awaiting_merchant: 'Waiting on you', awaiting_support: 'Waiting on support', resolved: 'Solved', closed: 'Closed',
+};
+/** Merchant tabs: Open = open + awaiting_support, Waiting on you = awaiting_merchant, Solved = resolved + closed (P89C-16). */
+export type SupportTicketTab = 'all' | 'open' | 'waiting_on_you' | 'solved';
+export const SUPPORT_TICKET_TAB_STATUSES: Record<Exclude<SupportTicketTab, 'all'>, readonly SupportTicketStatus[]> = {
+  open: ['open', 'awaiting_support'], waiting_on_you: ['awaiting_merchant'], solved: ['resolved', 'closed'],
+};
+export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+/** `low` is staff-only (P89C-14). */
+export const SUPPORT_MERCHANT_PRIORITIES: readonly SupportTicketPriority[] = ['normal', 'high', 'urgent'];
+export type SupportTicketCategory =
+  | 'orders_payments' | 'shipping_couriers' | 'products_inventory' | 'storefront_domain' | 'billing_plan'
+  | 'sms_marketing' | 'account_access' | 'bug' | 'other';
+export const SUPPORT_TICKET_CATEGORIES: readonly SupportTicketCategory[] = [
+  'orders_payments', 'shipping_couriers', 'products_inventory', 'storefront_domain', 'billing_plan', 'sms_marketing',
+  'account_access', 'bug', 'other',
+];
+export const SUPPORT_TICKET_CATEGORY_LABELS: Record<SupportTicketCategory, string> = {
+  orders_payments: 'Orders & payments', shipping_couriers: 'Shipping & couriers', products_inventory: 'Products & inventory',
+  storefront_domain: 'Online store & domain', billing_plan: 'Billing & plan', sms_marketing: 'SMS & marketing',
+  account_access: 'Account & access', bug: 'Something is broken', other: 'Something else',
+};
+export type SupportMessageKind = 'merchant' | 'staff' | 'note' | 'system';
+export type SupportSystemEvent =
+  | 'created' | 'assigned' | 'unassigned' | 'status_changed' | 'priority_changed' | 'category_changed' | 'reopened'
+  | 'rated' | 'auto_closed';
+export type SupportAttachmentMime = 'image/jpeg' | 'image/png' | 'application/pdf';
+export const SUPPORT_ATTACHMENT_MIMES: readonly SupportAttachmentMime[] = ['image/jpeg', 'image/png', 'application/pdf'];
+export const SUPPORT_LIMITS = {
+  subjectMin: 5, subject: 150, descriptionMin: 20, body: 5000, attachmentsPerMessage: 5,
+  attachmentBytes: 10 * 1024 * 1024, openTicketsPerTenant: 20, ratingComment: 500,
+  /** days after resolve during which a rating can be given or changed */
+  ratingWindowDays: 14,
+  /** resolved → closed automatically */
+  autoCloseDays: 7,
+} as const;
+/** `T-1001` (global sequence from 1001). */
+export const supportTicketReference = (n: number): string => `T-${n}`;
+
+export interface SupportAttachment {
+  id: string; filename: string; mime: SupportAttachmentMime; size_bytes: number;
+  kind: 'image' | 'pdf'; status: 'processing' | 'ready';
+}
+export interface SupportAttachmentLink { url: string; expires_at: string }
+/** Merchant view of a person on the thread: staff shown as "{first name} · Store Plix". */
+export interface SupportPerson { id: string | null; name: string; is_staff: boolean }
+export interface SupportTicketOrderRef {
+  /** null when the order was deleted (number kept) */
+  id: string | null;
+  number: string;
+}
+export interface SupportRating { rating: 1 | 2 | 3 | 4 | 5; comment: string | null; rated_at: string }
+export interface SupportTicketSummary {
+  id: string; number: number;
+  /** `T-{number}` */
+  reference: string;
+  subject: string; category: SupportTicketCategory; priority: SupportTicketPriority; status: SupportTicketStatus;
+  related_order: SupportTicketOrderRef | null;
+  requester: UserRef | null;
+  last_reply: { author: SupportPerson; at: string } | null;
+  created_at: string; updated_at: string;
+}
+/** Merchant order card (only with `orders.view`). */
+export interface SupportTicketOrderCard {
+  id: string; number: string; status: OrderStatus; total_amount: number; currency: string; placed_at: string;
+}
+export interface SupportTicket extends SupportTicketSummary {
+  /** first name only for merchants */
+  assignee_name: string | null;
+  order_card: SupportTicketOrderCard | null;
+  shop: { name: string; domain: string | null };
+  first_staff_reply_at: string | null;
+  first_reply_seconds: number | null;
+  resolved_at: string | null;
+  resolution_seconds: number | null;
+  closed_at: string | null;
+  rating: SupportRating | null;
+  /** every non-note attachment of the ticket (side panel Files) */
+  files: SupportAttachment[];
+  can: { reply: boolean; resolve: boolean; rate: boolean };
+  revision: number;
+}
+export interface SupportTicketMessage {
+  id: string;
+  /** merchants never receive `note` */
+  kind: Exclude<SupportMessageKind, 'note'>;
+  body: string | null;
+  author: SupportPerson | null;
+  attachments: SupportAttachment[];
+  system: { event: SupportSystemEvent; status?: SupportTicketStatus | null; actor_name?: string | null } | null;
+  created_at: string;
+}
+export interface SupportTicketFilters { tab?: SupportTicketTab; q?: string; page?: number; per_page?: number }
+export interface SupportTicketListMeta extends PaginationMeta {
+  counts: Record<SupportTicketTab, number>;
+  stats: {
+    open: number; waiting_on_you: number; solved_this_month: number;
+    /** 90 days; null without staff replies */
+    avg_first_reply_seconds: number | null;
+    csat_average: number | null; csat_count: number;
+  };
+}
+export interface CreateSupportTicketInput {
+  category: SupportTicketCategory; subject: string; description: string;
+  priority?: Exclude<SupportTicketPriority, 'low'>;
+  /** needs `orders.view` */
+  order_id?: string | null;
+  attachment_ids?: string[];
+  /** uuid; a replay returns the stored ticket */
+  client_id: string;
+}
+export interface ReplySupportTicketInput { body: string; attachment_ids?: string[]; client_id: string }
+export interface RateSupportTicketInput { rating: 1 | 2 | 3 | 4 | 5; comment?: string | null }
+
+// ----- Super admin: help content (§7) -----
+export interface AdminHelpCategory {
+  id: string; slug: string; name_en: string; name_bn: string | null;
+  description_en: string | null; description_bn: string | null;
+  icon: HelpCategoryIcon; position: number;
+  article_counts: { published: number; total: number };
+  updated_at: string; revision: number;
+}
+export interface AdminHelpCategoryInput {
+  slug: string; name_en: string; name_bn?: string | null;
+  description_en?: string | null; description_bn?: string | null; icon: HelpCategoryIcon;
+}
+export interface UpdateAdminHelpCategoryInput extends Partial<AdminHelpCategoryInput> { revision: number }
+export interface HelpTranslationInput { title: string; summary: string; body: HelpArticleDoc; keywords: string[] }
+export interface AdminHelpTranslation extends HelpTranslationInput {
+  language: HelpLanguage;
+  /** title, summary and ≥ 1 body block present */
+  complete: boolean;
+  /** a published snapshot exists */
+  published: boolean;
+  has_unpublished_changes: boolean;
+  published_at: string | null;
+  word_count: number; read_minutes: number;
+}
+export type AdminHelpLanguageState = 'missing' | 'draft' | 'published';
+export interface AdminHelpFeedbackSummary {
+  yes: number; no: number;
+  /** last 30 days; null without votes */
+  helpful_percent_30d: number | null;
+  votes_30d: number;
+  top_reasons: { reason: HelpFeedbackReason; count: number }[];
+}
+export interface AdminHelpArticleSummary {
+  id: string; slug: string;
+  /** English draft title */
+  title: string;
+  category: { id: string; name: string };
+  languages: Record<HelpLanguage, AdminHelpLanguageState>;
+  status: HelpArticleStatus; scheduled_at: string | null;
+  has_unpublished_changes: boolean;
+  helpful: { percent: number | null; votes: number };
+  views_7d: number;
+  updated_at: string; updated_by: UserRef | null;
+}
+export interface AdminHelpArticle {
+  id: string; slug: string; status: HelpArticleStatus; scheduled_at: string | null;
+  category_id: string;
+  related_article_ids: string[];
+  related: { id: string; slug: string; title: string; status: HelpArticleStatus }[];
+  translations: { en: AdminHelpTranslation; bn: AdminHelpTranslation | null };
+  media: Record<string, HelpMediaRef>;
+  feedback: AdminHelpFeedbackSummary;
+  views_7d: number;
+  /** `/help/articles/{slug}` in the merchant app */
+  merchant_path: string;
+  first_published_at: string | null; last_published_at: string | null; last_published_by: UserRef | null;
+  archived_at: string | null;
+  created_at: string; updated_at: string; updated_by: UserRef | null;
+  revision: number;
+}
+export type AdminHelpArticleTab = 'all' | 'published' | 'draft' | 'scheduled' | 'archived' | 'missing_bn';
+export interface AdminHelpArticleFilters {
+  tab?: AdminHelpArticleTab; q?: string;
+  /** category id */
+  category?: string;
+  language?: HelpLanguage;
+  sort?: 'updated' | 'title' | 'helpful' | 'views';
+  page?: number; per_page?: number;
+}
+export interface AdminHelpArticleListMeta extends PaginationMeta {
+  counts: Record<AdminHelpArticleTab, number>;
+  stats: { published: number; drafts: number; missing_bn: number; helpful_percent_30d: number | null };
+}
+export interface CreateAdminHelpArticleInput { slug: string; category_id: string; title_en: string }
+export interface UpdateAdminHelpArticleInput {
+  revision: number;
+  slug?: string; category_id?: string; related_article_ids?: string[];
+  /** draft fields only; `bn: null` deletes the বাংলা draft */
+  translations?: { en?: HelpTranslationInput; bn?: HelpTranslationInput | null };
+}
+export interface PublishAdminHelpArticleInput {
+  revision: number;
+  /** null/absent = publish now; a time ≥ now + 5 min schedules a not-yet-live article */
+  scheduled_at?: string | null;
+}
+export interface AdminHelpFeedbackEntry {
+  id: string; helpful: boolean; reason: HelpFeedbackReason | null; note: string | null; language: HelpLanguage;
+  tenant: { id: string; name: string } | null;
+  created_at: string; updated_at: string;
+}
+/** `error.details` of 422 `help_article_incomplete`. */
+export interface HelpArticleIncompleteDetails { language: HelpLanguage; fields: ('title' | 'summary' | 'body')[] }
+/** `error.details` of 422 `help_article_media_missing`. */
+export interface HelpArticleMediaMissingDetails { media_ids: string[] }
+
+// ----- Super admin: support queue (§9) -----
+export interface AdminSupportShop {
+  tenant_id: string; tenant_name: string; store_name: string | null; domain: string | null;
+  plan: string | null; tenant_status: string;
+}
+/** Limited live order card (P89C-20); hidden (null) once the ticket is closed. No phone, email or street. */
+export interface AdminSupportOrderCard {
+  id: string; number: string; placed_at: string; status: OrderStatus;
+  payment_status: string; payment_method: string | null;
+  total_amount: number; paid_amount: number; due_amount: number; currency: string;
+  items_count: number; first_item_name: string | null;
+  courier: { provider: string; status: string | null } | null;
+  customer: { first_name: string | null; district: string | null };
+}
+export interface AdminSupportTicketSummary {
+  id: string; number: number; reference: string;
+  subject: string; category: SupportTicketCategory; priority: SupportTicketPriority; status: SupportTicketStatus;
+  shop: AdminSupportShop;
+  requester: UserRef | null;
+  assignee: UserRef | null;
+  related_order: SupportTicketOrderRef | null;
+  waiting_since: string | null;
+  first_reply_seconds: number | null;
+  last_message_at: string;
+  last_reply: { author_name: string; is_staff: boolean; at: string } | null;
+  messages_count: number;
+  created_at: string;
+}
+export interface AdminSupportTicket extends AdminSupportTicketSummary {
+  requester_email: string | null;
+  order_card: AdminSupportOrderCard | null;
+  first_staff_reply_at: string | null; last_staff_reply_at: string | null; last_merchant_reply_at: string | null;
+  resolved_at: string | null; resolution_seconds: number | null; closed_at: string | null;
+  reopened_count: number;
+  rating: SupportRating | null;
+  files: SupportAttachment[];
+  can: { reply: boolean; assign: boolean; set_status: boolean };
+  revision: number;
+}
+export interface AdminSupportMessage {
+  id: string; kind: SupportMessageKind; body: string | null;
+  author: { id: string; name: string; is_staff: boolean; platform_role: PlatformRole | null } | null;
+  attachments: SupportAttachment[];
+  system: { event: SupportSystemEvent; meta: Record<string, string | number | null> } | null;
+  created_at: string;
+}
+export interface AdminSupportFilters {
+  status?: SupportTicketStatus[];
+  /** `me` | `unassigned` | staff user id */
+  assignee?: string;
+  priority?: SupportTicketPriority[]; category?: SupportTicketCategory[];
+  q?: string;
+  sort?: 'waiting' | 'newest' | 'updated' | 'priority';
+  page?: number; per_page?: number;
+}
+export interface AdminSupportListMeta extends PaginationMeta {
+  counts: Record<SupportTicketStatus | 'mine' | 'unassigned', number>;
+  stats: { median_first_reply_seconds_7d: number | null; csat_average_30d: number | null; csat_count_30d: number };
+}
+export interface AdminSupportReplyInput {
+  kind: 'reply' | 'note'; body: string; attachment_ids?: string[]; client_id: string;
+  /** reply only; default `awaiting_merchant` */
+  status?: 'awaiting_merchant' | 'awaiting_support' | 'resolved';
+}
+export interface AdminSupportAssignInput { assignee_id: string | null; revision?: number }
+export interface AdminSupportStatusInput { status: SupportTicketStatus; revision?: number }
+export interface UpdateAdminSupportTicketInput { priority?: SupportTicketPriority; category?: SupportTicketCategory; revision: number }
+export interface AdminSupportAssignee { user: UserRef; platform_role: PlatformRole; open_count: number; is_you: boolean }
+
+// ----- Errors and audit (§11.3, §12.1) -----
+export type HelpErrorCode =
+  | 'help_article_not_found' | 'help_category_not_found' | 'help_slug_taken' | 'help_category_slug_taken'
+  | 'help_category_not_empty' | 'help_category_limit_reached' | 'help_article_incomplete' | 'help_article_media_missing';
+export type SupportErrorCode =
+  | 'support_ticket_closed' | 'support_ticket_limit_reached' | 'support_rating_unavailable' | 'support_assignee_invalid'
+  | 'support_attachment_processing';
+export type HelpAuditAction =
+  | 'help_article.created' | 'help_article.published' | 'help_article.scheduled' | 'help_article.unpublished'
+  | 'help_article.archived' | 'help_article.restored' | 'help_article.deleted' | 'help_article.schedule_failed'
+  | 'help_category.created' | 'help_category.updated' | 'help_category.deleted';
+export const HELP_AUDIT_ACTIONS: readonly HelpAuditAction[] = [
+  'help_article.created', 'help_article.published', 'help_article.scheduled', 'help_article.unpublished',
+  'help_article.archived', 'help_article.restored', 'help_article.deleted', 'help_article.schedule_failed',
+  'help_category.created', 'help_category.updated', 'help_category.deleted',
+];
+export type SupportAuditAction =
+  | 'support_ticket.created' | 'support_ticket.assigned' | 'support_ticket.status_changed' | 'support_ticket.order_viewed';
+export const SUPPORT_AUDIT_ACTIONS: readonly SupportAuditAction[] = [
+  'support_ticket.created', 'support_ticket.assigned', 'support_ticket.status_changed', 'support_ticket.order_viewed',
+];

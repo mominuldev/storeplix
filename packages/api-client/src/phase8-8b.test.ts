@@ -127,7 +127,7 @@ describe('Phase 8.8b suppliers + purchase orders client', () => {
 
   it('catalogue: purchasing.manage after inventory.adjust; owner + admin, not staff', () => {
     expect(PERMISSION_KEYS.indexOf('purchasing.manage')).toBe(PERMISSION_KEYS.indexOf('inventory.adjust') + 1);
-    expect(PERMISSION_KEYS.filter((k) => k !== 'billing.manage')).toHaveLength(28); // + inbox.manage (PHASE-8-8E)
+    expect(PERMISSION_KEYS.filter((k) => k !== 'billing.manage')).toHaveLength(29); // + inbox.manage (PHASE-8-8E), support.manage (PHASE-8-9C)
     expect(SYSTEM_ROLE_PERMISSIONS.owner).toContain('purchasing.manage');
     expect(SYSTEM_ROLE_PERMISSIONS.admin).toContain('purchasing.manage');
     expect(SYSTEM_ROLE_PERMISSIONS.staff).not.toContain('purchasing.manage');

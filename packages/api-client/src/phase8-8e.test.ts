@@ -33,7 +33,7 @@ describe('PHASE-8-8E types, permission and queries', () => {
     expect(PERMISSION_KEYS.indexOf('inbox.manage')).toBe(PERMISSION_KEYS.indexOf('customers.delete') + 1);
     expect(SYSTEM_ROLE_PERMISSIONS.staff).toContain('inbox.manage');
     expect(SYSTEM_ROLE_PERMISSIONS.admin).toContain('inbox.manage');
-    expect(PERMISSION_KEYS.filter((k) => k !== 'billing.manage')).toHaveLength(28);
+    expect(PERMISSION_KEYS.filter((k) => k !== 'billing.manage')).toHaveLength(29); // + support.manage (PHASE-8-9C)
   });
 
   it('SMS purposes gain the two inbox purposes with labels', () => {
