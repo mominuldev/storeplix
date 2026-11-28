@@ -1070,13 +1070,17 @@ jobs:
   # Fails when the `rls` group is empty or anything in it skips, and when a race test or the checkout p95
   # test doesn't run.
   api-rls:
-    name: api (RLS on, app role, postgres)
+    name: api (RLS on, app role, postgres, ${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    # The full job (25 phase groups + 36 race tests) takes ~24 min on a normal runner and ~2x that on a slow one;
-    # 30 min cancelled run 46148021829 mid-way with every finished step green. Split the job before raising further.
-    timeout-minutes: 60
+    # Split in two parallel parts (each ~12-15 min): `core` = migrations, rollback, catalogue, rls / tenancy / security,
+    # race tests and the checkout p95; `phases` = every phase group with RLS on. Both set up their own database.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [core, phases]
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/api
@@ -1154,6 +1158,7 @@ jobs:
       # QA 5b-1 F-L4: roll back exactly the RLS migration and everything after it (not the whole schema), prove the
       # policies are really gone with the tables and data still there, then re-apply.
       - name: Rollback is reversible (storeplix_owner)
+        if: matrix.part == 'core'
         run: |
           q() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" -AtX -c "$1"; }
           steps=$(ls database/migrations | awk '$0 >= "2026_06_01_000100"' | wc -l | tr -d ' ')
@@ -1171,6 +1176,7 @@ jobs:
       # Raw catalogue checks, independent of the PHP tests: the app role owns nothing, can't bypass RLS, and
       # every table with a tenant_id column has RLS enabled AND forced with at least one policy.
       - name: Catalogue checks (ownership, roles, forced RLS)
+        if: matrix.part == 'core'
         run: |
           q() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U storeplix -d "$DB_DATABASE" -AtX -c "$1"; }
           fail=0
@@ -1222,14 +1228,18 @@ jobs:
           chmod +x "$RUNNER_TEMP/run-group.sh"
       # §2.6 raw-SQL probes, coverage, definer functions, lifecycle. Must not be empty or skipped.
       - name: rls group (must run, never skip)
+        if: matrix.part == 'core'
         run: '"$RUNNER_TEMP/run-group.sh" rls strict --group=rls'
       - name: tenant-isolation (RLS on)
+        if: matrix.part == 'core'
         run: '"$RUNNER_TEMP/run-group.sh" tenancy lenient --group=tenancy'
       # Race tests commit their data, so they are excluded here and run one per process below.
       - name: security (RLS on)
+        if: matrix.part == 'core'
         run: '"$RUNNER_TEMP/run-group.sh" security lenient --group=security --exclude-group perf --exclude-group race'
       # 5a race tests once more with RLS on (§2.6), same loop as api-perf: one process each, must not skip.
       - name: race tests (RLS on, must not skip)
+        if: matrix.part == 'core'
         run: |
           fail=0
           for t in \
@@ -1268,111 +1278,163 @@ jobs:
             test_two_activations_leave_one_primary \
             test_a_broadcast_scheduled_twice_is_scheduled_once_and_the_cap_holds \
             test_two_first_order_messages_create_one_conversation_and_one_client_id_one_message \
-            test_two_verifies_of_one_phone_and_concurrent_assign; do
+            test_two_verifies_of_one_phone_and_concurrent_assign \
+            test_parallel_purchase_recording_creates_one_event_per_destination \
+            test_twenty_parallel_requests_with_credits_for_ten_charge_exactly_ten; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
       # Phase 6 (PHASE-6-CONTRACT §10, §12.2): definer functions sp_domain_claim_state / sp_domain_allowed (B17, B18),
       # the `ask` endpoint, domains:check discovery and the domain isolation tests with RLS on.
       - name: domains (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" domains lenient --group=domains --exclude-group perf --exclude-group race'
       # Phase 7 (PHASE-7-CONTRACT §11, S56, S63): billing tables (forced RLS), sp_billing_payment_owner (B22/B23),
       # billing:run / reconcile discovery on pgsql_admin, report aggregates under RLS.
       - name: phase 7 billing (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" billing lenient --group=billing --exclude-group perf --exclude-group race'
       - name: phase 7 plans (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" plans lenient --group=plans --exclude-group perf --exclude-group race'
       - name: phase 7 reports (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" reports lenient --group=reports --exclude-group perf --exclude-group race'
       # Phase 8.1 (PHASE-8-1-CONTRACT §10, §14.7): admin reads on pgsql_admin, sp_resolve_host with the suspended
       # flag, impersonation scoped to one tenant with RLS on.
       - name: phase 8.1 admin (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" admin lenient --group=admin --exclude-group perf --exclude-group race'
       - name: phase 8.1 impersonation (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" impersonation lenient --group=impersonation --exclude-group perf --exclude-group race'
       # Phase 8.2 (PHASE-8-2-CONTRACT §10, S84): analytics aggregate/backfill and /admin/analytics/* on pgsql_admin
       # with RLS on; the app-role REVOKE and forced RLS on tenant_daily_metrics are covered by the `rls` step above.
       - name: phase 8.2 analytics (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" analytics lenient --group=analytics --exclude-group perf --exclude-group race'
       # Phase 8.3 (PHASE-8-3-CONTRACT §10, §13.6): roles API, N1–N9, parity and the roles/role_permissions member-read
       # policy with the app role and RLS forced (RLS probes for both tables are also in the `rls` step above).
       - name: phase 8.3 roles (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" roles lenient --group=roles --exclude-group perf --exclude-group race'
       # Phase 8.4 (PHASE-8-4-CONTRACT §10, S102, S110): key lookup through sp_api_key_owner() before tenant context,
       # external API and deliveries isolated with the app role and RLS forced on the four new tables (their RLS probes
       # are also in the `rls` step above); DeliverWebhook runs in the delivery's tenant.
       - name: phase 8.4 developer-api (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" developer-api lenient --group=developer-api --exclude-group perf --exclude-group race'
       # Phase 8.5 (PHASE-8-5-CONTRACT §4.2, §7, S117, S119): the four new tables are RLS-forced; storefront unsubscribe
       # resolves the code inside the host's tenant (normal RLS path, no definer function); campaign jobs run in the
       # campaign's tenant (their RLS probes are also in the `rls` step above).
       - name: phase 8.5 campaigns (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" campaigns lenient --group=campaigns --exclude-group perf --exclude-group race'
       # Phase 8.6 (PHASE-8-6-CONTRACT §4.4, S130): the four new tables are RLS-forced; cart contact + recover resolve inside
       # the host's tenant; EvaluateAutomation / resume-due / detect-abandoned run in the automation's tenant.
       - name: phase 8.6 automations (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" automations lenient --group=automations --exclude-group perf --exclude-group race'
       # Phase 8.7 (PHASE-8-7-CONTRACT §4, §9, S141, S149): expenses + expense_recurrences are RLS-forced; expenses:repeat
       # and expenses:prune-receipts discover cross-tenant and generate/delete inside each tenant; the signed receipt
       # download resolves the tenant from the signature (their RLS probes are also in the `rls` step above).
       - name: phase 8.7 expenses (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" expenses lenient --group=expenses --exclude-group perf --exclude-group race'
       # Phase 8.8a (PHASE-8-8-CONTRACT §4, §9, S154, S161): the five guard tables are RLS-forced; CheckOrderRisk runs in
       # the order's tenant; fraud:resolve-stale and fraud:prune discover cross-tenant and work inside each tenant; the
       # storefront OTP + checkout rules resolve inside the host's tenant (their RLS probes are also in the `rls` step above).
       - name: phase 8.8a fraud (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" fraud lenient --group=fraud --exclude-group perf --exclude-group race'
       # Phase 8.8b (PHASE-8-8B-CONTRACT §3, S167): the six purchasing tables are RLS-forced; receipts, quick purchase and
       # the supplier import write stock and cost inside the actor's tenant; invoice uploads stay on the private disk
       # (their RLS probes are also in the `rls` step above).
       - name: phase 8.8b purchasing (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" purchasing lenient --group=purchasing --exclude-group perf --exclude-group race'
       # Phase 8.8c-A (PHASE-8-8C-CONTRACT §3.1, S179, S183): `locations` is RLS-forced; per-location stock rows, the
       # backfill, order line locations, "Receive at" and make-default work inside the actor's tenant with the app role
       # (the RLS probe for `locations` is also in the `rls` step above).
       - name: phase 8.8c-A locations (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" locations lenient --group=locations --exclude-group perf --exclude-group race'
       # Phase 8.8c-B (PHASE-8-8C-CONTRACT §3.2, S187): the four transfer/count tables are RLS-forced; send, receive,
       # cancel, scan and finish write stock inside the actor's tenant with the app role (their RLS probes are also in the
       # `rls` step above). Must not be empty.
       - name: phase 8.8c-B stocktransfer (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" stocktransfer lenient --group=stocktransfer --exclude-group perf --exclude-group race'
       # Phase 8.8d-A (PHASE-8-8D-CONTRACT §3.1, S195): pos_registers / pos_sessions / pos_sales are RLS-forced; open, close,
       # sale (orders, payments with pos_session_id, InventoryService::sell at the register location), receipts and the SMS
       # receipt run inside the actor's tenant with the app role (their RLS probes are also in the `rls` step above). Must
       # not be empty.
       - name: phase 8.8d-A pos (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" pos lenient --group=pos --exclude-group perf --exclude-group race'
       # Phase 8.9a (PHASE-8-9A-CONTRACT §3.1, S208, S209): the four SMS tables are RLS-forced (the credit ledger append-only);
       # charging, purchase grants, templates, sender IDs and the log run inside the actor's tenant with the app role; the
       # log never shows another tenant's, null-tenant or `otp_*` rows with RLS on. Admin sender-ID review and credit adjust
       # run cross-tenant on the admin connection. Must not be empty.
       - name: phase 8.9a sms (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" sms lenient --group=sms --exclude-group perf --exclude-group race'
       # Phase 8.9b (PHASE-8-9B-CONTRACT §3, S230, S233): the app role has SELECT only on sms_providers /
       # platform_sms_message_types / platform_sms_templates and nothing on the broadcast tables; platform SMS rows
       # (tenant_id NULL + merchant_tenant_id) are never visible inside a tenant; provider admin, broadcasts, the log and
       # the opt-out lookup run on the admin connection; routing reads providers as the app role. Must not be empty.
       - name: phase 8.9b platform-sms (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" platform-sms lenient --group=platform-sms --exclude-group perf --exclude-group race'
       # Phase 8.8e (PHASE-8-8E-CONTRACT §3, S234): the eight inbox tables are RLS-forced; widget sessions, magic links and
       # order tokens resolve inside the host's tenant; the inbound email router resolves the store on pgsql_admin
       # (`// cross-tenant: inbound email routing`) and then runs the job in that tenant; the reply SMS job charges inside the
       # conversation's tenant (their RLS probes are also in the `rls` step above). Must not be empty.
       - name: phase 8.8e inbox (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" inbox lenient --group=inbox --exclude-group perf --exclude-group race'
+      # help center (platform content, per-member votes) with RLS on.
+      - name: phase 8.9c help (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" help lenient --group=help --exclude-group perf --exclude-group race'
+      # support tickets (3 RLS tables) with RLS on.
+      - name: phase 8.9c support (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" support lenient --group=support --exclude-group perf --exclude-group race'
+      # integrations registry with RLS on.
+      - name: phase 8.9d integrations (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" integrations lenient --group=integrations --exclude-group perf --exclude-group race'
+      # server tracking events with RLS on.
+      - name: phase 8.9d tracking (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" tracking lenient --group=tracking --exclude-group perf --exclude-group race'
+      # product feeds with RLS on.
+      - name: phase 8.9d feeds (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" feeds lenient --group=feeds --exclude-group perf --exclude-group race'
+      # Nagad gateway with RLS on.
+      - name: phase 8.9d nagad (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" nagad lenient --group=nagad --exclude-group perf --exclude-group race'
+      # AI credits, writer and photos with RLS on.
+      - name: phase 8.9d ai (RLS on)
+        if: matrix.part == 'phases'
+        run: '"$RUNNER_TEMP/run-group.sh" ai lenient --group=ai --exclude-group perf --exclude-group race'
       # Amendment A1 (§1 A1-2): `platform_settings` follows RlsTables::PLATFORM (the app role can't write it outside the
       # admin surface); the setting is read/written on the admin connection and login reads it before any tenant context.
       # Must not be empty.
       - name: amendment A1 admin-settings (RLS on)
+        if: matrix.part == 'phases'
         run: '"$RUNNER_TEMP/run-group.sh" admin-settings lenient --group=admin-settings --exclude-group perf --exclude-group race'
       # §2.8 / §20.1: checkout p95 < 300 ms with RLS on (CheckoutPerfTest, group checkout-perf).
       - name: checkout p95 budget (RLS on)
+        if: matrix.part == 'core'
         run: '"$RUNNER_TEMP/run-group.sh" checkout-perf strict --group=checkout-perf'
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rls-junit
+          name: rls-junit-${{ matrix.part }}
           path: apps/api/build/*.xml
           if-no-files-found: ignore
 
