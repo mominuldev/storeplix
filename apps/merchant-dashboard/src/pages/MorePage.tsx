@@ -17,6 +17,7 @@ const groupTile: Record<string, string> = {
 };
 
 const hints: Record<string, string> = {
+  '/inbox': 'Chats, order messages, email',
   '/pos': 'Bill walk-in customers',
   '/reports': 'Profit, couriers, returns',
   '/online-store': 'Theme, pages, domain',

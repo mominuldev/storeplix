@@ -22,6 +22,9 @@ import type {
   PosSaleListFilters,
   SmsCreditLedgerFilters,
   SmsLogFilters,
+  InboxListFilters,
+  InboxMessagesQuery,
+  InboxSavedReplyFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -277,4 +280,26 @@ export function smsLogQuery(f: SmsLogFilters = {}): Query {
 /** PHASE-8-9A §5.5 credit ledger. */
 export function smsCreditLedgerQuery(f: SmsCreditLedgerFilters = {}): Query {
   return { 'filter[type]': list(f.type), cursor: f.cursor || undefined };
+}
+
+/** PHASE-8-8E §5 conversation list: status (default open server-side), scope, channel comma list, q (trimmed), cursor. */
+export function inboxConversationQuery(f: InboxListFilters = {}): Query {
+  return {
+    'filter[status]': f.status || undefined,
+    'filter[scope]': f.scope || undefined,
+    'filter[channel]': list(f.channel),
+    q: text(f.q),
+    cursor: f.cursor || undefined,
+  };
+}
+
+/** PHASE-8-8E §6.2 thread paging: `after` (polling) wins over `before` (history). */
+export function inboxMessagesQuery(q: InboxMessagesQuery = {}): Query {
+  if (q.after) return { after: q.after };
+  return { before: q.before || undefined };
+}
+
+/** PHASE-8-8E §8.1 saved replies list. */
+export function inboxSavedReplyQuery(f: InboxSavedReplyFilters = {}): Query {
+  return { q: text(f.q), 'filter[chip]': f.chip ? 1 : undefined, 'filter[attachment]': f.attachment ? 1 : undefined };
 }

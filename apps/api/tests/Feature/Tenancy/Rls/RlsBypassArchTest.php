@@ -26,6 +26,9 @@ class RlsBypassArchTest extends TestCase
         // tables only ever read — on the platform connection; platform SMS rows have tenant_id NULL.
         '#^app/Domain/Sms/(Providers|Routing|Platform|Broadcasts)/#',
         '#^database/seeders/#',
+        // PHASE-8-8E §11.2 step 3: inbound email routing before any tenant is known (RLS off: the explicit opt-out;
+        // RLS on: the definer function sp_inbox_route).
+        '#^app/Domain/Inbox/Support/InboundRouter\.php$#',
     ];
 
     public function test_without_tenancy_and_the_admin_connection_are_used_only_in_allowlisted_places(): void

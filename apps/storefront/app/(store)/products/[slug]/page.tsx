@@ -20,6 +20,7 @@ import { ProductCard } from '@/themes/modern-commerce/components/product-card';
 import { SectionHeader } from '@/themes/modern-commerce/components/section-header';
 import { Icon } from '@/themes/modern-commerce/components/icon';
 import Link from 'next/link';
+import { formatMoney } from '@/lib/format';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -150,6 +151,17 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <div className="flex flex-col gap-16 px-4 pt-2 pb-16 lg:gap-24 lg:px-20 lg:pt-6 lg:pb-24">
+      {mode === 'live' && config.inbox?.web_chat ? (
+        // 8.8e §9.3: the chat widget reads this to show "Asking about {product} · {price}" and send `product_slug`.
+        <span
+          hidden
+          data-sp-chat-product
+          data-slug={product.slug}
+          data-name={product.name}
+          data-price={formatMoney(product.price_min_amount, product.currency)}
+          data-image={images[0]?.url ?? ''}
+        />
+      ) : null}
       {mode === 'live' && !product.is_preview_only ? <JsonLd data={productJsonLd(product, origin, inStock, richTextPlain(product.description, 500))} /> : null}
       <div className="flex flex-col gap-6">
         <div className="hidden lg:block">

@@ -127,6 +127,7 @@ class PermissionEnforcementTest extends TestCase
             'customers.view' => ['customers.view', ['GET', '/customers/{customer}'], ['POST', '/customers', ['name' => 'Salma Begum', 'phone' => '01812345679']]],
             'customers.edit' => ['customers.edit', ['POST', '/customers', ['name' => 'Salma Begum', 'phone' => '01812345679']], ['DELETE', '/customers/{customer}']],
             'customers.delete' => ['customers.delete', ['DELETE', '/customers/{customer}'], ['GET', '/reports/sales']],
+            'inbox.manage' => ['inbox.manage', ['GET', '/inbox/summary'], ['GET', '/customers']], // PHASE-8-8E §2
             'costs.view' => ['costs.view', ['GET', '/products/{product}'], ['GET', '/reports/profit']],
             'reports.view' => ['reports.view', ['GET', '/reports/delivery'], ['GET', '/reports/profit']],
             'expenses.manage' => ['expenses.manage', ['GET', '/expenses/summary'], ['GET', '/reports/delivery']], // PHASE-8-7 §2.1

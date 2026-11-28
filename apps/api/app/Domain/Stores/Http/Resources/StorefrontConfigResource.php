@@ -2,6 +2,7 @@
 
 namespace App\Domain\Stores\Http\Resources;
 
+use App\Domain\Inbox\Models\InboxSetting;
 use App\Domain\Media\Http\Resources\MediaPresenter;
 use App\Domain\Media\MediaMaps;
 use App\Domain\Navigation\Models\StoreNavigation;
@@ -40,7 +41,7 @@ class StorefrontConfigResource extends JsonResource
         $favicon = $settings?->favicon;
         $theme = $this->themeConfig($preview);
 
-        return [
+        $config = [
             'store' => [
                 'id' => $this->id,
                 'name' => $this->name,
@@ -74,6 +75,37 @@ class StorefrontConfigResource extends JsonResource
             'navigation' => $this->navigationMenus($preview),
             'media' => MediaMaps::storefront(ThemeConfigValidator::mediaIds($theme)),
             'commerce' => $this->commerce($settings),
+        ];
+        // PHASE-8-8E §9.1: only when a shopper channel is on (absent = no widget, no order Messages card; a shop that
+        // turns nothing on gets exactly the old config).
+        if (($inbox = $this->inbox($preview)) !== null) {
+            $config['inbox'] = $inbox;
+        }
+
+        return $config;
+    }
+
+    /**
+     * PHASE-8-8E §9.1: StorefrontInboxConfig — null when no shopper channel is on, and never on a draft store or a
+     * preview response (no widget, no order Messages card).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function inbox(bool $preview): ?array
+    {
+        if ($preview || $this->status !== Store::STATUS_ACTIVE) {
+            return null;
+        }
+        $s = InboxSetting::query()->where('store_id', $this->id)->first();
+        if ($s === null || (! $s->web_chat_enabled && ! $s->order_messages_enabled)) {
+            return null;
+        }
+
+        return [
+            'web_chat' => $s->web_chat_enabled
+                ? ['enabled' => true, 'reply_time' => $s->widget_reply_time, 'hours' => $s->widget_hours, 'greeting' => $s->widget_greeting]
+                : null,
+            'order_messages' => (bool) $s->order_messages_enabled,
         ];
     }
 

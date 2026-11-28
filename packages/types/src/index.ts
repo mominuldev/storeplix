@@ -78,6 +78,8 @@ export interface StorefrontConfig {
   media?: Record<string, StorefrontMedia>;
   /** Phase 5. Optional on the wire for rolling deploys. */
   commerce?: StorefrontCommerce;
+  /** Phase 8.8e (PHASE-8-8E §9.1): Inbox channels for shoppers; null/absent = no widget, no order Messages card. */
+  inbox?: StorefrontInboxConfig | null;
 }
 
 export interface PreviewToken { token: string; url: string; /** ISO-8601 */ expires_at: string }
@@ -405,7 +407,9 @@ export type PermissionKey =
   | 'integrations.manage' | 'domains.manage' | 'developers.manage' | 'staff.manage' | 'audit.view' | 'billing.view'
   | 'billing.manage'
   /** Phase 8.8d (PHASE-8-8D §2.1) */
-  | 'pos.sell';
+  | 'pos.sell'
+  /** Phase 8.8e (PHASE-8-8E §2, P88E-3) */
+  | 'inbox.manage';
 export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers' | 'money' | 'store' | 'team';
 
 /**
@@ -417,12 +421,14 @@ export type PermissionGroupKey = 'orders' | 'shipping' | 'products' | 'customers
  * Phase 8.8b (PHASE-8-8B §2.1): `purchasing.manage` (group `products`, sensitive, requires `costs.view`) after
  * `inventory.adjust`; owner + admin, never staff.
  * Phase 8.8d (PHASE-8-8D §2.1, P88D-18): `pos.sell` (group `orders`, not sensitive, requires nothing) after
- * `orders.refund`; owner + admin + staff. 27 grantable keys + owner-only `billing.manage`.
+ * `orders.refund`; owner + admin + staff.
+ * Phase 8.8e (PHASE-8-8E §2, P88E-3): `inbox.manage` (group `customers`, not sensitive, requires nothing) after
+ * `customers.delete`; owner + admin + staff. 28 grantable keys + owner-only `billing.manage`.
  */
 export const PERMISSION_KEYS: readonly PermissionKey[] = [
   'orders.view', 'orders.process', 'orders.refund', 'pos.sell', 'fraud.manage', 'shipments.manage', 'shipments.cancel',
   'products.edit', 'products.delete', 'inventory.adjust', 'purchasing.manage', 'customers.view', 'customers.edit', 'customers.delete',
-  'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
+  'inbox.manage', 'costs.view', 'reports.view', 'expenses.manage', 'data.export', 'data.import', 'marketing.manage', 'settings.manage',
   'integrations.manage', 'domains.manage', 'developers.manage', 'staff.manage', 'audit.view', 'billing.view', 'billing.manage',
 ];
 
@@ -432,7 +438,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRoleKey, readonly PermissionK
   admin: PERMISSION_KEYS.filter((k) => k !== 'billing.manage'),
   staff: [
     'orders.view', 'orders.process', 'pos.sell', 'shipments.manage', 'shipments.cancel', 'products.edit',
-    'inventory.adjust', 'customers.view', 'customers.edit', 'reports.view',
+    'inventory.adjust', 'customers.view', 'customers.edit', 'inbox.manage', 'reports.view',
   ],
 };
 
@@ -1003,6 +1009,12 @@ export interface StorefrontOrderTracking {
     status: ShipmentStatus | null; status_at: string | null; checked_at: string | null;
     events: { status: ShipmentStatus; at: string }[];
   } | null;
+  /**
+   * Phase 8.8e (PHASE-8-8E §10): order-page Messages; null (or absent on older APIs) when the shop's order-messages
+   * channel is off. `access_token` is a store-bound signed token for `X-Order-Access` (server-side only; keep it in an
+   * httpOnly cookie).
+   */
+  messages?: StorefrontOrderMessagesAccess | null;
 }
 
 // ---------- Orders (merchant) ----------
@@ -3755,16 +3767,18 @@ export const POS_AUDIT_ACTIONS: readonly PosAuditAction[] = [
 /** `sms_messages.purpose` values a merchant can see (account sign-in codes `otp_*` are never listed, P89A-21). */
 export type SmsPurpose =
   | 'order_placed' | 'order_confirmed' | 'order_shipped' | 'order_cancelled' | 'order_updated' | 'payment_link'
-  | 'pos_receipt' | 'checkout_otp' | 'campaign' | 'automation' | 'sms_test';
+  | 'pos_receipt' | 'checkout_otp' | 'campaign' | 'automation' | 'sms_test'
+  /** Phase 8.8e (PHASE-8-8E P88E-11, P88E-12): transactional; `inbox_verify` never has a body preview */
+  | 'inbox_verify' | 'inbox_reply';
 export const SMS_PURPOSES: readonly SmsPurpose[] = [
   'order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link',
-  'pos_receipt', 'checkout_otp', 'campaign', 'automation', 'sms_test',
+  'pos_receipt', 'checkout_otp', 'campaign', 'automation', 'sms_test', 'inbox_verify', 'inbox_reply',
 ];
 export const SMS_PURPOSE_LABELS: Record<SmsPurpose, string> = {
   order_placed: 'Order received', order_confirmed: 'Order confirmed', order_shipped: 'Shipped',
   order_cancelled: 'Order cancelled', order_updated: 'Order updated', payment_link: 'Payment link',
   pos_receipt: 'POS receipt', checkout_otp: 'Checkout code', campaign: 'Campaign', automation: 'Automation',
-  sms_test: 'Test SMS',
+  sms_test: 'Test SMS', inbox_verify: 'Chat code', inbox_reply: 'Inbox reply',
 };
 /** transactional = `sms_per_month` purposes (+ `sms_test`); marketing = `campaign_sms_per_month` (campaign, automation). */
 export type SmsKind = 'transactional' | 'marketing';
@@ -3940,7 +3954,8 @@ export interface SmsSenderIdRequestInput {
 // ----- SMS log (§9, P89A-19 – P89A-21) -----
 export const SMS_LOG_WINDOW_DAYS = 90;
 export const SMS_LOG_PER_PAGE = 50;
-export type SmsReferenceType = 'order' | 'campaign' | 'automation' | 'pos_sale';
+/** Phase 8.8e: `conversation` = an Inbox conversation (`inbox_reply`; label = contact name). */
+export type SmsReferenceType = 'order' | 'campaign' | 'automation' | 'pos_sale' | 'conversation';
 export interface SmsLogEntry {
   id: string; created_at: string;
   /** e.g. "01711-•••211" */
@@ -4471,3 +4486,321 @@ export const PLATFORM_SMS_AUDIT_ACTIONS: readonly PlatformSmsAuditAction[] = [
   'platform_sms_broadcast.scheduled', 'platform_sms_broadcast.cancelled', 'platform_sms_broadcast.finished',
   'platform_sms.log_exported', 'platform_sms.opted_out', 'platform_sms.opted_in',
 ];
+
+// ---------- Inbox on own channels (Phase 8.8e, PHASE-8-8E-CONTRACT §3–§14; openapi 1.25.0) ----------
+/**
+ * One merchant Inbox for website chat (SMS-verified guests), order-page Messages and email replies (P88E-1). One
+ * conversation per contact per channel thread (P88E-2); Open / Pending / Closed, a shopper message reopens it for its
+ * assignee (P88E-5); internal notes are staff-only (P88E-6). Permission `inbox.manage` (P88E-3); no plan gate (P88E-19).
+ * Realtime = polling with ETag/304 and `after` cursors (P88E-17). Messenger / WhatsApp / Instagram and AI drafting: 8.8f.
+ */
+
+// ----- Enums and constants (§3) -----
+export type InboxChannel = 'web_chat' | 'order' | 'email';
+export const INBOX_CHANNELS: readonly InboxChannel[] = ['web_chat', 'order', 'email'];
+export const INBOX_CHANNEL_LABELS: Record<InboxChannel, string> = { web_chat: 'Website chat', order: 'Order message', email: 'Email' };
+/** "Connect a channel" placeholders only (8.8f). */
+export type InboxExternalChannel = 'messenger' | 'whatsapp' | 'instagram';
+export const INBOX_EXTERNAL_CHANNELS: readonly InboxExternalChannel[] = ['messenger', 'whatsapp', 'instagram'];
+export type InboxStatus = 'open' | 'pending' | 'closed';
+export const INBOX_STATUSES: readonly InboxStatus[] = ['open', 'pending', 'closed'];
+/**
+ * How the shopper was identified (P88E-10, P88E-14): `verified_phone` (widget SMS code), `order_access` (order page),
+ * `email` (SPF/DKIM pass), `email_unverified`, `unverified` (widget when the code SMS could not be sent — never linked
+ * to a customer, never texted).
+ */
+export type InboxIdentity = 'verified_phone' | 'order_access' | 'email' | 'email_unverified' | 'unverified';
+export const INBOX_IDENTITY_LABELS: Record<InboxIdentity, string> = {
+  verified_phone: 'Verified phone', order_access: 'Order access', email: 'Email (verified)',
+  email_unverified: 'Email (sender not verified)', unverified: 'Number not verified',
+};
+export type InboxMessageKind = 'customer' | 'reply' | 'note' | 'system';
+export type InboxSystemEvent =
+  | 'assigned' | 'unassigned' | 'pending' | 'closed' | 'reopened' | 'order_linked' | 'order_unlinked' | 'blocked' | 'unblocked';
+/** Email replies only. */
+export type InboxDeliveryStatus = 'queued' | 'sent' | 'failed';
+/** Reply SMS (P88E-12): `pending` until the 2-minute job runs; `seen` = skipped because the shopper saw it. */
+export type InboxSmsStatus = 'pending' | 'sent' | 'seen' | 'throttled' | 'no_credits' | 'failed' | 'not_applicable';
+export type InboxScope = 'mine_unassigned' | 'mine' | 'unassigned' | 'all';
+export type InboxReplyTime = 'minutes' | 'hour' | 'day';
+export const INBOX_REPLY_TIME_LABELS: Record<InboxReplyTime, string> = {
+  minutes: 'Replies in a few minutes', hour: 'Replies in about an hour', day: 'Replies within a day',
+};
+export const INBOX_LIMITS = {
+  /** message body (members); shopper messages are capped at 2000 */
+  body_max: 4000, shopper_body_max: 2000, attachments_per_message: 3, attachment_max_bytes: 5 * 1024 * 1024,
+  saved_replies_max: 200, saved_reply_body_max: 1000, saved_reply_title_max: 60,
+  list_per_page: 30, messages_per_page: 50, preview_max: 160, past_orders: 5,
+  code_length: 6, code_ttl_minutes: 10, code_attempts: 5, code_resend_seconds: 60,
+  reply_sms_delay_seconds: 120, reply_sms_throttle_minutes: 30, retention_months: 24,
+} as const;
+export const INBOX_ATTACHMENT_MIMES = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+export type InboxAttachmentMime = (typeof INBOX_ATTACHMENT_MIMES)[number];
+/** `[a-z0-9_-]{2,24}`, unique per store case-insensitively. */
+export const INBOX_SHORTCUT_PATTERN = /^[a-z0-9_-]{2,24}$/;
+/** Polling intervals in ms (§12); paused while the tab is hidden. */
+export const INBOX_POLL_MS = {
+  summary: 30_000, list: 15_000, thread: 5_000, widget_open: 5_000, widget_closed: 60_000, order_card: 10_000,
+} as const;
+export type InboxMergeTag =
+  | 'customer_name' | 'shop_name' | 'order_number' | 'order_total' | 'order_due' | 'delivery_inside'
+  | 'delivery_outside' | 'payment_link' | 'track_url';
+export const INBOX_MERGE_TAGS: readonly InboxMergeTag[] = [
+  'customer_name', 'shop_name', 'order_number', 'order_total', 'order_due', 'delivery_inside', 'delivery_outside',
+  'payment_link', 'track_url',
+];
+export const INBOX_MERGE_TAG_LABELS: Record<InboxMergeTag, string> = {
+  customer_name: 'Customer name', shop_name: 'Shop name', order_number: 'Order number', order_total: 'Order total',
+  order_due: 'Cash to collect', delivery_inside: 'Delivery inside Dhaka', delivery_outside: 'Delivery outside Dhaka',
+  payment_link: 'Payment link', track_url: 'Tracking page',
+};
+
+// ----- Shared shapes -----
+export interface InboxContact {
+  name: string;
+  /** Full `8801…`-normalised number shown as local `01…` (members with inbox.manage); null for email-only */
+  phone: string | null;
+  email: string | null;
+}
+export interface InboxOrderRef { id: string; number: string }
+export interface InboxAttachment {
+  id: string; filename: string; mime: InboxAttachmentMime; size_bytes: number;
+  kind: 'image' | 'pdf';
+  /** images are re-encoded after upload; a link for a `processing` image answers 409 `inbox_attachment_processing` */
+  status: 'processing' | 'ready';
+}
+/** Product card stored with the first website-chat message from a product page. */
+export interface InboxProductContext {
+  product_id: string; name: string; price_amount: number; currency: string; path: string; image_url: string | null;
+}
+
+// ----- Summary and list (§5) -----
+export interface InboxSummary {
+  /** P88E-9: not closed, not blocked, assigned to me or unassigned, with unread shopper messages */
+  unread: number;
+  open: number; pending: number; mine_open: number; unassigned_open: number;
+  channels_enabled: { web_chat: boolean; order_messages: boolean; email: boolean };
+}
+export interface InboxConversationSummary {
+  id: string; channel: InboxChannel; status: InboxStatus; identity: InboxIdentity;
+  contact: InboxContact;
+  order: InboxOrderRef | null;
+  /** last shopper or reply text (≤ 160; notes never) */
+  preview: string;
+  last_message_at: string;
+  assignee: UserRef | null;
+  /** shopper messages after my last read, capped at 99 */
+  unread_count: number;
+  blocked: boolean;
+}
+export interface InboxListFilters {
+  status?: InboxStatus;
+  scope?: InboxScope;
+  channel?: InboxChannel[];
+  /** ≥ 2 chars: name, phone digits, email, order number */
+  q?: string;
+  cursor?: string;
+}
+export interface InboxListMeta extends CursorMeta { counts: Record<InboxStatus, number> }
+
+// ----- Conversation detail and side panel (§6) -----
+export interface InboxOrderCard {
+  id: string; number: string; placed_at: string; status: OrderStatus; payment_status: PaymentStatus;
+  payment_method: string;
+  first_line: { name: string; variant: string | null; quantity: number; image_url: string | null } | null;
+  extra_lines: number;
+  paid_amount: number; due_amount: number; total_amount: number; currency: string;
+}
+export interface InboxPastOrder { id: string; number: string; placed_at: string; total_amount: number; currency: string; status: OrderStatus }
+export interface InboxCustomerPanel {
+  contact: InboxContact;
+  /** null without `customers.view` or when no customer is linked */
+  customer: {
+    id: string; name: string; since: string; orders_count: number; phone: string | null; email: string | null;
+    address: { district: string | null; thana: string | null; street: string | null } | null;
+    risk: CustomerRisk;
+  } | null;
+  /** null without `orders.view` or when no order is linked */
+  linked_order: InboxOrderCard | null;
+  /** [] without `orders.view`; ≤ 5 newest excluding the linked order */
+  past_orders: InboxPastOrder[];
+}
+export interface InboxConversationCapabilities {
+  reply: boolean; assign: boolean;
+  /** inbox.manage + orders.view, and channel ≠ order */
+  link_order: boolean;
+  /** inbox.manage + customers.delete */
+  delete: boolean;
+  view_customer: boolean; view_order: boolean;
+}
+export interface InboxConversation extends InboxConversationSummary {
+  subject: string | null;
+  context: InboxProductContext | null;
+  /** storefront path where the chat started (no query) */
+  source_path: string | null;
+  started_at: string;
+  /** seconds from the first shopper message to the first reply; null until replied */
+  first_response_seconds: number | null;
+  customer_seen_at: string | null;
+  closed_at: string | null; closed_by: UserRef | null;
+  customer: InboxCustomerPanel;
+  can: InboxConversationCapabilities;
+  revision: number;
+}
+
+// ----- Messages (§6.2) -----
+export interface InboxMessage {
+  id: string; kind: InboxMessageKind;
+  /** null only for system rows */
+  body: string | null;
+  /** reply / note author; null for customer and system rows */
+  author: UserRef | null;
+  attachments: InboxAttachment[];
+  system: { event: InboxSystemEvent; actor: UserRef | null; assignee: UserRef | null; order_number: string | null } | null;
+  delivery_status: InboxDeliveryStatus | null;
+  sms_status: InboxSmsStatus | null;
+  /** reply rows: the shopper has seen it */
+  seen: boolean;
+  created_at: string;
+}
+export interface InboxMessagesQuery {
+  /** polling: messages after this id, oldest first (≤ 100) */
+  after?: string;
+  /** history: the 50 before this id */
+  before?: string;
+}
+export interface SendInboxMessageInput {
+  kind: 'reply' | 'note';
+  body: string;
+  attachment_ids?: string[];
+  /** uuid generated per composer send; a retry with the same id returns the stored message */
+  client_id: string;
+  saved_reply_id?: string | null;
+}
+
+// ----- Actions (§6.4) -----
+export interface AssignInboxConversationInput { assignee_id: string | null; revision?: number }
+export interface SetInboxStatusInput { status: InboxStatus; revision?: number }
+export interface LinkInboxOrderInput { order_id: string | null }
+export interface MarkInboxReadInput { last_read_message_id: string }
+export interface InboxAssignee { user: UserRef; role_name: string; open_count: number; is_you: boolean }
+export interface InboxAttachmentLink { url: string; expires_at: string }
+
+// ----- Saved replies (§8) -----
+export interface InboxSavedReply {
+  id: string; title: string; shortcut: string; body: string; show_as_chip: boolean; position: number;
+  attachment: InboxAttachment | null;
+  use_count: number; last_used_at: string | null;
+  updated_by: UserRef | null; updated_at: string; revision: number;
+}
+export interface InboxSavedReplyInput {
+  title: string; shortcut: string; body: string; show_as_chip?: boolean;
+  /** an uploaded inbox attachment id; null removes it */
+  attachment_id?: string | null;
+}
+export interface UpdateInboxSavedReplyInput extends Partial<InboxSavedReplyInput> { revision: number }
+export interface InboxSavedReplyFilters { q?: string; chip?: boolean; attachment?: boolean }
+export interface InboxSavedReplyListMeta { counts: { all: number; chips: number; with_attachment: number } }
+export interface InboxSavedReplyRender {
+  body: string;
+  /** a fresh copy of the saved reply's attachment, ready for `attachment_ids` */
+  attachment: InboxAttachment | null;
+  /** merge tags without a value, left in `body` as `{tag}`; Send is blocked until they are edited out */
+  unresolved: InboxMergeTag[];
+}
+
+// ----- Channel settings (§4) -----
+export interface InboxSettings {
+  channels: {
+    web_chat: { enabled: boolean; live_on: string | null };
+    order_messages: { enabled: boolean };
+    /** `available` false until the inbound mail driver and domain are configured (Q299) */
+    email: { enabled: boolean; address: string | null; available: boolean };
+  };
+  widget: { reply_time: InboxReplyTime; hours: string | null; greeting: string | null };
+  external_channels: { channel: InboxExternalChannel; status: 'coming_later' }[];
+  revision: number;
+  can: { edit: boolean };
+}
+export interface UpdateInboxSettingsInput {
+  revision: number;
+  web_chat_enabled?: boolean; order_messages_enabled?: boolean; email_enabled?: boolean;
+  widget_reply_time?: InboxReplyTime; widget_hours?: string | null; widget_greeting?: string | null;
+}
+
+// ----- Storefront: widget and order messages (§9, §10) -----
+export interface StorefrontInboxConfig {
+  web_chat: { enabled: true; reply_time: InboxReplyTime; hours: string | null; greeting: string | null } | null;
+  order_messages: boolean;
+}
+export type InboxWidgetSessionStatus = 'pending' | 'verified' | 'unverified';
+export interface InboxWidgetSession {
+  status: InboxWidgetSessionStatus; name: string;
+  /** "017••••5678" */
+  phone_masked: string;
+  unread_count: number;
+  /** seconds until a new code may be requested (pending only) */
+  resend_after: number | null;
+}
+/** POST /storefront/inbox/sessions (multipart). `website` is the honeypot and must stay empty. */
+export interface StartInboxWidgetInput {
+  name: string; phone: string; message: string; client_id: string;
+  file?: Blob; filename?: string;
+  product_slug?: string | null; page_path?: string | null;
+  website?: string;
+}
+export interface InboxWidgetStart {
+  /** set once, server-side only → httpOnly cookie `sp_chat` */
+  session_token: string;
+  /** code_sent = message held until the code is entered; unverified = delivered without SMS (P88E-14) */
+  status: 'code_sent' | 'unverified';
+  phone_masked: string;
+  resend_after: number | null;
+}
+export interface InboxWidgetVerifyResult { status: 'verified'; unread_count: number }
+/** `error.details` of 422 `inbox_code_invalid`. */
+export interface InboxCodeInvalidDetails { attempts_left: number }
+/** What a shopper sees: their own messages and the shop's replies only (never notes or system rows). */
+export interface InboxShopperMessage {
+  id: string; from: 'customer' | 'shop';
+  body: string | null;
+  attachments: InboxAttachment[];
+  /** shop rows: the shop name */
+  author_name: string;
+  /** shop rows: the shopper saw the reply; customer rows: a team member has read up to this message */
+  seen: boolean;
+  created_at: string;
+}
+export interface SendInboxShopperMessageInput { body: string; client_id: string; file?: Blob; filename?: string }
+export interface StorefrontOrderMessagesAccess {
+  enabled: true;
+  /** server-side only (X-Order-Access); 12 h from track, 24 h from confirmation, 7 days from a magic link */
+  access_token: string;
+  unread_count: number;
+  reply_time: InboxReplyTime;
+}
+export type InboxMagicLinkResult =
+  | { kind: 'chat'; session_token: string }
+  | { kind: 'order'; access_token: string; number: string };
+
+// ----- Errors and audit (§13.3, §14.1) -----
+export type InboxErrorCode =
+  | 'inbox_assignee_invalid' | 'inbox_order_locked' | 'inbox_attachment_processing' | 'impersonation_attachment_hidden'
+  | 'saved_reply_shortcut_taken' | 'saved_reply_limit_reached' | 'saved_reply_unknown_merge_tag'
+  | 'inbox_unavailable' | 'inbox_session_invalid' | 'inbox_session_unverified' | 'inbox_code_invalid'
+  | 'inbox_code_expired' | 'inbox_link_invalid' | 'order_access_invalid' | 'inbound_email_signature_invalid'
+  | 'inbox_email_unavailable';
+/** `error.details` of 422 `saved_reply_unknown_merge_tag`. */
+export interface SavedReplyUnknownTagDetails { tags: string[] }
+export type InboxAuditAction =
+  | 'inbox.settings_updated' | 'inbox.email_address_rotated' | 'inbox_conversation.assigned'
+  | 'inbox_conversation.blocked' | 'inbox_conversation.unblocked' | 'inbox_conversation.deleted'
+  | 'inbox_saved_reply.created' | 'inbox_saved_reply.updated' | 'inbox_saved_reply.deleted';
+export const INBOX_AUDIT_ACTIONS: readonly InboxAuditAction[] = [
+  'inbox.settings_updated', 'inbox.email_address_rotated', 'inbox_conversation.assigned',
+  'inbox_conversation.blocked', 'inbox_conversation.unblocked', 'inbox_conversation.deleted',
+  'inbox_saved_reply.created', 'inbox_saved_reply.updated', 'inbox_saved_reply.deleted',
+];
+
+/** Result of a conditional GET (ETag / If-None-Match, P88E-17). */
+export type Conditional<T> = { status: 'not_modified'; etag: string } | { status: 'ok'; data: T; etag: string | null };

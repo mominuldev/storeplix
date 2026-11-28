@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { visibleNav, type NavEntry } from './nav';
 import { useAuth } from '../auth/AuthProvider';
+import { useInboxSummary } from '../inbox/queries';
 import { PlanCard } from '../plan/PlanCard';
 import { TenantSwitcher } from './TenantSwitcher';
 
@@ -11,6 +12,8 @@ import { TenantSwitcher } from './TenantSwitcher';
 // right border, padding 16; logo 32h; store switcher; nav; spacer; Help & support.
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { activeTenant } = useAuth();
+  // PHASE-8-8E §12: unread conversations (mine + unassigned), polled every 30 s with `inbox.manage` only.
+  const unread = useInboxSummary().data?.unread ?? 0;
   return (
     <aside
       aria-label="Main navigation"
@@ -26,7 +29,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       <TenantSwitcher collapsed={collapsed} />
       <nav className="mt-1 flex flex-col">
         {visibleNav(activeTenant).map((item) => (
-          <SidebarEntry key={item.to} item={item} collapsed={collapsed} />
+          <SidebarEntry key={item.to} item={item} collapsed={collapsed} badge={item.to === '/inbox' && unread > 0 ? unread : undefined} />
         ))}
       </nav>
       <div className="flex-1" />
@@ -38,7 +41,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean }) {
+function SidebarEntry({ item, collapsed, badge }: { item: NavEntry; collapsed: boolean; badge?: number }) {
   const { pathname } = useLocation();
   const inSection = item.to !== '/' && (pathname.startsWith(item.to) || !!item.children?.some((c) => pathname.startsWith(c.to)));
   const [expanded, setExpanded] = useState(inSection);
@@ -48,7 +51,15 @@ function SidebarEntry({ item, collapsed }: { item: NavEntry; collapsed: boolean 
   if (!item.children || collapsed) {
     return (
       <NavLink to={item.to} end={item.to === '/'} className="rounded-md outline-none focus-visible:shadow-focus" title={collapsed ? item.label : undefined}>
-        {({ isActive }) => <NavItem icon={<Icon />} label={item.label} active={isActive || (collapsed && inSection)} collapsed={collapsed} />}
+        {({ isActive }) => (
+          <NavItem
+            icon={<Icon />}
+            label={item.label}
+            active={isActive || (collapsed && inSection)}
+            collapsed={collapsed}
+            count={badge !== undefined ? <span aria-label={`${badge} unread`}>{badge > 99 ? '99+' : badge}</span> : undefined}
+          />
+        )}
       </NavLink>
     );
   }

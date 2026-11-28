@@ -35,7 +35,7 @@ final class SmsTemplates
     public const POS_RECEIPT = 'pos_receipt';
 
     /** `sms_messages.purpose` values counted against the `sms_per_month` allowance (P5-26 + P88-13 + P88D-12). */
-    public const COUNTED = [...self::EVENTS, self::CHECKOUT_OTP, self::POS_RECEIPT, 'sms_test']; // + PHASE-8-9A P89A-2 test SMS
+    public const COUNTED = [...self::EVENTS, self::CHECKOUT_OTP, self::POS_RECEIPT, 'sms_test', 'inbox_verify', 'inbox_reply']; // + PHASE-8-9A P89A-2 test SMS, + PHASE-8-8E inbox SMS
 
     public const LABELS = [
         'order_placed' => 'Order received',

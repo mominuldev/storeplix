@@ -7,7 +7,7 @@ namespace App\Domain\Tenancy\Authorization;
 /**
  * PHASE-8-3 §2.1 / ADR 0017: the code-defined permission catalogue (replaces the ADR 0005 role matrix).
  *
- * 27 grantable keys plus the owner-only `billing.manage` (PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
+ * 28 grantable keys plus the owner-only `billing.manage` (PHASE-8-8E §2 added `inbox.manage`; PHASE-8-4 §2.1 added `developers.manage`, PHASE-8-7 §2.1
  * `expenses.manage`, PHASE-8-8 §2.1 `fraud.manage`, PHASE-8-8B §2.1 `purchasing.manage`, PHASE-8-8D §2.1 `pos.sell`). Case order = UI order = catalogue order of
  * `TenantMembership.permissions`. Roles store these keys; unknown keys in the database are ignored on read and
  * rejected on write. Adding a key = a code change, a route mapping (RoutePermissionsTest) and a SystemRole decision.
@@ -28,6 +28,7 @@ enum Permission: string
     case CustomersView = 'customers.view';
     case CustomersEdit = 'customers.edit';
     case CustomersDelete = 'customers.delete';
+    case InboxManage = 'inbox.manage'; // PHASE-8-8E §2 (P88E-3)
     case CostsView = 'costs.view';
     case ReportsView = 'reports.view';
     case ExpensesManage = 'expenses.manage'; // PHASE-8-7 §2.1
@@ -60,7 +61,7 @@ enum Permission: string
             self::OrdersView, self::OrdersProcess, self::OrdersRefund, self::PosSell, self::FraudManage => 'orders',
             self::ShipmentsManage, self::ShipmentsCancel => 'shipping',
             self::ProductsEdit, self::ProductsDelete, self::InventoryAdjust, self::PurchasingManage => 'products',
-            self::CustomersView, self::CustomersEdit, self::CustomersDelete => 'customers',
+            self::CustomersView, self::CustomersEdit, self::CustomersDelete, self::InboxManage => 'customers',
             self::CostsView, self::ReportsView, self::ExpensesManage, self::DataExport, self::DataImport => 'money',
             self::MarketingManage, self::SettingsManage, self::IntegrationsManage, self::DomainsManage, self::DevelopersManage => 'store',
             self::StaffManage, self::AuditView, self::BillingView, self::BillingManage => 'team',
@@ -114,6 +115,7 @@ enum Permission: string
             self::CustomersView => 'View customers',
             self::CustomersEdit => 'Add & edit customers',
             self::CustomersDelete => "Delete customers and others' notes",
+            self::InboxManage => 'Reply to customer messages',
             self::CostsView => 'See product cost & profit',
             self::ReportsView => 'Reports, payouts & COD settlements',
             self::ExpensesManage => 'Record & see expenses',
@@ -146,6 +148,7 @@ enum Permission: string
             self::PurchasingManage => 'Suppliers, purchase orders, supplier payments and purchase prices',
             self::CustomersView => 'Names, phones, order history',
             self::CustomersEdit => 'Details and notes',
+            self::InboxManage => 'Inbox: chats, order messages and email replies',
             self::CostsView => 'Cost price, margin, profit report',
             self::ReportsView => 'Sales and delivery reports',
             self::ExpensesManage => 'Expenses, receipts and export',

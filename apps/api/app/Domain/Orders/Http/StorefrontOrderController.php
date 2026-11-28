@@ -6,6 +6,8 @@ use App\Domain\Cart\CartService;
 use App\Domain\Cart\Http\StorefrontCartController;
 use App\Domain\FraudGuard\FraudGuard;
 use App\Domain\Geo\AddressValidator;
+use App\Domain\Inbox\OrderMessages;
+use App\Domain\Inbox\Support\OrderAccessToken;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\OrderPlacementService;
 use App\Domain\Orders\OrderPresenter;
@@ -80,7 +82,8 @@ class StorefrontOrderController
         $ctx = StorefrontContext::from($request)->requireVisible();
         $order = self::orderByToken($request, $ctx->store->id);
 
-        return new JsonResponse(['data' => OrderPresenter::storefront($order)], 200, self::NO_STORE);
+        // PHASE-8-8E §10: the thank-you page's order Messages card (token 24 h); absent when the channel is off.
+        return new JsonResponse(['data' => self::withMessages(OrderPresenter::storefront($order), $order, OrderAccessToken::CONFIRMATION_SECONDS)], 200, self::NO_STORE);
     }
 
     /** The order behind X-Order-Token (thank-you page cookie `sp_order`), else 404. */
@@ -119,6 +122,21 @@ class StorefrontOrderController
             throw new ApiException(404, 'not_found', 'Resource not found.');
         }
 
-        return new JsonResponse(['data' => OrderPresenter::tracking($order)], 200, self::NO_STORE);
+        // PHASE-8-8E §10: order Messages (token 12 h); absent when the channel is off.
+        return new JsonResponse(['data' => self::withMessages(OrderPresenter::tracking($order), $order, OrderAccessToken::TRACK_SECONDS)], 200, self::NO_STORE);
+    }
+
+    /**
+     * PHASE-8-8E §10: `messages` only when the shop's order-messages channel is on, so a shop that turns nothing on
+     * answers exactly as before (the field is optional in StorefrontOrderTracking).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function withMessages(array $data, Order $order, int $ttlSeconds): array
+    {
+        $messages = OrderMessages::access($order, $ttlSeconds);
+
+        return $messages === null ? $data : $data + ['messages' => $messages];
     }
 }

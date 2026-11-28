@@ -10,6 +10,7 @@ import { PreviewBanner } from '@/components/preview-banner';
 import { PreviewBridge } from '@/components/preview-bridge';
 import { JsonLd } from '@/components/json-ld';
 import { manifestIcons, storeIconsMetadata } from '@/lib/store-icons';
+import { ChatWidget } from '@/components/inbox/chat-widget';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { host, config, mode } = await requireCurrentStore();
@@ -88,6 +89,18 @@ export default async function StoreLayout({ children }: { children: ReactNode })
       >
         {children}
       </Layout>
+      {/* 8.8e §9.3: website chat only on a live store with the channel on (never draft, Coming soon or preview). */}
+      {mode === 'live' && config.inbox?.web_chat ? (
+        <ChatWidget
+          config={{
+            shopName: config.store.name,
+            logoUrl: sanitizeImageUrl(config.store.logo_url),
+            replyTime: config.inbox.web_chat.reply_time,
+            hours: config.inbox.web_chat.hours,
+            greeting: config.inbox.web_chat.greeting,
+          }}
+        />
+      ) : null}
     </>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { requireCurrentStore } from '@/lib/store';
 import { fetchConfirmation, getClientIp } from '@/lib/commerce-api';
+import { getConfirmationWithMessages } from '@/lib/inbox';
 import { getOrderToken } from '@/lib/commerce-context';
 import { getPreviewToken } from '@/lib/preview';
 import { NOINDEX_ROBOTS } from '@/lib/seo';
@@ -21,7 +22,15 @@ export default async function ThankYouPage() {
   const token = await getOrderToken();
   if (!token) redirect('/');
   const preview = store.mode === 'preview' ? await getPreviewToken() : null;
-  const r = await fetchConfirmation(store.host, token, preview, await getClientIp());
+  const clientIp = await getClientIp();
+  // 8.8e §10 (Q304): with order Messages on, the same confirmation call also carries `messages` (token stays here).
+  if (store.mode === 'live' && store.config.inbox?.order_messages) {
+    const m = await getConfirmationWithMessages({ host: store.host, clientIp }, token);
+    if (!m.ok || !('data' in m)) redirect('/');
+    const messages = m.data.messages ? { unread_count: m.data.messages.unread_count, reply_time: m.data.messages.reply_time } : null;
+    return <OrderConfirmation order={m.data.order} whatsappHref={whatsappHref(store.config.contact.whatsapp)} hero={{ kind: 'auto' }} retryKey={crypto.randomUUID()} messages={messages} />;
+  }
+  const r = await fetchConfirmation(store.host, token, preview, clientIp);
   if (!r.ok) redirect('/');
   return <OrderConfirmation order={r.data} whatsappHref={whatsappHref(store.config.contact.whatsapp)} hero={{ kind: 'auto' }} retryKey={crypto.randomUUID()} />;
 }

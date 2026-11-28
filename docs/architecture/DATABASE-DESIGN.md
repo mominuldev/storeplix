@@ -1317,6 +1317,71 @@ tenant_id)**, IX(tenant_id, status, created_at) (weekly cap), IX(broadcast_id, s
   `CHECK IN ('account','link')` null · welcome_sms_at timestamptz null.
 - `audit_logs` action catalogue gains `PLATFORM_SMS_AUDIT_ACTIONS` (`packages/types`).
 
+## 5.14 Phase 8.8e Inbox on own channels (PHASE-8-8E-CONTRACT §3, ADR 0028, migrations `2026_12_13_*`)
+Eight new `[S]` RLS tables (`RlsTables::TENANT` 103 after Phase 8.8e), `database/sql/rls-emergency-off.sql`. Locking:
+the conversation row `FOR UPDATE` first; the SMS charger lock is taken only in the reply-SMS job. No plan feature.
+Retention: conversations deleted 24 months after their last message (`inbox:prune`).
+
+### inbox_settings [S] (`000100`)
+id · tenant_id · store_id **U** · web_chat_enabled / order_messages_enabled / email_enabled bool default false ·
+email_key varchar(12) null **U** (global; lowercase base32; inbound address `shop-{key}@INBOX_MAIL_DOMAIN`) ·
+email_key_rotated_at null · widget_reply_time `CHECK IN ('minutes','hour','day')` default `minutes` · widget_hours
+varchar(40) null · widget_greeting varchar(200) null · revision · updated_by null FK users SET NULL · timestamps.
+Created lazily; absent = all channels off.
+
+### inbox_conversations [S] (`000200`)
+id · tenant_id · store_id · channel `CHECK IN ('web_chat','order','email')` · thread_key varchar(300) (`phone:{msisdn}`,
+`session:{id}`, `order:{id}`, `email:{address}`) · status `CHECK IN ('open','pending','closed')` · identity `CHECK IN
+('verified_phone','order_access','email','email_unverified','unverified')` · assignee_id null FK users SET NULL ·
+customer_id null FK (tenant_id, customer_id) → customers SET NULL · order_id null FK (tenant_id, order_id) → orders SET
+NULL · contact_name varchar(120) · contact_phone varchar(15) null · contact_email varchar(254) null · subject
+varchar(200) null · context jsonb null · source_path varchar(300) null · preview varchar(160) · last_message_at ·
+last_customer_message_id char(26) null · last_customer_message_at null · first_response_at null ·
+last_inbound_message_id varchar(255) null · reply_sms_sent_at null · customer_seen_at null · closed_at / closed_by null ·
+blocked_at / blocked_by null · messages_count int · revision · timestamps. **U(store_id, channel, thread_key)** ·
+IX(tenant_id, store_id, status, last_message_at DESC, id DESC) · IX(tenant_id, store_id, assignee_id, status) ·
+IX(tenant_id, customer_id) · IX(tenant_id, order_id) · trigram IX(contact_name) (pgsql).
+
+### inbox_messages [S] (`000300`; immutable)
+id · tenant_id · store_id · conversation_id FK (tenant_id, conversation_id) CASCADE · kind `CHECK IN ('customer',
+'reply','note','system')` · author_user_id null FK users SET NULL · body text null (≤ 4000; null only for system) ·
+system_event `CHECK IN ('assigned','unassigned','pending','closed','reopened','order_linked','order_unlinked','blocked',
+'unblocked')` null · system_meta jsonb null · client_id varchar(36) null · delivery_status `CHECK IN ('queued','sent',
+'failed')` null · sms_status `CHECK IN ('pending','sent','seen','throttled','no_credits','failed','not_applicable')` null ·
+sms_message_id char(26) null (soft) · email_message_id varchar(255) null · saved_reply_id null (soft) · timestamps.
+Partial **U(conversation_id, client_id)** WHERE client_id IS NOT NULL · partial **U(store_id, email_message_id)** WHERE
+email_message_id IS NOT NULL · IX(tenant_id, conversation_id, id).
+
+### inbox_attachments [S] (`000300`)
+id · tenant_id · store_id · media_id **U** FK (tenant_id, media_id) → media RESTRICT · message_id null FK → inbox_messages
+CASCADE · saved_reply_id null FK → inbox_saved_replies CASCADE (never both) · uploaded_by_type `CHECK IN ('user','shopper',
+'email')` · uploaded_by_user_id null · widget_session_id null · filename varchar(160) · mime `CHECK IN ('image/jpeg',
+'image/png','application/pdf')` · size_bytes int `<= 5242880` · created_at. IX(tenant_id, message_id). `media.purpose`
+gains `inbox_attachment` (private, no variants, never a library purpose). Unattached rows pruned after 24 h.
+
+### inbox_reads [S] (`000400`)
+id · tenant_id · store_id · conversation_id FK CASCADE · user_id FK users CASCADE · last_read_message_id char(26) ·
+read_at · **U(conversation_id, user_id)** · IX(tenant_id, user_id).
+
+### inbox_saved_replies [S] (`000500`)
+id · tenant_id · store_id · title varchar(60) · shortcut varchar(24) · body text (1–1000) · show_as_chip bool · position
+int · use_count int · last_used_at null · created_by / updated_by null FK users SET NULL · revision · timestamps.
+**U(store_id, lower(shortcut))** · IX(tenant_id, store_id, position). ≤ 200 per store (code).
+
+### inbox_widget_sessions · inbox_magic_links [S] (`000600`)
+Sessions: id · tenant_id · store_id · token_hash char(64) **U** · name varchar(80) · phone varchar(15) · status `CHECK
+IN ('pending','verified','unverified')` · code_hash char(64) null (HMAC) · code_sent_at null · code_attempts / code_sends
+smallint · pending_message jsonb null · verified_at null · conversation_id null FK SET NULL · ip_hash char(64) ·
+last_seen_at · expires_at · timestamps; IX(tenant_id, store_id, phone, created_at) · IX(expires_at). Links: id ·
+tenant_id · store_id · conversation_id FK CASCADE · code_hash char(64) **U** · uses smallint (≤ 20) · expires_at (7
+days) · created_at.
+
+### Changes to existing tables
+- **sms_messages** (`000700`): `reference_type` CHECK + `conversation`; purposes `inbox_verify` (body never stored) and
+  `inbox_reply` (transactional, counted in `sms_per_month`).
+- Permission catalogue (code): `inbox.manage` (Owner, Admin, Staff).
+- `audit_logs` action catalogue gains `INBOX_AUDIT_ACTIONS` (`packages/types`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 
@@ -1326,7 +1391,7 @@ All tenant-owned, same conventions. Designed now so core tables don't need break
 | Developer API keys & webhooks (144:40725) | `api_keys`, `webhook_endpoints`, `webhook_secrets`, `webhook_deliveries` — **specified in 8.4 (§5.4, PHASE-8-4 §5, ADR 0018)** | 8.4 |
 | Coupons/campaigns (61:12479 Marketing) | `coupons`, `coupon_redemptions` (built in Phase 5a, §5.1); `campaigns`, `campaign_recipients`, `campaign_conversions`, `marketing_suppressions` — **specified in 8.5 (§5.5, PHASE-8-5 §7, ADR 0019)** | 5 / 8.5 |
 | POS (26:2147, page 22:1736) | `pos_registers(tenant_id, name, location_id)`, `pos_sessions(register_id, opened_by, opening_cash_amount, closing_cash_amount, status)`; POS sales are `orders` with `source='pos'` | 8+ |
-| Inbox (141:48129) | `conversations(tenant_id, channel fb/whatsapp/web, external_thread_id, customer_id, status, assigned_user_id)`, `messages(conversation_id, direction, body, attachments jsonb, external_id)`; draft order → `orders.source='inbox'` | 8+ |
+| Inbox (141:48129) | Own channels: `inbox_settings`, `inbox_conversations`, `inbox_messages`, `inbox_attachments`, `inbox_reads`, `inbox_saved_replies`, `inbox_widget_sessions`, `inbox_magic_links` — **specified in 8.8e (§5.14, PHASE-8-8E §3, ADR 0028)**. External channels (Messenger/WhatsApp/Instagram: `channel` values + external thread ids) and AI draft → `orders.source='inbox'` in 8.8f | 8.8e / 8.8f |
 | Automations (140:30335) | `automations`, `automation_runs`, `automation_run_steps`, `automation_conversions`, cart contact columns — **specified in 8.6 (§5.6, PHASE-8-6 §4.4, ADR 0020)** | 8.6 |
 | Expenses (144:41613) | `expenses`, `expense_recurrences` (no category table; receipts in `media`) — **specified in 8.7 (§5.7, PHASE-8-7 §4, ADR 0021)** | 8.7 |
 | Suppliers / purchasing (26:2146 Inventory) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_receipts`, `purchase_receipt_items`, `supplier_payments` — **specified in 8.8b (§5.9, PHASE-8-8B §3, ADR 0023)** | 8.8b |

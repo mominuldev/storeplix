@@ -24,10 +24,16 @@ final class SmsPurposes
 
     public const CHECKOUT_OTP = 'checkout_otp';
 
+    /** PHASE-8-8E P88E-11: the website-chat verification code (transactional; body never stored). */
+    public const INBOX_VERIFY = 'inbox_verify';
+
+    /** PHASE-8-8E P88E-12: "the shop replied" with a magic link (transactional; reference `conversation`). */
+    public const INBOX_REPLY = 'inbox_reply';
+
     /** SmsPurpose (openapi) in display order. */
     public const LISTED = [
         'order_placed', 'order_confirmed', 'order_shipped', 'order_cancelled', 'order_updated', 'payment_link', 'pos_receipt',
-        self::CHECKOUT_OTP, self::CAMPAIGN, self::AUTOMATION, self::SMS_TEST,
+        self::CHECKOUT_OTP, self::INBOX_VERIFY, self::INBOX_REPLY, self::CAMPAIGN, self::AUTOMATION, self::SMS_TEST,
     ];
 
     public const MARKETING_PURPOSES = [self::CAMPAIGN, self::AUTOMATION];

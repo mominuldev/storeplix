@@ -9,6 +9,8 @@ import { ThemeImage } from '../components/theme-image';
 import { OrderTimeline } from './order-timeline';
 import { deliveryDays } from './ui';
 import { PaymentPoller, RetryPayment } from './payment-client';
+import { OrderMessages } from '@/components/inbox/order-messages';
+import type { ShopperOrderMessagesView } from '@/lib/tracking';
 
 /**
  * Order confirmation body (Figma 1:11788, mobile 33:5751), shared by `/checkout/thank-you` and
@@ -26,9 +28,11 @@ interface Props {
   /** Idempotency-Key for the first retry / COD switch (created per render on the server). */
   retryKey: string;
   now?: number;
+  /** 8.8e §10 (Q304): order Messages card on the thank-you page; null when the channel is off. No token here. */
+  messages?: ShopperOrderMessagesView | null;
 }
 
-export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now = Date.now() }: Props) {
+export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now = Date.now(), messages = null }: Props) {
   const c = order.currency;
   const firstName = order.customer_name.split(/\s+/)[0] ?? order.customer_name;
   const phone = formatBdPhone(order.customer_phone);
@@ -180,6 +184,7 @@ export function OrderConfirmation({ order, whatsappHref: wa, hero, retryKey, now
               </div>
             </dl>
           </section>
+          {messages ? <OrderMessages number={order.number} replyTime={messages.reply_time} via="confirmation" /> : null}
           {wa ? (
             <a href={wa} target="_blank" rel="noopener noreferrer" className="type-body-s flex items-center gap-2.5 rounded-sf-md bg-sunken p-4 text-ink-secondary hover:brightness-95">
               <Icon name="whatsapp" size={20} className="text-brand" />

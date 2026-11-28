@@ -11,6 +11,7 @@ use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Customers\Models\CustomerNote;
 use App\Domain\Developer\Webhooks\Sending\HostResolver;
 use App\Domain\Documents\TemplateConfig;
+use App\Domain\Inbox\ConversationService;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Models\Tenant;
@@ -246,6 +247,32 @@ class PermissionParityTest extends TestCase
         'PATCH api/v1/billing/sms-credits' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'GET api/v1/billing/sms-credits/ledger' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/billing/sms-credits/purchase' => ['owner' => 201, 'admin' => 403, 'staff' => 403],
+        // Phase 8.8e (PHASE-8-8E §2, §13.1, P88E-3): Staff holds inbox.manage (and orders.view) but not customers.delete or
+        // settings.manage → delete conversation and channel writes 403 for staff.
+        'GET api/v1/stores/{store}/inbox/summary' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/inbox/conversations' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/inbox/conversations/{conversation}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/stores/{store}/inbox/conversations/{conversation}' => ['owner' => 204, 'admin' => 204, 'staff' => 403],
+        'GET api/v1/stores/{store}/inbox/conversations/{conversation}/messages' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/messages' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/assign' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/status' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/block' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/unblock' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/read' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
+        'PUT api/v1/stores/{store}/inbox/conversations/{conversation}/order' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/conversations/{conversation}/saved-replies/{saved_reply}/render' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/inbox/assignees' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/attachments' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'GET api/v1/stores/{store}/inbox/attachments/{attachment}/link' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/inbox/saved-replies' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/inbox/saved-replies' => ['owner' => 201, 'admin' => 201, 'staff' => 201],
+        'POST api/v1/stores/{store}/inbox/saved-replies/reorder' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PATCH api/v1/stores/{store}/inbox/saved-replies/{saved_reply}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'DELETE api/v1/stores/{store}/inbox/saved-replies/{saved_reply}' => ['owner' => 204, 'admin' => 204, 'staff' => 204],
+        'GET api/v1/stores/{store}/inbox/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'PATCH api/v1/stores/{store}/inbox/settings' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/inbox/settings/email-address/rotate' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -516,6 +543,22 @@ class PermissionParityTest extends TestCase
             'sender_id' => 'ParityBD', 'business_name' => 'Parity Traders', 'uses' => ['order_updates'], 'rights_confirmed' => '1',
             'document' => UploadedFile::fake()->createWithContent('licence.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
         ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        // Phase 8.8e: chat + order channels on, one web-chat conversation with a customer message, a saved reply with a PDF.
+        $this->req($h, 'PATCH', "{$base}/inbox/settings", ['revision' => 1, 'web_chat_enabled' => true, 'order_messages_enabled' => true])->assertOk();
+        [$conversation, $inboxMessage] = $this->inTenant($tenant, function () use ($store) {
+            return DB::transaction(function () use ($store) {
+                $service = app(ConversationService::class);
+                $c = $service->lockOrCreate($store->id, 'web_chat', 'phone:8801711000555', ['identity' => 'verified_phone', 'contact_name' => 'Parity Shopper', 'contact_phone' => '8801711000555']);
+                $m = $service->appendCustomer($c, 'Parity question', collect());
+
+                return [$c->id, $m->id];
+            });
+        });
+        $inboxFile = $this->flushHeaders()->withHeaders($h)->post("{$base}/inbox/attachments", [
+            'file' => UploadedFile::fake()->createWithContent('list.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $savedReply = $this->req($h, 'POST', "{$base}/inbox/saved-replies", ['title' => 'Parity', 'shortcut' => 'parity', 'body' => 'Hi {customer_name}', 'attachment_id' => $inboxFile])
+            ->assertCreated()->json('data.id');
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -537,6 +580,7 @@ class PermissionParityTest extends TestCase
             'till' => $till, 'register' => $register, 'spare_register' => $spareRegister, 'archived_register' => $archivedRegister,
             'pos_session' => $posSession, 'pos_lines' => $posLines, 'pos_total' => $posTotal, 'pos_sale' => $posSale,
             'pos_item' => $posItem, 'pos_held' => $posHeld, 'sender_id' => $senderId,
+            'conversation' => $conversation, 'inbox_message' => $inboxMessage, 'inbox_file' => $inboxFile, 'saved_reply' => $savedReply,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -754,6 +798,34 @@ class PermissionParityTest extends TestCase
             ], ['Accept' => 'application/json']),
             'POST api/v1/stores/{store}/sms/sender-ids/{sender_id}/cancel' => $r('POST', "{$b}/sms/sender-ids/{$s['sender_id']}/cancel"),
             'GET api/v1/stores/{store}/sms/messages' => $r('GET', "{$b}/sms/messages"),
+            // Phase 8.8e Inbox.
+            'GET api/v1/stores/{store}/inbox/summary' => $r('GET', "{$b}/inbox/summary"),
+            'GET api/v1/stores/{store}/inbox/conversations' => $r('GET', "{$b}/inbox/conversations"),
+            'GET api/v1/stores/{store}/inbox/conversations/{conversation}' => $r('GET', "{$b}/inbox/conversations/{$s['conversation']}"),
+            'DELETE api/v1/stores/{store}/inbox/conversations/{conversation}' => $r('DELETE', "{$b}/inbox/conversations/{$s['conversation']}"),
+            'GET api/v1/stores/{store}/inbox/conversations/{conversation}/messages' => $r('GET', "{$b}/inbox/conversations/{$s['conversation']}/messages"),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/messages' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/messages",
+                ['kind' => 'note', 'body' => 'Parity note', 'client_id' => (string) Str::uuid()]),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/assign' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/assign", ['assignee_id' => null]),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/status' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/status", ['status' => 'pending']),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/block' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/block"),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/unblock' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/unblock"),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/read' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/read", ['last_read_message_id' => $s['inbox_message']]),
+            'PUT api/v1/stores/{store}/inbox/conversations/{conversation}/order' => $r('PUT', "{$b}/inbox/conversations/{$s['conversation']}/order", ['order_id' => $s['pending']]),
+            'POST api/v1/stores/{store}/inbox/conversations/{conversation}/saved-replies/{saved_reply}/render' => $r('POST', "{$b}/inbox/conversations/{$s['conversation']}/saved-replies/{$s['saved_reply']}/render"),
+            'GET api/v1/stores/{store}/inbox/assignees' => $r('GET', "{$b}/inbox/assignees"),
+            'POST api/v1/stores/{store}/inbox/attachments' => fn (array $h) => $this->flushHeaders()->withHeaders($h)->post("{$b}/inbox/attachments", [
+                'file' => UploadedFile::fake()->createWithContent('photo.png', $this->imageBytes(120, 120)),
+            ], ['Accept' => 'application/json']),
+            'GET api/v1/stores/{store}/inbox/attachments/{attachment}/link' => $r('GET', "{$b}/inbox/attachments/{$s['inbox_file']}/link"),
+            'GET api/v1/stores/{store}/inbox/saved-replies' => $r('GET', "{$b}/inbox/saved-replies"),
+            'POST api/v1/stores/{store}/inbox/saved-replies' => $r('POST', "{$b}/inbox/saved-replies", ['title' => 'New', 'shortcut' => 'new-one', 'body' => 'Thanks from {shop_name}']),
+            'POST api/v1/stores/{store}/inbox/saved-replies/reorder' => $r('POST', "{$b}/inbox/saved-replies/reorder", ['ids' => [$s['saved_reply']]]),
+            'PATCH api/v1/stores/{store}/inbox/saved-replies/{saved_reply}' => $r('PATCH', "{$b}/inbox/saved-replies/{$s['saved_reply']}", ['title' => 'Renamed', 'revision' => 1]),
+            'DELETE api/v1/stores/{store}/inbox/saved-replies/{saved_reply}' => $r('DELETE', "{$b}/inbox/saved-replies/{$s['saved_reply']}"),
+            'GET api/v1/stores/{store}/inbox/settings' => $r('GET', "{$b}/inbox/settings"),
+            'PATCH api/v1/stores/{store}/inbox/settings' => $r('PATCH', "{$b}/inbox/settings", ['revision' => 2, 'widget_reply_time' => 'hour']),
+            'POST api/v1/stores/{store}/inbox/settings/email-address/rotate' => $r('POST', "{$b}/inbox/settings/email-address/rotate"),
             'GET api/v1/billing/sms-credits' => $r('GET', '/api/v1/billing/sms-credits'),
             'PATCH api/v1/billing/sms-credits' => $r('PATCH', '/api/v1/billing/sms-credits', ['low_credit_threshold' => 500]),
             'GET api/v1/billing/sms-credits/ledger' => $r('GET', '/api/v1/billing/sms-credits/ledger'),

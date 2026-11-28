@@ -1,4 +1,4 @@
-import type { OrderStatus, ShipmentStatus, StorefrontOrderTracking } from '@storeplix/types';
+import type { InboxReplyTime, OrderStatus, ShipmentStatus, StorefrontOrderTracking } from '@storeplix/types';
 
 /**
  * 5b-3 (PHASE-5B-CONTRACT §11 `/track`): the shipment block gains the courier status and its time, from courier
@@ -19,6 +19,21 @@ export type StorefrontTracking = Omit<StorefrontOrderTracking, 'shipment'> & {
   // Courier fields optional: manual shipments and older API responses don't carry them (the Zod schema nulls bad values).
   shipment: (Pick<NonNullable<StorefrontOrderTracking['shipment']>, 'carrier_name' | 'tracking_code' | 'tracking_url'> & Partial<CourierTrack>) | null;
 };
+
+/**
+ * 8.8e (PHASE-8-8E §10): what the browser gets for order Messages — never the access token, which goes into the httpOnly
+ * `sp_order_access` cookie server-side.
+ */
+export interface ShopperOrderMessagesView {
+  unread_count: number;
+  reply_time: InboxReplyTime;
+}
+export type ShopperTracking = Omit<StorefrontTracking, 'messages'> & { messages: ShopperOrderMessagesView | null };
+
+export function toShopperTracking(t: StorefrontTracking): ShopperTracking {
+  const { messages, ...rest } = t;
+  return { ...rest, messages: messages ? { unread_count: messages.unread_count, reply_time: messages.reply_time } : null };
+}
 
 /** Title of the "with the courier" step for a courier status while the order is `shipped`. */
 const COURIER_STEP_TITLES: Partial<Record<CourierTrackStatus, string>> = {

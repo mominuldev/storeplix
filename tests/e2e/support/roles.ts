@@ -12,7 +12,8 @@ export type PermissionKey =
   | 'orders.view' | 'orders.process' | 'orders.refund' | 'pos.sell' | 'fraud.manage' | 'shipments.manage' | 'shipments.cancel'
   | 'products.edit' | 'products.delete' | 'inventory.adjust' | 'purchasing.manage' | 'customers.view' | 'customers.edit' | 'customers.delete'
   | 'costs.view' | 'reports.view' | 'data.export' | 'data.import' | 'marketing.manage' | 'settings.manage'
-  | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage';
+  | 'integrations.manage' | 'domains.manage' | 'staff.manage' | 'audit.view' | 'billing.view' | 'billing.manage'
+  | 'inbox.manage';
 
 /** §2.1 labels, used as toggle / checkbox names in the UI. */
 export const LABEL: Record<PermissionKey, string> = {
@@ -42,6 +43,7 @@ export const LABEL: Record<PermissionKey, string> = {
   'audit.view': 'View activity log',
   'billing.view': 'View plan & invoices',
   'billing.manage': 'Change plan & pay',
+  'inbox.manage': 'Reply to customer messages', // PHASE-8-8E §2 (group customers, not sensitive, requires nothing)
 };
 
 export interface Shop extends ThrowawayTenant {

@@ -394,6 +394,25 @@ jobs:
           [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'platform-sms'"; exit 1; }
           exit $status
 
+      # Phase 8.8e (PHASE-8-8E-CONTRACT §14.2 S234–S247, §16, §17 AC 7): the `inbox` group (every §13 route: happy, validation,
+      # authz matrix O/A/S/C for inbox.manage / settings.manage / orders.view / customers.view / customers.delete,
+      # impersonation 403 on writes + attachment links, isolation incl. cross-tenant/cross-store 404 (S234, S235); status /
+      # reopen / assign vectors incl. departed member (S245); unread per member + badge scope; ETag 304 + invalidation;
+      # client_id idempotency; reply dispatch per channel/identity with the reply SMS job (seen / throttled / no_credits /
+      # failed + refund, not_applicable) (S239); notes never in any shopper / email / SMS output (S236); attachments (S241);
+      # saved replies + merge tags; widget start/verify/resend/unverified/honeypot/limiters/blocked/draft (S237, S238, S240);
+      # magic links; order tokens + /orders/access; signed inbound email (S243); outbound headers; OrderPlacedMail Reply-To;
+      # auto-link rules (S244); delete + retention prune (S247)) must exist and pass on sqlite. Concurrency (`race`) runs on
+      # Postgres only.
+      - name: phase 8.8e group (inbox)
+        run: |
+          mkdir -p build
+          php artisan test --group=inbox --exclude-group perf --exclude-group race --log-junit build/inbox.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/inbox.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "inbox tests executed: ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'inbox'"; exit 1; }
+          exit $status
+
       # Amendment A1 (PHASE-8-1-AMENDMENT-ADMIN-2FA §2, Q231): the `admin-settings` group (env default local off / testing
       # on / ADMIN_TWO_FACTOR_REQUIRED override, stored value wins, login `signed_in` path with session + audit, required
       # path unchanged, GET/PATCH /admin/settings/security authz (support, read_only, merchant → 403/401), wrong password
@@ -668,6 +687,22 @@ jobs:
           DB_CONNECTION: pgsql
           DB_DATABASE: storeplix_test
           CACHE_STORE: array
+      # Phase 8.8e (§3): the eight inbox tables (U(store_id, channel, thread_key), partial uniques on client_id and
+      # email_message_id, CHECKs, composite FKs, trigram index on contact_name), the media purpose inbox_attachment and the
+      # sms_messages purposes / reference_type `conversation` exist on Postgres; inbox must pass there too (ILIKE search,
+      # ON CONFLICT upsert of the conversation, FOR UPDATE locks) and must not be empty.
+      - name: phase 8.8e inbox (postgres)
+        run: |
+          mkdir -p build
+          php artisan test --group=inbox --exclude-group perf --exclude-group race --log-junit build/inbox-pg.xml; status=$?
+          ran=$(grep -o 'tests="[0-9]*"' build/inbox-pg.xml | head -1 | grep -o '[0-9]*' || echo 0)
+          echo "inbox tests executed (postgres): ${ran}"
+          [ "${ran:-0}" -ge 1 ] || { echo "::error::no tests in group 'inbox' on Postgres"; exit 1; }
+          exit $status
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: storeplix_test
+          CACHE_STORE: array
       # Amendment A1 (§1 A1-2): `platform_settings` (key PK, jsonb value, updated_by FK SET NULL, timestamptz) exists on
       # Postgres; admin-settings must pass there too and must not be empty.
       - name: amendment A1 admin-settings (postgres)
@@ -783,6 +818,8 @@ jobs:
       # process) with an array cache: forked children must not share the parent's Redis socket.
       #   S2 oversell (stock 5, 20 parallel checkouts → 5 orders) · S2 mixed-cart deadlock · S3 coupon
       #   usage limit · S4 same Idempotency-Key · S17 manual-order plan limit · Phase 4 A8/A16.
+      #   Phase 8.8e (S246): InboxRaceTest — two first order messages → one conversation, one client_id → one message;
+      #   two verifies of one phone → one conversation, concurrent assigns serialise.
       - name: race tests (postgres, must not skip)
         run: |
           mkdir -p build
@@ -821,7 +858,9 @@ jobs:
             test_concurrent_verifications_of_one_payment_grant_the_credits_once \
             test_two_shops_racing_for_one_sender_id_get_one_request \
             test_two_activations_leave_one_primary \
-            test_a_broadcast_scheduled_twice_is_scheduled_once_and_the_cap_holds; do
+            test_a_broadcast_scheduled_twice_is_scheduled_once_and_the_cap_holds \
+            test_two_first_order_messages_create_one_conversation_and_one_client_id_one_message \
+            test_two_verifies_of_one_phone_and_concurrent_assign; do
             php artisan test --filter="::${t}\$" --log-junit "build/race-${t}.xml" || fail=1
             ran=$(grep -o 'tests="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
             skipped=$(grep -o 'skipped="[0-9]*"' "build/race-${t}.xml" | head -1 | grep -o '[0-9]*' || echo 0)
@@ -949,6 +988,29 @@ jobs:
             listed=$(grep -cw -- "${t}" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" || true)
             echo "${t}: listed ${listed}x"
             [ "${listed:-0}" -ge 2 ] || { echo "::error::platform-sms race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
+          done
+          exit $fail
+      # Phase 8.8e (S246, §16): the `inbox` ∩ `race` tests (two verifies of one phone create one conversation under the
+      # ON CONFLICT upsert; two sends with one client_id store one message; one inbound Message-ID twice stores one message)
+      # run in the list above. This guard DISCOVERS that intersection from the test files (a #[Group('race')] method or
+      # class in a file tagged #[Group('inbox')]) and fails when it is empty or when a discovered test is missing from the
+      # race lists of api-perf and api-rls, so a new inbox race test can't silently not run.
+      - name: phase 8.8e race list complete (discovered)
+        run: |
+          names=$(grep -rlE "Group\('inbox'\)" tests --include='*.php' | xargs -r awk '
+            FNR == 1 { pend = 0; classrace = 0 }
+            /^[[:space:]]*#\[Group\(.race.\)\]/ { pend = 1; next }
+            /^[[:space:]]*(#\[|\/\*\*|\*)/ { next }
+            /^[[:space:]]*((final|abstract|readonly)[[:space:]]+)*class[[:space:]]/ { classrace = pend; pend = 0; next }
+            /function[[:space:]]+test_/ { if (pend || classrace) { match($0, /test_[A-Za-z0-9_]+/); print substr($0, RSTART, RLENGTH) } pend = 0; next }
+            /^[[:space:]]*$/ { next }
+            { pend = 0 }' | sort -u)
+          [ -n "$names" ] || { echo "::error::no race tests in group 'inbox' (S246 needs a two-verify race, a client_id race and an inbound duplicate race)"; exit 1; }
+          fail=0
+          for t in $names; do
+            listed=$(grep -cw -- "${t}" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" || true)
+            echo "${t}: listed ${listed}x"
+            [ "${listed:-0}" -ge 2 ] || { echo "::error::inbox race test ${t} is not in both race lists (api-perf, api-rls)"; fail=1; }
           done
           exit $fail
       # Phase 5a perf budget (§12): checkout p95 < 300 ms, 10-line cart, 50 sequential runs. Runs the
@@ -1161,7 +1223,9 @@ jobs:
             test_concurrent_verifications_of_one_payment_grant_the_credits_once \
             test_two_shops_racing_for_one_sender_id_get_one_request \
             test_two_activations_leave_one_primary \
-            test_a_broadcast_scheduled_twice_is_scheduled_once_and_the_cap_holds; do
+            test_a_broadcast_scheduled_twice_is_scheduled_once_and_the_cap_holds \
+            test_two_first_order_messages_create_one_conversation_and_one_client_id_one_message \
+            test_two_verifies_of_one_phone_and_concurrent_assign; do
             "$RUNNER_TEMP/run-group.sh" "race-${t}" strict --filter="::${t}\$" || fail=1
           done
           exit $fail
@@ -1248,6 +1312,12 @@ jobs:
       # the opt-out lookup run on the admin connection; routing reads providers as the app role. Must not be empty.
       - name: phase 8.9b platform-sms (RLS on)
         run: '"$RUNNER_TEMP/run-group.sh" platform-sms lenient --group=platform-sms --exclude-group perf --exclude-group race'
+      # Phase 8.8e (PHASE-8-8E-CONTRACT §3, S234): the eight inbox tables are RLS-forced; widget sessions, magic links and
+      # order tokens resolve inside the host's tenant; the inbound email router resolves the store on pgsql_admin
+      # (`// cross-tenant: inbound email routing`) and then runs the job in that tenant; the reply SMS job charges inside the
+      # conversation's tenant (their RLS probes are also in the `rls` step above). Must not be empty.
+      - name: phase 8.8e inbox (RLS on)
+        run: '"$RUNNER_TEMP/run-group.sh" inbox lenient --group=inbox --exclude-group perf --exclude-group race'
       # Amendment A1 (§1 A1-2): `platform_settings` follows RlsTables::PLATFORM (the app role can't write it outside the
       # admin surface); the setting is read/written on the admin connection and login reads it before any tenant context.
       # Must not be empty.

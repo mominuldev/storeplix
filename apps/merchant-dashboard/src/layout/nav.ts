@@ -54,7 +54,8 @@ export const mainNav: NavEntry[] = [
       { label: 'Fake order guard', to: '/orders/fraud-guard', requires: can.manageFraudGuard },
     ],
   },
-  { label: 'Inbox', to: '/inbox', icon: MessageCircle },
+  // PHASE-8-8E §2/§12: `inbox.manage`; the sidebar shows the unread badge from the inbox summary.
+  { label: 'Inbox', to: '/inbox', icon: MessageCircle, requires: can.manageInbox },
   // PHASE-8-8D §11.9: POS shows only with `pos.sell` (the route gates itself too).
   { label: 'POS', to: '/pos', icon: Monitor, requires: can.sellPos },
   {
@@ -106,7 +107,7 @@ export const mainNav: NavEntry[] = [
 
 // Figma Merchant Admin – Mobile · More 32:6541 grouping.
 export const mobileMoreGroups: { heading: string; items: string[] }[] = [
-  { heading: 'Sales', items: ['/orders', '/pos', '/customers'] },
+  { heading: 'Sales', items: ['/orders', '/inbox', '/pos', '/customers'] },
   { heading: 'Catalog', items: ['/products', '/inventory'] },
   { heading: 'Grow', items: ['/marketing', '/reports'] },
   { heading: 'Setup', items: ['/online-store', '/integrations', '/settings'] },

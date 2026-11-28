@@ -1,8 +1,9 @@
 import 'server-only';
 import { cache } from 'react';
 import { z } from 'zod';
-import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontConfig, StorefrontMedia } from '@storeplix/types';
+import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontConfig, StorefrontInboxConfig, StorefrontMedia } from '@storeplix/types';
 import { parseCommerce } from './commerce-schemas';
+import { parseInboxConfig } from './inbox-schemas';
 import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
 import { buildCommerceRequest } from './commerce-request';
@@ -78,14 +79,18 @@ const StorefrontConfigSchema = z.object({
   media: z.unknown().optional().transform(parseMediaMap),
   // Phase 5a; optional on the wire (rolling deploys) → null.
   commerce: z.unknown().optional().transform(parseCommerce),
+  // Phase 8.8e (PHASE-8-8E §9.1); optional on the wire → null (no widget, no order Messages card).
+  inbox: z.unknown().optional().transform(parseInboxConfig),
 });
 
 /**
  * Store config whose `theme` is still untrusted input for the theme engine. Optional-on-the-wire
  * fields (icons, contact, social, navigation, media) are always present here, with safe defaults.
  */
-export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'contact' | 'social' | 'navigation' | 'media' | 'commerce'> & {
+export type RawStorefrontConfig = Omit<StorefrontConfig, 'theme' | 'store' | 'contact' | 'social' | 'navigation' | 'media' | 'commerce' | 'inbox'> & {
   commerce: StorefrontCommerce | null;
+  /** 8.8e §9.1: null = no widget, no order Messages (always null on a draft store). */
+  inbox?: StorefrontInboxConfig | null;
   store: StorefrontConfig['store'] & { icons: NonNullable<StorefrontConfig['store']['icons']> };
   contact: StoreContact;
   social: SocialLinks;
@@ -164,6 +169,8 @@ function finalizeConfig(
       redirect_host: preview || redirect === host ? null : redirect,
     },
     preview,
+    // 8.8e §9.1: never a widget or order Messages on a draft store, whatever the API sent.
+    inbox: config.store.status === 'active' ? config.inbox : null,
   };
 }
 

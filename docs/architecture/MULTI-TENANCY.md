@@ -186,7 +186,9 @@ existed before 5b and revokes `UPDATE, DELETE ON audit_logs` from the app role (
   after Phase 8.8c part A**: + `locations`; **87 after Phase 8.8c**: + `stock_transfers`, `stock_transfer_items`,
   `stock_counts`, `stock_count_items`; **91 after Phase 8.8d**: + `pos_registers`, `pos_sessions`, `pos_sales`,
   `pos_held_sales`; **95 after Phase 8.9a**: + `sms_credit_accounts`, `sms_credit_ledger` (append-only, SELECT/INSERT
-  policies only), `sms_templates`, `sms_sender_ids`; the
+  policies only), `sms_templates`, `sms_sender_ids`; **103 after Phase 8.8e**: + `inbox_settings`, `inbox_conversations`,
+  `inbox_messages`, `inbox_attachments`, `inbox_reads`, `inbox_saved_replies`, `inbox_widget_sessions`,
+  `inbox_magic_links` (inbound email is routed cross-tenant only in `Inbox\Support\InboundRouter`); the
   `RlsTables` docblock count is authoritative). `RlsTables::PLATFORM` lists the
   tables without `tenant_id` and without RLS (`users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`,
   `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`, `tenants`, `plans`, `otp_codes`, `migrations`).

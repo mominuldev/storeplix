@@ -109,6 +109,8 @@ export const can = {
   receiveStock: (m: PermissionHolder) => any(m, 'purchasing.manage', 'inventory.adjust'),
   /** PHASE-8-8D §2.1 `pos.sell`: POS (registers, open/close, sell). Register writes also need `settings.manage`. */
   sellPos: (m: PermissionHolder) => hasPermission(m, 'pos.sell'),
+  /** PHASE-8-8E §2 `inbox.manage`: Inbox page, replies, notes, assignment, saved replies (sidebar badge too). */
+  manageInbox: (m: PermissionHolder) => hasPermission(m, 'inbox.manage'),
   /** Upload media: `products.edit|settings.manage`. */
   uploadMedia: (m: PermissionHolder) => any(m, 'products.edit', 'settings.manage'),
 

@@ -7,12 +7,26 @@ import { formatDhakaClock, formatDhakaTime, trackingSteps, TRACK_HEADLINES } fro
 import { Icon } from '../components/icon';
 import { OrderTimeline } from './order-timeline';
 import { Notice } from './ui';
+import { OrderMessages } from '@/components/inbox/order-messages';
+import type { ShopperTracking } from '@/lib/tracking';
 
 const inputCls = 'type-body-m h-[52px] w-full rounded-sf-md border border-line bg-surface px-4 text-ink outline-none placeholder:text-ink-muted focus:border-2 focus:border-brand aria-[invalid=true]:border-sale';
 
 /** Track form + result (Figma 1:11959). Street address and email are never part of the response. */
-export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; whatsapp: string | null }) {
-  const [state, action, pending] = useActionState<TrackState, FormData>(trackOrder, { status: 'idle' });
+export function TrackForm({
+  initialNumber,
+  whatsapp,
+  initialTracking = null,
+}: {
+  initialNumber: string;
+  whatsapp: string | null;
+  /** 8.8e: the order opened from a reply-SMS magic link (`/track?view=messages`). */
+  initialTracking?: ShopperTracking | null;
+}) {
+  const [state, action, pending] = useActionState<TrackState, FormData>(
+    trackOrder,
+    initialTracking ? { status: 'found', tracking: initialTracking, values: { number: initialTracking.number, phone: '' } } : { status: 'idle' },
+  );
   const fieldErrors = state.status === 'invalid' ? state.fieldErrors : {};
   const t = state.status === 'found' ? state.tracking : null;
   const typed = state.status === 'idle' ? { number: initialNumber, phone: '' } : state.values;
@@ -62,7 +76,8 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
       </div>
 
       {t ? (
-        <section aria-labelledby="track-result" className="flex min-w-0 flex-1 flex-col gap-6 rounded-sf-md border border-line bg-surface p-5 lg:p-8" data-sp-tracking>
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <section aria-labelledby="track-result" className="flex min-w-0 flex-col gap-6 rounded-sf-md border border-line bg-surface p-5 lg:p-8" data-sp-tracking>
           <div className="flex flex-col gap-1">
             <p className="type-body-s text-ink-muted">Order {t.number}</p>
             <h2 id="track-result" className="type-h1 text-ink">
@@ -120,6 +135,10 @@ export function TrackForm({ initialNumber, whatsapp }: { initialNumber: string; 
             </a>
           ) : null}
         </section>
+        {t.messages ? (
+          <OrderMessages key={t.number} number={t.number} replyTime={t.messages.reply_time} via="track" focus={initialTracking !== null && t === initialTracking} />
+        ) : null}
+        </div>
       ) : null}
     </div>
   );

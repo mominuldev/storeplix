@@ -29,6 +29,7 @@ use App\Domain\Geo\Http\GeoController;
 use App\Domain\Identity\Http\Controllers\AccountController;
 use App\Domain\Identity\Http\Controllers\AuthController;
 use App\Domain\Identity\Http\Controllers\OtpController;
+use App\Domain\Inbox\Http\Controllers\InboxAttachmentController;
 use App\Domain\Inventory\Http\Controllers\InventoryController;
 use App\Domain\Media\Http\Controllers\MediaController;
 use App\Domain\Navigation\Http\Controllers\NavigationController;
@@ -382,6 +383,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.9a (PHASE-8-9A-CONTRACT §10.1): SMS overview, test SMS, templates, sender IDs and the SMS log (own group).
     require __DIR__.'/sms.php';
 
+    // Phase 8.8e (PHASE-8-8E-CONTRACT §13): Inbox — merchant, storefront chat / order messages and inbound email (own groups).
+    require __DIR__.'/inbox.php';
+
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
         Route::get('config', StorefrontConfigController::class)->name('storefront.config');
@@ -489,6 +493,10 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.8b (PHASE-8-8B §3, S176): signed 5-minute supplier invoice download (no session; tenant from the signature).
     Route::get('purchase-invoices/{media}/download', [PurchasingController::class, 'downloadInvoice'])->where('media', '[0-9A-Za-z]{26}')
         ->middleware(['signed', 'throttle:60,1,purchase-invoices.download'])->name('purchase-invoices.download');
+
+    // Phase 8.8e (PHASE-8-8E §7, S241): signed 5-minute inbox attachment download (no session; tenant from the signature).
+    Route::get('inbox-attachments/{attachment}/download', [InboxAttachmentController::class, 'download'])->where('attachment', '[0-9A-Za-z]{26}')
+        ->middleware(['signed', 'throttle:60,1,inbox-attachments.download'])->name('inbox-attachments.download');
 
     // Phase 4: signed 5-minute export download for local/private disks (S3 uses its own pre-signed URL).
     Route::get('exports/{export}/download', [ExportController::class, 'download'])

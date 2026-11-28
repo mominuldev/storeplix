@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Sms;
 
 use App\Domain\Automations\Models\Automation;
+use App\Domain\Inbox\Models\InboxConversation;
 use App\Domain\Marketing\Models\Campaign;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Pos\Models\PosSale;
@@ -30,14 +31,16 @@ final class SmsLogPresenter
         $saleOrders = Order::query()->whereIn('id', $sales->values()->all())->pluck('number', 'id');
         $campaigns = Campaign::query()->whereIn('id', $ids('campaign'))->pluck('name', 'id');
         $automations = Automation::query()->whereIn('id', $ids('automation'))->pluck('name', 'id');
+        $conversations = InboxConversation::query()->whereIn('id', $ids('conversation'))->pluck('contact_name', 'id'); // PHASE-8-8E
         $previewSince = now()->subDays((int) config('sms.preview_days', 90));
 
-        return $rows->map(function (SmsMessage $m) use ($orders, $sales, $saleOrders, $campaigns, $automations, $previewSince) {
+        return $rows->map(function (SmsMessage $m) use ($orders, $sales, $saleOrders, $campaigns, $automations, $conversations, $previewSince) {
             $label = match ($m->reference_type) {
                 'order' => $orders[$m->reference_id] ?? null,
                 'pos_sale' => isset($sales[$m->reference_id]) ? ($saleOrders[$sales[$m->reference_id]] ?? null) : null,
                 'campaign' => $campaigns[$m->reference_id] ?? null,
                 'automation' => $automations[$m->reference_id] ?? null,
+                'conversation' => $conversations[$m->reference_id] ?? null,
                 default => null,
             };
             $error = in_array($m->error_code, [SmsMessage::PROVIDER_ERROR, SmsMessage::NO_CREDITS], true) ? $m->error_code

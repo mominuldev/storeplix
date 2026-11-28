@@ -27,6 +27,7 @@ import type { CourierTrackStatus, StorefrontTracking } from './tracking';
 import { normalizeRichText } from './rich-text';
 import { cleanText } from './text';
 import { parseProductCard, parseStorefrontMedia } from './storefront-schemas';
+import { parseOrderMessagesAccess } from './inbox-schemas';
 
 /**
  * Boundary parsers for the Phase 5a storefront payloads (PHASE-5-CONTRACT §3.2–3.4, §6). Pure (no
@@ -574,6 +575,8 @@ const TrackingSchema = z.object({
     })
     .nullable()
     .catch(null),
+  // 8.8e (PHASE-8-8E §10): order Messages access; holds a server-side token (never sent to the browser as-is).
+  messages: z.unknown().optional().transform((v) => parseOrderMessagesAccess(v)),
 }) satisfies z.ZodType<StorefrontTracking, unknown>;
 
 export function parseTracking(v: unknown): StorefrontTracking | null {

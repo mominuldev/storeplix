@@ -12,4 +12,7 @@ return [
     'checkout_otp' => '{shop}: Your checkout code is {code}. It is valid for 5 minutes. Do not share it.',
     // PHASE-8-8D P88D-12: till SMS receipt (vars: shop, number, total, method, footer); text only, no link.
     'pos_receipt' => '{shop}: Thank you! Receipt {number}, total Tk {total}, paid {method}. {footer}',
+    // PHASE-8-8E P88E-11/12: Inbox chat code (vars: shop, code) and "the shop replied" with a magic link (vars: shop, url).
+    'inbox_verify' => '{shop}: Your code is {code}. It expires in 10 minutes.',
+    'inbox_reply' => '{shop}: We replied to your message. Read it here: {url}',
 ];

@@ -1,8 +1,30 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.24.0
+  version: 1.25.0
   description: |
+    1.25.0 (2026-11-28, Phase 8.8e Inbox on own channels, PHASE-8-8E-CONTRACT.md, ADR 0028; Q287–Q302 defaults
+    accepted). New tag inbox (permission inbox.manage): /stores/{store}/inbox/summary and /conversations (conditional GETs
+    with ETag / If-None-Match → 304), /conversations/{conversation} (GET, DELETE with customers.delete), /messages (GET
+    after/before cursors; POST reply or internal note with client_id), /assign, /status, PUT /order, /block, /unblock,
+    /read, /saved-replies/{saved_reply}/render; /inbox/assignees; /inbox/attachments (multipart, JPG/PNG/PDF ≤ 5 MB) +
+    /{attachment}/link and public signed /inbox-attachments/{attachment}/download; /inbox/saved-replies (+ reorder,
+    PATCH/DELETE); /inbox/settings (GET, PATCH settings.manage) + /email-address/rotate. Storefront (server-to-server):
+    /storefront/inbox/session, /sessions (multipart start; SMS code or unverified fallback), /sessions/verify,
+    /sessions/resend, /messages (+ /seen), /attachments/{attachment}, /links/{code}; /storefront/orders/access,
+    /storefront/orders/messages (+ /seen) with X-Order-Access. Webhook POST /webhooks/inbound-email/{driver}
+    (signature-verified). PermissionKey gains inbox.manage; SmsPurpose gains inbox_verify and inbox_reply;
+    SmsLogEntry.reference.type gains conversation; StorefrontConfig gains optional inbox; StorefrontOrderTracking gains
+    optional messages. New parameters InboxConversationPath, InboxSavedReplyPath, InboxAttachmentPath, InboxSessionHeader,
+    OrderAccessHeader, IfNoneMatch. New schemas InboxChannel, InboxStatus, InboxScope, InboxIdentity, InboxMessageKind,
+    InboxSystemEvent, InboxSmsStatus, InboxReplyTime, InboxMergeTag, InboxContact, InboxOrderRef, InboxAttachment,
+    InboxProductContext, InboxSummary, InboxConversationSummary, InboxListMeta, InboxOrderCard, InboxPastOrder,
+    InboxCustomerPanel, InboxConversation, InboxMessage, SendInboxMessageInput, AssignInboxConversationInput,
+    SetInboxStatusInput, LinkInboxOrderInput, MarkInboxReadInput, InboxAssignee, InboxAttachmentLink, InboxSavedReply,
+    InboxSavedReplyInput, UpdateInboxSavedReplyInput, InboxSavedReplyListMeta, InboxSavedReplyRender, InboxSettings,
+    UpdateInboxSettingsInput, StorefrontInboxConfig, InboxWidgetSession, InboxWidgetStart, InboxWidgetVerifyResult,
+    InboxCodeInvalidDetails, InboxShopperMessage, StorefrontOrderMessagesAccess, InboxMagicLinkResult,
+    SavedReplyUnknownTagDetails.
     1.24.0 (2026-11-28, Phase 8.9b platform SMS provider, PHASE-8-9B-CONTRACT.md, ADR 0027; Q273–Q286 defaults accepted).
     New tag platform-sms (platform permission manage_settings): /admin/sms/drivers, /admin/sms/alerts,
     /admin/sms/providers (overview, create draft, GET/PATCH, /test, /activate with typed name, /rotate test-then-swap,
@@ -352,6 +374,8 @@ tags:
   description: 'Phase 8.9b: platform SMS providers, failover, platform message types, broadcasts and the platform SMS log (PHASE-8-9B §4–§9); super admin, manage_settings'
 - name: account
   description: 'Phase 8.9b: the signed-in user''s own settings (SMS preferences) and the public promotional SMS opt-out (PHASE-8-9B §7.6)'
+- name: inbox
+  description: 'Phase 8.8e: Inbox on own channels — website chat, order messages, email replies; conversations, notes, attachments, saved replies, channel settings (PHASE-8-8E §4–§13)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -22192,8 +22216,1945 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
       security: []
+  /stores/{store}/inbox/summary:
+    get:
+      tags:
+      - inbox
+      summary: Inbox summary (sidebar badge)
+      operationId: getInboxSummary
+      description: 'PHASE-8-8E §5. `inbox.manage`. Conditional GET (P88E-17): send If-None-Match, 304 without a body when unchanged.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSummary'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Weak ETag (store inbox version + member read version + query hash)
+        '304':
+          description: Not modified (If-None-Match matched); no body
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/conversations:
+    get:
+      tags:
+      - inbox
+      summary: List conversations
+      operationId: listInboxConversations
+      description: PHASE-8-8E §5. `inbox.manage`. 30 per page, `(last_message_at DESC, id DESC)`, cursor. Conditional GET.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - in: query
+        name: filter[status]
+        schema:
+          $ref: '#/components/schemas/InboxStatus'
+        description: Default open
+      - in: query
+        name: filter[scope]
+        schema:
+          $ref: '#/components/schemas/InboxScope'
+        description: Default mine_unassigned
+      - in: query
+        name: filter[channel]
+        schema:
+          type: string
+        description: Comma list of InboxChannel
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description: Contact name, phone digits, email or order number; % and _ literal
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxConversationSummary'
+                  meta:
+                    $ref: '#/components/schemas/InboxListMeta'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Weak ETag (store inbox version + member read version + query hash)
+        '304':
+          description: Not modified (If-None-Match matched); no body
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/conversations/{conversation}:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    get:
+      tags:
+      - inbox
+      summary: Conversation with side panel
+      operationId: getInboxConversation
+      description: PHASE-8-8E §6.1/§6.3. `inbox.manage`; customer fields need customers.view, order cards orders.view (else
+        null / []).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - inbox
+      summary: Delete a conversation
+      operationId: deleteInboxConversation
+      description: 'PHASE-8-8E §6.4 / P88E-18. `inbox.manage` + `customers.delete`. Hard delete with messages and attachments;
+        audited `inbox_conversation.deleted`. Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write`
+        120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/conversations/{conversation}/messages:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    get:
+      tags:
+      - inbox
+      summary: Messages of a conversation
+      operationId: listInboxMessages
+      description: PHASE-8-8E §6.2. `inbox.manage`. Default the latest 50; `before` = the 50 older; `after` = newer ones oldest
+        first (≤ 100, polling). Conditional GET.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - in: query
+        name: after
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      - in: query
+        name: before
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxMessage'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Weak ETag (store inbox version + member read version + query hash)
+        '304':
+          description: Not modified (If-None-Match matched); no body
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - inbox
+      summary: Send a reply or internal note
+      operationId: sendInboxMessage
+      description: 'PHASE-8-8E §6.2. `inbox.manage`. Replay with the same client_id → 200 with the stored message. A reply reopens
+        a closed conversation and dispatches by channel (email job; reply SMS job after 120 s for verified web chat / order
+        threads). Notes are staff-only and never dispatched. Every write: impersonation → 403 `impersonation_read_only`; limiter
+        `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendInboxMessageInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxMessage'
+        '200':
+          description: Replay of the same client_id
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxMessage'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/conversations/{conversation}/assign:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    post:
+      tags:
+      - inbox
+      summary: Assign or unassign
+      operationId: assignInboxConversation
+      description: 'PHASE-8-8E §6.4 (P88E-4). `inbox.manage`. The assignee must hold inbox.manage (422 inbox_assignee_invalid);
+        the new assignee is emailed (not on self-assign); system row; audited. Every write: impersonation → 403 `impersonation_read_only`;
+        limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignInboxConversationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+  /stores/{store}/inbox/conversations/{conversation}/status:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    post:
+      tags:
+      - inbox
+      summary: Set status
+      operationId: setInboxConversationStatus
+      description: 'PHASE-8-8E §6.4 (P88E-5). `inbox.manage`. Same status = no-op 200. Every write: impersonation → 403 `impersonation_read_only`;
+        limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetInboxStatusInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+  /stores/{store}/inbox/conversations/{conversation}/order:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    put:
+      tags:
+      - inbox
+      summary: Link or unlink the order
+      operationId: linkInboxOrder
+      description: 'PHASE-8-8E §6.4. `inbox.manage` + `orders.view`. Order channel → 422 inbox_order_locked; an order of another
+        store → 404. Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkInboxOrderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/conversations/{conversation}/block:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    post:
+      tags:
+      - inbox
+      summary: Block
+      operationId: blockInboxConversation
+      description: 'PHASE-8-8E §6.4 / P88E-13. Further shopper messages are dropped silently; audited. Every write: impersonation
+        → 403 `impersonation_read_only`; limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/conversations/{conversation}/unblock:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    post:
+      tags:
+      - inbox
+      summary: Unblock
+      operationId: unblockInboxConversation
+      description: 'PHASE-8-8E §6.4. Audited. Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write`
+        120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxConversation'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/conversations/{conversation}/read:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    post:
+      tags:
+      - inbox
+      summary: Mark read for me
+      operationId: markInboxConversationRead
+      description: 'PHASE-8-8E §6.4 (P88E-9). Never moves backwards. Every write: impersonation → 403 `impersonation_read_only`;
+        limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkInboxReadInput'
+      responses:
+        '204':
+          description: Saved
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/conversations/{conversation}/saved-replies/{saved_reply}/render:
+    parameters:
+    - $ref: '#/components/parameters/InboxConversationPath'
+    - $ref: '#/components/parameters/InboxSavedReplyPath'
+    post:
+      tags:
+      - inbox
+      summary: Render a saved reply for a conversation
+      operationId: renderInboxSavedReply
+      description: PHASE-8-8E §8.2. `inbox.manage`. Merge tags without a value stay as {tag} and are listed in unresolved; an
+        attachment is copied into a fresh upload.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSavedReplyRender'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/assignees:
+    get:
+      tags:
+      - inbox
+      summary: Members who can be assigned
+      operationId: listInboxAssignees
+      description: PHASE-8-8E §6.4. Members holding inbox.manage, you first.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxAssignee'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/attachments:
+    post:
+      tags:
+      - inbox
+      summary: Upload an attachment
+      operationId: uploadInboxAttachment
+      description: 'PHASE-8-8E §7 (P88E-7). `inbox.manage`; limiter inbox-upload 30/min per member. JPG/PNG/PDF ≤ 5 MB, MIME
+        sniffed, private; attach with attachment_ids within 24 h. Every write: impersonation → 403 `impersonation_read_only`;
+        limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxAttachment'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/attachments/{attachment}/link:
+    parameters:
+    - $ref: '#/components/parameters/InboxAttachmentPath'
+    get:
+      tags:
+      - inbox
+      summary: Signed view link (5 minutes)
+      operationId: getInboxAttachmentLink
+      description: PHASE-8-8E §7. `inbox.manage`. 409 inbox_attachment_processing while an image is re-encoded; impersonation
+        → 403 impersonation_attachment_hidden.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxAttachmentLink'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '409':
+          description: '`inbox_attachment_processing`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/inbox/saved-replies:
+    get:
+      tags:
+      - inbox
+      summary: Saved replies
+      operationId: listInboxSavedReplies
+      description: PHASE-8-8E §8.1. `inbox.manage`. Ordered by position.
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 60
+      - in: query
+        name: filter[chip]
+        schema:
+          type: integer
+          enum:
+          - 1
+      - in: query
+        name: filter[attachment]
+        schema:
+          type: integer
+          enum:
+          - 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxSavedReply'
+                  meta:
+                    $ref: '#/components/schemas/InboxSavedReplyListMeta'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - inbox
+      summary: Create a saved reply
+      operationId: createInboxSavedReply
+      description: 'PHASE-8-8E §8.1. `inbox.manage`. 409 saved_reply_shortcut_taken; 422 saved_reply_limit_reached (200) / saved_reply_unknown_merge_tag
+        (details tags); audited. Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write` 120/min per
+        member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxSavedReplyInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSavedReply'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          description: '`saved_reply_shortcut_taken`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/inbox/saved-replies/reorder:
+    post:
+      tags:
+      - inbox
+      summary: Reorder saved replies
+      operationId: reorderInboxSavedReplies
+      description: 'PHASE-8-8E §8.1. All ids in the new order. Every write: impersonation → 403 `impersonation_read_only`; limiter
+        `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Ulid'
+                  maxItems: 200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxSavedReply'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /stores/{store}/inbox/saved-replies/{saved_reply}:
+    parameters:
+    - $ref: '#/components/parameters/InboxSavedReplyPath'
+    patch:
+      tags:
+      - inbox
+      summary: Update a saved reply
+      operationId: updateInboxSavedReply
+      description: 'PHASE-8-8E §8.1. revision required (409). Audited. Every write: impersonation → 403 `impersonation_read_only`;
+        limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInboxSavedReplyInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSavedReply'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+    delete:
+      tags:
+      - inbox
+      summary: Delete a saved reply
+      operationId: deleteInboxSavedReply
+      description: 'PHASE-8-8E §8.1. Audited. Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write`
+        120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/inbox/settings:
+    get:
+      tags:
+      - inbox
+      summary: Inbox channels
+      operationId: getInboxSettings
+      description: PHASE-8-8E §4. `inbox.manage | settings.manage`. Absent row = every channel off (P88E-20).
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - inbox
+      summary: Update inbox channels
+      operationId: updateInboxSettings
+      description: 'PHASE-8-8E §4. `settings.manage`. 409 revision_conflict; 422 inbox_email_unavailable when the inbound mail
+        driver/domain is not configured. First email enable generates the address. Revalidates the storefront tag. Audited inbox.settings_updated.
+        Every write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInboxSettingsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+  /stores/{store}/inbox/settings/email-address/rotate:
+    post:
+      tags:
+      - inbox
+      summary: Rotate the inbound email address
+      operationId: rotateInboxEmailAddress
+      description: 'PHASE-8-8E §4. `settings.manage`. The old address stops at once. Audited inbox.email_address_rotated. Every
+        write: impersonation → 403 `impersonation_read_only`; limiter `inbox-write` 120/min per member.'
+      security:
+      - sessionCookie: []
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxSettings'
+        '400':
+          $ref: '#/components/responses/TenantRequired'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /inbox-attachments/{attachment}/download:
+    parameters:
+    - $ref: '#/components/parameters/InboxAttachmentPath'
+    - in: query
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - inbox
+      summary: Download an inbox attachment (signed, 5 minutes)
+      operationId: downloadInboxAttachment
+      description: PHASE-8-8E §7. Public signed URL; tenant from the signature. Images inline, PDF as attachment; `nosniff`,
+        `Content-Security-Policy sandbox; default-src 'none'`, `private, no-store`, `Referrer-Policy no-referrer`. Limiter 60/min
+        per IP.
+      security: []
+      responses:
+        '200':
+          description: File
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Bad or expired signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/session:
+    get:
+      tags:
+      - storefront
+      - inbox
+      summary: Chat session state
+      operationId: getInboxWidgetSession
+      description: PHASE-8-8E §9.2. X-Inbox-Session = the sp_chat cookie value (server-to-server only).
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxWidgetSession'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/sessions:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Start a website chat
+      operationId: startInboxWidget
+      description: PHASE-8-8E §9.2 (P88E-10/11/13/14). Sends a 6-digit code by SMS (purpose inbox_verify, charged) and holds
+        the message until verified → status code_sent; when the code SMS cannot be afforded or sent the message is delivered
+        unverified → status unverified. A filled honeypot `website` answers 202 and stores nothing. Limiters inbox-widget-start
+        (5/h per store+IP, 3/h per store+phone) and inbox-widget-code.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - name
+              - phone
+              - message
+              - client_id
+              properties:
+                name:
+                  type: string
+                  maxLength: 80
+                phone:
+                  type: string
+                  maxLength: 20
+                message:
+                  type: string
+                  maxLength: 2000
+                client_id:
+                  type: string
+                  maxLength: 36
+                file:
+                  type: string
+                  format: binary
+                product_slug:
+                  type: string
+                  maxLength: 220
+                page_path:
+                  type: string
+                  maxLength: 300
+                website:
+                  type: string
+                  description: Honeypot; must be empty
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxWidgetStart'
+        '202':
+          description: Honeypot hit; nothing stored
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/sessions/verify:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Verify the chat code
+      operationId: verifyInboxWidget
+      description: PHASE-8-8E §9.2. HMAC code, 10-minute TTL, 5 attempts (then a new code is required). 422 inbox_code_invalid
+        (details attempts_left) / inbox_code_expired.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxWidgetVerifyResult'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/sessions/resend:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Resend the chat code
+      operationId: resendInboxWidgetCode
+      description: PHASE-8-8E §9.2. 60 s cooldown (429 with retry_after); 5 sends per phone per hour per store.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxWidgetSession'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/messages:
+    get:
+      tags:
+      - storefront
+      - inbox
+      summary: Chat messages
+      operationId: listInboxShopperMessages
+      description: PHASE-8-8E §9.2. Customer and shop rows of this session's conversation only (never notes or system rows).
+        Conditional GET.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - in: query
+        name: after
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxShopperMessage'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Weak ETag (store inbox version + member read version + query hash)
+        '304':
+          description: Not modified (If-None-Match matched); no body
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Send a chat message
+      operationId: sendInboxShopperMessage
+      description: PHASE-8-8E §9.2. Verified or unverified sessions; pending → 409 inbox_session_unverified. Limiter inbox-widget-message
+        20/min, 200/day per session. A blocked conversation swallows the message (201 as usual).
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - body
+              - client_id
+              properties:
+                body:
+                  type: string
+                  maxLength: 2000
+                client_id:
+                  type: string
+                  maxLength: 36
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxShopperMessage'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/messages/seen:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Mark shop replies seen
+      operationId: markInboxShopperSeen
+      description: PHASE-8-8E §9.2. Sets customer_seen_at; pending reply SMS become seen (not sent).
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/InboxSessionHeader'
+      responses:
+        '204':
+          description: Saved
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/attachments/{attachment}:
+    parameters:
+    - $ref: '#/components/parameters/InboxAttachmentPath'
+    get:
+      tags:
+      - storefront
+      - inbox
+      summary: Stream an attachment to the shopper
+      operationId: streamInboxShopperAttachment
+      description: PHASE-8-8E §9.2. X-Inbox-Session or X-Order-Access; only attachments of the shopper's own conversation (customer
+        or reply rows). Headers as the signed download.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - in: header
+        name: X-Inbox-Session
+        schema:
+          type: string
+      - in: header
+        name: X-Order-Access
+        schema:
+          type: string
+      responses:
+        '200':
+          description: File
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/inbox/links/{code}:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Redeem a reply-SMS link
+      operationId: redeemInboxLink
+      description: PHASE-8-8E §9.2 / §9.5. 7-day link, ≤ 20 uses. 404 inbox_link_invalid. Limiter inbox-link 20/min per IP.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - in: path
+        name: code
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9]{22}$
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxMagicLinkResult'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/orders/access:
+    get:
+      tags:
+      - storefront
+      - inbox
+      summary: Order tracking view for an access token
+      operationId: getStorefrontOrderByAccess
+      description: PHASE-8-8E §10. Same limited view as POST /storefront/orders/track. 404 order_access_invalid.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/OrderAccessHeader'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StorefrontOrderTracking'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/orders/messages:
+    get:
+      tags:
+      - storefront
+      - inbox
+      summary: Order messages
+      operationId: listOrderMessages
+      description: PHASE-8-8E §10. Customer and shop rows only. Conditional GET.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/OrderAccessHeader'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - in: query
+        name: after
+        schema:
+          $ref: '#/components/schemas/Ulid'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InboxShopperMessage'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Weak ETag (store inbox version + member read version + query hash)
+        '304':
+          description: Not modified (If-None-Match matched); no body
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Send an order message
+      operationId: sendOrderMessage
+      description: PHASE-8-8E §10. The first message creates the order conversation (customer and order linked). Limiter inbox-widget-message
+        keyed by order.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/OrderAccessHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - body
+              - client_id
+              properties:
+                body:
+                  type: string
+                  maxLength: 2000
+                client_id:
+                  type: string
+                  maxLength: 36
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InboxShopperMessage'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /storefront/orders/messages/seen:
+    post:
+      tags:
+      - storefront
+      - inbox
+      summary: Mark order replies seen
+      operationId: markOrderMessagesSeen
+      description: PHASE-8-8E §10.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      - $ref: '#/components/parameters/OrderAccessHeader'
+      responses:
+        '204':
+          description: Saved
+        '401':
+          description: Bad key (`invalid_storefront_key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: '`store_not_found` / `inbox_unavailable` (channel off) / `inbox_session_invalid` / `order_access_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: '`store_not_live`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /webhooks/inbound-email/{driver}:
+    parameters:
+    - in: path
+      name: driver
+      required: true
+      schema:
+        type: string
+        enum:
+        - mailgun
+        - fake
+      description: '`fake` only outside production'
+    post:
+      tags:
+      - webhooks
+      - inbox
+      summary: Inbound email from the mail provider
+      operationId: inboundEmailWebhook
+      description: 'PHASE-8-8E §11.2 (P88E-15). Driver-specific signature (mailgun: HMAC-SHA256 of timestamp+token with the
+        signing key, ±15 min, token replay cache 1 h) → else 401 inbound_email_signature_invalid, nothing stored. Unknown or
+        unsigned recipient addresses → 202 accepted false (no bounce). Processed on the webhooks queue; raw MIME never stored.
+        Limiter webhooks; body ≤ 25 MB.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Accepted (or silently dropped)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundEmailAck'
+        '401':
+          description: '`inbound_email_signature_invalid`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 components:
   parameters:
+    InboxConversationPath:
+      in: path
+      name: conversation
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    InboxSavedReplyPath:
+      in: path
+      name: saved_reply
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    InboxAttachmentPath:
+      in: path
+      name: attachment
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    InboxSessionHeader:
+      in: header
+      name: X-Inbox-Session
+      required: true
+      schema:
+        type: string
+        minLength: 43
+        maxLength: 43
+      description: Opaque chat session token (sp_chat cookie value); server-to-server only
+    OrderAccessHeader:
+      in: header
+      name: X-Order-Access
+      required: true
+      schema:
+        type: string
+        maxLength: 200
+      description: Store-bound signed order access token (StorefrontOrderMessagesAccess.access_token)
+    IfNoneMatch:
+      in: header
+      name: If-None-Match
+      required: false
+      schema:
+        type: string
+      description: ETag of the last response (PHASE-8-8E P88E-17)
     SmsTemplateKeyPath:
       in: path
       name: key
@@ -23439,6 +25400,11 @@ components:
       - contact
       - social
       properties:
+        inbox:
+          description: Phase 8.8e (PHASE-8-8E §9.1); null/absent = no widget and no order Messages card
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontInboxConfig'
+          - type: 'null'
         commerce:
           $ref: '#/components/schemas/StorefrontCommerce'
         store:
@@ -23885,7 +25851,8 @@ components:
         grantable; sensitive; requires orders.view). Phase 8.8b adds purchasing.manage (group products, after
         inventory.adjust; owner and admin; grantable; sensitive; requires costs.view). Phase 8.8d adds pos.sell
         (group orders, after orders.refund in catalogue order; owner, admin and staff; grantable; not sensitive; requires
-        nothing).
+        nothing). Phase 8.8e adds inbox.manage (group customers, after customers.delete; owner, admin and staff;
+        grantable; not sensitive; requires nothing).
       enum:
       - orders.view
       - orders.process
@@ -23915,6 +25882,7 @@ components:
       - billing.view
       - billing.manage
       - pos.sell
+      - inbox.manage
     PermissionDefinition:
       type: object
       required:
@@ -31014,6 +32982,11 @@ components:
               at:
                 type: string
                 format: date-time
+        messages:
+          description: Phase 8.8e (PHASE-8-8E §10); null when the order-messages channel is off. access_token is server-side only.
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontOrderMessagesAccess'
+          - type: 'null'
         shipment:
           oneOf:
           - type: object
@@ -34049,6 +36022,22 @@ components:
       properties:
         received:
           type: boolean
+    InboundEmailAck:
+      description: 'PHASE-8-8E §11: inbound email webhook ack; `accepted` is false when the mail was dropped (unknown address, loop, auto-reply, duplicate).'
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - received
+          - accepted
+          properties:
+            received:
+              type: boolean
+            accepted:
+              type: boolean
     BillingInterval:
       type: string
       enum:
@@ -41838,6 +43827,8 @@ components:
       - campaign
       - automation
       - sms_test
+      - inbox_verify
+      - inbox_reply
     SmsKind:
       type: string
       enum:
@@ -42404,6 +44395,7 @@ components:
                 - campaign
                 - automation
                 - pos_sale
+                - conversation
               id:
                 $ref: '#/components/schemas/Ulid'
               label:
@@ -44375,3 +46367,1098 @@ components:
           type: integer
         balance_paisa:
           type: integer
+    InboxChannel:
+      type: string
+      enum:
+      - web_chat
+      - order
+      - email
+    InboxStatus:
+      type: string
+      enum:
+      - open
+      - pending
+      - closed
+    InboxScope:
+      type: string
+      enum:
+      - mine_unassigned
+      - mine
+      - unassigned
+      - all
+    InboxIdentity:
+      type: string
+      enum:
+      - verified_phone
+      - order_access
+      - email
+      - email_unverified
+      - unverified
+    InboxMessageKind:
+      type: string
+      enum:
+      - customer
+      - reply
+      - note
+      - system
+    InboxSystemEvent:
+      type: string
+      enum:
+      - assigned
+      - unassigned
+      - pending
+      - closed
+      - reopened
+      - order_linked
+      - order_unlinked
+      - blocked
+      - unblocked
+    InboxSmsStatus:
+      type: string
+      enum:
+      - pending
+      - sent
+      - seen
+      - throttled
+      - no_credits
+      - failed
+      - not_applicable
+    InboxReplyTime:
+      type: string
+      enum:
+      - minutes
+      - hour
+      - day
+    InboxMergeTag:
+      type: string
+      enum:
+      - customer_name
+      - shop_name
+      - order_number
+      - order_total
+      - order_due
+      - delivery_inside
+      - delivery_outside
+      - payment_link
+      - track_url
+    InboxContact:
+      type: object
+      required:
+      - name
+      - phone
+      - email
+      properties:
+        name:
+          type: string
+        phone:
+          oneOf:
+          - type: string
+          - type: 'null'
+        email:
+          oneOf:
+          - type: string
+          - type: 'null'
+    InboxOrderRef:
+      type: object
+      required:
+      - id
+      - number
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+    InboxAttachment:
+      type: object
+      required:
+      - id
+      - filename
+      - mime
+      - size_bytes
+      - kind
+      - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        filename:
+          type: string
+        mime:
+          type: string
+          enum:
+          - image/jpeg
+          - image/png
+          - application/pdf
+        size_bytes:
+          type: integer
+          maximum: 5242880
+        kind:
+          type: string
+          enum:
+          - image
+          - pdf
+        status:
+          type: string
+          enum:
+          - processing
+          - ready
+    InboxProductContext:
+      type: object
+      required:
+      - product_id
+      - name
+      - price_amount
+      - currency
+      - path
+      - image_url
+      properties:
+        product_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+        price_amount:
+          type: integer
+        currency:
+          type: string
+        path:
+          type: string
+        image_url:
+          oneOf:
+          - type: string
+          - type: 'null'
+    InboxSummary:
+      type: object
+      required:
+      - unread
+      - open
+      - pending
+      - mine_open
+      - unassigned_open
+      - channels_enabled
+      properties:
+        unread:
+          type: integer
+        open:
+          type: integer
+        pending:
+          type: integer
+        mine_open:
+          type: integer
+        unassigned_open:
+          type: integer
+        channels_enabled:
+          type: object
+          required:
+          - web_chat
+          - order_messages
+          - email
+          properties:
+            web_chat:
+              type: boolean
+            order_messages:
+              type: boolean
+            email:
+              type: boolean
+    InboxConversationSummary:
+      type: object
+      required:
+      - id
+      - channel
+      - status
+      - identity
+      - contact
+      - order
+      - preview
+      - last_message_at
+      - assignee
+      - unread_count
+      - blocked
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        channel:
+          $ref: '#/components/schemas/InboxChannel'
+        status:
+          $ref: '#/components/schemas/InboxStatus'
+        identity:
+          $ref: '#/components/schemas/InboxIdentity'
+        contact:
+          $ref: '#/components/schemas/InboxContact'
+        order:
+          oneOf:
+          - $ref: '#/components/schemas/InboxOrderRef'
+          - type: 'null'
+        preview:
+          type: string
+          maxLength: 160
+        last_message_at:
+          type: string
+          format: date-time
+        assignee:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        unread_count:
+          type: integer
+          maximum: 99
+        blocked:
+          type: boolean
+    InboxListMeta:
+      allOf:
+      - $ref: '#/components/schemas/CursorMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - open
+            - pending
+            - closed
+            properties:
+              open:
+                type: integer
+              pending:
+                type: integer
+              closed:
+                type: integer
+    InboxOrderCard:
+      type: object
+      required:
+      - id
+      - number
+      - placed_at
+      - status
+      - payment_status
+      - payment_method
+      - first_line
+      - extra_lines
+      - paid_amount
+      - due_amount
+      - total_amount
+      - currency
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        payment_status:
+          $ref: '#/components/schemas/PaymentStatus'
+        payment_method:
+          type: string
+        first_line:
+          oneOf:
+          - type: object
+            required:
+            - name
+            - variant
+            - quantity
+            - image_url
+            properties:
+              name:
+                type: string
+              variant:
+                oneOf:
+                - type: string
+                - type: 'null'
+              quantity:
+                type: integer
+              image_url:
+                oneOf:
+                - type: string
+                - type: 'null'
+          - type: 'null'
+        extra_lines:
+          type: integer
+        paid_amount:
+          type: integer
+        due_amount:
+          type: integer
+        total_amount:
+          type: integer
+        currency:
+          type: string
+    InboxPastOrder:
+      type: object
+      required:
+      - id
+      - number
+      - placed_at
+      - total_amount
+      - currency
+      - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        number:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+        total_amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+    InboxCustomerPanel:
+      type: object
+      required:
+      - contact
+      - customer
+      - linked_order
+      - past_orders
+      properties:
+        contact:
+          $ref: '#/components/schemas/InboxContact'
+        customer:
+          oneOf:
+          - type: object
+            required:
+            - id
+            - name
+            - since
+            - orders_count
+            - phone
+            - email
+            - address
+            - risk
+            properties:
+              id:
+                $ref: '#/components/schemas/Ulid'
+              name:
+                type: string
+              since:
+                type: string
+                format: date-time
+              orders_count:
+                type: integer
+              phone:
+                oneOf:
+                - type: string
+                - type: 'null'
+              email:
+                oneOf:
+                - type: string
+                - type: 'null'
+              address:
+                oneOf:
+                - type: object
+                  required:
+                  - district
+                  - thana
+                  - street
+                  properties:
+                    district:
+                      oneOf:
+                      - type: string
+                      - type: 'null'
+                    thana:
+                      oneOf:
+                      - type: string
+                      - type: 'null'
+                    street:
+                      oneOf:
+                      - type: string
+                      - type: 'null'
+                - type: 'null'
+              risk:
+                $ref: '#/components/schemas/CustomerRisk'
+          - type: 'null'
+        linked_order:
+          oneOf:
+          - $ref: '#/components/schemas/InboxOrderCard'
+          - type: 'null'
+        past_orders:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/InboxPastOrder'
+      description: customer null without customers.view; linked_order null and past_orders [] without orders.view
+    InboxConversation:
+      allOf:
+      - $ref: '#/components/schemas/InboxConversationSummary'
+      - type: object
+        required:
+        - subject
+        - context
+        - source_path
+        - started_at
+        - first_response_seconds
+        - customer_seen_at
+        - closed_at
+        - closed_by
+        - customer
+        - can
+        - revision
+        properties:
+          subject:
+            oneOf:
+            - type: string
+            - type: 'null'
+          context:
+            oneOf:
+            - $ref: '#/components/schemas/InboxProductContext'
+            - type: 'null'
+          source_path:
+            oneOf:
+            - type: string
+            - type: 'null'
+          started_at:
+            type: string
+            format: date-time
+          first_response_seconds:
+            oneOf:
+            - type: integer
+            - type: 'null'
+          customer_seen_at:
+            oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          closed_at:
+            oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          closed_by:
+            oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+          customer:
+            $ref: '#/components/schemas/InboxCustomerPanel'
+          can:
+            type: object
+            required:
+            - reply
+            - assign
+            - link_order
+            - delete
+            - view_customer
+            - view_order
+            properties:
+              reply:
+                type: boolean
+              assign:
+                type: boolean
+              link_order:
+                type: boolean
+              delete:
+                type: boolean
+              view_customer:
+                type: boolean
+              view_order:
+                type: boolean
+          revision:
+            type: integer
+    InboxMessage:
+      type: object
+      required:
+      - id
+      - kind
+      - body
+      - author
+      - attachments
+      - system
+      - delivery_status
+      - sms_status
+      - seen
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          $ref: '#/components/schemas/InboxMessageKind'
+        body:
+          oneOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+        author:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/InboxAttachment'
+        system:
+          oneOf:
+          - type: object
+            required:
+            - event
+            - actor
+            - assignee
+            - order_number
+            properties:
+              event:
+                $ref: '#/components/schemas/InboxSystemEvent'
+              actor:
+                oneOf:
+                - $ref: '#/components/schemas/UserRef'
+                - type: 'null'
+              assignee:
+                oneOf:
+                - $ref: '#/components/schemas/UserRef'
+                - type: 'null'
+              order_number:
+                oneOf:
+                - type: string
+                - type: 'null'
+          - type: 'null'
+        delivery_status:
+          oneOf:
+          - type: string
+            enum:
+            - queued
+            - sent
+            - failed
+          - type: 'null'
+        sms_status:
+          oneOf:
+          - $ref: '#/components/schemas/InboxSmsStatus'
+          - type: 'null'
+        seen:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    SendInboxMessageInput:
+      type: object
+      required:
+      - kind
+      - body
+      - client_id
+      properties:
+        kind:
+          type: string
+          enum:
+          - reply
+          - note
+        body:
+          type: string
+          maxLength: 4000
+          description: Trimmed; may be empty only with attachments
+        attachment_ids:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Ulid'
+        client_id:
+          type: string
+          format: uuid
+        saved_reply_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    AssignInboxConversationInput:
+      type: object
+      required:
+      - assignee_id
+      properties:
+        assignee_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        revision:
+          type: integer
+    SetInboxStatusInput:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          $ref: '#/components/schemas/InboxStatus'
+        revision:
+          type: integer
+    LinkInboxOrderInput:
+      type: object
+      required:
+      - order_id
+      properties:
+        order_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    MarkInboxReadInput:
+      type: object
+      required:
+      - last_read_message_id
+      properties:
+        last_read_message_id:
+          $ref: '#/components/schemas/Ulid'
+    InboxAssignee:
+      type: object
+      required:
+      - user
+      - role_name
+      - open_count
+      - is_you
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRef'
+        role_name:
+          type: string
+        open_count:
+          type: integer
+        is_you:
+          type: boolean
+    InboxAttachmentLink:
+      type: object
+      required:
+      - url
+      - expires_at
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    InboxSavedReply:
+      type: object
+      required:
+      - id
+      - title
+      - shortcut
+      - body
+      - show_as_chip
+      - position
+      - attachment
+      - use_count
+      - last_used_at
+      - updated_by
+      - updated_at
+      - revision
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        title:
+          type: string
+          maxLength: 60
+        shortcut:
+          type: string
+          pattern: ^[a-z0-9_-]{2,24}$
+        body:
+          type: string
+          maxLength: 1000
+        show_as_chip:
+          type: boolean
+        position:
+          type: integer
+        attachment:
+          oneOf:
+          - $ref: '#/components/schemas/InboxAttachment'
+          - type: 'null'
+        use_count:
+          type: integer
+        last_used_at:
+          oneOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        updated_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    InboxSavedReplyInput:
+      type: object
+      required:
+      - title
+      - shortcut
+      - body
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 60
+        shortcut:
+          type: string
+          pattern: ^[a-z0-9_-]{2,24}$
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        show_as_chip:
+          type: boolean
+        attachment_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    UpdateInboxSavedReplyInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        title:
+          type: string
+          minLength: 1
+          maxLength: 60
+        shortcut:
+          type: string
+          pattern: ^[a-z0-9_-]{2,24}$
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        show_as_chip:
+          type: boolean
+        attachment_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+    InboxSavedReplyListMeta:
+      type: object
+      required:
+      - counts
+      properties:
+        counts:
+          type: object
+          required:
+          - all
+          - chips
+          - with_attachment
+          properties:
+            all:
+              type: integer
+            chips:
+              type: integer
+            with_attachment:
+              type: integer
+    InboxSavedReplyRender:
+      type: object
+      required:
+      - body
+      - attachment
+      - unresolved
+      properties:
+        body:
+          type: string
+        attachment:
+          oneOf:
+          - $ref: '#/components/schemas/InboxAttachment'
+          - type: 'null'
+        unresolved:
+          type: array
+          items:
+            $ref: '#/components/schemas/InboxMergeTag'
+    InboxSettings:
+      type: object
+      required:
+      - channels
+      - widget
+      - external_channels
+      - revision
+      - can
+      properties:
+        channels:
+          type: object
+          required:
+          - web_chat
+          - order_messages
+          - email
+          properties:
+            web_chat:
+              type: object
+              required:
+              - enabled
+              - live_on
+              properties:
+                enabled:
+                  type: boolean
+                live_on:
+                  oneOf:
+                  - type: string
+                  - type: 'null'
+            order_messages:
+              type: object
+              required:
+              - enabled
+              properties:
+                enabled:
+                  type: boolean
+            email:
+              type: object
+              required:
+              - enabled
+              - address
+              - available
+              properties:
+                enabled:
+                  type: boolean
+                address:
+                  oneOf:
+                  - type: string
+                    format: email
+                  - type: 'null'
+                available:
+                  type: boolean
+        widget:
+          type: object
+          required:
+          - reply_time
+          - hours
+          - greeting
+          properties:
+            reply_time:
+              $ref: '#/components/schemas/InboxReplyTime'
+            hours:
+              oneOf:
+              - type: string
+                maxLength: 40
+              - type: 'null'
+            greeting:
+              oneOf:
+              - type: string
+                maxLength: 200
+              - type: 'null'
+        external_channels:
+          type: array
+          items:
+            type: object
+            required:
+            - channel
+            - status
+            properties:
+              channel:
+                type: string
+                enum:
+                - messenger
+                - whatsapp
+                - instagram
+              status:
+                type: string
+                enum:
+                - coming_later
+        revision:
+          type: integer
+        can:
+          type: object
+          required:
+          - edit
+          properties:
+            edit:
+              type: boolean
+    UpdateInboxSettingsInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        web_chat_enabled:
+          type: boolean
+        order_messages_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        widget_reply_time:
+          $ref: '#/components/schemas/InboxReplyTime'
+        widget_hours:
+          oneOf:
+          - type: string
+            maxLength: 40
+          - type: 'null'
+        widget_greeting:
+          oneOf:
+          - type: string
+            maxLength: 200
+          - type: 'null'
+    StorefrontInboxConfig:
+      type: object
+      required:
+      - web_chat
+      - order_messages
+      properties:
+        web_chat:
+          oneOf:
+          - type: object
+            required:
+            - enabled
+            - reply_time
+            - hours
+            - greeting
+            properties:
+              enabled:
+                type: boolean
+                enum:
+                - true
+              reply_time:
+                $ref: '#/components/schemas/InboxReplyTime'
+              hours:
+                oneOf:
+                - type: string
+                - type: 'null'
+              greeting:
+                oneOf:
+                - type: string
+                - type: 'null'
+          - type: 'null'
+        order_messages:
+          type: boolean
+    InboxWidgetSession:
+      type: object
+      required:
+      - status
+      - name
+      - phone_masked
+      - unread_count
+      - resend_after
+      properties:
+        status:
+          type: string
+          enum:
+          - pending
+          - verified
+          - unverified
+        name:
+          type: string
+        phone_masked:
+          type: string
+        unread_count:
+          type: integer
+        resend_after:
+          oneOf:
+          - type: integer
+          - type: 'null'
+    InboxWidgetStart:
+      type: object
+      required:
+      - session_token
+      - status
+      - phone_masked
+      - resend_after
+      properties:
+        session_token:
+          type: string
+          description: Server-side only → httpOnly cookie sp_chat
+        status:
+          type: string
+          enum:
+          - code_sent
+          - unverified
+        phone_masked:
+          type: string
+        resend_after:
+          oneOf:
+          - type: integer
+          - type: 'null'
+    InboxWidgetVerifyResult:
+      type: object
+      required:
+      - status
+      - unread_count
+      properties:
+        status:
+          type: string
+          enum:
+          - verified
+        unread_count:
+          type: integer
+    InboxCodeInvalidDetails:
+      type: object
+      required:
+      - attempts_left
+      properties:
+        attempts_left:
+          type: integer
+    InboxShopperMessage:
+      type: object
+      required:
+      - id
+      - from
+      - body
+      - attachments
+      - author_name
+      - seen
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        from:
+          type: string
+          enum:
+          - customer
+          - shop
+        body:
+          oneOf:
+          - type: string
+          - type: 'null'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/InboxAttachment'
+        author_name:
+          type: string
+        seen:
+          type: boolean
+          description: Shop rows — the shopper has seen the reply (created_at ≤ customer_seen_at). Customer rows — a team member has read up to this message ("Seen" under the shopper's bubble).
+        created_at:
+          type: string
+          format: date-time
+    StorefrontOrderMessagesAccess:
+      type: object
+      required:
+      - enabled
+      - access_token
+      - unread_count
+      - reply_time
+      properties:
+        enabled:
+          type: boolean
+          enum:
+          - true
+        access_token:
+          type: string
+        unread_count:
+          type: integer
+        reply_time:
+          $ref: '#/components/schemas/InboxReplyTime'
+    InboxMagicLinkResult:
+      oneOf:
+      - type: object
+        required:
+        - kind
+        - session_token
+        properties:
+          kind:
+            type: string
+            enum:
+            - chat
+          session_token:
+            type: string
+      - type: object
+        required:
+        - kind
+        - access_token
+        - number
+        properties:
+          kind:
+            type: string
+            enum:
+            - order
+          access_token:
+            type: string
+          number:
+            type: string
+    SavedReplyUnknownTagDetails:
+      type: object
+      required:
+      - tags
+      properties:
+        tags:
+          type: array
+          items:
+            type: string

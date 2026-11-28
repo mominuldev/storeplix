@@ -104,6 +104,8 @@ class RoutePermissionsTest extends TestCase
             'staff.update',
         ],
         'settings.manage' => [
+            'stores.inbox.settings.rotate', // PHASE-8-8E §4
+            'stores.inbox.settings.update',
             'stores.document-templates.update',
             // PHASE-8-9A §10.1: template writes.
             'stores.sms.templates.destroy',
@@ -405,6 +407,32 @@ class RoutePermissionsTest extends TestCase
             'stores.purchase-orders.show',
             'stores.purchasing.invoices.store',
         ],
+        // PHASE-8-8E §13.1 (P88E-3): every Inbox route is inbox.manage; delete + customers.delete, order link + orders.view,
+        // channel settings read inbox.manage|settings.manage and write settings.manage.
+        'inbox.manage' => [
+            'stores.inbox.assignees',
+            'stores.inbox.attachments.link',
+            'stores.inbox.attachments.store',
+            'stores.inbox.conversations.assign',
+            'stores.inbox.conversations.block',
+            'stores.inbox.conversations.index',
+            'stores.inbox.conversations.messages.index',
+            'stores.inbox.conversations.messages.store',
+            'stores.inbox.conversations.read',
+            'stores.inbox.conversations.saved-replies.render',
+            'stores.inbox.conversations.show',
+            'stores.inbox.conversations.status',
+            'stores.inbox.conversations.unblock',
+            'stores.inbox.saved-replies.destroy',
+            'stores.inbox.saved-replies.index',
+            'stores.inbox.saved-replies.reorder',
+            'stores.inbox.saved-replies.store',
+            'stores.inbox.saved-replies.update',
+            'stores.inbox.summary',
+        ],
+        'inbox.manage,customers.delete' => ['stores.inbox.conversations.destroy'],
+        'inbox.manage,orders.view' => ['stores.inbox.conversations.order'],
+        'inbox.manage|settings.manage' => ['stores.inbox.settings.show'],
         // PHASE-8-8D §10 (P88D-18): every other POS route.
         'pos.sell' => [
             'stores.pos.catalog',

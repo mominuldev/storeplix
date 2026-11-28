@@ -16,6 +16,10 @@ namespace App\Domain\Media;
  * PHASE-8-9A P89A-16 (S216): `SenderIdDocument` (a trade licence for a masked sender ID request) follows the same rules:
  * private disk, JPG/PNG/WebP/PDF ≤ 5 MB, sniffed, images re-encoded, no variants, never a library purpose. Uploaded only
  * by the SMS sender-ID domain; merchants never download it back, staff stream it from /admin/sender-ids/{id}/document.
+ *
+ * PHASE-8-8E P88E-7 (S241): `InboxAttachment` (a photo or PDF on an Inbox message or saved reply): private disk, JPG/PNG/PDF
+ * only (no WebP), ≤ 5 MB, sniffed, sides 32–10000 px, images re-encoded, no variants, never a library purpose. Uploaded,
+ * attached, streamed and deleted only by the Inbox domain.
  */
 enum MediaPurpose: string
 {
@@ -26,6 +30,7 @@ enum MediaPurpose: string
     case ExpenseReceipt = 'expense_receipt'; // PHASE-8-7 P87-7
     case PurchaseInvoice = 'purchase_invoice'; // PHASE-8-8B §3
     case SenderIdDocument = 'sender_id_document'; // PHASE-8-9A P89A-16
+    case InboxAttachment = 'inbox_attachment'; // PHASE-8-8E P88E-7
 
     public const MAX_PIXELS = 40_000_000;
 
@@ -35,6 +40,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Favicon => ['image/png'],
             self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument => ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
+            self::InboxAttachment => ['image/jpeg', 'image/png', 'application/pdf'],
             default => ['image/png', 'image/jpeg', 'image/webp'],
         };
     }
@@ -44,7 +50,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => 2 * 1024 * 1024,
             self::Favicon => 1024 * 1024,
-            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument => 5 * 1024 * 1024,
+            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument, self::InboxAttachment => 5 * 1024 * 1024,
             default => 5 * 1024 * 1024,
         };
     }
@@ -56,6 +62,7 @@ enum MediaPurpose: string
             self::Logo => [64, 4096],
             self::Favicon => [64, 1024],
             self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument => [100, 10000],
+            self::InboxAttachment => [32, 10000],
             default => [200, 6000],
         };
     }
@@ -81,7 +88,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => [['w160', 160, 'webp'], ['w320', 320, 'webp'], ['w640', 640, 'webp']],
             self::Favicon => [['favicon_32', 32, 'png'], ['apple_180', 180, 'png'], ['icon_192', 192, 'png'], ['icon_512', 512, 'png']],
-            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument => [], // the original is re-encoded (EXIF/GPS stripped); no variants
+            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument, self::InboxAttachment => [], // the original is re-encoded (EXIF/GPS stripped); no variants
             default => [['w320', 320, 'webp'], ['w640', 640, 'webp'], ['w1024', 1024, 'webp'], ['w1600', 1600, 'webp']],
         };
     }
@@ -92,7 +99,7 @@ enum MediaPurpose: string
         return match ($this) {
             self::Logo => 'w320',
             self::Favicon => 'icon_192',
-            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument => null,
+            self::ExpenseReceipt, self::PurchaseInvoice, self::SenderIdDocument, self::InboxAttachment => null,
             default => 'w640',
         };
     }
@@ -100,10 +107,11 @@ enum MediaPurpose: string
     /** True for the purposes of the generic media library (`/media`). */
     public function isLibrary(): bool
     {
-        return $this !== self::ExpenseReceipt && $this !== self::PurchaseInvoice && $this !== self::SenderIdDocument;
+        return $this !== self::ExpenseReceipt && $this !== self::PurchaseInvoice && $this !== self::SenderIdDocument
+            && $this !== self::InboxAttachment;
     }
 
-    /** @return list<self> every purpose the generic `/media` routes accept, list and show (all but ExpenseReceipt, PurchaseInvoice and SenderIdDocument) */
+    /** @return list<self> every purpose the generic `/media` routes accept, list and show (all but ExpenseReceipt, PurchaseInvoice, SenderIdDocument and InboxAttachment) */
     public static function libraryCases(): array
     {
         return array_values(array_filter(self::cases(), fn (self $p) => $p->isLibrary()));

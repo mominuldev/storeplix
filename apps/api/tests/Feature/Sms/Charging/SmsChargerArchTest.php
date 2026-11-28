@@ -29,6 +29,7 @@ class SmsChargerArchTest extends TestCase
         'app/Domain/Orders/Notifications/SendOrderSms.php' => true,
         'app/Domain/FraudGuard/Jobs/SendCheckoutOtp.php' => true,
         'app/Domain/Sms/SmsTestService.php' => true,
+        'app/Domain/Inbox/InboxSms.php' => true, // PHASE-8-8E: chat code + reply SMS (inbox_verify, inbox_reply)
         // PHASE-8-9B: the router itself and the platform SMS senders (platform-paid, never charged).
         'app/Domain/Sms/Routing/RoutingSmsGateway.php' => false,
         'app/Domain/Sms/Platform/PlatformSmsDelivery.php' => false,

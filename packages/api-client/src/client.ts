@@ -1,4 +1,36 @@
 import type {
+  AssignInboxConversationInput,
+  Conditional,
+  InboxAssignee,
+  InboxAttachment,
+  InboxAttachmentLink,
+  InboxConversation,
+  InboxConversationSummary,
+  InboxListFilters,
+  InboxListMeta,
+  InboxMagicLinkResult,
+  InboxMessage,
+  InboxMessagesQuery,
+  InboxSavedReply,
+  InboxSavedReplyFilters,
+  InboxSavedReplyInput,
+  InboxSavedReplyListMeta,
+  InboxSavedReplyRender,
+  InboxSettings,
+  InboxShopperMessage,
+  InboxSummary,
+  InboxWidgetSession,
+  InboxWidgetStart,
+  InboxWidgetVerifyResult,
+  LinkInboxOrderInput,
+  MarkInboxReadInput,
+  SendInboxMessageInput,
+  SendInboxShopperMessageInput,
+  SetInboxStatusInput,
+  StartInboxWidgetInput,
+  StorefrontOrderTracking,
+  UpdateInboxSavedReplyInput,
+  UpdateInboxSettingsInput,
   PlatformSmsOptOutLookup,
   SmsPreferences,
   UpdateSmsPreferencesInput,
@@ -337,7 +369,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, inboxConversationQuery, inboxMessagesQuery, inboxSavedReplyQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -693,6 +725,54 @@ export function createApiClient(options: ApiClientOptions) {
   async function listOf<T, M>(path: string, query: RequestOptions['query'], fallback: M): Promise<{ data: T[]; meta: M }> {
     const envelope = await requestEnvelope<T[]>(path, { query });
     return { data: envelope?.data ?? [], meta: (envelope?.meta as M | undefined) ?? fallback };
+  }
+
+  /**
+   * PHASE-8-8E P88E-17 conditional GET: sends `If-None-Match` when `etag` is given; 304 → `not_modified` (keep the
+   * cached data). Errors use the normal envelope handling.
+   */
+  async function conditionalEnvelope<T>(
+    path: string,
+    opts: Pick<RequestOptions, 'query' | 'signal' | 'headers' | 'anonymous' | 'init'> & { etag?: string | null } = {},
+  ): Promise<Conditional<ApiSuccess<T>>> {
+    const headers: Record<string, string> = { Accept: 'application/json', ...options.headers, ...opts.headers, ...tenantHeaders(opts) };
+    if (opts.etag) headers['If-None-Match'] = opts.etag;
+    let response: Response;
+    try {
+      response = await doFetch(buildUrl(path, opts.query), { credentials, cache: 'no-store', ...opts.init, method: 'GET', headers, signal: opts.signal });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+      throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
+    }
+    const etag = response.headers.get('ETag');
+    if (response.status === 304) return { status: 'not_modified', etag: etag ?? opts.etag ?? '' };
+    try {
+      const envelope = parseResponse<T>(response.status, response.statusText, await response.text());
+      return { status: 'ok', data: envelope ?? { data: undefined as T }, etag };
+    } catch (error) {
+      return handleError(error);
+    }
+  }
+
+  async function conditional<T>(path: string, opts: Parameters<typeof conditionalEnvelope>[1] = {}): Promise<Conditional<T>> {
+    const r = await conditionalEnvelope<T>(path, opts);
+    return r.status === 'ok' ? { status: 'ok', data: r.data.data, etag: r.etag } : r;
+  }
+
+  /** Multipart POST via fetch with explicit headers (storefront server-to-server calls; no progress, no CSRF). */
+  async function postForm<T>(path: string, form: FormData, headers: Record<string, string>, signal?: AbortSignal): Promise<T> {
+    let response: Response;
+    try {
+      response = await doFetch(buildUrl(path), { method: 'POST', cache: 'no-store', headers: { Accept: 'application/json', ...headers }, body: form, signal });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+      throw new ApiError(0, 'network_error', 'Unable to reach the server. Check your connection.');
+    }
+    try {
+      return parseResponse<T>(response.status, response.statusText, await response.text())?.data as T;
+    } catch (error) {
+      return handleError(error);
+    }
   }
 
   const emptyPage = (): PaginationMeta => ({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
@@ -1951,6 +2031,91 @@ export function createApiClient(options: ApiClientOptions) {
         listOf<SmsLogEntry, CursorMeta>(`${store(storeId)}/sms/messages`, smsLogQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
     },
 
+    /**
+     * PHASE-8-8E Inbox (`/inbox`). Every call needs `inbox.manage` unless noted. GETs marked "conditional" take the last
+     * `etag` and resolve `{ status: 'not_modified' }` on 304 (poll with TanStack Query `refetchInterval`, INBOX_POLL_MS).
+     */
+    inbox: {
+      /** §5 sidebar badge + chip counts (conditional). */
+      summary: (storeId: string, opts: { etag?: string | null; signal?: AbortSignal } = {}) =>
+        conditional<InboxSummary>(`${store(storeId)}/inbox/summary`, opts),
+      /** §5 list, 30 per page, cursor (conditional). */
+      conversations: async (
+        storeId: string,
+        filters: InboxListFilters = {},
+        opts: { etag?: string | null; signal?: AbortSignal } = {},
+      ): Promise<Conditional<{ data: InboxConversationSummary[]; meta: InboxListMeta }>> => {
+        const r = await conditionalEnvelope<InboxConversationSummary[]>(`${store(storeId)}/inbox/conversations`, { ...opts, query: inboxConversationQuery(filters) });
+        if (r.status !== 'ok') return r;
+        const meta = (r.data.meta as InboxListMeta | undefined) ?? { next_cursor: null, prev_cursor: null, per_page: 30, counts: { open: 0, pending: 0, closed: 0 } };
+        return { status: 'ok', data: { data: r.data.data ?? [], meta }, etag: r.etag };
+      },
+      /** §6.1 thread header + side panel (fields hidden per orders.view / customers.view). */
+      conversation: (storeId: string, id: string) => request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}`),
+      /** §6.2 latest 50, `before` for history, `after` for polling (conditional). */
+      messages: (storeId: string, id: string, q: InboxMessagesQuery = {}, opts: { etag?: string | null; signal?: AbortSignal } = {}) =>
+        conditional<InboxMessage[]>(`${store(storeId)}/inbox/conversations/${enc(id)}/messages`, { ...opts, query: inboxMessagesQuery(q) }),
+      /** §6.2 reply or internal note → 201 (200 on a `client_id` replay). */
+      send: (storeId: string, id: string, input: SendInboxMessageInput) =>
+        request<InboxMessage>(`${store(storeId)}/inbox/conversations/${enc(id)}/messages`, {
+          method: 'POST',
+          body: { kind: input.kind, body: input.body, attachment_ids: input.attachment_ids ?? [], client_id: input.client_id, saved_reply_id: input.saved_reply_id ?? null },
+        }),
+      /** §6.4 null = Unassigned. 422 `inbox_assignee_invalid`, 409 `revision_conflict`. */
+      assign: (storeId: string, id: string, input: AssignInboxConversationInput) =>
+        request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}/assign`, { method: 'POST', body: input }),
+      /** §6.4 open / pending / closed (same status = no-op). */
+      setStatus: (storeId: string, id: string, input: SetInboxStatusInput) =>
+        request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}/status`, { method: 'POST', body: input }),
+      /** §6.4 + `orders.view`; 422 `inbox_order_locked` on order-channel conversations. */
+      linkOrder: (storeId: string, id: string, input: LinkInboxOrderInput) =>
+        request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}/order`, { method: 'PUT', body: { order_id: input.order_id } }),
+      block: (storeId: string, id: string) => request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}/block`, { method: 'POST' }),
+      unblock: (storeId: string, id: string) => request<InboxConversation>(`${store(storeId)}/inbox/conversations/${enc(id)}/unblock`, { method: 'POST' }),
+      /** §6.4 → 204; never moves backwards. */
+      markRead: (storeId: string, id: string, input: MarkInboxReadInput) =>
+        request<void>(`${store(storeId)}/inbox/conversations/${enc(id)}/read`, { method: 'POST', body: input }),
+      /** §6.4 + `customers.delete` → 204 (hard delete, audited). */
+      remove: (storeId: string, id: string) => request<void>(`${store(storeId)}/inbox/conversations/${enc(id)}`, { method: 'DELETE' }),
+      /** §6.4 members holding `inbox.manage` (you first). */
+      assignees: (storeId: string) => request<InboxAssignee[]>(`${store(storeId)}/inbox/assignees`),
+      /** §7 JPG/PNG/PDF ≤ 5 MB → 201 (limiter `inbox-upload`). Attach with `attachment_ids` within 24 h. */
+      uploadAttachment: (storeId: string, input: { file: Blob; filename?: string }, opts?: UploadOptions) => {
+        const form = new FormData();
+        form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'attachment'));
+        return uploadForm<InboxAttachment>(`${store(storeId)}/inbox/attachments`, form, opts);
+      },
+      /** §7 signed 5-minute URL. 409 `inbox_attachment_processing`, 403 `impersonation_attachment_hidden`. */
+      attachmentLink: (storeId: string, attachmentId: string) =>
+        request<InboxAttachmentLink>(`${store(storeId)}/inbox/attachments/${enc(attachmentId)}/link`),
+      savedReplies: {
+        list: (storeId: string, filters: InboxSavedReplyFilters = {}) =>
+          listOf<InboxSavedReply, InboxSavedReplyListMeta>(`${store(storeId)}/inbox/saved-replies`, inboxSavedReplyQuery(filters), { counts: { all: 0, chips: 0, with_attachment: 0 } }),
+        /** 409 `saved_reply_shortcut_taken`, 422 `saved_reply_limit_reached` / `saved_reply_unknown_merge_tag`. */
+        create: (storeId: string, input: InboxSavedReplyInput) =>
+          request<InboxSavedReply>(`${store(storeId)}/inbox/saved-replies`, { method: 'POST', body: input }),
+        update: (storeId: string, id: string, input: UpdateInboxSavedReplyInput) =>
+          request<InboxSavedReply>(`${store(storeId)}/inbox/saved-replies/${enc(id)}`, { method: 'PATCH', body: input }),
+        remove: (storeId: string, id: string) => request<void>(`${store(storeId)}/inbox/saved-replies/${enc(id)}`, { method: 'DELETE' }),
+        /** All ids in the new order. */
+        reorder: (storeId: string, ids: string[]) =>
+          request<InboxSavedReply[]>(`${store(storeId)}/inbox/saved-replies/reorder`, { method: 'POST', body: { ids } }),
+        /** §8.2 merge tags filled for this conversation; `unresolved` tags stay as `{tag}`. */
+        render: (storeId: string, conversationId: string, savedReplyId: string) =>
+          request<InboxSavedReplyRender>(`${store(storeId)}/inbox/conversations/${enc(conversationId)}/saved-replies/${enc(savedReplyId)}/render`, { method: 'POST' }),
+      },
+      settings: {
+        /** §4 `inbox.manage | settings.manage`. */
+        get: (storeId: string) => request<InboxSettings>(`${store(storeId)}/inbox/settings`),
+        /** `settings.manage`; 409 `revision_conflict`, 422 `inbox_email_unavailable`. */
+        update: (storeId: string, input: UpdateInboxSettingsInput) =>
+          request<InboxSettings>(`${store(storeId)}/inbox/settings`, { method: 'PATCH', body: input }),
+        /** `settings.manage`; the old address stops at once. */
+        rotateEmailAddress: (storeId: string) =>
+          request<InboxSettings>(`${store(storeId)}/inbox/settings/email-address/rotate`, { method: 'POST' }),
+      },
+    },
+
     /** PHASE-8-8B §7 and §8.1 purchasing helpers. */
     purchasing: {
       /** §7 groups by last supplier; empty when no units shipped in 30 days (`purchasing.manage`). */
@@ -2050,8 +2215,84 @@ export function createApiClient(options: ApiClientOptions) {
           init: { cache: 'no-store' },
           headers: storefrontHeaders(host, key, opts?.clientIp),
         }),
+      /**
+       * PHASE-8-8E §9.2 website chat (server-to-server only, from the storefront route handlers). `session` is the value
+       * of the httpOnly `sp_chat` cookie; never expose it to browser JS. 404 `inbox_unavailable` when the channel is off.
+       */
+      inbox: {
+        session: (host: string, key: string, session: string, opts?: SfOpts) =>
+          request<InboxWidgetSession>('/storefront/inbox/session', sfReq(host, key, opts, { 'X-Inbox-Session': session })),
+        /** Multipart → 201. Limiters `inbox-widget-start` / `inbox-widget-code` (429). */
+        start: (host: string, key: string, input: StartInboxWidgetInput, opts?: SfOpts) => {
+          const form = new FormData();
+          form.append('name', input.name);
+          form.append('phone', input.phone);
+          form.append('message', input.message);
+          form.append('client_id', input.client_id);
+          if (input.product_slug) form.append('product_slug', input.product_slug);
+          if (input.page_path) form.append('page_path', input.page_path);
+          form.append('website', input.website ?? '');
+          if (input.file) form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'attachment'));
+          return postForm<InboxWidgetStart>('/storefront/inbox/sessions', form, storefrontHeaders(host, key, opts?.clientIp), opts?.signal);
+        },
+        /** 422 `inbox_code_invalid` (details `attempts_left`) / `inbox_code_expired`. */
+        verify: (host: string, key: string, session: string, code: string, opts?: SfOpts) =>
+          request<InboxWidgetVerifyResult>('/storefront/inbox/sessions/verify', { ...sfReq(host, key, opts, { 'X-Inbox-Session': session }), method: 'POST', body: { code } }),
+        /** 429 `rate_limited` with `retry_after` inside the 60 s cooldown. */
+        resend: (host: string, key: string, session: string, opts?: SfOpts) =>
+          request<InboxWidgetSession>('/storefront/inbox/sessions/resend', { ...sfReq(host, key, opts, { 'X-Inbox-Session': session }), method: 'POST' }),
+        /** Conditional; `after` for polling. Customer + shop rows only. */
+        messages: (host: string, key: string, session: string, q: { after?: string } = {}, opts?: SfOpts & { etag?: string | null }) =>
+          conditional<InboxShopperMessage[]>('/storefront/inbox/messages', {
+            anonymous: true, signal: opts?.signal, etag: opts?.etag, query: { after: q.after || undefined },
+            headers: { ...storefrontHeaders(host, key, opts?.clientIp), 'X-Inbox-Session': session },
+          }),
+        /** Multipart → 201; 409 `inbox_session_unverified` while the code is pending. */
+        send: (host: string, key: string, session: string, input: SendInboxShopperMessageInput, opts?: SfOpts) =>
+          postForm<InboxShopperMessage>('/storefront/inbox/messages', shopperForm(input), { ...storefrontHeaders(host, key, opts?.clientIp), 'X-Inbox-Session': session }, opts?.signal),
+        seen: (host: string, key: string, session: string, opts?: SfOpts) =>
+          request<void>('/storefront/inbox/messages/seen', { ...sfReq(host, key, opts, { 'X-Inbox-Session': session }), method: 'POST' }),
+        /** Raw response for the storefront proxy route (own conversation only; headers per §7). */
+        attachment: (host: string, key: string, auth: { session?: string; orderAccess?: string }, attachmentId: string, opts?: SfOpts) =>
+          doFetch(buildUrl(`/storefront/inbox/attachments/${enc(attachmentId)}`), {
+            method: 'GET', cache: 'no-store', signal: opts?.signal,
+            headers: { ...storefrontHeaders(host, key, opts?.clientIp), ...(auth.session ? { 'X-Inbox-Session': auth.session } : {}), ...(auth.orderAccess ? { 'X-Order-Access': auth.orderAccess } : {}) },
+          }),
+        /** Magic link from the reply SMS → a session or order access token. 404 `inbox_link_invalid`. */
+        redeemLink: (host: string, key: string, code: string, opts?: SfOpts) =>
+          request<InboxMagicLinkResult>(`/storefront/inbox/links/${enc(code)}`, { ...sfReq(host, key, opts), method: 'POST' }),
+      },
+      /** PHASE-8-8E §10 order-page Messages; `access` = `StorefrontOrderTracking.messages.access_token` (httpOnly cookie). */
+      orderMessages: {
+        /** The tracking view for a held access token (after a magic link). 404 `order_access_invalid`. */
+        order: (host: string, key: string, access: string, opts?: SfOpts) =>
+          request<StorefrontOrderTracking>('/storefront/orders/access', sfReq(host, key, opts, { 'X-Order-Access': access })),
+        list: (host: string, key: string, access: string, q: { after?: string } = {}, opts?: SfOpts & { etag?: string | null }) =>
+          conditional<InboxShopperMessage[]>('/storefront/orders/messages', {
+            anonymous: true, signal: opts?.signal, etag: opts?.etag, query: { after: q.after || undefined },
+            headers: { ...storefrontHeaders(host, key, opts?.clientIp), 'X-Order-Access': access },
+          }),
+        send: (host: string, key: string, access: string, input: SendInboxShopperMessageInput, opts?: SfOpts) =>
+          postForm<InboxShopperMessage>('/storefront/orders/messages', shopperForm(input), { ...storefrontHeaders(host, key, opts?.clientIp), 'X-Order-Access': access }, opts?.signal),
+        seen: (host: string, key: string, access: string, opts?: SfOpts) =>
+          request<void>('/storefront/orders/messages/seen', { ...sfReq(host, key, opts, { 'X-Order-Access': access }), method: 'POST' }),
+      },
     },
   };
+}
+
+type SfOpts = { clientIp?: string | null; signal?: AbortSignal };
+
+function sfReq(host: string, key: string, opts: SfOpts | undefined, extra: Record<string, string> = {}): RequestOptions {
+  return { anonymous: true, signal: opts?.signal, init: { cache: 'no-store' }, headers: { ...storefrontHeaders(host, key, opts?.clientIp), ...extra } };
+}
+
+function shopperForm(input: SendInboxShopperMessageInput): FormData {
+  const form = new FormData();
+  form.append('body', input.body);
+  form.append('client_id', input.client_id);
+  if (input.file) form.append('file', input.file, input.filename ?? (input.file instanceof File ? input.file.name : 'attachment'));
+  return form;
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;

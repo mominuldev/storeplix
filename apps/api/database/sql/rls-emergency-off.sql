@@ -1035,6 +1035,86 @@ BEGIN
   END IF;
 END
 $$;
+-- table: inbox_settings
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_settings') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_settings";
+    ALTER TABLE "inbox_settings" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_settings" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_conversations
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_conversations') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_conversations";
+    ALTER TABLE "inbox_conversations" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_conversations" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_messages
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_messages') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_messages";
+    ALTER TABLE "inbox_messages" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_messages" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_attachments
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_attachments') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_attachments";
+    ALTER TABLE "inbox_attachments" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_attachments" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_reads
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_reads') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_reads";
+    ALTER TABLE "inbox_reads" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_reads" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_saved_replies
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_saved_replies') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_saved_replies";
+    ALTER TABLE "inbox_saved_replies" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_saved_replies" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_widget_sessions
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_widget_sessions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_widget_sessions";
+    ALTER TABLE "inbox_widget_sessions" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_widget_sessions" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: inbox_magic_links
+DO $$
+BEGIN
+  IF to_regclass('public.inbox_magic_links') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "inbox_magic_links";
+    ALTER TABLE "inbox_magic_links" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "inbox_magic_links" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

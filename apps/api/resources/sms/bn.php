@@ -14,4 +14,7 @@ return [
     'checkout_otp' => '{shop}: আপনার চেকআউট কোড {code}। কোডটি ৫ মিনিট বৈধ। কাউকে জানাবেন না।',
     // PHASE-8-8D P88D-12: till SMS receipt (vars: shop, number, total, method, footer); text only, no link.
     'pos_receipt' => '{shop}: ধন্যবাদ! রসিদ {number}, মোট {total} টাকা, পরিশোধ: {method}। {footer}',
+    // PHASE-8-8E P88E-11/12: Inbox chat code (vars: shop, code) and "the shop replied" with a magic link (vars: shop, url).
+    'inbox_verify' => '{shop}: আপনার কোড {code}। ১০ মিনিট কার্যকর।',
+    'inbox_reply' => '{shop}: আপনার মেসেজের উত্তর দেওয়া হয়েছে। দেখুন: {url}',
 ];

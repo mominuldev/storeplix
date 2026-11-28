@@ -108,6 +108,9 @@ const PosPage = lazy(() => import('./pos/PosPage'));
 const PosSalePage = lazy(() => import('./pos/SalePage'));
 const PosClosePage = lazy(() => import('./pos/ClosePage'));
 const PosHistoryPage = lazy(() => import('./pos/HistoryPage'));
+// PHASE-8-8E Inbox (code-split).
+const InboxPage = lazy(() => import('./inbox/InboxPage'));
+const SavedRepliesPage = lazy(() => import('./inbox/SavedRepliesPage'));
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<LoadingState />}>{el}</Suspense>;
 /** PHASE-8-3 §7.1: lazy page behind a permission check (no-access state on a deep link). */
@@ -117,7 +120,7 @@ const gated = (allow: (m: PermissionHolder) => boolean, el: React.ReactNode) => 
 const onlineStoreRoutes = ['/online-store', '/online-store/seo', '/online-store/domains'];
 const catalogRoutes = ['/products', '/products/categories', '/products/import', '/inventory', '/customers'];
 const reportRoutes = ['/reports'];
-const commerceRoutes = ['/pos', '/orders', '/orders/new', '/orders/print', '/orders/fraud-guard', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
+const commerceRoutes = ['/inbox', '/pos', '/orders', '/orders/new', '/orders/print', '/orders/fraud-guard', '/returns', '/shipments', '/marketing', '/marketing/coupons', '/marketing/campaigns', '/marketing/automations', '/integrations'];
 const settingsRoutes = ['/settings/store', '/settings/plan', '/settings/shipping', '/settings/payments', '/settings/notifications', '/settings/invoices'];
 
 /** `/marketing`: the overview for `marketing.manage` (PHASE-8-5 §8), Coupons for everyone else. */
@@ -250,6 +253,8 @@ export function AppRoutes() {
               <Route path="/inventory/counts/:id" element={lazyEl(<CountPage />)} />
               <Route path="/customers" element={gated(can.viewCustomers, <CustomersPage />)} />
               <Route path="/customers/:customerId" element={gated(can.viewCustomers, <CustomerDetailPage />)} />
+              <Route path="/inbox" element={gated(can.manageInbox, <InboxPage />)} />
+              <Route path="/inbox/saved-replies" element={gated(can.manageInbox, <SavedRepliesPage />)} />
               <Route path="/pos" element={gated(can.sellPos, <PosPage />)} />
               <Route path="/pos/history" element={gated(can.sellPos, <PosHistoryPage />)} />
               <Route path="/pos/:sessionId" element={gated(can.sellPos, <PosSalePage />)} />

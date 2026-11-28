@@ -24,6 +24,7 @@ enum SystemRole: string
                 Permission::OrdersView, Permission::OrdersProcess, Permission::ShipmentsManage, Permission::ShipmentsCancel,
                 Permission::ProductsEdit, Permission::InventoryAdjust, Permission::CustomersView, Permission::CustomersEdit,
                 Permission::ReportsView, Permission::PosSell, // PHASE-8-8D P88D-18: cashiers are staff
+                Permission::InboxManage, // PHASE-8-8E P88E-3: staff answer customer messages
             ]),
         };
     }

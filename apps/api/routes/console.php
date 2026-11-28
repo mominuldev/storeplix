@@ -90,3 +90,6 @@ Schedule::command('sms:prune-sender-documents')->dailyAt('03:20')->timezone('Asi
 Schedule::command('sms:fetch-balances')->everyFifteenMinutes()->withoutOverlapping();
 Schedule::command('sms:run-broadcasts')->everyMinute()->withoutOverlapping();
 Schedule::command('sms:prune-broadcast-recipients')->dailyAt('03:30')->timezone('Asia/Dhaka')->withoutOverlapping();
+
+// Phase 8.8e (PHASE-8-8E P88E-18): Inbox retention — conversations > 24 months, expired chat sessions / links, stale uploads.
+Schedule::command('inbox:prune')->dailyAt('03:40')->timezone('UTC')->withoutOverlapping();

@@ -7,7 +7,8 @@ namespace App\Domain\Sms;
 use App\Domain\Shared\Support\Phone;
 
 /**
- * PHASE-8-9A P89A-21 (S217): what the SMS log may keep and show. Checkout codes and account codes are never stored;
+ * PHASE-8-9A P89A-21 (S217): what the SMS log may keep and show. Checkout codes, Inbox chat codes (PHASE-8-8E) and
+ * account codes are never stored;
  * other previews are ≤ 160 characters with every link (scheme, `www.` or bare host with a path, e.g. the campaign
  * opt-out `shop.example/u/{code}` and payment-link tokens) replaced by `[link]`. Phones are masked `01711-•••211`.
  */
@@ -17,7 +18,7 @@ final class SmsPreview
 
     public static function of(string $purpose, string $text): ?string
     {
-        if ($purpose === SmsPurposes::CHECKOUT_OTP || SmsPurposes::isAccountCode($purpose)) {
+        if ($purpose === SmsPurposes::CHECKOUT_OTP || $purpose === SmsPurposes::INBOX_VERIFY || SmsPurposes::isAccountCode($purpose)) {
             return null;
         }
         $text = (string) preg_replace('~(?:https?://|www\.)\S+~iu', '[link]', $text);

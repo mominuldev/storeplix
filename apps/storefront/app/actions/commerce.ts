@@ -4,7 +4,8 @@ import { cookies } from 'next/headers';
 import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import type { StorefrontTracking } from '@/lib/tracking';
+import { toShopperTracking, type ShopperTracking } from '@/lib/tracking';
+import { ORDER_ACCESS_COOKIE, ORDER_ACCESS_MAX_AGE, orderAccessCookieValue } from '@/lib/inbox-shared';
 import {
   addCartItem,
   deleteCoupon,
@@ -419,7 +420,7 @@ export type TrackState =
   | { status: 'idle' }
   | ({ status: 'invalid'; fieldErrors: { number?: string; phone?: string } } & TrackValues)
   | ({ status: 'not_found' | 'error'; message: string } & TrackValues)
-  | ({ status: 'found'; tracking: StorefrontTracking } & TrackValues);
+  | ({ status: 'found'; tracking: ShopperTracking } & TrackValues);
 
 export async function trackOrder(_prev: TrackState, formData: FormData): Promise<TrackState> {
   const number = String(formData.get('number') ?? '').trim().toUpperCase();
@@ -433,7 +434,15 @@ export async function trackOrder(_prev: TrackState, formData: FormData): Promise
   const ctx = await getCommerceContext();
   if (!ctx) return { status: 'error', message: NOT_OPEN, values };
   const r = await postTrack(ctx.store.host, number, phone!, ctx.call.previewToken, ctx.call.clientIp);
-  if (r.ok) return { status: 'found', tracking: r.data, values };
+  if (r.ok) {
+    // 8.8e §10: the order-messages token stays server-side (httpOnly cookie, 12 h); the browser gets counts only.
+    const access = r.data.messages ? orderAccessCookieValue(r.data.number, r.data.messages.access_token) : null;
+    if (access && ctx.store.mode === 'live') {
+      (await cookies()).set(ORDER_ACCESS_COOKIE, access, commerceCookieOptions(ORDER_ACCESS_MAX_AGE.track, process.env.NODE_ENV === 'production' && !isLocalDevHost(ctx.store.host)));
+    }
+    const tracking = toShopperTracking(r.data);
+    return { status: 'found', tracking: ctx.store.mode === 'live' ? tracking : { ...tracking, messages: null }, values };
+  }
   if (r.status === 404) return { status: 'not_found', message: "We couldn't find an order with that number and phone. Check both and try again.", values };
   return { status: 'error', message: errorMessage(r), values };
 }
