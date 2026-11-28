@@ -18,6 +18,7 @@ import { roleNameOf } from '../lib/permissions';
 import { formatBdPhone, normalizeBdPhone } from '../lib/phone';
 import { FormAlert } from '../onboarding/AuthShell';
 import { fetchTenantStore, storeDomain, storeKey } from '../stores/useTenantStore';
+import { SmsPreferencesCard, SmsPreferencesCardReadOnly } from '../platform-sms/SmsPreferencesCard';
 
 const profileSchema = z.object({
   name: z.string().trim().min(2, 'Enter your full name').max(120),
@@ -71,6 +72,9 @@ function SupportSessionAccount({ shopName }: { shopName: string }) {
           description="Profile, password and sign-in settings belong to each person on the shop. Nothing here can be viewed or changed while impersonating."
         />
       </Card>
+      <div className="mt-6">
+        <SmsPreferencesCardReadOnly />
+      </div>
     </>
   );
 }
@@ -220,6 +224,9 @@ function OwnAccount() {
               ))}
             </ul>
           </Card>
+
+          {/* PHASE-8-9B §12 (composed, no Figma frame): Store Plix promotional SMS opt-out. */}
+          <SmsPreferencesCard />
         </div>
 
         <div className="flex w-full flex-col gap-6 xl:w-[360px]">

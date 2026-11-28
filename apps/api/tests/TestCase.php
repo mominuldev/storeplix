@@ -13,11 +13,13 @@ use App\Domain\Tenancy\Support\PlatformDb;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\ParallelTesting;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -34,10 +36,42 @@ abstract class TestCase extends BaseTestCase
     /** @var list<array<string, mixed>>|null the migration-seeded plans, restored before every RLS-mode test */
     private static ?array $rlsPlans = null;
 
+    /** @var bool the per-process fake-disk roots are removed once, when the process ends */
+    private static bool $fakeDiskCleanup = false;
+
     protected function setUp(): void
     {
         parent::setUp();
         Http::preventStrayRequests(); // no real network calls from tests
+        $this->isolateFakeDisks();
+    }
+
+    /**
+     * Storage::fake('local') cleans and reuses one shared root (storage/framework/testing/disks/local) unless a parallel
+     * token is set. Two `php artisan test` processes in the same checkout (e.g. sqlite and Postgres runs side by side)
+     * then wipe each other's faked files mid-test — AdminSenderIdsTest's document download turned into a 404 that way
+     * (QA 8.9b). Outside paratest, give every process its own root (`…/local_test_p{pid}`); paratest keeps its token.
+     * Only the fake-disk root uses this: parallel DB/cache/view isolation still needs LARAVEL_PARALLEL_TESTING.
+     */
+    private function isolateFakeDisks(): void
+    {
+        if (! empty($_SERVER['TEST_TOKEN'])) {
+            return;
+        }
+        $token = 'p'.getmypid();
+        ParallelTesting::resolveTokenUsing(fn () => $token);
+        if (! self::$fakeDiskCleanup) {
+            self::$fakeDiskCleanup = true;
+            $disks = storage_path('framework/testing/disks');
+            register_shutdown_function(static function () use ($disks, $token): void {
+                if ('p'.getmypid() !== $token) {
+                    return; // a forked race child exiting: the parent still uses the root
+                }
+                foreach (glob($disks.'/*_test_'.$token, GLOB_ONLYDIR) ?: [] as $dir) {
+                    (new Filesystem)->deleteDirectory($dir);
+                }
+            });
+        }
     }
 
     /**

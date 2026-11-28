@@ -50,6 +50,7 @@ export function AppRoutes() {
           <Route path="/team" element={<TeamPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/sms" element={<SettingsPage section="sms" />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

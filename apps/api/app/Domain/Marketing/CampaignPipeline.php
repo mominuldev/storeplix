@@ -241,9 +241,9 @@ final class CampaignPipeline
             : ['status' => CampaignRecipient::FAILED, 'error_code' => $error, 'parts' => 0, 'updated_at' => now()]);
         if ($message !== null) {
             if ($error === null) {
-                $message->markSent($providerId);
+                $message->markSent($providerId, $this->messenger->lastResult);
             } else {
-                $message->markFailed($error);
+                $message->markFailed($error, $this->messenger->lastFailure);
                 app(SmsCharger::class)->refund($message);
             }
         }

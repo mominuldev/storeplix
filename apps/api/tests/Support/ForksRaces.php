@@ -100,7 +100,10 @@ trait ForksRaces
     /** Child process: never reuse the parent's DB / Redis sockets (interleaved replies → flakes). */
     private function reconnectAfterFork(): void
     {
-        DB::purge();
+        // Every open connection, not only the default (PHASE-8-9B: platform code races on pgsql_admin).
+        foreach (array_keys(DB::getConnections()) as $name) {
+            DB::purge($name);
+        }
         DB::reconnect();
         if (app()->bound('redis')) {
             app()->forgetInstance('redis');

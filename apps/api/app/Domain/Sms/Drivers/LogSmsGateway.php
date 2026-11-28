@@ -4,15 +4,16 @@ namespace App\Domain\Sms\Drivers;
 
 use App\Domain\Sms\SmsGateway;
 use App\Domain\Sms\SmsResult;
+use App\Domain\Sms\SmsRoute;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /** Local development: writes the SMS to the log, sends nothing. */
 class LogSmsGateway implements SmsGateway
 {
-    public function send(string $msisdn, string $text, ?string $senderId = null): SmsResult
+    public function send(string $msisdn, string $text, ?string $senderId = null, SmsRoute $route = SmsRoute::Shop): SmsResult
     {
-        Log::info('sms.log_driver', ['to' => $msisdn, 'text' => $text, 'sender_id' => $senderId]);
+        Log::info('sms.log_driver', ['to' => $msisdn, 'text' => $text, 'sender_id' => $senderId, 'route' => $route->value]);
 
         return new SmsResult('log-'.Str::lower((string) Str::ulid()), true, ['driver' => 'log']);
     }

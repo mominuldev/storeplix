@@ -17,6 +17,7 @@ use App\Domain\Payments\PayloadScrubber;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Sms\Credits\SmsCreditService;
+use App\Domain\Sms\Platform\PlatformSmsType;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -203,6 +204,8 @@ final class BillingPaymentService
                     'number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount),
                     'credits' => number_format((int) $invoice->sms_credits), 'balance' => number_format($this->credits->balance()),
                 ]);
+                $this->notifier->ownerSms(PlatformSmsType::PaymentReceived, ['invoice_no' => (string) $invoice->number,
+                    'amount' => Money::plain((int) $invoice->total_amount), 'plan' => 'SMS credits']);
             } elseif ($result === 'paid' || $result === 'late') {
                 RenderBillingInvoicePdf::dispatch($invoice->id)->forTenant($invoice->tenant_id)->afterCommit();
                 $subscription = $this->plans->current();
@@ -210,6 +213,8 @@ final class BillingPaymentService
                     'number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount), 'plan' => $invoice->plan->name,
                     'date' => BillingNotifier::date($subscription->current_period_end),
                 ]);
+                $this->notifier->ownerSms(PlatformSmsType::PaymentReceived, ['invoice_no' => (string) $invoice->number,
+                    'amount' => Money::plain((int) $invoice->total_amount), 'plan' => (string) $invoice->plan->name]);
             } elseif ($result === 'duplicate') {
                 $this->notifier->ops('payment_duplicate', ['tenant' => $payment->tenant_id, 'number' => $invoice->number, 'payment' => $payment->id,
                     'detail' => 'duplicate payment of '.Money::bdt($payment->amount)]);

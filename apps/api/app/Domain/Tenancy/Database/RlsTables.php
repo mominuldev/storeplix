@@ -64,7 +64,15 @@ final class RlsTables
     ];
 
     /** PHASE-8-2 S84: tables the app role has no privilege on at all (only the admin connection reads/writes them). */
-    public const APP_REVOKED = ['tenant_daily_metrics', 'platform_daily_metrics'];
+    public const APP_REVOKED = ['tenant_daily_metrics', 'platform_daily_metrics', 'platform_sms_broadcasts', 'platform_sms_broadcast_recipients'];
+
+    /**
+     * PHASE-8-9B §3.1: platform tables whose `tenant_id` names the SUBJECT (the merchant a platform row is about), not an
+     * RLS owner. No RLS, no grant to the app role (only `pgsql_admin` reads and writes them). Excluded from TENANT.
+     *
+     * @var list<string>
+     */
+    public const PLATFORM_SUBJECT = ['platform_sms_broadcast_recipients'];
 
     /** @var list<string> platform tables: no tenant_id, no RLS */
     public const PLATFORM = [
@@ -76,5 +84,8 @@ final class RlsTables
         'platform_daily_metrics',
         // PHASE-8-1 amendment A1-2 (app role SELECT only; writes on the admin connection)
         'platform_settings',
+        // Phase 8.9b (PHASE-8-9B §3.1; providers/types/templates: app role SELECT only; broadcasts: no grant)
+        'sms_providers', 'platform_sms_message_types', 'platform_sms_templates', 'platform_sms_broadcasts',
+        'platform_sms_broadcast_recipients',
     ];
 }

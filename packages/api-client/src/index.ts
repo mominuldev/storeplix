@@ -2,7 +2,7 @@ export { auditLogQuery, createApiClient, mediaListQuery, normalizeHost, readCook
 export type { ApiClient, ApiClientOptions, DownloadedFile, Paginated, RequestOptions, UploadMediaInput, UploadOptions } from './client';
 export { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, returnListQuery, shipmentListQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery } from './queries';
 export type { ReturnListFilters } from './queries';
-export { adminAuditQuery, adminDomainQuery, adminImpersonationQuery, adminInvoiceQuery, adminSenderIdQuery, adminTeamQuery, adminTenantQuery, analyticsQuery } from './admin';
+export { adminAuditQuery, adminDomainQuery, adminImpersonationQuery, adminInvoiceQuery, adminSenderIdQuery, adminTeamQuery, adminTenantQuery, analyticsQuery, platformSmsBroadcastQuery, platformSmsLogQuery } from './admin';
 export type { AdminApi, AdminAuditFilters, AdminDomainFilters, AdminImpersonationFilters, AdminInvoiceFilters, AdminTeamFilters, AdminTenantFilters, AdminTenantListMeta, AnalyticsResult } from './admin';
 export { ApiError, fieldErrorsOf, isApiError } from './errors';
 export type { ApiErrorDetails, ApiFieldErrors } from './errors';

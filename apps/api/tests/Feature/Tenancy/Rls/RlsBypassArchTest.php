@@ -22,6 +22,9 @@ class RlsBypassArchTest extends TestCase
         '#^app/Domain/[A-Za-z]+/Console/#',
         '#^app/Domain/Tenancy/#',
         '#^app/Domain/Admin/#', // PHASE-8-1 P8-6: the admin API reads on pgsql_admin
+        // PHASE-8-9B §3: platform SMS tables (providers, types, templates, broadcasts) are written — and the broadcast
+        // tables only ever read — on the platform connection; platform SMS rows have tenant_id NULL.
+        '#^app/Domain/Sms/(Providers|Routing|Platform|Broadcasts)/#',
         '#^database/seeders/#',
     ];
 

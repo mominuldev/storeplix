@@ -39,9 +39,9 @@ class SendCheckoutOtp implements ShouldQueue
         }
         try {
             $result = $gateway->send($message->to, $this->text, $message->sender_id); // PHASE-8-9A: the masked sender charged with
-            $message->markSent($result->message_id);
+            $message->markSent($result->message_id, $result);
         } catch (SmsSendFailed $e) {
-            $message->markFailed(Str::limit($e->getMessage(), 250));
+            $message->markFailed(Str::limit($e->getMessage(), 250), $e);
             $charger->refund($message); // PHASE-8-9A §4.2: credits back on a final provider failure
             $otp->markFailed($this->storeId, $message->to);
             Log::warning('fraud_guard.otp_sms_failed', ['store_id' => $this->storeId]);

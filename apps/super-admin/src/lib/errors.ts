@@ -18,6 +18,28 @@ const byCode: Record<string, string> = {
   document_processing: 'The licence is still being processed. Try again in a minute.',
   idempotency_key_mismatch: 'This change was already submitted with different values. Close the dialog and start again.',
   idempotency_key_in_use: 'This change is still being saved. Wait a moment.',
+  // PHASE-8-9B §9.3 platform SMS
+  sms_provider_driver_unavailable: 'This provider isn’t available yet. Use “Other (HTTP API)” for it meanwhile.',
+  sms_provider_name_taken: 'Another provider already has this name. Pick a different name.',
+  sms_provider_test_required: 'Send a passing test SMS with these settings before activating.',
+  sms_provider_test_failed: 'The test SMS failed, so nothing was saved. The current credentials keep working.',
+  sms_provider_is_primary: 'The primary provider can’t be removed. Make another provider primary first.',
+  confirmation_mismatch: 'The name you typed doesn’t match. Type it exactly as shown.',
+  platform_sms_type_locked: 'This message is locked: it is always on and its text can’t be changed.',
+  platform_sms_type_disabled: 'Broadcasts are switched off in Message types. Switch them on first.',
+  broadcasts_pending: 'A broadcast is scheduled or sending. Cancel it or wait until it finishes.',
+  platform_sms_template_unknown_merge_field: 'The text uses a merge tag this message doesn’t have.',
+  platform_sms_template_missing_merge_field: 'The text is missing a required merge tag.',
+  platform_sms_template_link_not_allowed: 'Links can’t be typed in. Use the {link} merge tag instead.',
+  platform_sms_template_too_long: 'Too long. Keep it within 3 SMS parts.',
+  outside_sending_hours: 'Promotional SMS can only go out between 9 AM and 9 PM Bangladesh time.',
+  broadcast_estimate_changed: 'The number of recipients changed. Check the new numbers and type the new count.',
+  promotional_sender_not_approved: 'The promotional sender mask isn’t approved yet, so broadcasts can’t be scheduled.',
+  gateway_balance_insufficient: 'The gateway balance is too low for this broadcast. Top up at the provider first.',
+  broadcast_empty_audience: 'Nobody in this audience can receive the broadcast.',
+  export_too_large: 'Too many rows to export. Narrow the dates or filters (max 50,000 rows).',
+  revision_conflict: 'Someone else changed this. Reload and try again.',
+  impersonation_read_only: 'Read-only session. Changes are disabled.',
 };
 
 /** One readable sentence for any mutation/query error. */
@@ -32,4 +54,9 @@ export function errorMessage(error: unknown, fallback = 'Something went wrong. P
     return byCode[error.code] ?? error.message ?? fallback;
   }
   return fallback;
+}
+
+/** The fixed sentence for a stable error `code`, if there is one (domain 422s whose `details` aren't field messages). */
+export function messageForCode(code: string): string | undefined {
+  return byCode[code];
 }

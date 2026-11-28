@@ -1,9 +1,9 @@
 import type { PlatformSecuritySettings } from '@storeplix/types';
 import { Badge, buttonVariants, Card, cn, Toggle } from '@storeplix/ui';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Lock, Shield, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Lock, MessageSquare, Shield, ShieldAlert, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { Empty, ErrorState, LoadingRows } from '../components/States';
 import { PageHeader } from '../layout/PageHeader';
@@ -12,6 +12,7 @@ import { formatDateTime } from '../lib/format';
 import { useCan } from '../lib/permissions';
 import { ConfirmSecurityDialog } from './ConfirmSecurityDialog';
 import { securityQueryKey } from './queryKeys';
+import { SmsProviderSettings } from './sms/SmsProviderSettings';
 
 const onOff = (v: boolean) => (v ? 'On' : 'Off');
 
@@ -23,15 +24,29 @@ const onOff = (v: boolean) => (v ? 'On' : 'Off');
 // row 45:8564: border, radius 12, px 16 py 14, gap 12, 36px icon tile radius 10, Body/14 Medium title + Caption muted
 // text, StatusPill, Toggle; divider; footer 45:8586 Caption muted "Last changed by … · …"). Only the Security tab is
 // built; General, Subscription billing, Domains & SSL, Messaging, Email, Maintenance and Legal stay hidden (8.1 §7.1).
-export function SettingsPage() {
+// PHASE-8-9B §11: "SMS provider" (`/settings/sms`, Figma 2098:8460) joins the nav under Security; it replaces the old
+// Messaging → SMS gateway card (46:6794 / 46:7167), which was never built.
+export type SettingsSection = 'security' | 'sms';
+
+const sections: { key: SettingsSection; label: string; to: string; icon: LucideIcon }[] = [
+  { key: 'security', label: 'Security', to: '/settings', icon: Shield },
+  { key: 'sms', label: 'SMS provider', to: '/settings/sms', icon: MessageSquare },
+];
+
+export function SettingsPage({ section = 'security' }: { section?: SettingsSection }) {
   const can = useCan();
   const allowed = can('manage_settings');
+  const sms = section === 'sms';
 
   return (
     <>
       <PageHeader
-        title="Platform settings"
-        subtitle="Global configuration for every Storeplix shop and staff account"
+        title={sms ? 'SMS provider' : 'Platform settings'}
+        subtitle={
+          sms
+            ? 'The gateway Storeplix uses to text merchants: sign-up, billing, sign-in codes and announcements.'
+            : 'Global configuration for every Storeplix shop and staff account'
+        }
         actions={
           can('view_merchants') && (
             <Link to="/audit-log" className={buttonVariants({ variant: 'secondary' })}>
@@ -43,9 +58,7 @@ export function SettingsPage() {
       {allowed ? (
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <SettingsNav />
-          <div className="flex min-w-0 flex-1 flex-col gap-5">
-            <SecurityCard />
-          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-5">{sms ? <SmsProviderSettings /> : <SecurityCard />}</div>
         </div>
       ) : (
         <Card>
@@ -58,15 +71,28 @@ export function SettingsPage() {
 
 function SettingsNav() {
   return (
-    <nav aria-label="Settings sections" className="flex w-full shrink-0 flex-col gap-0.5 rounded-card border border-border-default bg-surface-card p-2 shadow-elevation-1 lg:w-60">
-      <span
-        aria-current="page"
-        className="flex items-center gap-2.5 rounded-md bg-brand-50 px-3 py-[9px] text-body font-semibold text-brand-700"
-      >
-        <Shield aria-hidden className="size-[18px] shrink-0" />
-        <span className="flex-1 truncate">Security</span>
-        <ChevronRight aria-hidden className="size-3.5 shrink-0" />
-      </span>
+    <nav aria-label="Settings sections" className="flex w-full shrink-0 gap-0.5 overflow-x-auto rounded-card border border-border-default bg-surface-card p-2 shadow-elevation-1 lg:w-60 lg:flex-col">
+      {sections.map(({ key, label, to, icon: Icon }) => (
+        <NavLink
+          key={key}
+          to={to}
+          end
+          className={({ isActive }) =>
+            cn(
+              'flex shrink-0 items-center gap-2.5 rounded-md px-3 py-[9px] text-body outline-none focus-visible:shadow-focus',
+              isActive ? 'bg-brand-50 font-semibold text-brand-700' : 'font-medium text-text-secondary hover:bg-surface-subtle',
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Icon aria-hidden className="size-[18px] shrink-0" />
+              <span className="flex-1 truncate">{label}</span>
+              {isActive && <ChevronRight aria-hidden className="hidden size-3.5 shrink-0 lg:block" />}
+            </>
+          )}
+        </NavLink>
+      ))}
     </nav>
   );
 }

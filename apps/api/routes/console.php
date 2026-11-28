@@ -86,3 +86,7 @@ Schedule::command('fraud:prune')->dailyAt('03:50')->timezone('UTC')->withoutOver
 // PHASE-8-9A P89A-21 / §8.2: SMS log previews nulled after 90 days; finished sender-ID trade licences pruned after 180 days.
 Schedule::command('sms:prune-previews')->dailyAt('03:10')->timezone('Asia/Dhaka')->withoutOverlapping();
 Schedule::command('sms:prune-sender-documents')->dailyAt('03:20')->timezone('Asia/Dhaka')->withoutOverlapping();
+// PHASE-8-9B §4.7, P89B-22: gateway balances every 15 min, due broadcasts every minute, recipients pruned after 13 months.
+Schedule::command('sms:fetch-balances')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('sms:run-broadcasts')->everyMinute()->withoutOverlapping();
+Schedule::command('sms:prune-broadcast-recipients')->dailyAt('03:30')->timezone('Asia/Dhaka')->withoutOverlapping();

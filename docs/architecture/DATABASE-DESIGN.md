@@ -1265,6 +1265,58 @@ store_id, requested_at DESC) · IX(status, requested_at) (admin queue on `pgsql_
 - Allowance usage (`sms_per_month`, `campaign_sms_per_month`) excludes `charged_from = 'credits'` and `skipped` rows.
 - `audit_logs` action catalogue gains `SMS_AUDIT_ACTIONS` (`packages/types`).
 
+## 5.13 Phase 8.9b platform SMS provider (PHASE-8-9B-CONTRACT §3, ADR 0027, migrations `2026_12_12_*`)
+Platform tables (no `tenant_id` owner column, no RLS, like `platform_settings`): the app role has **SELECT only** on
+`sms_providers`, `platform_sms_message_types`, `platform_sms_templates` (queue workers route and render with them) and
+**no grant** on the broadcast tables; writes go through the platform connection (`pgsql_admin`). `RlsTables::TENANT`
+stays 95.
+
+### sms_providers (`000100`)
+id PK · driver varchar(16) `CHECK IN ('revesms','ssl_wireless','alpha_sms','bulksmsbd','http')` · name varchar(60) ·
+role varchar(10) `CHECK IN ('draft','primary','failover','inactive','removed')` · credentials_encrypted text null
+(integration-credentials encrypter; null only when removed) · credentials_hint jsonb (field → `••••` + last 4) ·
+settings jsonb (`account_id`, `base_url` https, `http` mapping) · default_sender_id varchar(11) · promotional_sender_id
+varchar(11) null · promotional_sender_status `CHECK IN ('approved','pending')` null · message_groups jsonb (list of
+`shop|registration|billing|security|promotional`) · rate_limit_per_minute int default 300 (1–6000) ·
+failover_after_failures smallint default 3 (1–10) · failover_timeout_seconds smallint default 10 (3–30) ·
+price_masking_paisa / price_non_masking_paisa int null · balance_amount bigint null · balance_fetched_at null ·
+balance_status `CHECK IN ('ok','unsupported','error')` null · low_threshold_paisa bigint null default 100000 ·
+alert_email / alert_in_app bool default true · low_balance_alerted_at null (null = armed) · connection_changed_at ·
+last_test_at · last_test_status `CHECK IN ('passed','failed')` · last_test_error_code · last_test_by ·
+credentials_rotated_at/by · activated_at/by · removed_at/by · created_by (all users FKs SET NULL) · revision int ·
+timestamps. Partial **U(role) WHERE role = 'primary'** · partial **U(role) WHERE role = 'failover'** · partial
+**U(lower(name)) WHERE role <> 'removed'**. Breaker state lives in the platform cache, not here.
+
+### platform_sms_message_types · platform_sms_templates (`000200`)
+`platform_sms_message_types`: type varchar(24) PK (9 types, seeded) · enabled bool · updated_by FK users SET NULL ·
+updated_at. `platform_sms_templates`: id · type (5 editable types) · language `CHECK IN ('bn','en')` · body text
+(1–480) · revision int · updated_by · timestamps · **U(type, language)**; only custom bodies (defaults in
+`resources/sms/platform/{bn,en}.php`).
+
+### platform_sms_broadcasts · platform_sms_broadcast_recipients (`000300`; `pgsql_admin` only)
+Broadcasts: id · name varchar(80) · body_bn / body_en text (1–480) · audience jsonb · status `CHECK IN ('draft',
+'scheduled','sending','sent','cancelled','failed')` · scheduled_at / started_at / finished_at null · estimate jsonb null
+· recipients_count / sent_count / failed_count / skipped_count int · provider_id char(26) null (soft) · sender_id
+varchar(11) null · failure_reason varchar(40) null · created_by / confirmed_by / cancelled_by FK users SET NULL ·
+confirmed_at / cancelled_at · revision · timestamps; IX(status, scheduled_at), IX(created_at DESC). Recipients: id ·
+broadcast_id FK CASCADE · tenant_id FK tenants CASCADE (subject) · user_id FK users SET NULL · to varchar(15) null
+(nulled after 90 days) · language char(2) · status `CHECK IN ('pending','sent','failed','skipped')` · skip_reason
+`CHECK IN ('opted_out','no_verified_phone','weekly_cap','suspended','duplicate')` null · parts smallint null ·
+opt_out_code_hash char(64) null **U** · sms_message_id char(26) null · sent_at null · timestamps; **U(broadcast_id,
+tenant_id)**, IX(tenant_id, status, created_at) (weekly cap), IX(broadcast_id, status). Pruned after 13 months.
+
+### Changes to existing tables
+- **sms_messages** (`000400`; RLS policies unchanged): + provider_id char(26) null (soft ref) · merchant_tenant_id
+  char(26) null FK tenants SET NULL (platform rows) · platform_type varchar(24) null. Platform SMS (`otp_*`,
+  `platform_*` purposes) always have `tenant_id = NULL`; data step moves any `otp_*` row's tenant_id to
+  merchant_tenant_id. `error_code` gains `provider_unavailable`, `provider_timeout`, `provider_auth`, `no_route`
+  (merchant outputs map them to `provider_error`). Partial IX(created_at DESC, id DESC) WHERE tenant_id IS NULL ·
+  partial IX(to, created_at DESC) WHERE tenant_id IS NULL · partial IX(provider_id, created_at) WHERE provider_id IS NOT
+  NULL.
+- **users** (`000500`): + platform_promo_sms_opted_out_at timestamptz null · platform_promo_sms_opt_out_source
+  `CHECK IN ('account','link')` null · welcome_sms_at timestamptz null.
+- `audit_logs` action catalogue gains `PLATFORM_SMS_AUDIT_ACTIONS` (`packages/types`).
+
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.
 

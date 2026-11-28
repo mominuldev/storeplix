@@ -80,19 +80,37 @@ class RevesmsGatewayTest extends TestCase
         $this->gateway()->send('8801711111111', 'x');
     }
 
-    public function test_timeout_is_retried_twice_then_fails(): void
+    /** PHASE-8-9B S225: a read timeout may have been accepted — never retried; connect failures are (nothing was sent). */
+    public function test_timeout_is_never_retried(): void
     {
         $attempts = 0;
         Http::fake(function () use (&$attempts) {
             $attempts++;
-            throw new ConnectionException('cURL error 28: Operation timed out');
+            throw new ConnectionException('cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received');
         });
 
         try {
             $this->gateway()->send('8801711111111', 'x');
             $this->fail('Expected SmsSendFailed');
-        } catch (SmsSendFailed) {
+        } catch (SmsSendFailed $e) {
+            $this->assertSame(1, $attempts);
+            $this->assertSame(SmsSendFailed::TIMEOUT, $e->reason);
+        }
+    }
+
+    public function test_connect_errors_are_retried_twice_then_unavailable(): void
+    {
+        $attempts = 0;
+        Http::fake(function () use (&$attempts) {
+            $attempts++;
+            throw new ConnectionException('cURL error 7: Failed to connect to smpp.revesms.test port 7790: Connection refused');
+        });
+        try {
+            $this->gateway()->send('8801711111111', 'x');
+            $this->fail('Expected SmsSendFailed');
+        } catch (SmsSendFailed $e) {
             $this->assertSame(3, $attempts); // 1 + 2 retries
+            $this->assertSame(SmsSendFailed::UNAVAILABLE, $e->reason);
         }
     }
 

@@ -39,6 +39,12 @@ final class SmsPurposes
 
     public static function isAccountCode(string $purpose): bool
     {
-        return str_starts_with($purpose, 'otp_') || ! in_array($purpose, self::LISTED, true);
+        return str_starts_with($purpose, 'otp_') || (! in_array($purpose, self::LISTED, true) && ! self::isPlatformMessage($purpose));
+    }
+
+    /** PHASE-8-9B §3.2: Store Plix's own non-code SMS (`platform_*`): previewed like shop SMS, never charged or listed to a shop. */
+    public static function isPlatformMessage(string $purpose): bool
+    {
+        return str_starts_with($purpose, 'platform_');
     }
 }

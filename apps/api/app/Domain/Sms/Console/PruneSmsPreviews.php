@@ -28,6 +28,8 @@ class PruneSmsPreviews extends Command
                 $total += PlatformDb::connection()->table('sms_messages')->whereIn('id', $ids)->update(['body_preview' => null]);
             }
         } while (count($ids) === 1000);
+        // PHASE-8-9B §3.1: broadcast recipients' phone numbers go with the previews.
+        PlatformDb::connection()->table('platform_sms_broadcast_recipients')->whereNotNull('to')->where('created_at', '<', $before)->update(['to' => null]);
         $this->info("Pruned {$total} SMS previews.");
 
         return self::SUCCESS;

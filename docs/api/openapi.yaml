@@ -1,8 +1,29 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.23.0
+  version: 1.24.0
   description: |
+    1.24.0 (2026-11-28, Phase 8.9b platform SMS provider, PHASE-8-9B-CONTRACT.md, ADR 0027; Q273–Q286 defaults accepted).
+    New tag platform-sms (platform permission manage_settings): /admin/sms/drivers, /admin/sms/alerts,
+    /admin/sms/providers (overview, create draft, GET/PATCH, /test, /activate with typed name, /rotate test-then-swap,
+    /remove, /refresh-balance), /admin/sms/message-types (+ PATCH toggle, PUT|DELETE /templates/{language}, /preview,
+    /{type}/test), /admin/sms/broadcasts (list with kpis, create, /audiences, /estimate, /test, GET/PATCH/DELETE, /schedule
+    with typed recipient count, /cancel, /recipients), /admin/sms/messages (+ /export CSV). New tag account:
+    /account/sms-preferences (GET/PATCH) and public /platform-sms/opt-out/{code} (GET/POST). Credentials are write-only
+    (credentials_hint only). Merchant SmsLogEntry.error_code keeps provider_error | no_credits (new provider codes map to
+    provider_error). New schemas AdminShopRef, SmsProviderDriverCode, SmsMessageGroup, SmsProviderRole,
+    SmsProviderErrorCode, PlatformSmsErrorCode, SmsProviderField, SmsProviderDriverInfo, SmsHttpMapping,
+    SmsProviderSettings, SmsGatewayBalance, SmsProvider, PlatformSmsAlert, PlatformSmsRecentError, SmsProviderOverview,
+    CreateSmsProviderInput, UpdateSmsProviderInput, SmsProviderTestInput, SmsProviderTestResult,
+    SmsProviderTestFailedDetails, ActivateSmsProviderInput, RotateSmsProviderCredentialsInput, RemoveSmsProviderInput,
+    PlatformSmsGroup, PlatformSmsType, PlatformSmsMergeField, PlatformSmsTemplate, PlatformSmsMessageType,
+    PlatformSmsMessageTypesMeta, UpdatePlatformSmsMessageTypeInput, UpdatePlatformSmsTemplateInput,
+    PlatformSmsPreviewInput, PlatformSmsPreview, PlatformSmsTestInput, PlatformSmsTestResult, PlatformSmsAudience,
+    PlatformSmsBroadcastStatus, PlatformSmsSkipReason, PlatformSmsBroadcastEstimate, PlatformSmsBroadcast,
+    PlatformSmsBroadcastInput, UpdatePlatformSmsBroadcastInput, PlatformSmsBroadcastEstimateInput,
+    SchedulePlatformSmsBroadcastInput, PlatformSmsBroadcastTestInput, PlatformSmsBroadcastListMeta,
+    PlatformSmsAudienceCounts, PlatformSmsBroadcastRecipient, PlatformSmsLogEntry, SmsPreferences,
+    UpdateSmsPreferencesInput, PlatformSmsOptOutLookup, GatewayBalanceInsufficientDetails.
     1.23.0 (2026-11-28, Phase 8.9a SMS integration, PHASE-8-9A-CONTRACT.md, ADR 0026; Q257–Q272 defaults accepted). New
     tag sms. Store-scoped /stores/{store}/sms (overview), POST /sms/test (test SMS to the member's verified phone),
     /sms/templates (+ /preview, PUT|DELETE /{key}/{language}), /sms/sender-ids (multipart request with trade licence,
@@ -327,6 +348,10 @@ tags:
   description: 'Phase 8.8d: POS registers, cash sessions, till sales, held sales and returns at the till (PHASE-8-8D §10)'
 - name: sms
   description: 'Phase 8.9a: SMS integration — overview, test SMS, templates, sender IDs, SMS log (PHASE-8-9A §6–§9); credits are under billing'
+- name: platform-sms
+  description: 'Phase 8.9b: platform SMS providers, failover, platform message types, broadcasts and the platform SMS log (PHASE-8-9B §4–§9); super admin, manage_settings'
+- name: account
+  description: 'Phase 8.9b: the signed-in user''s own settings (SMS preferences) and the public promotional SMS opt-out (PHASE-8-9B §7.6)'
 - name: internal
   description: 'Phase 6: server-to-server allowlist for on-demand TLS (PHASE-6 §4.3); not exposed publicly'
 paths:
@@ -20761,6 +20786,1412 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /admin/sms/drivers:
+    get:
+      tags:
+      - platform-sms
+      summary: SMS provider driver catalogue
+      operationId: listSmsProviderDrivers
+      description: PHASE-8-9B §4.2. Platform permission `manage_settings` (super_admin only, P89B-25). From config; ssl_wireless, alpha_sms and bulksmsbd are `coming_soon` (Q274).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SmsProviderDriverInfo'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/alerts:
+    get:
+      tags:
+      - platform-sms
+      summary: Platform SMS alerts (shell banner)
+      operationId: listPlatformSmsAlerts
+      description: PHASE-8-9B §4.7. Platform permission `manage_settings` (super_admin only, P89B-25). no_provider, low_balance, balance_unavailable, failover_active, promotional_paused.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformSmsAlert'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers:
+    get:
+      tags:
+      - platform-sms
+      summary: SMS provider overview
+      operationId: getSmsProviderOverview
+      description: PHASE-8-9B §4. Platform permission `manage_settings` (super_admin only, P89B-25). Primary, failover, drafts/inactive, environment bootstrap, waiting, recent errors, alerts. Credentials are never returned (hints only).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProviderOverview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - platform-sms
+      summary: Create an SMS provider (draft)
+      operationId: createSmsProvider
+      description: PHASE-8-9B §4.6. Platform permission `manage_settings` (super_admin only, P89B-25). Credentials are encrypted and write-only. Audited `sms_provider.created`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSmsProviderInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProvider'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '409':
+          description: '`sms_provider_name_taken`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`sms_provider_driver_unavailable` | `validation_failed` (incl. non-https base_url)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    get:
+      tags:
+      - platform-sms
+      summary: SMS provider
+      operationId: getSmsProvider
+      description: PHASE-8-9B. Platform permission `manage_settings` (super_admin only, P89B-25).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProvider'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - platform-sms
+      summary: Update an SMS provider
+      operationId: updateSmsProvider
+      description: PHASE-8-9B §4.6. Platform permission `manage_settings` (super_admin only, P89B-25). No credentials (use rotate); connection settings of an active provider change only through rotate. Audited `sms_provider.updated`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSmsProviderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProvider'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}/test:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Send a test SMS through one provider
+      operationId: testSmsProvider
+      description: PHASE-8-9B §4.6, P89B-26. Platform permission `manage_settings` (super_admin only, P89B-25). Synchronous; limiter admin-sms-test 10/hour per staff member. A failed test is a 200 with status failed. Audited `sms_provider.tested`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmsProviderTestInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProviderTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}/activate:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Make a provider the primary or the failover
+      operationId: activateSmsProvider
+      description: PHASE-8-9B P89B-6/7. Platform permission `manage_settings` (super_admin only, P89B-25). Primary needs confirm_name = the provider name (case-insensitive) and a passed test after the last connection change. Audited `sms_provider.activated`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateSmsProviderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProviderOverview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`sms_provider_test_required` | `invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`confirmation_mismatch` | `validation_failed` (groups)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}/rotate:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Rotate provider credentials (test, then swap)
+      operationId: rotateSmsProviderCredentials
+      description: PHASE-8-9B P89B-5. Platform permission `manage_settings` (super_admin only, P89B-25). Sends a test with the new credentials; only a passing test replaces the stored ones. Limiter admin-sms-test. Audited `sms_provider.credentials_rotated` / `rotation_failed`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateSmsProviderCredentialsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProvider'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`sms_provider_test_failed` (details SmsProviderTestFailedDetails; old credentials kept) | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}/remove:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Remove a failover, draft or inactive provider
+      operationId: removeSmsProvider
+      description: PHASE-8-9B P89B-7. Platform permission `manage_settings` (super_admin only, P89B-25). Typed name; credentials deleted, row kept for history. Audited `sms_provider.removed`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveSmsProviderInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProviderOverview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`sms_provider_is_primary`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`confirmation_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/providers/{provider}/refresh-balance:
+    parameters:
+    - in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+      description: SMS provider id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Read the gateway balance now
+      operationId: refreshSmsProviderBalance
+      description: PHASE-8-9B P89B-23. Platform permission `manage_settings` (super_admin only, P89B-25). 6/hour per provider.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsProvider'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/message-types:
+    get:
+      tags:
+      - platform-sms
+      summary: Platform SMS message types
+      operationId: listPlatformSmsMessageTypes
+      description: PHASE-8-9B §6.1. Platform permission `manage_settings` (super_admin only, P89B-25). Nine types with bn/en templates.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformSmsMessageType'
+                  meta:
+                    $ref: '#/components/schemas/PlatformSmsMessageTypesMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/message-types/preview:
+    post:
+      tags:
+      - platform-sms
+      summary: Preview a platform SMS text
+      operationId: previewPlatformSmsTemplate
+      description: PHASE-8-9B §6.3. Platform permission `manage_settings` (super_admin only, P89B-25). Nothing saved; 60/min.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSmsPreviewInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsPreview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          description: '`platform_sms_template_*` | `platform_sms_type_locked` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/message-types/{type}:
+    parameters:
+    - in: path
+      name: type
+      required: true
+      schema:
+        $ref: '#/components/schemas/PlatformSmsType'
+      description: Platform SMS type
+    patch:
+      tags:
+      - platform-sms
+      summary: Turn a platform SMS type on or off
+      operationId: updatePlatformSmsMessageType
+      description: PHASE-8-9B P89B-15. Platform permission `manage_settings` (super_admin only, P89B-25). Audited `platform_sms_type.updated`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlatformSmsMessageTypeInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsMessageType'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`broadcasts_pending`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`platform_sms_type_locked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/message-types/{type}/test:
+    parameters:
+    - in: path
+      name: type
+      required: true
+      schema:
+        $ref: '#/components/schemas/PlatformSmsType'
+      description: Platform SMS type
+    post:
+      tags:
+      - platform-sms
+      summary: Send a platform SMS type as a test
+      operationId: testPlatformSmsMessageType
+      description: PHASE-8-9B §6.3, P89B-26. Platform permission `manage_settings` (super_admin only, P89B-25). Sample data; limiter admin-sms-test. Audited `platform_sms.test_sent`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSmsTestInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /admin/sms/message-types/{type}/templates/{language}:
+    parameters:
+    - in: path
+      name: type
+      required: true
+      schema:
+        $ref: '#/components/schemas/PlatformSmsType'
+      description: Platform SMS type
+    - in: path
+      name: language
+      required: true
+      schema:
+        type: string
+        enum:
+        - bn
+        - en
+    put:
+      tags:
+      - platform-sms
+      summary: Save a platform SMS template
+      operationId: updatePlatformSmsTemplate
+      description: PHASE-8-9B P89B-14. Platform permission `manage_settings` (super_admin only, P89B-25). A body equal to the default resets. Audited `platform_sms_template.updated`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlatformSmsTemplateInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          description: '`platform_sms_type_locked` | `platform_sms_template_unknown_merge_field` | `platform_sms_template_missing_merge_field` | `platform_sms_template_link_not_allowed` | `platform_sms_template_too_long` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - platform-sms
+      summary: Reset a platform SMS template to the default
+      operationId: resetPlatformSmsTemplate
+      description: PHASE-8-9B. Platform permission `manage_settings` (super_admin only, P89B-25). Idempotent. Audited `platform_sms_template.reset` when a custom row existed.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`platform_sms_type_locked`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts:
+    get:
+      tags:
+      - platform-sms
+      summary: Promotional broadcasts
+      operationId: listPlatformSmsBroadcasts
+      description: PHASE-8-9B §7. Platform permission `manage_settings` (super_admin only, P89B-25). Newest first.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of PlatformSmsBroadcastStatus
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+        description: Page
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+        description: Per page
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformSmsBroadcast'
+                  meta:
+                    $ref: '#/components/schemas/PlatformSmsBroadcastListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - platform-sms
+      summary: Create a broadcast draft
+      operationId: createPlatformSmsBroadcast
+      description: PHASE-8-9B §7.2. Platform permission `manage_settings` (super_admin only, P89B-25). Audited `platform_sms_broadcast.created`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSmsBroadcastInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcast'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          description: '`platform_sms_template_*` | `outside_sending_hours` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/audiences:
+    get:
+      tags:
+      - platform-sms
+      summary: Audience counts
+      operationId: getPlatformSmsAudienceCounts
+      description: PHASE-8-9B §7.3. Platform permission `manage_settings` (super_admin only, P89B-25).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsAudienceCounts'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/estimate:
+    post:
+      tags:
+      - platform-sms
+      summary: Estimate a broadcast
+      operationId: estimatePlatformSmsBroadcast
+      description: PHASE-8-9B P89B-19. Platform permission `manage_settings` (super_admin only, P89B-25). No side effects.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSmsBroadcastEstimateInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcastEstimate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          description: '`platform_sms_template_*` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/test:
+    post:
+      tags:
+      - platform-sms
+      summary: Send a broadcast text as a test
+      operationId: testPlatformSmsBroadcast
+      description: PHASE-8-9B §7.5. Platform permission `manage_settings` (super_admin only, P89B-25). Test opt-out code; limiter admin-sms-test. Audited `platform_sms.test_sent`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSmsBroadcastTestInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '409':
+          description: '`promotional_sender_not_approved`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /admin/sms/broadcasts/{broadcast}:
+    parameters:
+    - in: path
+      name: broadcast
+      required: true
+      schema:
+        type: string
+      description: Broadcast id (ULID)
+    get:
+      tags:
+      - platform-sms
+      summary: Broadcast
+      operationId: getPlatformSmsBroadcast
+      description: PHASE-8-9B. Platform permission `manage_settings` (super_admin only, P89B-25).
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcast'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - platform-sms
+      summary: Update a broadcast draft
+      operationId: updatePlatformSmsBroadcast
+      description: PHASE-8-9B §7.2. Platform permission `manage_settings` (super_admin only, P89B-25). Drafts only. Audited `platform_sms_broadcast.updated`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlatformSmsBroadcastInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcast'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition` | `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`platform_sms_template_*` | `outside_sending_hours` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags:
+      - platform-sms
+      summary: Delete a broadcast draft
+      operationId: deletePlatformSmsBroadcast
+      description: PHASE-8-9B. Platform permission `manage_settings` (super_admin only, P89B-25). Drafts only. Audited `platform_sms_broadcast.deleted`.
+      security:
+      - sessionCookie: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/{broadcast}/schedule:
+    parameters:
+    - in: path
+      name: broadcast
+      required: true
+      schema:
+        type: string
+      description: Broadcast id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Confirm and schedule (or send now)
+      operationId: schedulePlatformSmsBroadcast
+      description: 'PHASE-8-9B §7.4, P89B-19. Platform permission `manage_settings` (super_admin only, P89B-25). Typed confirmation: confirm_recipients must equal a fresh estimate. Audited `platform_sms_broadcast.scheduled`.'
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulePlatformSmsBroadcastInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcast'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`broadcast_estimate_changed` (details = PlatformSmsBroadcastEstimate) | `promotional_sender_not_approved` | `platform_sms_type_disabled` | `invalid_state_transition` | `revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`outside_sending_hours` | `gateway_balance_insufficient` (details GatewayBalanceInsufficientDetails) | `broadcast_empty_audience` | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/{broadcast}/cancel:
+    parameters:
+    - in: path
+      name: broadcast
+      required: true
+      schema:
+        type: string
+      description: Broadcast id (ULID)
+    post:
+      tags:
+      - platform-sms
+      summary: Cancel a scheduled broadcast
+      operationId: cancelPlatformSmsBroadcast
+      description: PHASE-8-9B §7.4. Platform permission `manage_settings` (super_admin only, P89B-25). Only while scheduled. Audited `platform_sms_broadcast.cancelled`.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsBroadcast'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`invalid_state_transition`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/broadcasts/{broadcast}/recipients:
+    parameters:
+    - in: path
+      name: broadcast
+      required: true
+      schema:
+        type: string
+      description: Broadcast id (ULID)
+    get:
+      tags:
+      - platform-sms
+      summary: Broadcast recipients
+      operationId: listPlatformSmsBroadcastRecipients
+      description: PHASE-8-9B §7.5. Platform permission `manage_settings` (super_admin only, P89B-25). Cursor, 50 per page.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of PlatformSmsRecipientStatus
+      - in: query
+        name: cursor
+        schema:
+          type: string
+        description: Cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformSmsBroadcastRecipient'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/messages:
+    get:
+      tags:
+      - platform-sms
+      summary: Platform SMS log
+      operationId: listPlatformSmsMessages
+      description: PHASE-8-9B §8, P89B-24. Platform permission `manage_settings` (super_admin only, P89B-25). Platform-sent SMS only (tenant_id null), last 90 days (Asia/Dhaka), newest first, cursor 50; phones masked; code bodies never stored.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+          maxLength: 100
+        description: A full BD phone number (exact) or a shop name (≥ 2 characters)
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of SmsMessageStatus
+      - in: query
+        name: filter[group]
+        schema:
+          type: string
+        description: Comma list of PlatformSmsGroup
+      - in: query
+        name: filter[from]
+        schema:
+          type: string
+          format: date
+        description: YYYY-MM-DD (Asia/Dhaka), ≥ today − 90 days
+      - in: query
+        name: filter[to]
+        schema:
+          type: string
+          format: date
+        description: YYYY-MM-DD (Asia/Dhaka)
+      - in: query
+        name: cursor
+        schema:
+          type: string
+        description: Cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformSmsLogEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/sms/messages/export:
+    get:
+      tags:
+      - platform-sms
+      summary: Export the platform SMS log (CSV)
+      operationId: exportPlatformSmsMessages
+      description: PHASE-8-9B §8. Platform permission `manage_settings` (super_admin only, P89B-25). Same filters and masking; ≤ 50,000 rows; 5/hour per staff member. Audited `platform_sms.log_exported`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[q]
+        schema:
+          type: string
+          maxLength: 100
+        description: A full BD phone number (exact) or a shop name (≥ 2 characters)
+      - in: query
+        name: filter[status]
+        schema:
+          type: string
+        description: Comma list of SmsMessageStatus
+      - in: query
+        name: filter[group]
+        schema:
+          type: string
+        description: Comma list of PlatformSmsGroup
+      - in: query
+        name: filter[from]
+        schema:
+          type: string
+          format: date
+        description: YYYY-MM-DD (Asia/Dhaka), ≥ today − 90 days
+      - in: query
+        name: filter[to]
+        schema:
+          type: string
+          format: date
+        description: YYYY-MM-DD (Asia/Dhaka)
+      responses:
+        '200':
+          description: CSV (UTF-8 with BOM), attachment
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '422':
+          description: '`export_too_large` (details {max}) | `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /account/sms-preferences:
+    get:
+      tags:
+      - account
+      summary: My Store Plix SMS preferences
+      operationId: getSmsPreferences
+      description: PHASE-8-9B §7.6. Signed-in user (merchant surface), no X-Tenant-Id.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      tags:
+      - account
+      summary: Turn Store Plix promotional SMS on or off
+      operationId: updateSmsPreferences
+      description: PHASE-8-9B §7.6, P89B-21. Own row only; codes and billing SMS are unaffected. Impersonation → 403 impersonation_read_only. Audited `platform_sms.opted_out` / `opted_in`.
+      security:
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSmsPreferencesInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SmsPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: '`impersonation_read_only`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /platform-sms/opt-out/{code}:
+    parameters:
+    - in: path
+      name: code
+      required: true
+      schema:
+        type: string
+        pattern: ^([A-Za-z0-9]{10}|test)$
+      description: Opt-out code (10 base62 characters, or `test`)
+    get:
+      tags:
+      - account
+      summary: Look up a promotional SMS opt-out link
+      operationId: lookupPlatformSmsOptOut
+      description: PHASE-8-9B §7.6. Public; GET never opts out. Limiter platform-sms-opt-out 30/min per IP.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsOptOutLookup'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security: []
+    post:
+      tags:
+      - account
+      summary: Stop Store Plix promotional SMS
+      operationId: optOutPlatformSms
+      description: PHASE-8-9B §7.6. Public; idempotent; opts the recipient user out (source link).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PlatformSmsOptOutLookup'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security: []
 components:
   parameters:
     SmsTemplateKeyPath:
@@ -41210,3 +42641,1737 @@ components:
           minLength: 5
           maxLength: 500
           description: 'Why (stored in the audit log, PHASE-8-1 conventions).'
+    AdminShopRef:
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+    SmsProviderDriverCode:
+      type: string
+      enum:
+      - revesms
+      - ssl_wireless
+      - alpha_sms
+      - bulksmsbd
+      - http
+    SmsMessageGroup:
+      type: string
+      enum:
+      - shop
+      - registration
+      - billing
+      - security
+      - promotional
+      description: shop = every 8.9a merchant-to-customer SMS; the primary must carry shop, registration, billing, security
+    SmsProviderRole:
+      type: string
+      enum:
+      - draft
+      - primary
+      - failover
+      - inactive
+      - removed
+    SmsProviderErrorCode:
+      type: string
+      enum:
+      - provider_error
+      - provider_unavailable
+      - provider_timeout
+      - provider_auth
+    PlatformSmsErrorCode:
+      type: string
+      enum:
+      - provider_error
+      - provider_unavailable
+      - provider_timeout
+      - provider_auth
+      - no_route
+    SmsProviderField:
+      type: object
+      required:
+      - key
+      - label
+      - secret
+      - required
+      - hint
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        secret:
+          type: boolean
+        required:
+          type: boolean
+        hint:
+          type:
+          - string
+          - 'null'
+    SmsProviderDriverInfo:
+      type: object
+      required:
+      - code
+      - name
+      - status
+      - recommended
+      - btrc_approved
+      - price_masking_paisa
+      - price_non_masking_paisa
+      - features
+      - credential_fields
+      - settings_fields
+      - default_base_url
+      properties:
+        code:
+          $ref: '#/components/schemas/SmsProviderDriverCode'
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - available
+          - coming_soon
+        recommended:
+          type: boolean
+        btrc_approved:
+          type: boolean
+        price_masking_paisa:
+          type:
+          - integer
+          - 'null'
+        price_non_masking_paisa:
+          type:
+          - integer
+          - 'null'
+        features:
+          type: object
+          required:
+          - masking
+          - dlr
+          - unicode
+          - balance
+          properties:
+            masking:
+              type: boolean
+            dlr:
+              type: boolean
+            unicode:
+              type: boolean
+            balance:
+              type: boolean
+        credential_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsProviderField'
+        settings_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsProviderField'
+        default_base_url:
+          type:
+          - string
+          - 'null'
+    SmsHttpMapping:
+      type: object
+      required:
+      - method
+      - body_format
+      - to_param
+      - text_param
+      - sender_param
+      - credential_params
+      - success_path
+      - success_value
+      - message_id_path
+      properties:
+        method:
+          type: string
+          enum:
+          - POST
+          - GET
+        body_format:
+          type: string
+          enum:
+          - json
+          - form
+          - query
+        to_param:
+          type: string
+        text_param:
+          type: string
+        sender_param:
+          type: string
+        credential_params:
+          type: object
+          additionalProperties:
+            type: string
+        success_path:
+          type: string
+        success_value:
+          type: string
+        message_id_path:
+          type:
+          - string
+          - 'null'
+      description: Generic HTTP driver mapping (P89B-3). https only via SafeHttpClient.
+    SmsProviderSettings:
+      type: object
+      required:
+      - account_id
+      - base_url
+      - http
+      properties:
+        account_id:
+          type:
+          - string
+          - 'null'
+          maxLength: 100
+        base_url:
+          type: string
+          format: uri
+          pattern: ^https://
+          maxLength: 255
+        http:
+          oneOf:
+          - $ref: '#/components/schemas/SmsHttpMapping'
+          - type: 'null'
+    SmsGatewayBalance:
+      type: object
+      required:
+      - status
+      - amount_paisa
+      - currency
+      - fetched_at
+      - approx_parts
+      - days_left
+      - spend_7d_paisa
+      - low_threshold_paisa
+      - alert_email
+      - alert_in_app
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - low
+          - unsupported
+          - error
+          - unknown
+        amount_paisa:
+          type:
+          - integer
+          - 'null'
+        currency:
+          type: string
+          const: BDT
+        fetched_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        approx_parts:
+          type:
+          - integer
+          - 'null'
+        days_left:
+          type:
+          - integer
+          - 'null'
+        spend_7d_paisa:
+          type: integer
+        low_threshold_paisa:
+          type:
+          - integer
+          - 'null'
+        alert_email:
+          type: boolean
+        alert_in_app:
+          type: boolean
+    SmsProvider:
+      type: object
+      required:
+      - id
+      - driver
+      - name
+      - role
+      - credentials_hint
+      - settings
+      - default_sender_id
+      - promotional_sender_id
+      - promotional_sender_status
+      - message_groups
+      - rate_limit_per_minute
+      - failover_after_failures
+      - failover_timeout_seconds
+      - price_masking_paisa
+      - price_non_masking_paisa
+      - balance
+      - health
+      - accepted_rate_24h
+      - last_sent_at
+      - last_test
+      - test_required
+      - credentials_rotated_at
+      - credentials_rotated_by
+      - activated_at
+      - created_at
+      - revision
+      properties:
+        id:
+          type: string
+        driver:
+          $ref: '#/components/schemas/SmsProviderDriverCode'
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/SmsProviderRole'
+        credentials_hint:
+          type: object
+          additionalProperties:
+            type: string
+          description: field key → •••• + last 4; secrets are never returned
+        settings:
+          $ref: '#/components/schemas/SmsProviderSettings'
+        default_sender_id:
+          type: string
+        promotional_sender_id:
+          type:
+          - string
+          - 'null'
+        promotional_sender_status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - approved
+          - pending
+          - null
+        message_groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMessageGroup'
+        rate_limit_per_minute:
+          type: integer
+        failover_after_failures:
+          type: integer
+        failover_timeout_seconds:
+          type: integer
+        price_masking_paisa:
+          type:
+          - integer
+          - 'null'
+        price_non_masking_paisa:
+          type:
+          - integer
+          - 'null'
+        balance:
+          $ref: '#/components/schemas/SmsGatewayBalance'
+        health:
+          type: string
+          enum:
+          - healthy
+          - failing
+          - failed_over
+          - unknown
+        accepted_rate_24h:
+          type:
+          - number
+          - 'null'
+        last_sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_test:
+          oneOf:
+          - type: object
+            required:
+            - at
+            - status
+            - error_code
+            - by
+            properties:
+              at:
+                type: string
+                format: date-time
+              status:
+                type: string
+                enum:
+                - passed
+                - failed
+              error_code:
+                oneOf:
+                - $ref: '#/components/schemas/SmsProviderErrorCode'
+                - type: 'null'
+              by:
+                type:
+                - object
+                - 'null'
+                required:
+                - id
+                - name
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+          - type: 'null'
+        test_required:
+          type: boolean
+        credentials_rotated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        credentials_rotated_by:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        activated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+    PlatformSmsAlert:
+      type: object
+      required:
+      - code
+      - severity
+      - message
+      - provider_id
+      properties:
+        code:
+          type: string
+          enum:
+          - no_provider
+          - low_balance
+          - balance_unavailable
+          - failover_active
+          - promotional_paused
+        severity:
+          type: string
+          enum:
+          - danger
+          - warning
+          - info
+        message:
+          type: string
+        provider_id:
+          type:
+          - string
+          - 'null'
+    PlatformSmsRecentError:
+      type: object
+      required:
+      - id
+      - at
+      - provider
+      - error_code
+      - detail
+      - type
+      - to_masked
+      - result
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        provider:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type:
+              - string
+              - 'null'
+            name:
+              type: string
+          description: id null = the environment (bootstrap) provider
+        error_code:
+          $ref: '#/components/schemas/PlatformSmsErrorCode'
+        detail:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+          description: redacted provider text; staff only
+        type:
+          type: string
+          enum:
+          - welcome
+          - phone_verification
+          - invoice_issued
+          - payment_received
+          - payment_due
+          - plan_expiring
+          - sign_in_code
+          - password_reset_code
+          - broadcast
+          - shop
+          - test
+        to_masked:
+          type: string
+        result:
+          type: string
+          enum:
+          - failed
+          - failed_over
+          - retrying
+    SmsProviderOverview:
+      type: object
+      required:
+      - source
+      - primary
+      - failover
+      - others
+      - environment
+      - failover_active
+      - waiting
+      - recent_errors
+      - alerts
+      properties:
+        source:
+          type: string
+          enum:
+          - database
+          - environment
+          - none
+        primary:
+          oneOf:
+          - $ref: '#/components/schemas/SmsProvider'
+          - type: 'null'
+        failover:
+          oneOf:
+          - $ref: '#/components/schemas/SmsProvider'
+          - type: 'null'
+        others:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsProvider'
+        environment:
+          oneOf:
+          - type: object
+            required:
+            - driver
+            - caller_id
+            - credentials_hint
+            properties:
+              driver:
+                type: string
+                enum:
+                - revesms
+                - log
+                - fake
+              caller_id:
+                type:
+                - string
+                - 'null'
+              credentials_hint:
+                type: object
+                additionalProperties:
+                  type: string
+          - type: 'null'
+        failover_active:
+          type: boolean
+        waiting:
+          type: array
+          items:
+            type: object
+            required:
+            - group
+            - queued
+            - failed_24h
+            properties:
+              group:
+                $ref: '#/components/schemas/SmsMessageGroup'
+              queued:
+                type: integer
+              failed_24h:
+                type: integer
+        recent_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformSmsRecentError'
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformSmsAlert'
+    CreateSmsProviderInput:
+      type: object
+      required:
+      - driver
+      - name
+      - credentials
+      - settings
+      - default_sender_id
+      - message_groups
+      properties:
+        driver:
+          $ref: '#/components/schemas/SmsProviderDriverCode'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+        credentials:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 500
+          description: write-only
+        settings:
+          $ref: '#/components/schemas/SmsProviderSettings'
+        default_sender_id:
+          type: string
+          pattern: ^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$
+        promotional_sender_id:
+          type:
+          - string
+          - 'null'
+          pattern: ^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$
+        promotional_sender_status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - approved
+          - pending
+          - null
+        message_groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMessageGroup'
+          minItems: 1
+        rate_limit_per_minute:
+          type: integer
+          minimum: 1
+          maximum: 6000
+        failover_after_failures:
+          type: integer
+          minimum: 1
+          maximum: 10
+        failover_timeout_seconds:
+          type: integer
+          minimum: 3
+          maximum: 30
+        price_masking_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        price_non_masking_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        low_threshold_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        alert_email:
+          type: boolean
+        alert_in_app:
+          type: boolean
+    UpdateSmsProviderInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+        settings:
+          type: object
+          properties:
+            account_id:
+              type:
+              - string
+              - 'null'
+              maxLength: 100
+            base_url:
+              type: string
+              format: uri
+              pattern: ^https://
+              maxLength: 255
+            http:
+              oneOf:
+              - $ref: '#/components/schemas/SmsHttpMapping'
+              - type: 'null'
+        default_sender_id:
+          type: string
+          pattern: ^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$
+        promotional_sender_id:
+          type:
+          - string
+          - 'null'
+          pattern: ^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$
+        promotional_sender_status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - approved
+          - pending
+          - null
+        message_groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmsMessageGroup'
+          minItems: 1
+        rate_limit_per_minute:
+          type: integer
+          minimum: 1
+          maximum: 6000
+        failover_after_failures:
+          type: integer
+          minimum: 1
+          maximum: 10
+        failover_timeout_seconds:
+          type: integer
+          minimum: 3
+          maximum: 30
+        price_masking_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        price_non_masking_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        low_threshold_paisa:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        alert_email:
+          type: boolean
+        alert_in_app:
+          type: boolean
+    SmsProviderTestInput:
+      type: object
+      required:
+      - phone
+      properties:
+        phone:
+          type: string
+          maxLength: 20
+          description: BD mobile; normalised to 8801…
+    SmsProviderTestResult:
+      type: object
+      required:
+      - status
+      - latency_ms
+      - parts
+      - provider_message_id
+      - balance_paisa
+      - error_code
+      - detail
+      - to_masked
+      properties:
+        status:
+          type: string
+          enum:
+          - passed
+          - failed
+        latency_ms:
+          type:
+          - integer
+          - 'null'
+        parts:
+          type: integer
+        provider_message_id:
+          type:
+          - string
+          - 'null'
+        balance_paisa:
+          type:
+          - integer
+          - 'null'
+        error_code:
+          oneOf:
+          - $ref: '#/components/schemas/SmsProviderErrorCode'
+          - type: 'null'
+        detail:
+          type:
+          - string
+          - 'null'
+        to_masked:
+          type: string
+    SmsProviderTestFailedDetails:
+      type: object
+      required:
+      - error_code
+      - detail
+      properties:
+        error_code:
+          $ref: '#/components/schemas/SmsProviderErrorCode'
+        detail:
+          type:
+          - string
+          - 'null'
+    ActivateSmsProviderInput:
+      type: object
+      required:
+      - role
+      properties:
+        role:
+          type: string
+          enum:
+          - primary
+          - failover
+        confirm_name:
+          type:
+          - string
+          - 'null'
+          maxLength: 60
+        keep_previous_as_failover:
+          type: boolean
+    RotateSmsProviderCredentialsInput:
+      type: object
+      required:
+      - credentials
+      - phone
+      properties:
+        credentials:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 500
+        settings:
+          type:
+          - object
+          - 'null'
+          properties:
+            account_id:
+              type:
+              - string
+              - 'null'
+              maxLength: 100
+            base_url:
+              type: string
+              pattern: ^https://
+              maxLength: 255
+        phone:
+          type: string
+          maxLength: 20
+    RemoveSmsProviderInput:
+      type: object
+      required:
+      - confirm_name
+      properties:
+        confirm_name:
+          type: string
+          maxLength: 60
+    PlatformSmsGroup:
+      type: string
+      enum:
+      - registration
+      - billing
+      - security
+      - promotional
+    PlatformSmsType:
+      type: string
+      enum:
+      - welcome
+      - phone_verification
+      - invoice_issued
+      - payment_received
+      - payment_due
+      - plan_expiring
+      - sign_in_code
+      - password_reset_code
+      - broadcast
+      description: phone_verification, sign_in_code, password_reset_code are locked (always on, text fixed)
+    PlatformSmsMergeField:
+      type: string
+      enum:
+      - merchant_name
+      - store_name
+      - invoice_no
+      - amount
+      - due_date
+      - plan
+      - link
+      - otp
+    PlatformSmsTemplate:
+      type: object
+      required:
+      - language
+      - body
+      - default_body
+      - is_custom
+      - preview
+      - parts
+      - revision
+      - updated_at
+      - updated_by
+      properties:
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        body:
+          type: string
+        default_body:
+          type: string
+        is_custom:
+          type: boolean
+        preview:
+          type: string
+        parts:
+          type: integer
+        revision:
+          type: integer
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        updated_by:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+    PlatformSmsMessageType:
+      type: object
+      required:
+      - type
+      - group
+      - label
+      - trigger
+      - locked
+      - editable
+      - enabled
+      - sender
+      - merge_fields
+      - required_fields
+      - templates
+      - sent_this_month
+      properties:
+        type:
+          $ref: '#/components/schemas/PlatformSmsType'
+        group:
+          $ref: '#/components/schemas/PlatformSmsGroup'
+        label:
+          type: string
+        trigger:
+          type: string
+        locked:
+          type: boolean
+        editable:
+          type: boolean
+        enabled:
+          type:
+          - boolean
+          - 'null'
+        sender:
+          type: string
+          enum:
+          - default
+          - promotional
+        merge_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformSmsMergeField'
+        required_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformSmsMergeField'
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformSmsTemplate'
+        sent_this_month:
+          type: integer
+    PlatformSmsMessageTypesMeta:
+      type: object
+      required:
+      - kpis
+      - groups
+      properties:
+        kpis:
+          type: object
+          required:
+          - sent_this_month
+          - codes_this_month
+          - promotional_this_month
+          - cost_this_month_paisa
+          properties:
+            sent_this_month:
+              type: integer
+            codes_this_month:
+              type: integer
+            promotional_this_month:
+              type: integer
+            cost_this_month_paisa:
+              type: integer
+        groups:
+          type: array
+          items:
+            type: object
+            required:
+            - group
+            - sender_id
+            - provider
+            - rate_limit_per_minute
+            properties:
+              group:
+                $ref: '#/components/schemas/PlatformSmsGroup'
+              sender_id:
+                type:
+                - string
+                - 'null'
+              provider:
+                type:
+                - object
+                - 'null'
+                required:
+                - id
+                - name
+                properties:
+                  id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                description: id null = the environment (bootstrap) provider
+              rate_limit_per_minute:
+                type:
+                - integer
+                - 'null'
+    UpdatePlatformSmsMessageTypeInput:
+      type: object
+      required:
+      - enabled
+      properties:
+        enabled:
+          type: boolean
+    UpdatePlatformSmsTemplateInput:
+      type: object
+      required:
+      - body
+      - revision
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 480
+        revision:
+          type: integer
+          minimum: 0
+    PlatformSmsPreviewInput:
+      type: object
+      required:
+      - type
+      - language
+      - body
+      properties:
+        type:
+          $ref: '#/components/schemas/PlatformSmsType'
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        body:
+          type: string
+          minLength: 1
+          maxLength: 480
+    PlatformSmsPreview:
+      type: object
+      required:
+      - text
+      - parts
+      - encoding
+      - characters
+      properties:
+        text:
+          type: string
+        parts:
+          type: integer
+        encoding:
+          $ref: '#/components/schemas/SmsEncoding'
+        characters:
+          type: integer
+    PlatformSmsTestInput:
+      type: object
+      required:
+      - language
+      - phone
+      properties:
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        phone:
+          type: string
+          maxLength: 20
+        body:
+          type:
+          - string
+          - 'null'
+          maxLength: 480
+    PlatformSmsTestResult:
+      type: object
+      required:
+      - sms_message_id
+      - status
+      - to_masked
+      - parts
+      - provider
+      properties:
+        sms_message_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/SmsMessageStatus'
+        to_masked:
+          type: string
+        parts:
+          type: integer
+        provider:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type:
+              - string
+              - 'null'
+            name:
+              type: string
+          description: id null = the environment (bootstrap) provider
+    PlatformSmsAudience:
+      type: object
+      required:
+      - kind
+      properties:
+        kind:
+          type: string
+          enum:
+          - all
+          - plan
+          - status
+          - trial_ending
+        plans:
+          type: array
+          items:
+            type: string
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionStatus'
+    PlatformSmsBroadcastStatus:
+      type: string
+      enum:
+      - draft
+      - scheduled
+      - sending
+      - sent
+      - cancelled
+      - failed
+    PlatformSmsSkipReason:
+      type: string
+      enum:
+      - opted_out
+      - no_verified_phone
+      - weekly_cap
+      - suspended
+      - duplicate
+    PlatformSmsBroadcastEstimate:
+      type: object
+      required:
+      - recipients
+      - skipped
+      - parts_bn
+      - parts_en
+      - parts_per_sms
+      - total_parts
+      - cost_paisa
+      - balance_paisa
+      - balance_after_paisa
+      - below_alert
+      - sender_id
+      - sender_status
+      - checks
+      properties:
+        recipients:
+          type: integer
+        skipped:
+          type: object
+          required:
+          - opted_out
+          - no_verified_phone
+          - weekly_cap
+          - suspended
+          - duplicate
+          properties:
+            opted_out:
+              type: integer
+            no_verified_phone:
+              type: integer
+            weekly_cap:
+              type: integer
+            suspended:
+              type: integer
+            duplicate:
+              type: integer
+        parts_bn:
+          type: integer
+        parts_en:
+          type: integer
+        parts_per_sms:
+          type: integer
+        total_parts:
+          type: integer
+        cost_paisa:
+          type: integer
+        balance_paisa:
+          type:
+          - integer
+          - 'null'
+        balance_after_paisa:
+          type:
+          - integer
+          - 'null'
+        below_alert:
+          type: boolean
+        sender_id:
+          type:
+          - string
+          - 'null'
+        sender_status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - approved
+          - pending
+          - null
+        checks:
+          type: object
+          required:
+          - sending_hours
+          - stop_footer
+          - opt_outs_honoured
+          - weekly_cap
+          properties:
+            sending_hours:
+              type: boolean
+            stop_footer:
+              type: boolean
+              const: true
+            opt_outs_honoured:
+              type: boolean
+              const: true
+            weekly_cap:
+              type: integer
+    PlatformSmsBroadcast:
+      type: object
+      required:
+      - id
+      - name
+      - body_bn
+      - body_en
+      - audience
+      - status
+      - scheduled_at
+      - started_at
+      - finished_at
+      - estimate
+      - counts
+      - created_by
+      - confirmed_by
+      - confirmed_at
+      - cancelled_at
+      - failure_reason
+      - revision
+      - created_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        body_bn:
+          type: string
+        body_en:
+          type: string
+        audience:
+          $ref: '#/components/schemas/PlatformSmsAudience'
+        status:
+          $ref: '#/components/schemas/PlatformSmsBroadcastStatus'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        started_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        estimate:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformSmsBroadcastEstimate'
+          - type: 'null'
+        counts:
+          type: object
+          required:
+          - recipients
+          - sent
+          - failed
+          - skipped
+          - pending
+          properties:
+            recipients:
+              type: integer
+            sent:
+              type: integer
+            failed:
+              type: integer
+            skipped:
+              type: integer
+            pending:
+              type: integer
+        created_by:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        confirmed_by:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failure_reason:
+          type:
+          - string
+          - 'null'
+        revision:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    PlatformSmsBroadcastInput:
+      type: object
+      required:
+      - name
+      - body_bn
+      - body_en
+      - audience
+      - scheduled_at
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        body_bn:
+          type: string
+          minLength: 1
+          maxLength: 480
+        body_en:
+          type: string
+          minLength: 1
+          maxLength: 480
+        audience:
+          $ref: '#/components/schemas/PlatformSmsAudience'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: 09:00–21:00 Asia/Dhaka, ≥ now + 5 min, ≤ now + 30 days; null = send now
+    UpdatePlatformSmsBroadcastInput:
+      type: object
+      required:
+      - revision
+      properties:
+        revision:
+          type: integer
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        body_bn:
+          type: string
+          minLength: 1
+          maxLength: 480
+        body_en:
+          type: string
+          minLength: 1
+          maxLength: 480
+        audience:
+          $ref: '#/components/schemas/PlatformSmsAudience'
+        scheduled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    PlatformSmsBroadcastEstimateInput:
+      type: object
+      required:
+      - audience
+      - body_bn
+      - body_en
+      properties:
+        audience:
+          $ref: '#/components/schemas/PlatformSmsAudience'
+        body_bn:
+          type: string
+          minLength: 1
+          maxLength: 480
+        body_en:
+          type: string
+          minLength: 1
+          maxLength: 480
+    SchedulePlatformSmsBroadcastInput:
+      type: object
+      required:
+      - acknowledged
+      - confirm_recipients
+      - revision
+      properties:
+        acknowledged:
+          type: boolean
+          const: true
+        confirm_recipients:
+          type: integer
+          minimum: 1
+        revision:
+          type: integer
+    PlatformSmsBroadcastTestInput:
+      type: object
+      required:
+      - language
+      - phone
+      - body_bn
+      - body_en
+      properties:
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        phone:
+          type: string
+          maxLength: 20
+        body_bn:
+          type: string
+          minLength: 1
+          maxLength: 480
+        body_en:
+          type: string
+          minLength: 1
+          maxLength: 480
+    PlatformSmsBroadcastListMeta:
+      allOf:
+      - $ref: '#/components/schemas/PaginationMeta'
+      - type: object
+        required:
+        - kpis
+        properties:
+          kpis:
+            type: object
+            required:
+            - broadcasts_this_month
+            - sent_success_rate
+            - opted_out_total
+            - spend_this_month_paisa
+            properties:
+              broadcasts_this_month:
+                type: integer
+              sent_success_rate:
+                type:
+                - number
+                - 'null'
+              opted_out_total:
+                type: integer
+              spend_this_month_paisa:
+                type: integer
+    PlatformSmsAudienceCounts:
+      type: object
+      required:
+      - all
+      - plans
+      - statuses
+      - trial_ending
+      properties:
+        all:
+          type: integer
+        plans:
+          type: array
+          items:
+            type: object
+            required:
+            - code
+            - name
+            - count
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+              count:
+                type: integer
+        statuses:
+          type: object
+          additionalProperties:
+            type: integer
+          description: SubscriptionStatus → count
+        trial_ending:
+          type: integer
+    PlatformSmsBroadcastRecipient:
+      type: object
+      required:
+      - id
+      - tenant
+      - to_masked
+      - language
+      - status
+      - skip_reason
+      - parts
+      - sent_at
+      properties:
+        id:
+          type: string
+        tenant:
+          $ref: '#/components/schemas/AdminShopRef'
+        to_masked:
+          type:
+          - string
+          - 'null'
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        status:
+          type: string
+          enum:
+          - pending
+          - sent
+          - failed
+          - skipped
+        skip_reason:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformSmsSkipReason'
+          - type: 'null'
+        parts:
+          type:
+          - integer
+          - 'null'
+        sent_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    PlatformSmsLogEntry:
+      type: object
+      required:
+      - id
+      - created_at
+      - to_masked
+      - merchant
+      - type
+      - group
+      - status
+      - body_preview
+      - body_hidden
+      - parts
+      - provider
+      - error_code
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        to_masked:
+          type: string
+        merchant:
+          oneOf:
+          - $ref: '#/components/schemas/AdminShopRef'
+          - type: 'null'
+        type:
+          type: string
+          enum:
+          - welcome
+          - phone_verification
+          - invoice_issued
+          - payment_received
+          - payment_due
+          - plan_expiring
+          - sign_in_code
+          - password_reset_code
+          - broadcast
+          - test
+        group:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformSmsGroup'
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/SmsMessageStatus'
+        body_preview:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+        body_hidden:
+          type: boolean
+        parts:
+          type:
+          - integer
+          - 'null'
+        provider:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              type:
+              - string
+              - 'null'
+            name:
+              type: string
+          description: id null = the environment (bootstrap) provider
+        error_code:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformSmsErrorCode'
+          - type: 'null'
+    SmsPreferences:
+      type: object
+      required:
+      - promotional
+      - opted_out_at
+      - source
+      - phone_masked
+      - phone_verified
+      properties:
+        promotional:
+          type: boolean
+        opted_out_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        source:
+          type:
+          - string
+          - 'null'
+          enum:
+          - account
+          - link
+          - null
+        phone_masked:
+          type:
+          - string
+          - 'null'
+        phone_verified:
+          type: boolean
+    UpdateSmsPreferencesInput:
+      type: object
+      required:
+      - promotional
+      properties:
+        promotional:
+          type: boolean
+    PlatformSmsOptOutLookup:
+      type: object
+      required:
+      - status
+      - phone_masked
+      properties:
+        status:
+          type: string
+          enum:
+          - subscribed
+          - opted_out
+        phone_masked:
+          type: string
+    GatewayBalanceInsufficientDetails:
+      type: object
+      required:
+      - cost_paisa
+      - balance_paisa
+      properties:
+        cost_paisa:
+          type: integer
+        balance_paisa:
+          type: integer

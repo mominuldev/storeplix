@@ -145,10 +145,11 @@ class SendOrderSms implements ShouldQueue
         try {
             $result = $gateway->send($message->to, $text, $sender);
         } catch (SmsSendFailed $e) {
-            $message->markFailed(Str::limit($e->getMessage(), 250));
+            $message->markFailed(Str::limit($e->getMessage(), 250), $e);
             $charger->refund($message);
             Log::warning('order.sms_failed', ['order_id' => $order->id, 'event' => $this->event, 'attempt' => $this->attempts()]);
-            if ($this->attempts() < $this->tries) {
+            // PHASE-8-9B S225: a timeout may have been accepted by the provider — never sent again.
+            if ($e->reason !== SmsSendFailed::TIMEOUT && $this->attempts() < $this->tries) {
                 throw $e; // retried with backoff; nothing was recorded as sent
             }
             OrderTimeline::record($order, 'notification', null, 'SMS not sent: the SMS provider failed', [
@@ -158,7 +159,7 @@ class SendOrderSms implements ShouldQueue
             return;
         }
 
-        $message->markSent($result->message_id);
+        $message->markSent($result->message_id, $result);
         OrderTimeline::record($order, 'notification', null, 'SMS sent: '.SmsTemplates::LABELS[$this->event], [
             'channel' => 'sms', 'event' => $this->event, 'status' => 'sent', 'sms_message_id' => $message->id, 'language' => $language,
         ] + ($this->ref !== null ? ['ref' => $this->ref] : []));

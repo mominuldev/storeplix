@@ -48,6 +48,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'platform_disabled_at' => 'datetime',
             'platform_locked_until' => 'datetime',
+            'platform_promo_sms_opted_out_at' => 'datetime', // PHASE-8-9B P89B-21
+            'welcome_sms_at' => 'datetime',
             'totp_secret' => 'encrypted',
             'totp_confirmed_at' => 'datetime',
             'totp_last_step' => 'integer',

@@ -29,6 +29,12 @@ class SmsChargerArchTest extends TestCase
         'app/Domain/Orders/Notifications/SendOrderSms.php' => true,
         'app/Domain/FraudGuard/Jobs/SendCheckoutOtp.php' => true,
         'app/Domain/Sms/SmsTestService.php' => true,
+        // PHASE-8-9B: the router itself and the platform SMS senders (platform-paid, never charged).
+        'app/Domain/Sms/Routing/RoutingSmsGateway.php' => false,
+        'app/Domain/Sms/Platform/PlatformSmsDelivery.php' => false,
+        'app/Domain/Sms/Platform/PlatformSmsMessageTypes.php' => false,
+        'app/Domain/Sms/Jobs/SendPlatformSms.php' => false,
+        'app/Domain/Sms/Broadcasts/Jobs/SendPlatformBroadcastBatch.php' => false,
     ];
 
     public function test_only_charger_aware_code_reaches_the_sms_gateway(): void

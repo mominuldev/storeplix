@@ -32,7 +32,7 @@ class RlsCoverageTest extends TestCase
             "select distinct c.relname as table_name from pg_attribute a
                join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace
               where n.nspname = current_schema() and c.relkind in ('r', 'p') and a.attname = 'tenant_id' and not a.attisdropped"
-        ))->pluck('table_name')->sort()->values()->all();
+        ))->pluck('table_name')->diff(RlsTables::PLATFORM_SUBJECT)->sort()->values()->all(); // PHASE-8-9B: subject, not owner
 
         $listed = collect(RlsTables::TENANT)->sort()->values()->all();
         $this->assertSame($listed, $withTenantId, 'RlsTables::TENANT must list exactly the tables with a tenant_id column');

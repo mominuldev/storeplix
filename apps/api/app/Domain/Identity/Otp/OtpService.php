@@ -2,9 +2,11 @@
 
 namespace App\Domain\Identity\Otp;
 
+use App\Domain\Marketing\Content\SmsParts;
 use App\Domain\Shared\Support\Phone;
 use App\Domain\Sms\Jobs\SendSms;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\Platform\PlatformSmsType;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Support\Facades\DB;
 
@@ -75,15 +77,26 @@ class OtpService
             ]);
         });
 
+        // PHASE-8-9B §5: account codes are platform SMS — tenant_id always NULL (the shop, if any, in merchant_tenant_id),
+        // platform_type + parts recorded, the text never stored; routed by group with a 5-minute retry window.
+        $type = match ($purpose) {
+            OtpPurpose::VerifyPhone => PlatformSmsType::PhoneVerification,
+            OtpPurpose::Login => PlatformSmsType::SignInCode,
+            OtpPurpose::ResetPassword => PlatformSmsType::PasswordResetCode,
+        };
+        $text = sprintf(self::TEXT, $code);
         $message = SmsMessage::query()->create([
-            'tenant_id' => $tenantId,
+            'tenant_id' => null,
+            'merchant_tenant_id' => $tenantId,
             'to' => $msisdn,
             'purpose' => 'otp_'.$purpose->value,
             'template' => 'otp_code',
             'status' => 'queued',
+            'platform_type' => $type->value,
+            'parts' => SmsParts::partsOf($text),
         ]);
 
-        SendSms::dispatchAfterResponse($message->id, sprintf(self::TEXT, $code));
+        SendSms::dispatchAfterResponse($message->id, $text, $type->route()->value);
 
         return $code;
     }

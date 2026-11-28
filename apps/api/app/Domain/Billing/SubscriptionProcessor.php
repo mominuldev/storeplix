@@ -10,6 +10,7 @@ use App\Domain\Billing\Models\Plan;
 use App\Domain\Billing\Models\Subscription;
 use App\Domain\Billing\Support\BillingLock;
 use App\Domain\Shared\Support\Money;
+use App\Domain\Sms\Platform\PlatformSmsType;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
@@ -59,6 +60,7 @@ final class SubscriptionProcessor
             if ($subscription->trial_ends_at->lessThanOrEqualTo(now()->addDays((int) config('billing.trial_reminder_days', 3)))
                 && DB::transaction(fn () => BillingNotifier::claimNotice($subscription, 'trial_ending'))) {
                 $this->notifier->owner(BillingMail::TRIAL_ENDING, ['date' => BillingNotifier::date($subscription->trial_ends_at)]);
+                $this->notifier->ownerSms(PlatformSmsType::PlanExpiring, ['plan' => $subscription->plan->name, 'due_date' => BillingNotifier::date($subscription->trial_ends_at)]);
             }
 
             return;
@@ -108,6 +110,7 @@ final class SubscriptionProcessor
             }
             $invoice = DB::transaction(fn () => $this->issueRenewal($subscription, $nextPlan, $nextInterval));
             $this->notifier->owner(BillingMail::INVOICE_ISSUED, $this->invoiceMail($invoice, $end));
+            $this->notifier->ownerSms(PlatformSmsType::InvoiceIssued, $this->invoiceSms($invoice, $end));
 
             return;
         }
@@ -131,6 +134,7 @@ final class SubscriptionProcessor
             });
             if ($claimed) {
                 $this->notifier->owner(BillingMail::REMINDER, $this->invoiceMail($invoice, $end));
+                $this->notifier->ownerSms(PlatformSmsType::PaymentDue, $this->invoiceSms($invoice, $end));
             }
             break; // one reminder per run (the latest due one)
         }
@@ -204,6 +208,7 @@ final class SubscriptionProcessor
         $this->notifier->owner(BillingMail::PAST_DUE, [
             'plan' => $subscription->plan->name, 'number' => $moved->number, 'date' => BillingNotifier::date($graceEnds),
         ]);
+        $this->notifier->ownerSms(PlatformSmsType::PaymentDue, $this->invoiceSms($moved, $graceEnds));
     }
 
     /** Step 5. */
@@ -220,6 +225,7 @@ final class SubscriptionProcessor
                 $this->notifier->owner(BillingMail::GRACE_ENDING, [
                     'plan' => $subscription->plan->name, 'number' => $open?->number, 'date' => BillingNotifier::date($subscription->grace_ends_at),
                 ]);
+                $this->notifier->ownerSms(PlatformSmsType::PlanExpiring, ['plan' => $subscription->plan->name, 'due_date' => BillingNotifier::date($subscription->grace_ends_at)]);
             }
 
             return;
@@ -267,6 +273,13 @@ final class SubscriptionProcessor
     private function invoiceMail(BillingInvoice $invoice, Carbon $date): array
     {
         return ['number' => $invoice->number, 'amount' => Money::bdt($invoice->total_amount), 'plan' => $invoice->plan->name, 'date' => BillingNotifier::date($date)];
+    }
+
+    /** PHASE-8-9B §5 SMS vars (amount "1,770", due date "5 Dec 2026"). @return array<string, string> */
+    private function invoiceSms(BillingInvoice $invoice, Carbon $date): array
+    {
+        return ['invoice_no' => (string) $invoice->number, 'amount' => Money::plain((int) $invoice->total_amount), 'plan' => (string) $invoice->plan?->name,
+            'due_date' => BillingNotifier::date($date)];
     }
 
     private function subscription(): ?Subscription

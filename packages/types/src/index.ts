@@ -4042,3 +4042,432 @@ export interface AdminSmsCredits {
 /** ± credits, never 0, |credits| ≤ 1,000,000; a deduction can't take the balance below 0 (422 `sms_credits_insufficient`). */
 export interface AdminSmsCreditAdjustInput { credits: number; reason: string }
 export const SMS_CREDIT_ADJUST_MAX = 1_000_000;
+
+// ---------- Platform SMS provider (Phase 8.9b, PHASE-8-9B-CONTRACT §3–§11; openapi 1.24.0) ----------
+/**
+ * SMS that Store Plix itself sends to merchants (registration, invoices and billing, sign-in codes, promotional
+ * broadcasts) and the gateway every SMS goes through. Providers live in the database (`sms_providers`), configured by
+ * super admins (platform permission `manage_settings`): one **primary** and an optional **failover**. The environment
+ * REVE credentials stay the bootstrap fallback while no database primary exists (P89B-2). Shop SMS (8.9a) keep their
+ * charging and texts; they only gain failover (P89B-9).
+ */
+
+// ----- Drivers and providers (§4, P89B-1 – P89B-10) -----
+/** `revesms` and `http` are built; the others are listed as "Coming soon" until their APIs are verified (Q274). */
+export type SmsProviderDriverCode = 'revesms' | 'ssl_wireless' | 'alpha_sms' | 'bulksmsbd' | 'http';
+export const SMS_PROVIDER_DRIVER_CODES: readonly SmsProviderDriverCode[] = ['revesms', 'ssl_wireless', 'alpha_sms', 'bulksmsbd', 'http'];
+export type SmsProviderDriverStatus = 'available' | 'coming_soon';
+/** One input of the configure drawer. `secret` fields are write-only: the API returns only their last 4 characters. */
+export interface SmsProviderField {
+  key: string; label: string; secret: boolean; required: boolean;
+  /** e.g. "Use an https:// address." or the provider portal page to copy it from */
+  hint: string | null;
+}
+/** `GET /admin/sms/drivers` (config catalogue; prices are list prices in paisa per SMS part, VAT included). */
+export interface SmsProviderDriverInfo {
+  code: SmsProviderDriverCode; name: string; status: SmsProviderDriverStatus; recommended: boolean; btrc_approved: boolean;
+  price_masking_paisa: number | null; price_non_masking_paisa: number | null;
+  /** `dlr` is always false in 8.9b (no delivery reports, Q267); `balance` = the driver can read the gateway balance */
+  features: { masking: boolean; dlr: boolean; unicode: boolean; balance: boolean };
+  credential_fields: SmsProviderField[];
+  /** non-secret connection fields (account ID, endpoint …) */
+  settings_fields: SmsProviderField[];
+  default_base_url: string | null;
+}
+/** draft = configured, never activated; inactive = a former primary or failover; removed = credentials deleted, row kept for history. */
+export type SmsProviderRole = 'draft' | 'primary' | 'failover' | 'inactive' | 'removed';
+/**
+ * What a provider carries. `shop` = every merchant-to-customer SMS of 8.9a (order updates, checkout codes, receipts,
+ * campaigns, automations). The primary must carry `shop`, `registration`, `billing` and `security` (P89B-6).
+ */
+export type SmsMessageGroup = 'shop' | 'registration' | 'billing' | 'security' | 'promotional';
+export const SMS_MESSAGE_GROUPS: readonly SmsMessageGroup[] = ['shop', 'registration', 'billing', 'security', 'promotional'];
+export const SMS_PRIMARY_REQUIRED_GROUPS: readonly SmsMessageGroup[] = ['shop', 'registration', 'billing', 'security'];
+export const SMS_MESSAGE_GROUP_LABELS: Record<SmsMessageGroup, string> = {
+  shop: 'Shop SMS', registration: 'Registration', billing: 'Invoice & billing', security: 'Login & security', promotional: 'Promotional',
+};
+/** healthy = last sends accepted; failing = consecutive provider failures below the switch threshold; failed_over = traffic is on the failover; unknown = nothing sent yet. */
+export type SmsProviderHealth = 'healthy' | 'failing' | 'failed_over' | 'unknown';
+export type SmsProviderTestStatus = 'passed' | 'failed';
+/** Generic HTTP driver (P89B-3): how to call a provider that is not built in. https only; no private hosts. */
+export interface SmsHttpMapping {
+  method: 'POST' | 'GET';
+  body_format: 'json' | 'form' | 'query';
+  /** request parameter names for the phone (`8801…`), the text and the sender ID */
+  to_param: string; text_param: string; sender_param: string;
+  /** request parameter name for each credential field key, e.g. `{ "api_key": "apikey" }` */
+  credential_params: Record<string, string>;
+  /** dot path in the JSON response and the value that means "accepted", e.g. `status` = `0` */
+  success_path: string; success_value: string;
+  /** dot path of the provider message id, or null */
+  message_id_path: string | null;
+}
+export interface SmsProviderSettings {
+  /** REVE "Account ID" and similar; null when the driver has none */
+  account_id: string | null;
+  /** https only (422 `validation_failed`: "Use an https:// address.") */
+  base_url: string;
+  /** only for `driver = 'http'` */
+  http: SmsHttpMapping | null;
+}
+/** low = below `low_threshold_paisa`; unsupported = the driver can't read a balance; error = the last fetch failed. */
+export type SmsBalanceStatus = 'ok' | 'low' | 'unsupported' | 'error' | 'unknown';
+export interface SmsGatewayBalance {
+  status: SmsBalanceStatus;
+  amount_paisa: number | null; currency: 'BDT'; fetched_at: string | null;
+  /** floor(amount / masking price); null when either is unknown */
+  approx_parts: number | null;
+  /** floor(amount / (spend_7d / 7)); null when nothing was spent */
+  days_left: number | null;
+  /** estimated: Σ parts × masking price of SMS this provider accepted in the last 7 days */
+  spend_7d_paisa: number;
+  low_threshold_paisa: number | null;
+  alert_email: boolean; alert_in_app: boolean;
+}
+export interface SmsProvider {
+  id: string; driver: SmsProviderDriverCode; name: string; role: SmsProviderRole;
+  /** field key → `••••` + last 4 characters; secrets are never returned (P89B-4) */
+  credentials_hint: Record<string, string>;
+  settings: SmsProviderSettings;
+  default_sender_id: string;
+  promotional_sender_id: string | null;
+  /** pending = "Pending BTRC": promotional SMS pause until it is approved */
+  promotional_sender_status: 'approved' | 'pending' | null;
+  message_groups: SmsMessageGroup[];
+  rate_limit_per_minute: number;
+  /** failover rules (P89B-8): switch after n consecutive provider failures or one call slower than the timeout */
+  failover_after_failures: number; failover_timeout_seconds: number;
+  price_masking_paisa: number | null; price_non_masking_paisa: number | null;
+  balance: SmsGatewayBalance;
+  health: SmsProviderHealth;
+  /** sent / (sent + failed) of the last 24 h through this provider, percent with one decimal; null when none */
+  accepted_rate_24h: number | null;
+  last_sent_at: string | null;
+  last_test: { at: string; status: SmsProviderTestStatus; error_code: SmsProviderErrorCode | null; by: { id: string; name: string } | null } | null;
+  /** true when the connection changed after the last passed test: activation needs a new passing test */
+  test_required: boolean;
+  credentials_rotated_at: string | null; credentials_rotated_by: { id: string; name: string } | null;
+  activated_at: string | null; created_at: string;
+  revision: number;
+}
+/** database = a primary is configured; environment = bootstrap from `REVESMS_*` env (no database primary yet); none = nothing can send. */
+export type SmsProviderSource = 'database' | 'environment' | 'none';
+export type PlatformSmsAlertCode = 'no_provider' | 'low_balance' | 'balance_unavailable' | 'failover_active' | 'promotional_paused';
+export interface PlatformSmsAlert {
+  code: PlatformSmsAlertCode; severity: 'danger' | 'warning' | 'info';
+  message: string; provider_id: string | null;
+}
+/** Figma 2111:9331 "What's waiting" (last 24 h, per group). */
+export interface SmsWaitingRow { group: SmsMessageGroup; queued: number; failed_24h: number }
+export interface PlatformSmsRecentError {
+  id: string; at: string; provider: { id: string; name: string } | null;
+  error_code: PlatformSmsErrorCode;
+  /** our own short text or the provider's text with credentials redacted (≤ 200) — staff only, never shown to merchants */
+  detail: string | null;
+  type: PlatformSmsType | 'shop' | 'test';
+  to_masked: string;
+  /** failed_over = the failover sent it; retrying = still inside the 30-minute window */
+  result: 'failed' | 'failed_over' | 'retrying';
+}
+/** `GET /admin/sms/providers`. */
+export interface SmsProviderOverview {
+  source: SmsProviderSource;
+  primary: SmsProvider | null; failover: SmsProvider | null;
+  /** draft and inactive providers (removed ones are not listed) */
+  others: SmsProvider[];
+  /** the bootstrap account from the environment; null when a database primary exists */
+  environment: { driver: 'revesms' | 'log' | 'fake'; caller_id: string | null; credentials_hint: Record<string, string> } | null;
+  failover_active: boolean;
+  waiting: SmsWaitingRow[];
+  recent_errors: PlatformSmsRecentError[];
+  alerts: PlatformSmsAlert[];
+}
+export interface CreateSmsProviderInput {
+  driver: SmsProviderDriverCode;
+  /** 2–60, unique (case-insensitive) among providers that are not removed; typed to confirm activation and removal */
+  name: string;
+  /** every required credential field of the driver (write-only) */
+  credentials: Record<string, string>;
+  settings: SmsProviderSettings;
+  default_sender_id: string;
+  promotional_sender_id?: string | null;
+  promotional_sender_status?: 'approved' | 'pending' | null;
+  message_groups: SmsMessageGroup[];
+  rate_limit_per_minute?: number;
+  failover_after_failures?: number; failover_timeout_seconds?: number;
+  price_masking_paisa?: number | null; price_non_masking_paisa?: number | null;
+  low_threshold_paisa?: number | null; alert_email?: boolean; alert_in_app?: boolean;
+}
+/** No credentials here (use rotate). `settings.base_url` / `account_id` of a primary or failover change only through rotate (they need a test). */
+export interface UpdateSmsProviderInput {
+  revision: number;
+  name?: string;
+  settings?: Partial<SmsProviderSettings>;
+  default_sender_id?: string;
+  promotional_sender_id?: string | null;
+  promotional_sender_status?: 'approved' | 'pending' | null;
+  message_groups?: SmsMessageGroup[];
+  rate_limit_per_minute?: number;
+  failover_after_failures?: number; failover_timeout_seconds?: number;
+  price_masking_paisa?: number | null; price_non_masking_paisa?: number | null;
+  low_threshold_paisa?: number | null; alert_email?: boolean; alert_in_app?: boolean;
+}
+/** Any BD mobile (normalised `8801…`); the drawer pre-fills the admin's own phone. */
+export interface SmsProviderTestInput { phone: string }
+export interface SmsProviderTestResult {
+  status: SmsProviderTestStatus;
+  latency_ms: number | null; parts: number;
+  provider_message_id: string | null;
+  /** balance read during the test (null = unsupported or failed) */
+  balance_paisa: number | null;
+  error_code: SmsProviderErrorCode | null;
+  detail: string | null;
+  to_masked: string;
+}
+/**
+ * `role: 'primary'` needs `confirm_name` = the provider name (trimmed, case-insensitive; 422 `confirmation_mismatch`).
+ * Both roles need a passed test after the last connection change (409 `sms_provider_test_required`).
+ */
+export interface ActivateSmsProviderInput {
+  role: 'primary' | 'failover';
+  confirm_name?: string;
+  /** primary only: the replaced primary becomes the failover (default true), else inactive */
+  keep_previous_as_failover?: boolean;
+}
+/** Sends a test with the NEW credentials first; only a passing test swaps them in (P89B-5). */
+export interface RotateSmsProviderCredentialsInput {
+  credentials: Record<string, string>;
+  settings?: { account_id?: string | null; base_url?: string };
+  phone: string;
+}
+export interface RemoveSmsProviderInput { confirm_name: string }
+
+// ----- Platform message types and templates (§6, P89B-11 – P89B-15) -----
+export type PlatformSmsGroup = 'registration' | 'billing' | 'security' | 'promotional';
+export type PlatformSmsType =
+  | 'welcome' | 'phone_verification'
+  | 'invoice_issued' | 'payment_received' | 'payment_due' | 'plan_expiring'
+  | 'sign_in_code' | 'password_reset_code'
+  | 'broadcast';
+export const PLATFORM_SMS_TYPES: readonly PlatformSmsType[] = [
+  'welcome', 'phone_verification', 'invoice_issued', 'payment_received', 'payment_due', 'plan_expiring',
+  'sign_in_code', 'password_reset_code', 'broadcast',
+];
+export const PLATFORM_SMS_TYPE_GROUP: Record<PlatformSmsType, PlatformSmsGroup> = {
+  welcome: 'registration', phone_verification: 'registration',
+  invoice_issued: 'billing', payment_received: 'billing', payment_due: 'billing', plan_expiring: 'billing',
+  sign_in_code: 'security', password_reset_code: 'security',
+  broadcast: 'promotional',
+};
+export const PLATFORM_SMS_TYPE_LABELS: Record<PlatformSmsType, string> = {
+  welcome: 'Welcome', phone_verification: 'Phone verification code',
+  invoice_issued: 'Invoice issued', payment_received: 'Payment received', payment_due: 'Payment due or failed', plan_expiring: 'Plan expiring',
+  sign_in_code: 'Sign-in code', password_reset_code: 'Password reset code',
+  broadcast: 'Broadcasts',
+};
+/** Always on, text not editable (account codes; sent in English, byte for byte as today). */
+export const PLATFORM_SMS_LOCKED_TYPES: readonly PlatformSmsType[] = ['phone_verification', 'sign_in_code', 'password_reset_code'];
+/** `sms_messages.purpose` per platform type (`otp_*` keep their existing values). */
+export const PLATFORM_SMS_PURPOSES: Record<PlatformSmsType, string> = {
+  welcome: 'platform_welcome', phone_verification: 'otp_verify_phone',
+  invoice_issued: 'platform_invoice_issued', payment_received: 'platform_payment_received',
+  payment_due: 'platform_payment_due', plan_expiring: 'platform_plan_expiring',
+  sign_in_code: 'otp_login', password_reset_code: 'otp_reset_password',
+  broadcast: 'platform_broadcast',
+};
+export type PlatformSmsMergeField = 'merchant_name' | 'store_name' | 'invoice_no' | 'amount' | 'due_date' | 'plan' | 'link' | 'otp';
+/** default = the provider's default sender ID ("Storeplix"); promotional = its promotional mask. Fixed by group (P89B-13). */
+export type PlatformSmsSender = 'default' | 'promotional';
+export interface PlatformSmsTemplate {
+  language: 'bn' | 'en';
+  /** effective body (custom, else the default) */
+  body: string; default_body: string; is_custom: boolean;
+  /** render with sample data (§6.3) */
+  preview: string; parts: number;
+  /** 0 when not custom */
+  revision: number;
+  updated_at: string | null; updated_by: { id: string; name: string } | null;
+}
+export interface PlatformSmsMessageType {
+  type: PlatformSmsType; group: PlatformSmsGroup; label: string;
+  /** "When: …" line, e.g. "A renewal invoice is issued" */
+  trigger: string;
+  locked: boolean;
+  /** false for locked types and `broadcast` (its text is written per broadcast) */
+  editable: boolean;
+  /** null = no switch (locked types are always on) */
+  enabled: boolean | null;
+  sender: PlatformSmsSender;
+  merge_fields: PlatformSmsMergeField[]; required_fields: PlatformSmsMergeField[];
+  /** bn then en; empty for `broadcast` */
+  templates: PlatformSmsTemplate[];
+  sent_this_month: number;
+}
+export interface PlatformSmsGroupInfo {
+  group: PlatformSmsGroup;
+  sender_id: string | null;
+  /** the provider currently carrying the group (null = none can; id null = environment) */
+  provider: { id: string | null; name: string } | null;
+  rate_limit_per_minute: number | null;
+}
+export interface PlatformSmsMessageTypesMeta {
+  kpis: { sent_this_month: number; codes_this_month: number; promotional_this_month: number; cost_this_month_paisa: number };
+  groups: PlatformSmsGroupInfo[];
+}
+export interface UpdatePlatformSmsMessageTypeInput { enabled: boolean }
+export interface UpdatePlatformSmsTemplateInput { body: string; revision: number }
+export interface PlatformSmsPreviewInput { type: PlatformSmsType; language: 'bn' | 'en'; body: string }
+export interface PlatformSmsPreview { text: string; parts: number; encoding: SmsEncoding; characters: number }
+/** Sends the given (or saved) text with sample data to `phone`. */
+export interface PlatformSmsTestInput { language: 'bn' | 'en'; phone: string; body?: string }
+export interface PlatformSmsTestResult {
+  sms_message_id: string; status: SmsMessageStatus; to_masked: string; parts: number;
+  provider: { id: string | null; name: string } | null;
+}
+
+// ----- Promotional broadcasts (§7, P89B-16 – P89B-22) -----
+export type PlatformSmsAudienceKind = 'all' | 'plan' | 'status' | 'trial_ending';
+export interface PlatformSmsAudience {
+  kind: PlatformSmsAudienceKind;
+  /** kind = plan: plan codes (≥ 1) */
+  plans?: string[];
+  /** kind = status: subscription statuses (≥ 1) */
+  statuses?: SubscriptionStatus[];
+}
+export type PlatformSmsBroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
+export type PlatformSmsSkipReason = 'opted_out' | 'no_verified_phone' | 'weekly_cap' | 'suspended' | 'duplicate';
+export interface PlatformSmsBroadcastEstimate {
+  recipients: number;
+  skipped: Record<PlatformSmsSkipReason, number>;
+  /** parts per SMS including the STOP footer, per language; `parts_per_sms` = the larger */
+  parts_bn: number; parts_en: number; parts_per_sms: number;
+  total_parts: number; cost_paisa: number;
+  balance_paisa: number | null; balance_after_paisa: number | null;
+  /** balance after is below the provider's low-balance threshold */
+  below_alert: boolean;
+  sender_id: string | null; sender_status: 'approved' | 'pending' | null;
+  checks: { sending_hours: boolean; stop_footer: true; opt_outs_honoured: true; weekly_cap: number };
+}
+export interface PlatformSmsBroadcast {
+  id: string; name: string; body_bn: string; body_en: string;
+  audience: PlatformSmsAudience; status: PlatformSmsBroadcastStatus;
+  /** null = send now (when confirmed) */
+  scheduled_at: string | null; started_at: string | null; finished_at: string | null;
+  /** the estimate confirmed at schedule time (null for drafts) */
+  estimate: PlatformSmsBroadcastEstimate | null;
+  counts: { recipients: number; sent: number; failed: number; skipped: number; pending: number };
+  created_by: { id: string; name: string } | null;
+  confirmed_by: { id: string; name: string } | null; confirmed_at: string | null;
+  cancelled_at: string | null;
+  /** failed only: `provider_unavailable` | `promotional_sender_not_approved` */
+  failure_reason: string | null;
+  revision: number; created_at: string;
+}
+export interface PlatformSmsBroadcastInput {
+  /** internal name 2–80 */
+  name: string;
+  /** both required, 1–480 each; merge fields merchant_name, store_name, plan, link; no typed links */
+  body_bn: string; body_en: string;
+  audience: PlatformSmsAudience;
+  /** ISO date-time; 09:00–21:00 Asia/Dhaka, ≥ now + 5 min, ≤ now + 30 days; null = send now */
+  scheduled_at: string | null;
+}
+export interface UpdatePlatformSmsBroadcastInput extends Partial<PlatformSmsBroadcastInput> { revision: number }
+export interface PlatformSmsBroadcastEstimateInput { audience: PlatformSmsAudience; body_bn: string; body_en: string }
+/**
+ * Typed confirmation (P89B-19): `confirm_recipients` must equal the recipient count of a fresh estimate, else 409
+ * `broadcast_estimate_changed` with the new estimate in `details`.
+ */
+export interface SchedulePlatformSmsBroadcastInput { acknowledged: true; confirm_recipients: number; revision: number }
+export interface PlatformSmsBroadcastTestInput { language: 'bn' | 'en'; phone: string; body_bn: string; body_en: string }
+export interface PlatformSmsBroadcastFilters { status?: PlatformSmsBroadcastStatus[]; page?: number; per_page?: number }
+export interface PlatformSmsBroadcastListMeta extends PaginationMeta {
+  kpis: { broadcasts_this_month: number; sent_success_rate: number | null; opted_out_total: number; spend_this_month_paisa: number };
+}
+export interface PlatformSmsAudienceCounts {
+  all: number;
+  plans: { code: string; name: string; count: number }[];
+  statuses: Record<SubscriptionStatus, number>;
+  trial_ending: number;
+}
+export type PlatformSmsRecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+export interface PlatformSmsBroadcastRecipient {
+  id: string; tenant: AdminShopRef; to_masked: string | null; language: 'bn' | 'en';
+  status: PlatformSmsRecipientStatus; skip_reason: PlatformSmsSkipReason | null;
+  parts: number | null; sent_at: string | null;
+}
+export const PLATFORM_SMS_WEEKLY_CAP = 2;
+/** Asia/Dhaka sending window for promotional SMS: [09:00, 21:00). */
+export const PLATFORM_SMS_SENDING_HOURS = { from: '09:00', to: '21:00', timezone: 'Asia/Dhaka' } as const;
+/** Appended by the server to every promotional SMS (counted in parts). `{url}` = the per-recipient opt-out link. */
+export const PLATFORM_SMS_STOP_FOOTER = { bn: 'বন্ধ করতে: {url}', en: 'STOP: {url}' } as const;
+
+// ----- Platform SMS log (§8, P89B-24) -----
+export type PlatformSmsErrorCode = 'provider_error' | 'provider_unavailable' | 'provider_timeout' | 'provider_auth' | 'no_route';
+/** Error codes of a provider test or rotation. */
+export type SmsProviderErrorCode = 'provider_error' | 'provider_unavailable' | 'provider_timeout' | 'provider_auth';
+export interface PlatformSmsLogEntry {
+  id: string; created_at: string; to_masked: string;
+  merchant: AdminShopRef | null;
+  type: PlatformSmsType | 'test'; group: PlatformSmsGroup | null;
+  status: SmsMessageStatus;
+  /** ≤ 160 chars, links → `[link]`; always null for codes (`body_hidden`) and after 90 days */
+  body_preview: string | null;
+  /** true for codes: shown as a lock + "Code hidden" (also in CSV) */
+  body_hidden: boolean;
+  parts: number | null;
+  provider: { id: string | null; name: string } | null;
+  error_code: PlatformSmsErrorCode | null;
+}
+export interface PlatformSmsLogFilters {
+  /** a full phone number (exact) or a shop name (≥ 2) */
+  q?: string;
+  status?: SmsMessageStatus[];
+  group?: PlatformSmsGroup[];
+  /** YYYY-MM-DD, Asia/Dhaka, ≥ today − 90 days */
+  from?: string; to?: string;
+  cursor?: string;
+}
+
+// ----- Merchant opt-out from Store Plix promotional SMS (§7.6, P89B-21) -----
+export type PlatformPromoSmsOptOutSource = 'account' | 'link';
+/** `GET|PATCH /account/sms-preferences` (signed-in user, no tenant). */
+export interface SmsPreferences {
+  /** receive Store Plix offers and news by SMS */
+  promotional: boolean;
+  opted_out_at: string | null; source: PlatformPromoSmsOptOutSource | null;
+  phone_masked: string | null; phone_verified: boolean;
+}
+export interface UpdateSmsPreferencesInput { promotional: boolean }
+/** `GET /platform-sms/opt-out/{code}` (public; GET never opts out). */
+export interface PlatformSmsOptOutLookup { status: 'subscribed' | 'opted_out'; phone_masked: string }
+
+// ----- Errors and audit (§9, §10) -----
+export type PlatformSmsErrorCodeName =
+  | 'sms_provider_test_required' | 'sms_provider_test_failed' | 'sms_provider_is_primary' | 'sms_provider_driver_unavailable'
+  | 'sms_provider_name_taken' | 'confirmation_mismatch' | 'platform_sms_type_locked' | 'broadcasts_pending'
+  | 'platform_sms_template_unknown_merge_field' | 'platform_sms_template_missing_merge_field'
+  | 'platform_sms_template_link_not_allowed' | 'platform_sms_template_too_long'
+  | 'outside_sending_hours' | 'broadcast_estimate_changed' | 'promotional_sender_not_approved'
+  | 'gateway_balance_insufficient' | 'broadcast_empty_audience' | 'platform_sms_type_disabled' | 'export_too_large';
+/** `error.details` of 422 `gateway_balance_insufficient`. */
+export interface GatewayBalanceInsufficientDetails { cost_paisa: number; balance_paisa: number }
+/** `error.details` of 422 `sms_provider_test_failed`. */
+export interface SmsProviderTestFailedDetails { error_code: SmsProviderErrorCode; detail: string | null }
+export type PlatformSmsAuditAction =
+  | 'sms_provider.created' | 'sms_provider.updated' | 'sms_provider.tested' | 'sms_provider.activated'
+  | 'sms_provider.credentials_rotated' | 'sms_provider.rotation_failed' | 'sms_provider.removed'
+  | 'sms_provider.failover_started' | 'sms_provider.failover_ended' | 'sms_provider.low_balance'
+  | 'platform_sms_type.updated' | 'platform_sms_template.updated' | 'platform_sms_template.reset' | 'platform_sms.test_sent'
+  | 'platform_sms_broadcast.created' | 'platform_sms_broadcast.updated' | 'platform_sms_broadcast.deleted'
+  | 'platform_sms_broadcast.scheduled' | 'platform_sms_broadcast.cancelled' | 'platform_sms_broadcast.finished'
+  | 'platform_sms.log_exported' | 'platform_sms.opted_out' | 'platform_sms.opted_in';
+export const PLATFORM_SMS_AUDIT_ACTIONS: readonly PlatformSmsAuditAction[] = [
+  'sms_provider.created', 'sms_provider.updated', 'sms_provider.tested', 'sms_provider.activated',
+  'sms_provider.credentials_rotated', 'sms_provider.rotation_failed', 'sms_provider.removed',
+  'sms_provider.failover_started', 'sms_provider.failover_ended', 'sms_provider.low_balance',
+  'platform_sms_type.updated', 'platform_sms_template.updated', 'platform_sms_template.reset', 'platform_sms.test_sent',
+  'platform_sms_broadcast.created', 'platform_sms_broadcast.updated', 'platform_sms_broadcast.deleted',
+  'platform_sms_broadcast.scheduled', 'platform_sms_broadcast.cancelled', 'platform_sms_broadcast.finished',
+  'platform_sms.log_exported', 'platform_sms.opted_out', 'platform_sms.opted_in',
+];

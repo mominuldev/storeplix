@@ -1,4 +1,7 @@
 import type {
+  PlatformSmsOptOutLookup,
+  SmsPreferences,
+  UpdateSmsPreferencesInput,
   SmsCreditAccount,
   SmsCreditLedgerEntry,
   SmsCreditLedgerFilters,
@@ -1880,6 +1883,24 @@ export function createApiClient(options: ApiClientOptions) {
      * PHASE-8-9A SMS integration page (`/integrations/sms`). Store-scoped; see each call for its permission.
      * Credits and purchases live under `billing.smsCredits` (tenant-level).
      */
+    /** PHASE-8-9B §7.6 the signed-in user's own settings (no tenant). */
+    account: {
+      smsPreferences: {
+        /** Store Plix promotional SMS on/off for this user (Account page). */
+        get: () => request<SmsPreferences>('/account/sms-preferences', { noTenant: true }),
+        /** Audited `platform_sms.opted_out` / `opted_in`. Codes, billing and security SMS are not affected. */
+        update: (input: UpdateSmsPreferencesInput) =>
+          request<SmsPreferences>('/account/sms-preferences', { method: 'PATCH', body: { promotional: input.promotional }, noTenant: true }),
+      },
+    },
+
+    /** PHASE-8-9B §7.6 public opt-out page `/s/{code}` (merchant app). GET never opts out; 404 for an unknown code. */
+    platformSms: {
+      optOutLookup: (code: string) => request<PlatformSmsOptOutLookup>(`/platform-sms/opt-out/${enc(code)}`, { anonymous: true }),
+      /** Idempotent; 429 `rate_limited`. */
+      optOut: (code: string) => request<PlatformSmsOptOutLookup>(`/platform-sms/opt-out/${enc(code)}`, { method: 'POST', anonymous: true }),
+    },
+
     sms: {
       /** §6.1 `settings.manage | integrations.manage | billing.view`. */
       overview: (storeId: string) => request<SmsOverview>(`${store(storeId)}/sms`),

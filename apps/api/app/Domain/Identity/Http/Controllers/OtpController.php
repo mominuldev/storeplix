@@ -9,6 +9,7 @@ use App\Domain\Identity\Otp\OtpService;
 use App\Domain\Identity\Rules\PasswordRules;
 use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\PhoneRule;
+use App\Domain\Sms\Platform\PlatformSmsNotifier;
 use App\Domain\Tenancy\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -74,6 +75,7 @@ class OtpController
 
         $user->forceFill(['phone_verified_at' => now()])->save();
         $this->audit->log('account.phone_verified', $user, tenantId: false);
+        app(PlatformSmsNotifier::class)->welcome($user); // PHASE-8-9B §5: once, after the first verification
 
         return new UserResource($user->load('tenants'));
     }

@@ -8,6 +8,7 @@ use App\Domain\Marketing\Content\StoreBrand;
 use App\Domain\Sms\Drivers\FakeSmsGateway;
 use App\Domain\Sms\Drivers\LogSmsGateway;
 use App\Domain\Sms\SmsGateway;
+use App\Domain\Sms\SmsResult;
 use App\Domain\Sms\SmsSendFailed;
 use App\Domain\Tenancy\Support\TenantCache;
 use Illuminate\Mail\Message;
@@ -28,6 +29,11 @@ use Throwable;
  */
 final class CampaignMessenger
 {
+    /** PHASE-8-9B §4.3 step 5: the last SMS outcome (provider id / failover) for the caller's `sms_messages` row. */
+    public ?SmsResult $lastResult = null;
+
+    public ?SmsSendFailed $lastFailure = null;
+
     public function __construct(private readonly SmsGateway $sms) {}
 
     /**
@@ -38,6 +44,8 @@ final class CampaignMessenger
      */
     public function sms(string $storeId, string $msisdn, string $text, ?string $senderId = null): ?string
     {
+        $this->lastResult = null;
+        $this->lastFailure = null;
         if (app()->environment('production') && ($this->sms instanceof LogSmsGateway || $this->sms instanceof FakeSmsGateway)) {
             throw new CampaignSendFailed('provider_error', 'Campaign SMS refuse the log/fake driver in production.');
         }
@@ -46,8 +54,11 @@ final class CampaignMessenger
         try {
             $result = $this->sms->send($msisdn, $text, $senderId);
         } catch (SmsSendFailed $e) {
+            $this->lastFailure = $e;
+
             throw new CampaignSendFailed('provider_error', $e->getMessage());
         }
+        $this->lastResult = $result;
         if (! $result->accepted) {
             throw new CampaignSendFailed('provider_error', 'The SMS provider did not accept the message.');
         }

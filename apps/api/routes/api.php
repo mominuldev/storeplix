@@ -498,5 +498,6 @@ Route::prefix('v1')->group(function (): void {
     require __DIR__.'/admin-merchants.php';
     require __DIR__.'/impersonation.php';
     require __DIR__.'/admin-analytics.php'; // Phase 8.2
-    require __DIR__.'/admin-sms.php'; // Phase 8.9a
+    require __DIR__.'/admin-sms.php'; // Phase 8.9a (+ 8.9b platform SMS)
+    require __DIR__.'/platform-sms.php'; // Phase 8.9b: account SMS preferences + public opt-out
 });

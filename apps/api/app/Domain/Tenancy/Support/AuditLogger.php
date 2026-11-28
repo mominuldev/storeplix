@@ -27,8 +27,12 @@ use App\Domain\Pos\Models\PosSession;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\Supplier;
 use App\Domain\Purchasing\Models\SupplierPayment;
+use App\Domain\Sms\Models\PlatformSmsBroadcast;
+use App\Domain\Sms\Models\PlatformSmsMessageTypeSetting;
+use App\Domain\Sms\Models\PlatformSmsTemplate;
 use App\Domain\Sms\Models\SmsCreditAccount;
 use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\Models\SmsProvider;
 use App\Domain\Sms\Models\SmsSenderId;
 use App\Domain\Sms\Models\SmsTemplate;
 use App\Domain\Staff\Models\StaffInvitation;
@@ -87,6 +91,10 @@ class AuditLogger
         SmsSenderId::class => 'sender_id',
         SmsCreditAccount::class => 'sms_credit_account',
         SmsMessage::class => 'sms_message',
+        SmsProvider::class => 'sms_provider', // PHASE-8-9B §10.1
+        PlatformSmsTemplate::class => 'platform_sms_template',
+        PlatformSmsMessageTypeSetting::class => 'platform_sms_type',
+        PlatformSmsBroadcast::class => 'platform_sms_broadcast',
     ];
 
     public function __construct(

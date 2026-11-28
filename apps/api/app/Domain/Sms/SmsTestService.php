@@ -57,12 +57,12 @@ final class SmsTestService
         try {
             $result = $this->gateway->send($to, $text, $sender);
         } catch (SmsSendFailed $e) {
-            $message->markFailed(Str::limit($e->getMessage(), 250));
+            $message->markFailed(Str::limit($e->getMessage(), 250), $e);
             $this->charger->refund($message);
 
             throw new ApiException(502, 'provider_error', 'The SMS provider could not send the test SMS. Try again in a moment.');
         }
-        $message->markSent($result->message_id);
+        $message->markSent($result->message_id, $result);
         $masked = SmsPreview::maskPhone($to);
         $this->audit->log('sms.test_sent', $message, ['to_masked' => $masked, 'parts' => $charge->parts, 'charged_from' => $charge->from, 'store_id' => $store->id], $user);
 

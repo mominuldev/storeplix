@@ -61,6 +61,40 @@ import type {
   TotpEnrollment,
   UpdatePlatformSecuritySettingsInput,
   UpdatePlatformStaffInput,
+  ActivateSmsProviderInput,
+  CreateSmsProviderInput,
+  PlatformSmsAlert,
+  PlatformSmsAudienceCounts,
+  PlatformSmsBroadcast,
+  PlatformSmsBroadcastEstimate,
+  PlatformSmsBroadcastEstimateInput,
+  PlatformSmsBroadcastFilters,
+  PlatformSmsBroadcastInput,
+  PlatformSmsBroadcastListMeta,
+  PlatformSmsBroadcastRecipient,
+  PlatformSmsBroadcastTestInput,
+  PlatformSmsLogEntry,
+  PlatformSmsLogFilters,
+  PlatformSmsMessageType,
+  PlatformSmsMessageTypesMeta,
+  PlatformSmsPreview,
+  PlatformSmsPreviewInput,
+  PlatformSmsTemplate,
+  PlatformSmsTestInput,
+  PlatformSmsTestResult,
+  PlatformSmsType,
+  RemoveSmsProviderInput,
+  RotateSmsProviderCredentialsInput,
+  SchedulePlatformSmsBroadcastInput,
+  SmsProvider,
+  SmsProviderDriverInfo,
+  SmsProviderOverview,
+  SmsProviderTestInput,
+  SmsProviderTestResult,
+  UpdatePlatformSmsBroadcastInput,
+  UpdatePlatformSmsMessageTypeInput,
+  UpdatePlatformSmsTemplateInput,
+  UpdateSmsProviderInput,
 } from '@storeplix/types';
 import type { DownloadedFile, RequestOptions } from './client';
 
@@ -199,6 +233,23 @@ export function adminImpersonationQuery(f: AdminImpersonationFilters = {}): Quer
 /** PHASE-8-9A §10.3 sender-ID queue (default status `pending`). */
 export function adminSenderIdQuery(f: AdminSenderIdFilters = {}): Query {
   return { 'filter[status]': f.status, 'filter[q]': blank(f.q?.trim()), page: f.page, per_page: f.per_page };
+}
+
+/** PHASE-8-9B §8 platform SMS log (comma lists; `q` = exact phone or shop name ≥ 2; dates Asia/Dhaka, ≤ 90 days back). */
+export function platformSmsLogQuery(f: PlatformSmsLogFilters = {}): Query {
+  return {
+    'filter[q]': blank(f.q?.trim()),
+    'filter[status]': f.status?.length ? f.status.join(',') : undefined,
+    'filter[group]': f.group?.length ? f.group.join(',') : undefined,
+    'filter[from]': blank(f.from),
+    'filter[to]': blank(f.to),
+    cursor: blank(f.cursor),
+  };
+}
+
+/** PHASE-8-9B §7 past broadcasts (`filter[status]` comma list; Figma chips All / Scheduled / Sent / Drafts). */
+export function platformSmsBroadcastQuery(f: PlatformSmsBroadcastFilters = {}): Query {
+  return { 'filter[status]': f.status?.length ? f.status.join(',') : undefined, page: f.page, per_page: f.per_page };
 }
 
 export function adminTeamQuery(f: AdminTeamFilters = {}): Query {
@@ -391,6 +442,117 @@ export function createAdminApi(t: AdminTransport) {
           body: { staff_two_factor_required: input.staff_two_factor_required, current_password: input.current_password },
           noTenant: true,
         }),
+    },
+
+    /**
+     * PHASE-8-9B platform SMS (`/settings/sms`). Every call needs platform permission `manage_settings` (super_admin
+     * only, P89B-25). Secrets are write-only: providers come back with `credentials_hint` (last 4) only.
+     */
+    platformSms: {
+      /** §4.1 driver catalogue (config; SSL Wireless, Alpha SMS and BulkSMSBD are `coming_soon`). */
+      drivers: () => get<SmsProviderDriverInfo[]>('/admin/sms/drivers'),
+      /** Shell banner (Figma 2111:9331 red banner, low balance, failover active). Cheap; poll on navigation. */
+      alerts: () => get<PlatformSmsAlert[]>('/admin/sms/alerts'),
+      providers: {
+        /** §4.2 primary, failover, drafts/inactive, environment fallback, waiting, recent errors, alerts. */
+        overview: () => get<SmsProviderOverview>('/admin/sms/providers'),
+        get: (id: string) => get<SmsProvider>(`/admin/sms/providers/${enc(id)}`),
+        /** 201 draft. 422 `sms_provider_driver_unavailable` (coming soon), 409 `sms_provider_name_taken`. */
+        create: (input: CreateSmsProviderInput) => post<SmsProvider>('/admin/sms/providers', input),
+        /** 409 `revision_conflict`. Connection fields of an active provider change only through `rotate`. */
+        update: (id: string, input: UpdateSmsProviderInput) =>
+          t.request<SmsProvider>(`/admin/sms/providers/${enc(id)}`, { method: 'PATCH', body: input, noTenant: true }),
+        /** Synchronous test send with the stored credentials (10/hour per staff member). A failed test is 200 with `status: 'failed'`. */
+        test: (id: string, input: SmsProviderTestInput) => post<SmsProviderTestResult>(`/admin/sms/providers/${enc(id)}/test`, { phone: input.phone }),
+        /** 409 `sms_provider_test_required`, 422 `confirmation_mismatch` (primary needs the typed name). */
+        activate: (id: string, input: ActivateSmsProviderInput) =>
+          post<SmsProviderOverview>(`/admin/sms/providers/${enc(id)}/activate`, {
+            role: input.role,
+            confirm_name: input.confirm_name ?? null,
+            keep_previous_as_failover: input.keep_previous_as_failover ?? true,
+          }),
+        /** Test with the new credentials, then swap; 422 `sms_provider_test_failed` keeps the old ones (P89B-5). */
+        rotate: (id: string, input: RotateSmsProviderCredentialsInput) =>
+          post<SmsProvider>(`/admin/sms/providers/${enc(id)}/rotate`, { credentials: input.credentials, settings: input.settings ?? null, phone: input.phone }),
+        /** 409 `sms_provider_is_primary`; 422 `confirmation_mismatch`. Credentials are deleted, history kept. */
+        remove: (id: string, input: RemoveSmsProviderInput) =>
+          post<SmsProviderOverview>(`/admin/sms/providers/${enc(id)}/remove`, { confirm_name: input.confirm_name }),
+        /** Reads the gateway balance now (6/hour per provider). */
+        refreshBalance: (id: string) => post<SmsProvider>(`/admin/sms/providers/${enc(id)}/refresh-balance`),
+      },
+      messageTypes: {
+        /** §6 nine types with bn/en templates; `meta.kpis` + `meta.groups`. */
+        list: async (): Promise<{ data: PlatformSmsMessageType[]; meta: PlatformSmsMessageTypesMeta }> =>
+          list<PlatformSmsMessageType, PlatformSmsMessageTypesMeta>('/admin/sms/message-types', {}, {
+            kpis: { sent_this_month: 0, codes_this_month: 0, promotional_this_month: 0, cost_this_month_paisa: 0 },
+            groups: [],
+          }),
+        /** On/off. 422 `platform_sms_type_locked`; 409 `broadcasts_pending` (broadcast off while one is scheduled/sending). */
+        update: (type: PlatformSmsType, input: UpdatePlatformSmsMessageTypeInput) =>
+          t.request<PlatformSmsMessageType>(`/admin/sms/message-types/${enc(type)}`, { method: 'PATCH', body: { enabled: input.enabled }, noTenant: true }),
+        /** 422 `platform_sms_template_*` / `platform_sms_type_locked`, 409 `revision_conflict`. Body equal to the default resets. */
+        updateTemplate: (type: PlatformSmsType, language: 'bn' | 'en', input: UpdatePlatformSmsTemplateInput) =>
+          t.request<PlatformSmsTemplate>(`/admin/sms/message-types/${enc(type)}/templates/${enc(language)}`, {
+            method: 'PUT',
+            body: { body: input.body, revision: input.revision },
+            noTenant: true,
+          }),
+        resetTemplate: (type: PlatformSmsType, language: 'bn' | 'en') =>
+          t.request<PlatformSmsTemplate>(`/admin/sms/message-types/${enc(type)}/templates/${enc(language)}`, { method: 'DELETE', noTenant: true }),
+        /** Same 422s as updateTemplate; nothing saved (60/min). */
+        preview: (input: PlatformSmsPreviewInput, opts?: Pick<RequestOptions, 'signal'>) =>
+          t.request<PlatformSmsPreview>('/admin/sms/message-types/preview', { method: 'POST', body: input, noTenant: true, signal: opts?.signal }),
+        /** "Send test to me" (10/hour per staff member). */
+        test: (type: PlatformSmsType, input: PlatformSmsTestInput) =>
+          post<PlatformSmsTestResult>(`/admin/sms/message-types/${enc(type)}/test`, { language: input.language, phone: input.phone, body: input.body ?? null }),
+      },
+      broadcasts: {
+        list: (filters: PlatformSmsBroadcastFilters = {}) =>
+          list<PlatformSmsBroadcast, PlatformSmsBroadcastListMeta>('/admin/sms/broadcasts', platformSmsBroadcastQuery(filters), {
+            ...emptyPage(),
+            kpis: { broadcasts_this_month: 0, sent_success_rate: null, opted_out_total: 0, spend_this_month_paisa: 0 },
+          }),
+        /** Sub-chip counts for the audience cards. */
+        audiences: () => get<PlatformSmsAudienceCounts>('/admin/sms/broadcasts/audiences'),
+        /** No side effects. */
+        estimate: (input: PlatformSmsBroadcastEstimateInput, opts?: Pick<RequestOptions, 'signal'>) =>
+          t.request<PlatformSmsBroadcastEstimate>('/admin/sms/broadcasts/estimate', { method: 'POST', body: input, noTenant: true, signal: opts?.signal }),
+        /** "Send test to me" with a test opt-out code (10/hour). */
+        test: (input: PlatformSmsBroadcastTestInput) => post<PlatformSmsTestResult>('/admin/sms/broadcasts/test', input),
+        /** 201 draft. */
+        create: (input: PlatformSmsBroadcastInput) => post<PlatformSmsBroadcast>('/admin/sms/broadcasts', input),
+        get: (id: string) => get<PlatformSmsBroadcast>(`/admin/sms/broadcasts/${enc(id)}`),
+        /** Drafts only (409 `invalid_state_transition`), 409 `revision_conflict`. */
+        update: (id: string, input: UpdatePlatformSmsBroadcastInput) =>
+          t.request<PlatformSmsBroadcast>(`/admin/sms/broadcasts/${enc(id)}`, { method: 'PATCH', body: input, noTenant: true }),
+        /** Drafts only. */
+        delete: (id: string) => t.request<void>(`/admin/sms/broadcasts/${enc(id)}`, { method: 'DELETE', noTenant: true }),
+        /**
+         * Typed confirmation → scheduled (or sending when `scheduled_at` is null). 409 `broadcast_estimate_changed`
+         * (details = fresh estimate), `promotional_sender_not_approved`, `revision_conflict`; 422 `outside_sending_hours`,
+         * `gateway_balance_insufficient`, `broadcast_empty_audience`.
+         */
+        schedule: (id: string, input: SchedulePlatformSmsBroadcastInput) =>
+          post<PlatformSmsBroadcast>(`/admin/sms/broadcasts/${enc(id)}/schedule`, {
+            acknowledged: input.acknowledged,
+            confirm_recipients: input.confirm_recipients,
+            revision: input.revision,
+          }),
+        /** scheduled → cancelled (until it starts sending). */
+        cancel: (id: string) => post<PlatformSmsBroadcast>(`/admin/sms/broadcasts/${enc(id)}/cancel`),
+        recipients: (id: string, filters: { status?: string[]; cursor?: string } = {}) =>
+          list<PlatformSmsBroadcastRecipient, CursorMeta>(
+            `/admin/sms/broadcasts/${enc(id)}/recipients`,
+            { 'filter[status]': filters.status?.length ? filters.status.join(',') : undefined, cursor: blank(filters.cursor) },
+            emptyCursor(),
+          ),
+      },
+      /** §8 platform-sent SMS only, 90 days, masked, codes hidden; cursor 50. */
+      messages: (filters: PlatformSmsLogFilters = {}) =>
+        list<PlatformSmsLogEntry, CursorMeta>('/admin/sms/messages', platformSmsLogQuery(filters), emptyCursor()),
+      /** CSV (masked, codes hidden), same filters; 5/hour; audited `platform_sms.log_exported`. */
+      exportMessages: (filters: Omit<PlatformSmsLogFilters, 'cursor'> = {}) =>
+        t.requestBlob('/admin/sms/messages/export', { query: platformSmsLogQuery(filters), fallbackName: 'platform-sms-log.csv' }),
     },
 
     team: {

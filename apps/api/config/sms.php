@@ -48,4 +48,84 @@ return [
     'template_max_parts' => 3,
     'log_days' => 90,
     'preview_days' => 90,
+
+    // ---------- PHASE-8-9B: platform SMS providers, failover, platform messages, broadcasts ----------
+    // §4.2 (S231): every provider driver call answers a canned success (no network). Dev / e2e only; refused at boot in production.
+    'providers_http_fake' => (bool) env('SMS_PROVIDERS_HTTP_FAKE', false),
+
+    // §4.2 driver catalogue (`GET /admin/sms/drivers`). Prices: list price per SMS part in paisa, VAT included.
+    'drivers' => [
+        'revesms' => [
+            'name' => 'REVE SMS', 'status' => 'available', 'recommended' => true, 'btrc_approved' => true,
+            'price_masking_paisa' => 45, 'price_non_masking_paisa' => 25,
+            'features' => ['masking' => true, 'dlr' => false, 'unicode' => true, 'balance' => true],
+            'credential_fields' => [
+                ['key' => 'api_key', 'label' => 'API key', 'secret' => true, 'required' => true, 'hint' => 'From the REVE SMS portal: Settings → API.'],
+                ['key' => 'secret_key', 'label' => 'Secret key', 'secret' => true, 'required' => true, 'hint' => 'From the REVE SMS portal: Settings → API.'],
+            ],
+            'settings_fields' => [
+                ['key' => 'account_id', 'label' => 'Account ID', 'secret' => false, 'required' => false, 'hint' => null],
+                ['key' => 'base_url', 'label' => 'API endpoint', 'secret' => false, 'required' => true, 'hint' => 'Use an https:// address.'],
+            ],
+            'default_base_url' => 'https://smpp.revesms.com:7790',
+            'portal_url' => 'https://smpp.revesms.com',
+        ],
+        'ssl_wireless' => [
+            'name' => 'SSL Wireless', 'status' => 'coming_soon', 'recommended' => false, 'btrc_approved' => true,
+            'price_masking_paisa' => 50, 'price_non_masking_paisa' => 30,
+            'features' => ['masking' => true, 'dlr' => false, 'unicode' => true, 'balance' => false],
+            'credential_fields' => [], 'settings_fields' => [], 'default_base_url' => null,
+        ],
+        'alpha_sms' => [
+            'name' => 'Alpha SMS', 'status' => 'coming_soon', 'recommended' => false, 'btrc_approved' => true,
+            'price_masking_paisa' => 45, 'price_non_masking_paisa' => 25,
+            'features' => ['masking' => true, 'dlr' => false, 'unicode' => true, 'balance' => false],
+            'credential_fields' => [], 'settings_fields' => [], 'default_base_url' => null,
+        ],
+        'bulksmsbd' => [
+            'name' => 'BulkSMSBD', 'status' => 'coming_soon', 'recommended' => false, 'btrc_approved' => true,
+            'price_masking_paisa' => 40, 'price_non_masking_paisa' => 25,
+            'features' => ['masking' => true, 'dlr' => false, 'unicode' => true, 'balance' => false],
+            'credential_fields' => [], 'settings_fields' => [], 'default_base_url' => null,
+        ],
+        'http' => [
+            'name' => 'Other (HTTP API)', 'status' => 'available', 'recommended' => false, 'btrc_approved' => false,
+            'price_masking_paisa' => null, 'price_non_masking_paisa' => null,
+            'features' => ['masking' => true, 'dlr' => false, 'unicode' => true, 'balance' => false],
+            // free keys (1–5, `[a-z_]{2,32}`, all secret) — the configure drawer composes them.
+            'credential_fields' => [],
+            'settings_fields' => [
+                ['key' => 'base_url', 'label' => 'API endpoint', 'secret' => false, 'required' => true, 'hint' => 'Use an https:// address.'],
+            ],
+            'default_base_url' => null,
+        ],
+    ],
+
+    'platform' => [
+        // P89B-8: breaker half-opens after this many seconds without a new failure.
+        'breaker_cooldown_seconds' => 300,
+        // §4.3: provider rows are read through this cache (flushed on every provider write).
+        'routing_cache_seconds' => 60,
+        // P89B-10: retry window of platform SMS (codes: 5 min) and the job backoff.
+        'retry_window_minutes' => 30,
+        'code_retry_window_minutes' => 5,
+        'retry_backoff_seconds' => [30, 60, 120, 240, 480, 900],
+        // P89B-26 / S232 limiters.
+        'test_per_hour' => 10,
+        'export_per_hour' => 5,
+        'refresh_balance_per_hour' => 6,
+        'opt_out_per_minute' => 30,
+        'export_max_rows' => 50000,
+        // P89B-18 / P89B-20: promotional sending hours (Asia/Dhaka) and the weekly cap per tenant.
+        'timezone' => 'Asia/Dhaka',
+        'sending_hours' => ['from' => 9, 'to' => 21],
+        'weekly_cap' => 2,
+        'broadcast_batch' => 100,
+        // P89B-21: opt-out link base (default `{MERCHANT_APP_URL}/s`).
+        'opt_out_base' => env('PLATFORM_SMS_OPT_OUT_BASE'),
+        // P89B-24: recipients rows are pruned after this many months.
+        'recipient_retention_months' => 13,
+        // P89B-23: default low-balance threshold (৳1,000).
+        'low_threshold_paisa' => 100000,
+    ],
 ];

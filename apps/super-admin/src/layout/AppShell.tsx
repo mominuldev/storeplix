@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ShopPickerDialog } from '../components/ShopPickerDialog';
 import { useCan } from '../lib/permissions';
+import { PlatformSmsBanner } from '../settings/sms/PlatformSmsBanner';
 import { ImpersonateDialog } from '../merchants/ImpersonateDialog';
 import { GlobalSearch } from './GlobalSearch';
 import { Sidebar } from './Sidebar';
@@ -60,6 +61,7 @@ export function AppShell() {
             )}
           </div>
         )}
+        <PlatformSmsBanner />
         <main className="flex flex-1 flex-col gap-5 px-4 pt-7 pb-10 lg:px-8">
           {lowCodes && (
             <p role="status" className="flex items-center gap-2 rounded-lg bg-warning-bg px-4 py-3 text-body text-warning">

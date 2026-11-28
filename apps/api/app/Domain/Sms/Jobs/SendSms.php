@@ -2,40 +2,39 @@
 
 namespace App\Domain\Sms\Jobs;
 
-use App\Domain\Sms\Models\SmsMessage;
+use App\Domain\Sms\Platform\PlatformSmsDelivery;
 use App\Domain\Sms\SmsGateway;
-use App\Domain\Sms\SmsSendFailed;
+use App\Domain\Sms\SmsRoute;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Str;
 
 /**
- * Sends one SMS. Dispatched after the response, so the HTTP request never waits on the
- * provider. The text (which may contain an OTP) lives only in the job payload, never in the DB.
+ * Sends one account code (Addendum A). Dispatched after the response, so the HTTP request never waits on the
+ * provider. The text (which contains the OTP) lives only in the job payload, never in the DB.
+ *
+ * PHASE-8-9B §4.5: routed by group (`registration` for phone verification, `security` for sign-in / reset codes); a
+ * provider-level failure on every candidate is retried with the backoff until 5 minutes after the row was created (the
+ * code's TTL), then `failed` / `provider_unavailable`. A timeout or a rejection is never retried.
  */
 class SendSms implements ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1; // the gateway itself retries connection errors; never resend an accepted SMS
+    public int $tries = 1; // retries are new jobs within the window; an accepted SMS is never resent
 
     public function __construct(
         public readonly string $smsMessageId,
         #[\SensitiveParameter] public readonly string $text,
+        public readonly string $route = 'security',
+        public readonly int $attempt = 0,
     ) {}
 
     public function handle(SmsGateway $gateway): void
     {
-        $message = SmsMessage::query()->find($this->smsMessageId);
-        if ($message === null || $message->status !== 'queued') {
-            return;
-        }
-
-        try {
-            $result = $gateway->send($message->to, $this->text);
-            $message->update(['status' => 'sent', 'provider_message_id' => $result->message_id]);
-        } catch (SmsSendFailed $e) {
-            $message->update(['status' => 'failed', 'error' => Str::limit($e->getMessage(), 250)]);
+        [$outcome, $delay] = PlatformSmsDelivery::attempt($gateway, $this->smsMessageId, $this->text, SmsRoute::from($this->route),
+            (int) config('sms.platform.code_retry_window_minutes', 5), $this->attempt);
+        if ($outcome === 'retry') {
+            self::dispatch($this->smsMessageId, $this->text, $this->route, $this->attempt + 1)->delay(now()->addSeconds($delay));
         }
     }
 }

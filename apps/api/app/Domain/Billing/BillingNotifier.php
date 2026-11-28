@@ -6,6 +6,8 @@ namespace App\Domain\Billing;
 
 use App\Domain\Billing\Mail\BillingMail;
 use App\Domain\Identity\Models\User;
+use App\Domain\Sms\Platform\PlatformSmsNotifier;
+use App\Domain\Sms\Platform\PlatformSmsType;
 use App\Domain\Stores\Models\Store;
 use App\Domain\Tenancy\Models\Tenant;
 use App\Domain\Tenancy\Models\TenantUser;
@@ -14,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 /** P7-21: owner-only billing emails (Q88) and ops alerts. Call inside the tenant context. */
 final class BillingNotifier
@@ -28,6 +31,27 @@ final class BillingNotifier
             return;
         }
         Mail::to($owner->email)->send(new BillingMail($kind, self::shopName(), $data));
+    }
+
+    /**
+     * PHASE-8-9B §5: the platform SMS next to an owner email (invoice issued, payment received, payment due or failed,
+     * plan expiring) — owner's verified phone only, the type's switch decides, the shop's SMS language. Never throws:
+     * billing must keep working when SMS fails. Call right after the matching owner() email, inside the tenant context.
+     *
+     * @param  array<string, string|int|null>  $vars  invoice_no, amount ("1,770"), due_date ("5 Dec 2026"), plan
+     */
+    public function ownerSms(PlatformSmsType $type, array $vars = []): void
+    {
+        try {
+            $owner = self::ownerUser();
+            if ($owner === null) {
+                return;
+            }
+            app(PlatformSmsNotifier::class)->send($type, $owner, $vars + ['merchant_name' => $owner->name, 'store_name' => self::shopName()],
+                app(TenantContext::class)->requireId());
+        } catch (Throwable $e) {
+            Log::warning('billing.sms_failed', ['type' => $type->value, 'error' => $e::class]);
+        }
     }
 
     /** @param array<string, string|int|null> $data */
