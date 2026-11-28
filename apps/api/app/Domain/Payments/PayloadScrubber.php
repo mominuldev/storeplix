@@ -20,6 +20,8 @@ final class PayloadScrubber
         'app_key', 'app_secret', 'username', 'password', 'store_passwd', 'id_token', 'refresh_token', 'token',
         'access_token', 'authorization', 'x-app-key', 'secret', 'secret_key', 'api_key', 'client_secret', 'sessionkey',
         'signature', 'verify_sign', 'verify_sign_sha2', 'verify_key', 'signingcerturl', 'subscribeurl', 'unsubscribeurl',
+        // Nagad (PHASE-8-9D): encrypted blobs, keys, challenge, wallet numbers
+        'sensitivedata', 'merchant_private_key', 'pg_public_key', 'challenge', 'clientmobileno', 'merchantmobileno', 'accountnumber',
         // card / account data
         'card_no', 'card_number', 'card_issuer', 'card_issuer_country',
         'card_issuer_country_code', 'card_ref_id', 'bank_account', 'account_no', 'payer_account', 'customermsisdn',

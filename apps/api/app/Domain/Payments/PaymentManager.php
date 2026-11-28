@@ -6,6 +6,7 @@ namespace App\Domain\Payments;
 
 use App\Domain\Payments\Gateways\BkashGateway;
 use App\Domain\Payments\Gateways\FakeGateway;
+use App\Domain\Payments\Gateways\NagadGateway;
 use App\Domain\Payments\Gateways\PaymentGateway;
 use App\Domain\Payments\Gateways\SslCommerzGateway;
 use App\Domain\Payments\Models\PaymentGatewayAccount;
@@ -29,6 +30,7 @@ final class PaymentManager
         return $this->container->make(match ($provider) {
             PaymentGatewayAccount::BKASH => BkashGateway::class,
             PaymentGatewayAccount::SSLCOMMERZ => SslCommerzGateway::class,
+            PaymentGatewayAccount::NAGAD => NagadGateway::class,
         });
     }
 }

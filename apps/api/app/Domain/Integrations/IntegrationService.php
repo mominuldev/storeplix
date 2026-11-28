@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Integrations;
 
+use App\Domain\Ai\AiGenerationService;
 use App\Domain\Billing\FeatureGate;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Feeds\FeedService;
@@ -74,6 +75,10 @@ final class IntegrationService
             throw new ApiException(422, 'integration_setup_required', 'Connect this sales channel with “Continue with …” (OAuth).');
         }
         $this->assertPlan($provider);
+        if ($provider === IntegrationProvider::AI_PHOTOS && ! AiGenerationService::photosAvailable()) {
+            // P89D-39 / Q358: no image provider in production yet — the card shows "Coming soon".
+            throw new ApiException(422, 'integration_setup_required', 'AI product photos are coming soon.');
+        }
         $class = ProviderSettings::for($provider);
         $existing = self::find($store, $provider);
         $live = $existing !== null && $existing->status !== StoreIntegration::DISCONNECTED;

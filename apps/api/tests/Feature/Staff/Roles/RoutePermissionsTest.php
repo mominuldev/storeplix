@@ -146,6 +146,13 @@ class RoutePermissionsTest extends TestCase
             'stores.themes.publish',
         ],
         'products.edit' => [
+            // PHASE-8-9D §13.1 (P89D-41): AI writer / photos, history, apply / undo.
+            'stores.ai.generations.index',
+            'stores.ai.generations.show',
+            'stores.ai.photo-edits',
+            'stores.ai.photo-edits.apply',
+            'stores.ai.photo-edits.undo',
+            'stores.ai.product-descriptions',
             'stores.categories.reorder',
             'stores.categories.store',
             'stores.categories.update',
@@ -247,6 +254,13 @@ class RoutePermissionsTest extends TestCase
         ],
         'integrations.manage|marketing.manage|products.edit' => [
             'stores.integrations.index',
+        ],
+        // PHASE-8-9D §10 (P89D-41): AI credits summary and ledger.
+        'products.edit|integrations.manage|billing.view' => [
+            'billing.ai-credits.show',
+        ],
+        'billing.view|integrations.manage' => [
+            'billing.ai-credits.ledger',
         ],
         'customers.view' => [
             'stores.customers.index',

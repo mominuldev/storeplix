@@ -16,7 +16,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * A merchant-owned gateway account (P5B-10/11), one per store and provider. `credentials` is IntegrationCredentials
- * ciphertext (bkash {app_key, app_secret, username, password}; sslcommerz {store_id, store_passwd}), hidden from
+ * ciphertext (bkash {app_key, app_secret, username, password}; sslcommerz {store_id, store_passwd}; nagad {merchant_id,
+ * merchant_number, merchant_private_key, pg_public_key} — PEM keys, PHASE-8-9D P89D-44), hidden from
  * every serialisation. Nothing is mass-assignable; route_key is never writable from input (S39).
  *
  * @property string $id
@@ -49,7 +50,9 @@ class PaymentGatewayAccount extends Model
 
     public const SSLCOMMERZ = 'sslcommerz';
 
-    public const PROVIDERS = [self::BKASH, self::SSLCOMMERZ];
+    public const NAGAD = 'nagad'; // PHASE-8-9D P89D-44
+
+    public const PROVIDERS = [self::BKASH, self::SSLCOMMERZ, self::NAGAD];
 
     public const SANDBOX = 'sandbox';
 
@@ -70,10 +73,11 @@ class PaymentGatewayAccount extends Model
     public const CREDENTIAL_FIELDS = [
         self::BKASH => ['app_key' => 64, 'app_secret' => 128, 'username' => 64, 'password' => 128],
         self::SSLCOMMERZ => ['store_id' => 64, 'store_passwd' => 128],
+        self::NAGAD => ['merchant_id' => 32, 'merchant_number' => 16, 'merchant_private_key' => 8192, 'pg_public_key' => 4096],
     ];
 
     /** The field whose last 4 characters form credentials_hint (P5B-10: app key / store id). */
-    public const HINT_FIELD = [self::BKASH => 'app_key', self::SSLCOMMERZ => 'store_id'];
+    public const HINT_FIELD = [self::BKASH => 'app_key', self::SSLCOMMERZ => 'store_id', self::NAGAD => 'merchant_id'];
 
     protected $fillable = [];
 

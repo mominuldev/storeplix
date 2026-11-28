@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\URL;
  * initiate() → the fake hosted page `/api/v1/dev/fake-gateway/{payment}` (signed, tenant in the signature), whose
  * Pay / Fail / Cancel buttons record the outcome here and redirect the browser to the return URL the payment was
  * initiated with, adding the provider's return params (bKash: paymentID + status=success|failure|cancel;
- * SSLCommerz: tran_id + val_id + status=VALID|FAILED|CANCELLED).
+ * SSLCommerz: tran_id + val_id + status=VALID|FAILED|CANCELLED; Nagad: payment_ref_id + order_id + status=Success|Failed|Aborted).
  *
  * Deterministic outcomes after "Pay", by the payment amount's last two paisa digits:
  *   13 → failed (`fake_declined`);  17 → reported amount is 1 paisa more (amount mismatch);
@@ -116,10 +116,14 @@ final class FakeGateway implements PaymentGateway
             return null;
         }
         $this->remember($payment, ['outcome' => $outcome]);
-        $params = $payment->provider === PaymentGatewayAccount::SSLCOMMERZ
-            ? ['tran_id' => $payment->id, 'val_id' => 'FAKEVAL'.strtoupper(substr($payment->id, -16)),
-                'status' => ['pay' => 'VALID', 'fail' => 'FAILED', 'cancel' => 'CANCELLED'][$outcome]]
-            : ['paymentID' => (string) $state['provider_payment_id'], 'status' => ['pay' => 'success', 'fail' => 'failure', 'cancel' => 'cancel'][$outcome]];
+        $params = match ($payment->provider) {
+            PaymentGatewayAccount::SSLCOMMERZ => ['tran_id' => $payment->id, 'val_id' => 'FAKEVAL'.strtoupper(substr($payment->id, -16)),
+                'status' => ['pay' => 'VALID', 'fail' => 'FAILED', 'cancel' => 'CANCELLED'][$outcome]],
+            // PHASE-8-9D §9.3: Nagad appends payment_ref_id, order_id and status (Success / Failed / Aborted) to the callback.
+            PaymentGatewayAccount::NAGAD => ['payment_ref_id' => (string) $state['provider_payment_id'], 'order_id' => $payment->id,
+                'status' => ['pay' => 'Success', 'fail' => 'Failed', 'cancel' => 'Aborted'][$outcome]],
+            default => ['paymentID' => (string) $state['provider_payment_id'], 'status' => ['pay' => 'success', 'fail' => 'failure', 'cancel' => 'cancel'][$outcome]],
+        };
         $url = (string) $state['return_url'];
 
         return $url.(str_contains($url, '?') ? '&' : '?').http_build_query($params);

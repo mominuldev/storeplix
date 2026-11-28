@@ -40,7 +40,11 @@ class ProcessPaymentWebhook implements ShouldQueue
             return;
         }
         $payload = (array) $event->payload;
-        $reference = $event->provider === PaymentGatewayAccount::SSLCOMMERZ ? ($payload['tran_id'] ?? null) : ($payload['merchantInvoiceNumber'] ?? null);
+        $reference = match ($event->provider) {
+            PaymentGatewayAccount::SSLCOMMERZ => $payload['tran_id'] ?? null,
+            PaymentGatewayAccount::NAGAD => $payload['order_id'] ?? null, // PHASE-8-9D P89D-47: a trigger for Verify Payment
+            default => $payload['merchantInvoiceNumber'] ?? null,
+        };
         $payment = is_string($reference) ? Payment::query()->where('store_id', $event->store_id)->whereKey(strtolower(trim($reference)))
             ->where('type', Payment::TYPE_CHARGE)->where('provider', $event->provider)->first() : null;
         $account = PaymentGatewayAccount::query()->where('store_id', $event->store_id)->whereKey($event->account_id)->first();

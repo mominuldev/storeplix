@@ -39,6 +39,22 @@ return [
                 'live' => env('SSLCOMMERZ_LIVE_BASE_URL', 'https://securepay.sslcommerz.com'),
             ],
         ],
+        // PHASE-8-9D §9 (P89D-44–P89D-48). Paths and signatures VERIFY against the Nagad sandbox before the QA gate.
+        // NAGAD_SANDBOX_ALLOW_HTTP=true accepts an http:// sandbox base URL (staging certification only; refused in
+        // production by the boot check). NAGAD_REFUNDS=true only after Nagad certifies its refund API (P89D-48).
+        'nagad' => [
+            'base_urls' => [
+                'sandbox' => env('NAGAD_SANDBOX_BASE_URL', 'https://sandbox-ssl.mynagad.com/api/dfs'),
+                'live' => env('NAGAD_LIVE_BASE_URL', 'https://api.mynagad.com/api/dfs'),
+            ],
+            'sandbox_allow_http' => (bool) env('NAGAD_SANDBOX_ALLOW_HTTP', false),
+            'refunds' => (bool) env('NAGAD_REFUNDS', false),
+            'api_version' => 'v-0.2.0',
+            'client_type' => 'PC_WEB',
+            // X-KM-IP-V4 when no request IP is known (queue / scheduler). VERIFY: Nagad may whitelist the merchant server IP.
+            'server_ip' => env('NAGAD_SERVER_IP', '127.0.0.1'),
+            'timezone' => 'Asia/Dhaka',
+        ],
     ],
 
     // Base for signed return URLs and webhook URLs shown to merchants (a tunnel URL in sandbox work).

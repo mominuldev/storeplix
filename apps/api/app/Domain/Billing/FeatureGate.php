@@ -2,6 +2,7 @@
 
 namespace App\Domain\Billing;
 
+use App\Domain\Ai\Credits\AiCreditCharger;
 use App\Domain\Billing\Exceptions\FeatureNotInPlan;
 use App\Domain\Billing\Exceptions\PlanLimitReached;
 use App\Domain\Billing\Models\Plan;
@@ -67,6 +68,8 @@ final class FeatureGate
             // Phase 8.5 (P85-13, §2.2): campaign SMS parts / emails this month (recipients sent|sending|unknown + test sends).
             Limit::CampaignSmsPerMonth => app(TenantContext::class)->run($tenant, fn () => CampaignAllowance::used('sms')),
             Limit::CampaignEmailsPerMonth => app(TenantContext::class)->run($tenant, fn () => CampaignAllowance::used('email')),
+            // PHASE-8-9D P89D-33: AI allowance credits used this month (consumes − refunds, store timezone).
+            Limit::AiCreditsPerMonth => app(TenantContext::class)->run($tenant, fn () => app(AiCreditCharger::class)->allowanceUsed()),
             default => 0,
         };
     }

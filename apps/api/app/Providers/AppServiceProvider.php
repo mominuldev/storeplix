@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Domain\Ai\AiServiceProvider;
 use App\Domain\Automations\AutomationsServiceProvider;
 use App\Domain\Developer\External\ExternalGate;
 use App\Domain\Developer\External\Http\Middleware\AuthenticateApiKey;
@@ -43,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->register(HelpServiceProvider::class); // Phase 8.9c help center limiters + commands
         $this->app->register(SupportServiceProvider::class); // Phase 8.9c support limiters, commands, staff unassign hook
         $this->app->register(IntegrationsServiceProvider::class); // Phase 8.9d integrations: commands, limiters, fake boot check
+        $this->app->register(AiServiceProvider::class); // Phase 8.9d part B AI tools: photo driver, ai-generate limiter, ai:prune
     }
 
     public function boot(): void

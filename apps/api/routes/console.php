@@ -108,3 +108,6 @@ Schedule::command('tracking:prune')->dailyAt('03:15')->timezone('Asia/Dhaka')->w
 Schedule::command('feeds:sync')->hourly()->withoutOverlapping();
 Schedule::command('feeds:sync-deltas')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('integrations:health')->dailyAt('03:00')->timezone('Asia/Dhaka')->withoutOverlapping();
+// Phase 8.9d part B (PHASE-8-9D §12): AI retention (photo results 7 d, kept originals 30 d, generations 90 d) and stuck
+// generations (failed + refunded), per tenant.
+Schedule::command('ai:prune')->dailyAt('03:35')->timezone('Asia/Dhaka')->withoutOverlapping();

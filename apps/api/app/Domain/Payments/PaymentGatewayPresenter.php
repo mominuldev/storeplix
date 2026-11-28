@@ -22,6 +22,8 @@ final class PaymentGatewayPresenter
                 'credentials_hint' => null, 'enabled' => false, 'is_default' => false, 'verified_at' => null,
                 'last_checked_at' => null, 'last_error_code' => null, 'connected_by' => null, 'connected_at' => null,
                 'revision' => 0,
+                'capabilities' => GatewayCapabilities::for($provider),
+                'callback_url' => GatewayCapabilities::callbackUrl($provider),
             ];
         }
 
@@ -38,6 +40,9 @@ final class PaymentGatewayPresenter
             'connected_by' => UserRef::of($a->connectedBy),
             'connected_at' => UserRef::iso($a->connected_at),
             'revision' => $a->revision,
+            // PHASE-8-9D P89D-45 / §9.1
+            'capabilities' => GatewayCapabilities::for($a->provider),
+            'callback_url' => GatewayCapabilities::callbackUrl($a->provider),
         ];
     }
 }

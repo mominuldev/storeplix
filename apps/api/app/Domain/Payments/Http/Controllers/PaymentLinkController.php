@@ -38,7 +38,7 @@ class PaymentLinkController
             'amount_kind' => ['required', 'string', Rule::in(PaymentLink::AMOUNT_KINDS)],
             'percent_bps' => ['nullable', 'integer:strict', 'min:1', 'max:10000'],
             'amount' => ['required_if:amount_kind,custom', 'nullable', 'integer:strict', 'min:1', 'max:1000000000000'],
-            'provider' => ['required', 'string', 'in:bkash,sslcommerz'],
+            'provider' => ['required', 'string', 'in:bkash,sslcommerz,nagad'],
             'expires_in_minutes' => ['required', 'integer', Rule::in(PaymentLink::EXPIRY_MINUTES)],
             'cancel_if_unpaid' => ['required', 'boolean'],
             'send_sms' => ['required', 'boolean'],

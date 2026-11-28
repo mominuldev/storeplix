@@ -31,7 +31,7 @@ class StorefrontPaymentController
     {
         $ctx = StorefrontContext::from($request)->requireVisible();
         $order = StorefrontOrderController::orderByToken($request, $ctx->store->id);
-        $input = $request->validate(['payment_method' => ['required', 'string', 'in:cod,bkash,sslcommerz']]);
+        $input = $request->validate(['payment_method' => ['required', 'string', 'in:cod,bkash,sslcommerz,nagad']]);
         $result = $this->payments->retry($order, $input['payment_method']);
         $order = $result['order']->refresh();
 

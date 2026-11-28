@@ -161,7 +161,7 @@ class ReturnController
         $input = $request->validate([
             'shipping_amount_override' => ['sometimes', 'nullable', 'integer:strict', 'min:0', 'max:1000000'],
             'send_payment_link' => ['sometimes', 'nullable', 'array:provider,expires_in_minutes'],
-            'send_payment_link.provider' => ['required_with:send_payment_link', 'string', 'in:bkash,sslcommerz'],
+            'send_payment_link.provider' => ['required_with:send_payment_link', 'string', 'in:bkash,sslcommerz,nagad'],
             'send_payment_link.expires_in_minutes' => ['required_with:send_payment_link', 'integer', 'in:120,360,1440,2880'],
         ]);
         [$return, $order] = $this->returns->exchange($return, $input, $request->user(), $this->context->permissions(), $request->header(IdempotencyGuard::HEADER));

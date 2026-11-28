@@ -77,7 +77,7 @@ class Payment extends Model
     public const PROVIDER_MANUAL = 'manual';
 
     /** Online providers (PaymentGatewayAccount::PROVIDERS). */
-    public const ONLINE_PROVIDERS = ['bkash', 'sslcommerz'];
+    public const ONLINE_PROVIDERS = ['bkash', 'sslcommerz', 'nagad']; // PHASE-8-9D: + nagad
 
     public const PURPOSE_ORDER = 'order';
 

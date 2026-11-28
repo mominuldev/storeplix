@@ -17,6 +17,7 @@ use App\Domain\Orders\Models\OrderEvent;
 use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\Payment;
 use App\Domain\Orders\Models\Shipment;
+use App\Domain\Payments\GatewayCapabilities;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\PaymentPresenter;
 use App\Domain\Shared\Http\UserRef;
@@ -295,6 +296,7 @@ final class OrderPresenter
             'payment_link_id' => $payment->payment_link_id,
             'return_request_id' => $payment->return_request_id ?? null,
             'can_refund' => $payment->type === Payment::TYPE_CHARGE && $payment->isOnline() && $payment->status === Payment::STATUS_SUCCEEDED
+                && GatewayCapabilities::supportsRefund($payment->provider) // PHASE-8-9D P89D-48 (Nagad: refund in the portal)
                 && ($permissions?->has(Permission::OrdersRefund) ?? false) && (int) $payment->amount - (int) $payment->refunded_amount > 0,
             'pos_session_id' => $payment->pos_session_id ?? null, // PHASE-8-8D §6.3: the till session ("Till · Register 1"), else null
         ];

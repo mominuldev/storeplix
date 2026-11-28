@@ -259,11 +259,11 @@ Route::prefix('v1')->group(function (): void {
 
                 // --- Phase 5b-2: payment gateways (reads O A S, writes O A ManageIntegrations) ---
                 Route::get('payment-gateways', [PaymentGatewayController::class, 'index'])->middleware('perm:base')->name('stores.payment-gateways.index');
-                Route::put('payment-gateways/{provider}', [PaymentGatewayController::class, 'connect'])->where('provider', 'bkash|sslcommerz')
+                Route::put('payment-gateways/{provider}', [PaymentGatewayController::class, 'connect'])->where('provider', 'bkash|sslcommerz|nagad')
                     ->middleware('throttle:20,1,stores.payment-gateways.connect')->middleware('perm:integrations.manage')->name('stores.payment-gateways.connect');
-                Route::patch('payment-gateways/{provider}', [PaymentGatewayController::class, 'update'])->where('provider', 'bkash|sslcommerz')->middleware('perm:integrations.manage')->name('stores.payment-gateways.update');
-                Route::delete('payment-gateways/{provider}', [PaymentGatewayController::class, 'disconnect'])->where('provider', 'bkash|sslcommerz')->middleware('perm:integrations.manage')->name('stores.payment-gateways.disconnect');
-                Route::post('payment-gateways/{provider}/test-payment', [PaymentGatewayController::class, 'testPayment'])->where('provider', 'bkash|sslcommerz')
+                Route::patch('payment-gateways/{provider}', [PaymentGatewayController::class, 'update'])->where('provider', 'bkash|sslcommerz|nagad')->middleware('perm:integrations.manage')->name('stores.payment-gateways.update');
+                Route::delete('payment-gateways/{provider}', [PaymentGatewayController::class, 'disconnect'])->where('provider', 'bkash|sslcommerz|nagad')->middleware('perm:integrations.manage')->name('stores.payment-gateways.disconnect');
+                Route::post('payment-gateways/{provider}/test-payment', [PaymentGatewayController::class, 'testPayment'])->where('provider', 'bkash|sslcommerz|nagad')
                     ->middleware(['throttle:20,1,stores.payment-gateways.test-payment', 'idempotent:payment-gateways.test'])->middleware('perm:integrations.manage')->name('stores.payment-gateways.test-payment');
 
                 // --- Phase 5b-3: couriers (reads O A S, writes O A ManageIntegrations) ---
@@ -392,6 +392,9 @@ Route::prefix('v1')->group(function (): void {
     // Phase 8.9d part A (PHASE-8-9D-CONTRACT §13.1): integrations registry, tracking (event log, stats, tests, storefront
     // beacon) and product feeds (OAuth start + public callback, accounts, sync, items, website claim) (own groups).
     require __DIR__.'/integrations.php';
+    // Phase 8.9d part B (PHASE-8-9D-CONTRACT §10–§11): AI generations, AI credits (merchant + admin) and the signed AI photo
+    // download (own groups).
+    require __DIR__.'/ai.php';
 
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {
@@ -434,7 +437,7 @@ Route::prefix('v1')->group(function (): void {
     // Phase 5b-2 (§4.3): gateway browser returns (signed 26 h; tenant from the payment id) and provider webhooks
     // (tenant from the route key). Public; no tenant header; responses carry no tenant data.
     Route::match(['GET', 'POST'], 'payments/return/{provider}/{payment}', PaymentReturnController::class)
-        ->where(['provider' => 'bkash|sslcommerz', 'payment' => '[0-9A-Za-z]{26}'])->middleware('throttle:payment-returns')->name('payments.return');
+        ->where(['provider' => 'bkash|sslcommerz|nagad', 'payment' => '[0-9A-Za-z]{26}'])->middleware('throttle:payment-returns')->name('payments.return');
     // Phase 7 (§6.2, B22/B23): platform billing returns (signed 26 h; tenant from the payment id) and the ONE platform
     // SSLCommerz IPN. Public; no tenant header; no CSRF; answers carry no tenant data.
     Route::match(['GET', 'POST'], 'billing/payments/return/{provider}/{payment}', BillingReturnController::class)
@@ -444,6 +447,8 @@ Route::prefix('v1')->group(function (): void {
     Route::middleware('throttle:webhooks')->group(function (): void {
         Route::post('webhooks/sslcommerz/{routeKey}', [PaymentWebhookController::class, 'sslcommerz'])->where('routeKey', '[A-Za-z0-9]{32}')->name('webhooks.sslcommerz');
         Route::post('webhooks/bkash/{routeKey}', [PaymentWebhookController::class, 'bkash'])->where('routeKey', '[A-Za-z0-9]{32}')->name('webhooks.bkash');
+        // Phase 8.9d (P89D-47): Nagad notification = untrusted trigger; Verify Payment decides.
+        Route::post('webhooks/nagad/{routeKey}', [PaymentWebhookController::class, 'nagad'])->where('routeKey', '[A-Za-z0-9]{32}')->name('webhooks.nagad');
         // Phase 5b-3 (P5B-37): courier webhooks (Steadfast bearer, Pathao X-PATHAO-Signature; RedX 404 until verified).
         Route::post('webhooks/{provider}/{routeKey}', CourierWebhookController::class)
             ->where(['provider' => 'steadfast|pathao|redx', 'routeKey' => '[A-Za-z0-9]{32}'])->name('webhooks.couriers');

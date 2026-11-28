@@ -68,7 +68,7 @@ class PaymentReturnController
 
         return match ($value) {
             'failure', 'fail', 'failed', 'unattempted', 'expired' => 'failure',
-            'cancel', 'cancelled', 'canceled' => 'cancel',
+            'cancel', 'cancelled', 'canceled', 'aborted' => 'cancel', // `aborted`: Nagad (PHASE-8-9D)
             default => 'success',
         };
     }

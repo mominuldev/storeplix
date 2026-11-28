@@ -1205,6 +1205,38 @@ BEGIN
   END IF;
 END
 $$;
+-- table: ai_credit_accounts
+DO $$
+BEGIN
+  IF to_regclass('public.ai_credit_accounts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "ai_credit_accounts";
+    ALTER TABLE "ai_credit_accounts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "ai_credit_accounts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: ai_credit_ledger
+DO $$
+BEGIN
+  IF to_regclass('public.ai_credit_ledger') IS NOT NULL THEN
+    DROP POLICY IF EXISTS ai_credit_ledger_select ON "ai_credit_ledger";
+    DROP POLICY IF EXISTS ai_credit_ledger_insert ON "ai_credit_ledger";
+    DROP POLICY IF EXISTS tenant_isolation ON "ai_credit_ledger";
+    ALTER TABLE "ai_credit_ledger" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "ai_credit_ledger" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: ai_generations
+DO $$
+BEGIN
+  IF to_regclass('public.ai_generations') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "ai_generations";
+    ALTER TABLE "ai_generations" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "ai_generations" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

@@ -313,6 +313,16 @@ class PermissionParityTest extends TestCase
         'GET api/v1/stores/{store}/integrations/{provider}/sync-runs' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'GET api/v1/stores/{store}/integrations/{provider}/items' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/stores/{store}/integrations/{provider}/claim-website' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.9d part B (PHASE-8-9D §2, §13.1, P89D-41): AI tools `products.edit` (staff has it); credits summary
+        // products.edit | integrations.manage | billing.view; ledger billing.view | integrations.manage (staff 403).
+        'GET api/v1/billing/ai-credits' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/billing/ai-credits/ledger' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/ai/product-descriptions' => ['owner' => 202, 'admin' => 202, 'staff' => 202],
+        'POST api/v1/stores/{store}/ai/photo-edits' => ['owner' => 202, 'admin' => 202, 'staff' => 202],
+        'POST api/v1/stores/{store}/ai/photo-edits/{generation}/apply' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'POST api/v1/stores/{store}/ai/photo-edits/{generation}/undo' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/ai/generations' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/ai/generations/{generation}' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
     ];
 
     /** @var array<string, mixed> */
@@ -626,6 +636,20 @@ class PermissionParityTest extends TestCase
             $this->flushHeaders()->get("/api/v1/integrations/oauth/{$feed}/callback?".parse_url($authorize, PHP_URL_QUERY))->assertStatus(303);
             $this->req($h, 'PUT', "{$base}/integrations/{$feed}/account", ['account_id' => '100200300'])->assertOk();
         }
+        // Phase 8.9d part B: both AI tools on, a product photo, a succeeded photo edit (apply) and an applied one (undo).
+        $this->req($h, 'PUT', "{$base}/integrations/ai_writer", ['settings' => ['default_language' => 'bn', 'default_tone' => 'friendly', 'default_length' => 'medium', 'use_product_image' => true]])->assertOk();
+        $this->req($h, 'PUT', "{$base}/integrations/ai_photos", ['settings' => ['default_background' => 'studio_white']])->assertOk();
+        $aiImages = [];
+        foreach ([1, 2] as $n) {
+            $aiImages[] = $this->flushHeaders()->withHeaders($h)->post('/api/v1/media', [
+                'file' => UploadedFile::fake()->createWithContent("ai{$n}.png", $this->imageBytes(400, 400)), 'purpose' => 'product_image',
+            ], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        }
+        $aiProduct = $this->req($h, 'POST', "{$base}/products", ['name' => 'AI parity product', 'status' => 'active',
+            'images' => array_map(fn ($id) => ['media_id' => $id], $aiImages), 'variants' => [['price_amount' => 50000]]])->assertCreated()->json('data.id');
+        $aiPhoto = $this->req($h, 'POST', "{$base}/ai/photo-edits", ['media_id' => $aiImages[0], 'operation' => 'remove_background'], true)->assertStatus(202)->json('data.id');
+        $aiApplied = $this->req($h, 'POST', "{$base}/ai/photo-edits", ['media_id' => $aiImages[1], 'operation' => 'remove_background'], true)->assertStatus(202)->json('data.id');
+        $this->req($h, 'POST', "{$base}/ai/photo-edits/{$aiApplied}/apply", ['product_id' => $aiProduct, 'replace_image_id' => $aiImages[1]])->assertOk();
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -649,6 +673,7 @@ class PermissionParityTest extends TestCase
             'pos_item' => $posItem, 'pos_held' => $posHeld, 'sender_id' => $senderId,
             'conversation' => $conversation, 'inbox_message' => $inboxMessage, 'inbox_file' => $inboxFile, 'saved_reply' => $savedReply,
             'ticket' => $ticket, 'solved_ticket' => $solved, 'ticket_file' => $ticketFile,
+            'ai_product' => $aiProduct, 'ai_image' => $aiImages[0], 'ai_photo' => $aiPhoto, 'ai_applied' => $aiApplied,
             'headers' => [
                 TenantUser::ROLE_OWNER => $this->tenantHeaders($owner, $tenant),
                 TenantUser::ROLE_ADMIN => $this->tenantHeaders($admin, $tenant),
@@ -936,6 +961,15 @@ class PermissionParityTest extends TestCase
             'PATCH api/v1/billing/sms-credits' => $r('PATCH', '/api/v1/billing/sms-credits', ['low_credit_threshold' => 500]),
             'GET api/v1/billing/sms-credits/ledger' => $r('GET', '/api/v1/billing/sms-credits/ledger'),
             'POST api/v1/billing/sms-credits/purchase' => $r('POST', '/api/v1/billing/sms-credits/purchase', ['pack' => 'credits_1000', 'provider' => 'bkash'], true),
+            // Phase 8.9d part B (§10, §11)
+            'GET api/v1/billing/ai-credits' => $r('GET', '/api/v1/billing/ai-credits'),
+            'GET api/v1/billing/ai-credits/ledger' => $r('GET', '/api/v1/billing/ai-credits/ledger'),
+            'POST api/v1/stores/{store}/ai/product-descriptions' => $r('POST', "{$b}/ai/product-descriptions", ['product_id' => $s['ai_product']], true),
+            'POST api/v1/stores/{store}/ai/photo-edits' => $r('POST', "{$b}/ai/photo-edits", ['media_id' => $s['ai_image'], 'operation' => 'replace_background', 'background' => 'mint'], true),
+            'POST api/v1/stores/{store}/ai/photo-edits/{generation}/apply' => $r('POST', "{$b}/ai/photo-edits/{$s['ai_photo']}/apply", ['product_id' => $s['ai_product']]),
+            'POST api/v1/stores/{store}/ai/photo-edits/{generation}/undo' => $r('POST', "{$b}/ai/photo-edits/{$s['ai_applied']}/undo"),
+            'GET api/v1/stores/{store}/ai/generations' => $r('GET', "{$b}/ai/generations"),
+            'GET api/v1/stores/{store}/ai/generations/{generation}' => $r('GET', "{$b}/ai/generations/{$s['ai_photo']}"),
             'POST api/v1/stores/{store}/pos/held-sales' => $r('POST', "{$b}/pos/held-sales", ['session_id' => $s['pos_session'], 'lines' => $s['pos_lines']]),
             'GET api/v1/stores/{store}/pos/held-sales/{held}' => $r('GET', "{$b}/pos/held-sales/{$s['pos_held']}"),
             'DELETE api/v1/stores/{store}/pos/held-sales/{held}' => $r('DELETE', "{$b}/pos/held-sales/{$s['pos_held']}"),

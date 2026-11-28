@@ -69,7 +69,7 @@ class PaymentService
         return $account !== null && $account->isUsable() ? $account : null;
     }
 
-    /** Enabled gateways in display order (bkash, sslcommerz). @return list<string> */
+    /** Enabled gateways in display order (bkash, sslcommerz, nagad). @return list<string> */
     public static function usableProviders(string $storeId): array
     {
         $enabled = PaymentGatewayAccount::query()->where('store_id', $storeId)->where('status', PaymentGatewayAccount::CONNECTED)
@@ -558,6 +558,11 @@ class PaymentService
             if ($charge === null || $charge->type !== Payment::TYPE_CHARGE || ! $charge->isOnline() || $charge->status !== PaymentStateMachine::SUCCEEDED) {
                 throw ValidationException::withMessages(['payment_id' => ['Choose an online payment of this order that went through.']]);
             }
+            if (! GatewayCapabilities::supportsRefund($charge->provider)) {
+                // PHASE-8-9D P89D-48: Nagad refunds are made in the merchant portal until certified.
+                throw new ApiException(422, 'gateway_refund_unsupported', 'Refund in the '.self::providerLabel($charge->provider).' merchant portal, then record a manual refund.',
+                    ['payment_id' => ['This gateway can’t refund from Store Plix yet.']]);
+            }
             $amount = (int) $input['amount'];
             $left = min($this->chargeRefundable($charge), $this->orderRefundable($o));
             if ($amount > $left) {
@@ -749,8 +754,8 @@ class PaymentService
             $this->lockOrder($charge);
             /** @var Payment|null $c */
             $c = Payment::query()->whereKey($charge->id)->lockForUpdate()->first();
-            if ($c === null || $c->status !== PaymentStateMachine::SUCCEEDED) {
-                return null;
+            if ($c === null || $c->status !== PaymentStateMachine::SUCCEEDED || ! GatewayCapabilities::supportsRefund($c->provider)) {
+                return null; // P89D-48: no gateway refund for Nagad (the merchant refunds in the Nagad portal)
             }
             if (Payment::query()->where('parent_payment_id', $c->id)->where('type', Payment::TYPE_REFUND)->whereIn('status', [Payment::STATUS_PENDING, Payment::STATUS_SUCCEEDED])->exists()) {
                 return null;
@@ -774,7 +779,8 @@ class PaymentService
     public function refundCancelledOrder(Order $order, ?User $user): void
     {
         $charges = Payment::query()->where('order_id', $order->id)->where('type', Payment::TYPE_CHARGE)->whereIn('provider', Payment::ONLINE_PROVIDERS)
-            ->where('status', Payment::STATUS_SUCCEEDED)->orderBy('created_at')->get();
+            ->where('status', Payment::STATUS_SUCCEEDED)->orderBy('created_at')->get()
+            ->filter(fn (Payment $c) => GatewayCapabilities::supportsRefund($c->provider)); // P89D-48: cancel-and-refund off for Nagad
         foreach ($charges as $charge) {
             $refund = DB::transaction(function () use ($order, $charge, $user) {
                 /** @var Order $o */
@@ -792,7 +798,11 @@ class PaymentService
 
     public static function providerLabel(string $provider): string
     {
-        return $provider === PaymentGatewayAccount::SSLCOMMERZ ? 'SSLCommerz' : 'bKash';
+        return match ($provider) {
+            PaymentGatewayAccount::SSLCOMMERZ => 'SSLCommerz',
+            PaymentGatewayAccount::NAGAD => 'Nagad',
+            default => 'bKash',
+        };
     }
 
     private function lockOrder(Payment $payment): ?Order

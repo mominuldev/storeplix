@@ -98,6 +98,30 @@ class PaymentWebhookController
         return new JsonResponse(['data' => self::ACK]);
     }
 
+    /**
+     * Nagad notification (PHASE-8-9D P89D-47, S342): no documented signature, so the body is an UNTRUSTED trigger. It is
+     * stored once per (payment_ref_id, status) and the queued job calls Verify Payment for the payment named by
+     * `orderId` within this account's store; PaymentService decides. A body without the two ids is acknowledged and
+     * dropped. Unknown route key → 404, never 401.
+     */
+    public function nagad(Request $request, string $routeKey): JsonResponse
+    {
+        $owner = $this->owner(PaymentGatewayAccount::NAGAD, $routeKey);
+        $body = $request->json()->all() ?: $request->post();
+        $body = is_array($body) ? $body : [];
+        $ref = $body['payment_ref_id'] ?? $body['paymentRefId'] ?? $body['paymentReferenceId'] ?? null;
+        $orderId = $body['order_id'] ?? $body['orderId'] ?? null;
+        if (! is_string($ref) || ! is_string($orderId) || preg_match('/^[A-Za-z0-9_-]{1,128}$/', $ref) !== 1 || preg_match('/^[0-9A-Za-z]{26}$/', $orderId) !== 1) {
+            return new JsonResponse(['data' => self::ACK]);
+        }
+        $status = is_string($body['status'] ?? null) ? strtolower(substr($body['status'], 0, 32)) : 'unknown';
+        $payload = PayloadScrubber::scrub(['payment_ref_id' => $ref, 'order_id' => strtolower($orderId), 'status' => $status]);
+        $this->ingestor->ingest($owner, PaymentGatewayAccount::NAGAD, $ref.':'.$status, $status, $payload, WebhookEvent::RECEIVED,
+            fn (WebhookEvent $e) => new ProcessPaymentWebhook($e->id));
+
+        return new JsonResponse(['data' => self::ACK]);
+    }
+
     /** md5 over the `verify_key` fields + md5(store_passwd), sorted by key, joined `k=v&` (SSLCommerz PHP SDK). */
     public static function verifySign(array $post, string $storePasswd): bool
     {

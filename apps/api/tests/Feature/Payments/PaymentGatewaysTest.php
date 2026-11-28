@@ -41,7 +41,7 @@ class PaymentGatewaysTest extends TestCase
 
     private const SSL = ['store_id' => 'testbox1234', 'store_passwd' => 'qwerty-store-pass'];
 
-    private const KEYS = ['provider', 'status', 'mode', 'credentials_hint', 'enabled', 'is_default', 'verified_at', 'last_checked_at', 'last_error_code', 'connected_by', 'connected_at', 'revision'];
+    private const KEYS = ['provider', 'status', 'mode', 'credentials_hint', 'enabled', 'is_default', 'verified_at', 'last_checked_at', 'last_error_code', 'connected_by', 'connected_at', 'revision', 'capabilities', 'callback_url']; // + PHASE-8-9D P89D-45
 
     protected function setUp(): void
     {
@@ -74,7 +74,7 @@ class PaymentGatewaysTest extends TestCase
     {
         [, $tenant, $store, $h] = $this->liveShop();
         $data = $this->api($h, 'GET', $this->url($store))->assertOk()->json('data');
-        $this->assertSame(['bkash', 'sslcommerz'], array_column($data, 'provider'));
+        $this->assertSame(['bkash', 'sslcommerz', 'nagad'], array_column($data, 'provider')); // PHASE-8-9D: + nagad
         foreach ($data as $row) {
             $this->assertSame(self::KEYS, array_keys($row));
             $this->assertSame(['not_connected', null, false, 0], [$row['status'], $row['mode'], $row['enabled'], $row['revision']]);
@@ -164,7 +164,7 @@ class PaymentGatewaysTest extends TestCase
         $this->connect($h, $store, 'bkash', ['app_key' => str_repeat('a', 65)] + self::BKASH)->assertStatus(422);
         $this->connect($h, $store, 'bkash', null, 'live')->assertStatus(422)->assertJsonValidationErrors('mode', 'error.details'); // no BKASH_LIVE_BASE_URL
         $this->connect($h, $store, 'sslcommerz', self::BKASH)->assertStatus(422);
-        $this->api($h, 'PUT', $this->url($store, '/nagad'), ['mode' => 'sandbox', 'credentials' => self::SSL])->assertNotFound();
+        $this->api($h, 'PUT', $this->url($store, '/eps'), ['mode' => 'sandbox', 'credentials' => self::SSL])->assertNotFound(); // EPS is a later row (Q354)
 
         $this->connect($h, $store, 'bkash', ['app_key' => 'invalid-key'] + self::BKASH)->assertStatus(422)->assertJsonPath('error.code', 'credentials_invalid'); // fake driver
         $this->connect($h, $store)->assertOk();

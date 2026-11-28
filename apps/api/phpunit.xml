@@ -44,6 +44,9 @@
         <!-- Phase 8.9d: fake tracking / feed drivers (CI never calls Meta, Google or TikTok; driver tests use Http::fake). -->
         <env name="TRACKING_FAKE" value="true" force="true"/>
         <env name="FEEDS_FAKE" value="true" force="true"/>
+        <env name="AI_DRIVER" value="fake" force="true"/>
+        <env name="AI_IMAGE_DRIVER" value="fake" force="true"/>
+        <env name="ANTHROPIC_API_KEY" value="" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>

@@ -1,0 +1,16 @@
+{
+  "merchantId": "683002007104225",
+  "orderId": "{order_id}",
+  "paymentRefId": "{ref}",
+  "amount": "{amount}",
+  "clientMobileNo": "016****5678",
+  "merchantMobileNo": "01700000001",
+  "orderDateTime": "2026-11-28 18:20:05.0",
+  "issuerPaymentDateTime": "2026-11-28 18:21:16.0",
+  "issuerPaymentRefNo": "000005S2",
+  "additionalMerchantInfo": null,
+  "status": "{status}",
+  "statusCode": "000",
+  "cancelIssuerDateTime": null,
+  "cancelIssuerRefNo": null
+}

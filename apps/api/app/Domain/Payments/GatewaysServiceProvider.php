@@ -43,5 +43,9 @@ final class GatewaysServiceProvider extends ServiceProvider
         if ((bool) config('payments.fake') && $app->environment('production')) {
             throw new RuntimeException('PAYMENTS_FAKE=true is not allowed in production.');
         }
+        // PHASE-8-9D §9.6: an http-only Nagad sandbox is for staging certification only.
+        if ((bool) config('payments.providers.nagad.sandbox_allow_http') && $app->environment('production')) {
+            throw new RuntimeException('NAGAD_SANDBOX_ALLOW_HTTP=true is not allowed in production.');
+        }
     }
 }
