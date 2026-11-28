@@ -5621,7 +5621,9 @@ export interface AiCreditLedgerEntry {
 }
 export interface AiCreditLedgerFilters { type?: AiCreditLedgerType[]; cursor?: string }
 export interface AdminAiCredits { tenant_id: string; credits: AiCreditsSummary; last_adjusted_at: string | null }
+/** ± bonus credits, never 0, |credits| ≤ 100,000 (P89D-35); a deduction can't take bonus below 0 (422 `ai_credits_insufficient`). */
 export interface AdminAiCreditAdjustInput { credits: number; reason: string }
+export const AI_CREDIT_ADJUST_MAX = 100_000;
 /** `error.details` of 402 `ai_credits_exhausted`. */
 export interface AiCreditsExhaustedDetails { needed: number; available: number; resets_at: string }
 
@@ -5686,7 +5688,7 @@ export type IntegrationErrorCode =
   | 'integration_setup_required' | 'integration_endpoint_blocked' | 'confirmation_mismatch' | 'store_not_live'
   | 'feed_sync_in_progress' | 'oauth_state_invalid' | 'website_claim_failed' | 'tracking_test_failed'
   | 'ai_credits_exhausted' | 'ai_integration_off' | 'ai_generation_not_applicable' | 'ai_credits_insufficient'
-  | 'gateway_refund_unsupported';
+  | 'gateway_refund_unsupported' | 'image_unsupported';
 /** `error.details` of 422 `integration_code_pasted` / `integration_id_invalid`. */
 export interface IntegrationFieldDetails { field: string }
 export type IntegrationAuditAction =

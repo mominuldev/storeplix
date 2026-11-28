@@ -1,8 +1,10 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.27.0
+  version: 1.27.1
   description: |
+    1.27.1 (2026-11-28, Phase 8.9d part B): documents the public signed GET /ai-photos/{media}/download
+    (AI photo results, 30 minutes); no shape changes.
     1.27.0 (2026-11-28, Phase 8.9d integrations — tracking, product feeds, Nagad, AI; PHASE-8-9D-CONTRACT.md, ADR 0030;
     Q330–Q369 defaults accepted, Q346 and Q358 open). Follows 1.26.0 (the
     Help center contract). New tag integrations: /stores/{store}/integrations (list),
@@ -25512,6 +25514,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /ai-photos/{media}/download:
+    parameters:
+    - in: path
+      name: media
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - in: query
+      name: tenant
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - ai
+      summary: Download a private AI photo result (signed, 30 minutes)
+      operationId: downloadAiPhotoResult
+      description: Public signed URL returned as `AiGeneration.result_image.url` (P89D-58, S346); tenant from the
+        signature. Served inline with `X-Content-Type-Options nosniff`, `Content-Security-Policy sandbox; default-src
+        'none'`, `private, no-store`, `Referrer-Policy no-referrer`. Limiter 60/min per IP.
+      security: []
+      responses:
+        '200':
+          description: Image file
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Bad or expired signature
+        '404':
+          $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
   /admin/tenants/{tenant}/ai-credits:
