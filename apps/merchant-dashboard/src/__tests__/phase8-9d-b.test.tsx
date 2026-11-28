@@ -224,6 +224,26 @@ describe('PHASE-8-9D AI tool pages (31:5788, 2135:55033)', () => {
     expect(await screen.findByRole('tab', { name: 'Overview' })).toBeInTheDocument();
   });
 
+  it.each([
+    ['first time', false],
+    ['after Turn off', true],
+  ] as const)('AI photos Turn on (%s) never sends read-only keep_originals_days (QA P89D-QA-B2)', async (_label, wasOn) => {
+    const row = integration('ai_photos', wasOn ? { status: 'disconnected', settings: { default_background: 'mint', keep_originals_days: 30 } } : {});
+    const fetchMock = signedIn('owner', {
+      'GET /stores/S1/integrations/ai_photos': ok(row),
+      'PUT /stores/S1/integrations/ai_photos': ok(connected('ai_photos', {})),
+      'GET /billing/ai-credits': ok(credits()),
+      'GET /stores/S1/products': ok([], { current_page: 1, per_page: 50, total: 0, last_page: 1, counts: {}, summary: {}, plan: { limit: null, used: 0 } }),
+      'GET /stores/S1/ai/generations': ok([], cursor),
+    });
+    renderApp(<AppRoutes />, { route: '/integrations/ai-photos' });
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Turn on' }, SLOW))[0]!);
+    await waitFor(() => expect(byMethod(fetchMock, '/stores/S1/integrations/ai_photos', 'PUT')).toHaveLength(1));
+    const body = bodyOf(byMethod(fetchMock, '/stores/S1/integrations/ai_photos', 'PUT')[0]!) as { settings: Record<string, unknown> };
+    expect(body.settings).not.toHaveProperty('keep_originals_days');
+    expect(body.settings).toHaveProperty('default_background');
+  });
+
   it('On: Turn off asks first, then POSTs disconnect; settings PATCH with the revision', async () => {
     const fetchMock = signedIn('owner', {
       'GET /stores/S1/integrations/ai_photos': ok(connected('ai_photos', {})),

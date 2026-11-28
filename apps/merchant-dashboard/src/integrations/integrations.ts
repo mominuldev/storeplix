@@ -461,10 +461,18 @@ export const oauthErrorText: Record<IntegrationOauthErrorReason, string> = {
 };
 export const isOauthReason = (r: string | null): r is IntegrationOauthErrorReason => !!r && r in oauthErrorText;
 
-/** Only follow https authorize URLs (the API builds them from config). */
-export const isSafeAuthorizeUrl = (url: string) => {
+const isLocalHost = (h: string) => h === 'localhost' || h === '127.0.0.1' || h.endsWith('.localhost');
+
+/**
+ * Only follow https authorize URLs (the API builds them from config). Exception for local dev / CI with the fake OAuth
+ * driver (QA P89D-QA-A2): an http URL on a localhost host, and only while the dashboard itself runs on localhost — a
+ * deployed dashboard never does, so production still requires https.
+ */
+export const isSafeAuthorizeUrl = (url: string, here: string = typeof window === 'undefined' ? '' : window.location.hostname) => {
   try {
-    return new URL(url).protocol === 'https:';
+    const u = new URL(url);
+    if (u.protocol === 'https:') return true;
+    return u.protocol === 'http:' && isLocalHost(u.hostname) && isLocalHost(here);
   } catch {
     return false;
   }
@@ -472,7 +480,8 @@ export const isSafeAuthorizeUrl = (url: string) => {
 
 // ---------- Errors (§13.2) ----------
 
-const fieldOf = (e: { details?: Record<string, unknown> }) => (typeof e.details?.field === 'string' ? e.details.field : null);
+/** The API names fields `settings.pixel_id`; our form keys are the bare names (QA P89D-QA-A1). */
+const fieldOf = (e: { details?: Record<string, unknown> }) => (typeof e.details?.field === 'string' ? e.details.field.replace(/^settings\./, '') : null);
 
 export function integrationErrorText(error: unknown, provider?: PartAProvider, fallback = 'Something went wrong. Try again.'): string {
   if (isImpersonationReadOnly(error)) return READ_ONLY_MESSAGE;

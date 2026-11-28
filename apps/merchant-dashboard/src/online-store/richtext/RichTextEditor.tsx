@@ -56,7 +56,9 @@ export default function RichTextEditor({ value, onChange, label, disabled = fals
   });
 
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    // emitUpdate false: setEditable otherwise fires `update`, and a null value (empty description) would come back as
+    // an empty doc and mark the form dirty on load (QA P89D-QA-B1).
+    editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
 
   // External changes (undo, reset to theme) replace the content without echoing back.

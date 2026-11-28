@@ -6,10 +6,12 @@ import { impersonation } from '../impersonation/store';
 import { oauthNavigation } from '../integrations/FeedPage';
 import {
   attentionText,
+  errorField,
   eventErrorText,
   eventStatusMeta,
   idProblem,
   integrationErrorText,
+  isSafeAuthorizeUrl,
   maskedHint,
   normalizeId,
   parseTab,
@@ -624,5 +626,22 @@ describe('PHASE-8-9D product feeds: states, read-only, dismiss, disconnect', () 
     await userEvent.type(within(dialog).getByLabelText('Type DISCONNECT to confirm'), 'DISCONNECT');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
     await waitFor(() => expect(byMethod(fetchMock, '/stores/S1/integrations/meta_catalog/disconnect', 'POST')).toHaveLength(1));
+  });
+});
+
+describe('PHASE-8-9D QA fixes (part A)', () => {
+  it('P89D-QA-A1: errorField maps the API `settings.` field names onto form keys', () => {
+    expect(errorField(new ApiError(422, 'integration_id_invalid', 'bad', { field: 'settings.pixel_id' }))).toBe('pixel_id');
+    expect(errorField(new ApiError(422, 'integration_code_pasted', 'code', { field: 'test_event_code' }))).toBe('test_event_code');
+    expect(errorField(new ApiError(422, 'validation_failed', 'x', { field: 'settings.pixel_id' }))).toBeNull();
+  });
+
+  it('P89D-QA-A2: authorize URLs need https, except a localhost URL while the dashboard runs on localhost', () => {
+    expect(isSafeAuthorizeUrl('https://www.facebook.com/dialog/oauth?x=1', 'app.storeplix.com')).toBe(true);
+    expect(isSafeAuthorizeUrl('http://localhost:8010/api/v1/integrations/oauth/meta_catalog/callback', 'localhost')).toBe(true);
+    expect(isSafeAuthorizeUrl('http://localhost:8010/cb', 'app.storeplix.com')).toBe(false);
+    expect(isSafeAuthorizeUrl('http://evil.example/cb', 'localhost')).toBe(false);
+    expect(isSafeAuthorizeUrl('javascript:alert(1)', 'localhost')).toBe(false);
+    expect(isSafeAuthorizeUrl('not a url', 'localhost')).toBe(false);
   });
 });

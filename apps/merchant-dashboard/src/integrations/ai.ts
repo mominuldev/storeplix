@@ -110,6 +110,12 @@ export function photoEditLabel(g: Pick<AiGeneration, 'input'>): string {
 
 // ---------- Generations ----------
 
+/** Settings a merchant may write: the API refuses read-only keys (P89D-4), e.g. `keep_originals_days` (fixed 30). */
+const AI_READ_ONLY_SETTINGS: Record<AiIntegrationProvider, readonly string[]> = { ai_writer: [], ai_photos: ['keep_originals_days'] };
+export function writableAiSettings(provider: AiIntegrationProvider, settings: object): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(settings).filter(([k]) => !AI_READ_ONLY_SETTINGS[provider].includes(k)));
+}
+
 export const isWorking = (g: Pick<AiGeneration, 'status'> | null | undefined) => !!g && (g.status === 'queued' || g.status === 'running');
 /** Poll every AI_GENERATION_POLL_MS; stop after 2 minutes with a retry message (P89D-51). */
 export const POLL_LIMIT_MS = 120_000;

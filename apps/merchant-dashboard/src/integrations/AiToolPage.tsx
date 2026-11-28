@@ -30,6 +30,7 @@ import {
   photoEditLabel,
   TONES,
   toneLabel,
+  writableAiSettings,
 } from './ai';
 import { AiCreditsCard, AiPhotoEditor, AiTile, WriteWithAiPanel } from './aiComponents';
 import { useGenerations, useTurnOnAi, useUndoPhoto } from './aiQueries';
@@ -126,7 +127,7 @@ function AiToolDetail({ provider }: { provider: AiIntegrationProvider }) {
   const use = canUseAi(activeTenant) && !readOnly;
   const turnOnNow = () =>
     turnOn.mutate(
-      { settings: (data.settings ?? data.defaults) as never, ...(data.status === 'not_connected' ? {} : { revision: data.revision }) },
+      { settings: writableAiSettings(provider, data.settings ?? data.defaults) as never, ...(data.status === 'not_connected' ? {} : { revision: data.revision }) },
       { onSuccess: () => toast(`${meta.name} is on`), onError: (e) => toast(aiErrorText(e), 'error') },
     );
 
