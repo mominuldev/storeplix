@@ -43,7 +43,11 @@ return [
             'busy_timeout' => env('DB_BUSY_TIMEOUT'),
             'journal_mode' => env('DB_JOURNAL_MODE'),
             'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            // IMMEDIATE takes the write lock when a transaction begins. With DEFERRED, a transaction that reads and
+            // then writes (database cache / rate limiter increments, queue reservation) can't upgrade under WAL
+            // while another connection writes, and SQLite fails at once with "database is locked" instead of
+            // honouring busy_timeout.
+            'transaction_mode' => env('DB_TRANSACTION_MODE', 'IMMEDIATE'),
         ],
 
         'mysql' => [
