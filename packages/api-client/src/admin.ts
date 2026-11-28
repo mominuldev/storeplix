@@ -24,6 +24,10 @@ import type {
   UpdateAdminHelpArticleInput,
   UpdateAdminHelpCategoryInput,
   UpdateAdminSupportTicketInput,
+  AdminAiCredits,
+  AdminAiCreditAdjustInput,
+  AiCreditLedgerEntry,
+  AiCreditLedgerFilters,
   AdminApproveSenderIdInput,
   AdminRejectSenderIdInput,
   AdminSenderIdFilters,
@@ -456,6 +460,20 @@ export function createAdminApi(t: AdminTransport) {
       /** Grant (+) or deduct (−). `idempotencyKey` once per dialog open. 422 `sms_credits_insufficient`. */
       adjust: (tenantId: string, input: AdminSmsCreditAdjustInput, idempotencyKey: string) =>
         post<AdminSmsCredits>(`${tenant(tenantId)}/sms-credits/adjust`, { credits: input.credits, reason: input.reason }, { 'Idempotency-Key': idempotencyKey }),
+    },
+
+    /** PHASE-8-9D §10.4 merchant AI credits (read `view_merchants`; adjust `manage_billing`; bonus credits only). */
+    aiCredits: {
+      get: (tenantId: string) => get<AdminAiCredits>(`${tenant(tenantId)}/ai-credits`),
+      ledger: (tenantId: string, filters: AiCreditLedgerFilters = {}) =>
+        list<AiCreditLedgerEntry, CursorMeta>(
+          `${tenant(tenantId)}/ai-credits/ledger`,
+          { 'filter[type]': filters.type?.length ? filters.type.join(',') : undefined, cursor: filters.cursor || undefined },
+          emptyCursor(),
+        ),
+      /** Grant (+) or deduct (−) bonus credits. 422 `ai_credits_insufficient` below 0. */
+      adjust: (tenantId: string, input: AdminAiCreditAdjustInput, idempotencyKey: string) =>
+        post<AdminAiCredits>(`${tenant(tenantId)}/ai-credits/adjust`, { credits: input.credits, reason: input.reason }, { 'Idempotency-Key': idempotencyKey }),
     },
 
     invoices: {

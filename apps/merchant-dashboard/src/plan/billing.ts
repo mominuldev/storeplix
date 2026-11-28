@@ -89,6 +89,7 @@ export const limitLabel: Record<LimitKey, string> = {
   // PHASE-8-5 §2.2 (SMS counted in parts); PHASE-8-6 P86-8: shared with automations → "Marketing SMS this month".
   campaign_sms_per_month: 'Marketing SMS this month',
   campaign_emails_per_month: 'Marketing emails this month',
+  ai_credits_per_month: 'AI credits this month',
 };
 
 const limitNoun: Record<LimitKey, string> = {
@@ -100,6 +101,7 @@ const limitNoun: Record<LimitKey, string> = {
   custom_domains: 'custom domains',
   campaign_sms_per_month: 'marketing SMS',
   campaign_emails_per_month: 'marketing emails',
+  ai_credits_per_month: 'AI credits',
 };
 
 export interface LimitWarning {
@@ -165,7 +167,7 @@ export function isSafeRedirect(url: string | null | undefined): url is string {
   }
 }
 
-export const providerLabel = { bkash: 'bKash', sslcommerz: 'Card, mobile banking (SSLCommerz)' } as const;
+export const providerLabel = { bkash: 'bKash', sslcommerz: 'Card, mobile banking (SSLCommerz)', nagad: 'Nagad' } as const;
 
 export function newIdempotencyKey(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;

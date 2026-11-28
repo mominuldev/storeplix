@@ -20,6 +20,7 @@ use App\Domain\Themes\Http\Resources\ThemeConfigPresenter;
 use App\Domain\Themes\Models\StoreTheme;
 use App\Domain\Themes\ThemeConfigValidator;
 use App\Domain\Themes\ThemeRegistry;
+use App\Domain\Tracking\StorefrontTracking;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -80,6 +81,11 @@ class StorefrontConfigResource extends JsonResource
         // turns nothing on gets exactly the old config).
         if (($inbox = $this->inbox($preview)) !== null) {
             $config['inbox'] = $inbox;
+        }
+        // PHASE-8-9D §6.1 (P89D-22): pixel IDs only, when something is connected on a live, non-preview render (absent
+        // otherwise: a shop that connects nothing gets exactly the old config, S349).
+        if (($tracking = StorefrontTracking::config($this->resource, $preview)) !== null) {
+            $config['tracking'] = $tracking;
         }
 
         return $config;

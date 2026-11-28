@@ -25,6 +25,7 @@ final class RotateIntegrationKey extends Command
     public const COLUMNS = [
         'payment_gateway_accounts' => ['credentials'],
         'courier_accounts' => ['credentials', 'webhook_secret_encrypted'],
+        'store_integrations' => ['credentials'], // PHASE-8-9D P89D-5
     ];
 
     public function handle(IntegrationCredentials $credentials): int

@@ -14,12 +14,15 @@ export const METHOD_LABEL: Record<PaymentMethod, string> = {
   cod: 'Cash on delivery',
   bkash: 'bKash',
   sslcommerz: 'Card or mobile banking',
+  // Phase 8.9d part B (PHASE-8-9D §9.6): labelled now, offered at checkout only once part B ships (METHOD_ORDER).
+  nagad: 'Nagad',
 };
 
 export const METHOD_HINT: Record<PaymentMethod, string> = {
   cod: 'Pay in cash when the parcel arrives',
   bkash: 'Pay now from your bKash app',
   sslcommerz: 'Visa, Mastercard, Nagad, Rocket and more',
+  nagad: 'Pay now from your Nagad app',
 };
 
 /** "with bKash" / "by card or mobile banking" for result lines. */
@@ -29,6 +32,9 @@ export function paidWith(provider: GatewayProvider): string {
 
 export const isGateway = (m: unknown): m is GatewayProvider => m === 'bkash' || m === 'sslcommerz';
 export const isPaymentMethod = (m: unknown): m is PaymentMethod => m === 'cod' || isGateway(m);
+
+/** Methods the storefront offers or advertises (cart "Pay with", footer badges); `nagad` waits for part B. */
+export const isOfferedMethod = (m: PaymentMethod): boolean => (METHOD_ORDER as readonly string[]).includes(m);
 
 /** Methods to offer at checkout, in a fixed order; an old/empty config falls back to COD only. */
 export function checkoutMethods(fromConfig: readonly PaymentMethod[] | null | undefined): PaymentMethod[] {

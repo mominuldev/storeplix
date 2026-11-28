@@ -389,6 +389,9 @@ Route::prefix('v1')->group(function (): void {
 
     // Phase 8.9c (PHASE-8-9C-CONTRACT §11.1): Help center guides and support tickets (tenant-level merchant group).
     require __DIR__.'/help.php';
+    // Phase 8.9d part A (PHASE-8-9D-CONTRACT §13.1): integrations registry, tracking (event log, stats, tests, storefront
+    // beacon) and product feeds (OAuth start + public callback, accounts, sync, items, website claim) (own groups).
+    require __DIR__.'/integrations.php';
 
     // --- Public storefront API (server-to-server; tenant from validated X-Storefront-Host) ---
     Route::prefix('storefront')->middleware(['storefront', 'throttle:storefront'])->group(function (): void {

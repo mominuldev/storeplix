@@ -64,6 +64,23 @@ export const gatewayMeta: Record<
       { key: 'store_passwd', label: 'Store password', max: 128, secret: true },
     ],
   },
+  // Phase 8.9d part B (PHASE-8-9D §9): the Nagad page and connect flow ship in part B; this copy keeps every
+  // `Record<GatewayProvider, …>` complete. Not listed in GATEWAYS until part B adds its card.
+  nagad: {
+    name: 'Nagad',
+    short: 'Nagad',
+    capability: 'Nagad wallet payments',
+    onboardingHint: 'Customers pay from their Nagad app · settles to your Nagad merchant account',
+    checkoutLabel: 'Nagad',
+    checkoutHint: 'Pay now from your Nagad app',
+    portalHint: 'Find these in the Nagad merchant portal.',
+    applyNote: 'Apply at Nagad with your trade licence. We’ll guide you.',
+    moneyTo: 'your Nagad merchant account',
+    fields: [
+      { key: 'merchant_id', label: 'Merchant ID', max: 64, secret: false },
+      { key: 'merchant_number', label: 'Merchant number', max: 20, secret: false },
+    ],
+  },
 };
 
 export const modeLabel: Record<IntegrationMode, string> = { sandbox: 'Sandbox', live: 'Live mode' };
@@ -79,7 +96,7 @@ export const isUsable = (a: Pick<PaymentGatewayAccount, 'status' | 'enabled'> | 
 
 /** Always one entry per provider, in display order (absent ones come back `not_connected` from the API). */
 export function byProvider(list: PaymentGatewayAccount[] | undefined): Record<GatewayProvider, PaymentGatewayAccount | undefined> {
-  return { bkash: list?.find((a) => a.provider === 'bkash'), sslcommerz: list?.find((a) => a.provider === 'sslcommerz') };
+  return { bkash: list?.find((a) => a.provider === 'bkash'), sslcommerz: list?.find((a) => a.provider === 'sslcommerz'), nagad: list?.find((a) => a.provider === 'nagad') };
 }
 
 /** Gateways a payment link can use: connected and enabled, default first. */
@@ -93,7 +110,7 @@ export function paymentMethodLabel(m: OrderPaymentMethod): string {
   return m === 'cod' ? 'Cash on delivery' : gatewayMeta[m].checkoutLabel;
 }
 
-export const isGateway = (p: string): p is GatewayProvider => p === 'bkash' || p === 'sslcommerz';
+export const isGateway = (p: string): p is GatewayProvider => p === 'bkash' || p === 'sslcommerz' || p === 'nagad';
 
 export const purposeLabel: Record<PaymentPurpose, string> = {
   order: 'Paid online',

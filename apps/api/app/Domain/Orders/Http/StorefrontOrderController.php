@@ -68,6 +68,8 @@ class StorefrontOrderController
             'idempotency_key' => $request->header(IdempotencyGuard::HEADER),
             'ip' => $ctx->clientIp,
             'user_agent' => null,
+            // PHASE-8-9D §5.5: CheckoutInput.tracking (sanitised, saved only for stores with tracking; never a 422)
+            'tracking' => is_array($request->input('tracking')) ? $request->input('tracking') : null,
         ]);
 
         return new JsonResponse(['data' => [

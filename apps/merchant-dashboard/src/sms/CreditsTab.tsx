@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { BillingInvoiceSummary, GatewayProvider, SmsCreditAccount, SmsCreditPack, SmsCreditPackCode, SmsOverview } from '@storeplix/types';
-import { Badge, Button, cn, formatCount, ProviderLogo, Spinner } from '@storeplix/ui';
+import { Badge, Button, cn, formatCount, Spinner } from '@storeplix/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock, Download } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -16,6 +16,7 @@ import { KeyValue, Panel } from './components';
 import { smsErrorText } from './errors';
 import { smsKeys, useCreditLedger, usePurchaseCredits, useSmsCredits, useSmsPurchases } from './queries';
 import { dailyCreditPace, LEDGER_LABELS, packBadge, paceDuration, perSmsPrice, purchaseStatus, signedCredits } from './sms';
+import { GatewayLogo } from '../payments/GatewayLogo';
 
 // Figma Buy credits 2075:51449 (§12.5): packs, Pay with, Order summary → POST /billing/sms-credits/purchase →
 // provider page. Credits arrive only after the API verifies the payment (rule 8): the return (`?payment=`) polls the
@@ -24,8 +25,8 @@ import { dailyCreditPace, LEDGER_LABELS, packBadge, paceDuration, perSmsPrice, p
 export const POLL_MS = 2_000;
 export const POLL_WINDOW_MS = 60_000;
 
-export const providerName: Record<GatewayProvider, string> = { bkash: 'bKash', sslcommerz: 'SSLCommerz' };
-const providerHint: Record<GatewayProvider, string> = { bkash: 'Pay from your bKash account', sslcommerz: 'Card, Nagad, Rocket or internet banking' };
+export const providerName: Record<GatewayProvider, string> = { bkash: 'bKash', sslcommerz: 'SSLCommerz', nagad: 'Nagad' };
+const providerHint: Record<GatewayProvider, string> = { bkash: 'Pay from your bKash account', sslcommerz: 'Card, Nagad, Rocket or internet banking', nagad: 'Pay from your Nagad account' };
 
 /** Pack + provider selection and the purchase call. One Idempotency-Key per (pack, provider) reused on retry. */
 export function usePurchaseFlow(account: SmsCreditAccount | undefined) {
@@ -210,7 +211,7 @@ export function CreditsTab({ overview, canBuy, canViewHistory, paymentId, onPaym
                         on ? 'border-2 border-brand-600 bg-brand-50' : 'border border-border-default bg-surface-card enabled:hover:bg-surface-subtle',
                       )}
                     >
-                      <ProviderLogo provider={p} size="sm" />
+                      <GatewayLogo provider={p} size="sm" />
                       <span className="flex min-w-0 flex-col">
                         <span className="text-body font-semibold text-text-primary">{providerName[p]}</span>
                         <span className="text-caption text-text-secondary">{providerHint[p]}</span>

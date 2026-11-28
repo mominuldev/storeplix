@@ -80,6 +80,11 @@ export interface StorefrontConfig {
   commerce?: StorefrontCommerce;
   /** Phase 8.8e (PHASE-8-8E §9.1): Inbox channels for shoppers; null/absent = no widget, no order Messages card. */
   inbox?: StorefrontInboxConfig | null;
+  /**
+   * Phase 8.9d (PHASE-8-9D §6.1): pixel IDs only — never a token or secret. null/absent = no tag, no beacon. Always null
+   * for Coming soon and preview renders.
+   */
+  tracking?: StorefrontTrackingConfig | null;
 }
 
 export interface PreviewToken { token: string; url: string; /** ISO-8601 */ expires_at: string }
@@ -205,7 +210,11 @@ export type FeatureKey =
   | 'custom_domain' | 'all_couriers' | 'bulk_courier_booking' | 'fake_order_guard' | 'sms_automation'
   | 'custom_roles' | 'multi_warehouse' | 'pos' | 'profit_reports' | 'api_webhooks'
   /** Phase 8.8b (PHASE-8-8B §2.2): suppliers + purchase orders; Starter + Growth. Without it writes 402, reads 200. */
-  | 'purchasing';
+  | 'purchasing'
+  /** Phase 8.9d (PHASE-8-9D P89D-40): Facebook & Instagram catalog + Google Merchant Center feeds; Starter + Growth. */
+  | 'product_feeds'
+  /** Phase 8.9d (PHASE-8-9D P89D-40): Google Tag Manager server-container forwarding; Growth. */
+  | 'server_side_tagging';
 export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courier_connections' | 'sms_per_month'
   /** Phase 6 (PHASE-6-CONTRACT P6-7): custom store_domains rows, any status */
   | 'custom_domains'
@@ -213,7 +222,9 @@ export type LimitKey = 'orders_per_month' | 'staff_seats' | 'products' | 'courie
    * Phase 8.5 (PHASE-8-5 P85-13): campaign SMS **parts** / campaign emails per calendar month (store tz). Free 0.
    * Phase 8.6 (P86-8): shared with automation messages; labels "Marketing SMS" / "Marketing emails".
    */
-  | 'campaign_sms_per_month' | 'campaign_emails_per_month';
+  | 'campaign_sms_per_month' | 'campaign_emails_per_month'
+  /** Phase 8.9d (PHASE-8-9D P89D-33): AI credits per calendar month (store tz), shared by the description writer and photos. Free 20 · Starter 300 · Growth 1,500. */
+  | 'ai_credits_per_month';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
 
 // ---------- Audit ----------
@@ -972,7 +983,8 @@ export interface Cart {
 export interface CartMeta { cart_token?: string; notices?: string[] }
 
 // ---------- Checkout / storefront orders ----------
-export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz';
+/** Phase 8.9d (PHASE-8-9D §9): `nagad` when connected and enabled. */
+export type PaymentMethod = 'cod' | 'bkash' | 'sslcommerz' | 'nagad';
 /** Phase 8.8d: an order's method also allows `pos` (till sales; the payments list says how it was paid). Checkout never accepts it. */
 export type OrderPaymentMethod = PaymentMethod | 'pos';
 export interface CheckoutInput {
@@ -986,6 +998,11 @@ export interface CheckoutInput {
    * `required: true`. Missing → 422 `otp_required`; wrong → 422 `otp_invalid` (`details.attempts_left`).
    */
   otp_code?: string | null;
+  /**
+   * Phase 8.9d (PHASE-8-9D §5.5): first-party click/browser ids and consent read server-side by the storefront from its
+   * own cookies, saved for the order's server-side purchase/refund events. Absent = nothing saved.
+   */
+  tracking?: TrackingCheckoutContext | null;
 }
 export interface StorefrontOrderLine {
   product_name: string; variant_title: string; quantity: number; image: StorefrontMedia | null;
@@ -1181,7 +1198,8 @@ export interface OrderDashboard {
 // ==================== Phase 5b: online money, couriers, documents, order changes (PHASE-5B-CONTRACT §9) ====================
 // Note: `ReturnType` below shadows TypeScript's global ReturnType<T> inside this module only; this file never uses the global.
 // ---------- Integrations (shared) ----------
-export type GatewayProvider = 'bkash' | 'sslcommerz';
+/** Phase 8.9d (PHASE-8-9D §9): `nagad` is the third gateway behind the same interface. */
+export type GatewayProvider = 'bkash' | 'sslcommerz' | 'nagad';
 export type CourierProvider = 'steadfast' | 'pathao' | 'redx';
 export type IntegrationMode = 'sandbox' | 'live';
 export type IntegrationStatus = 'not_connected' | 'connected' | 'error' | 'disconnected';
@@ -1193,10 +1211,24 @@ export interface PaymentGatewayAccount {
   enabled: boolean; is_default: boolean;
   verified_at: string | null; last_checked_at: string | null; last_error_code: string | null;
   connected_by: UserRef | null; connected_at: string | null; revision: number;
+  /**
+   * Phase 8.9d (PHASE-8-9D P89D-45): what the driver can do. Optional for rolling deploys (absent = Phase 5b
+   * behaviour). UI greys out what is missing ("Not offered by Nagad yet").
+   */
+  capabilities?: GatewayCapability[];
+  /** Phase 8.9d: the callback URL to give the provider during onboarding (Nagad); null for the others. */
+  callback_url?: string | null;
 }
+/**
+ * `refund` / `refund_partial`: gateway refunds; `query`: status lookup; `webhook`: provider notifications;
+ * `preauth` (pre-authorised advance) and `agreement` (tokenised checkout) are offered by no built driver yet.
+ */
+export type GatewayCapability = 'refund' | 'refund_partial' | 'query' | 'webhook' | 'preauth' | 'agreement';
+/** Phase 8.9d (PHASE-8-9D §9.2): PEM keys are write-only; the hint is the merchant ID's last 4. */
+export type NagadCredentialsInput = { merchant_id: string; merchant_number: string; merchant_private_key: string; pg_public_key: string };
 export type BkashCredentialsInput = { app_key: string; app_secret: string; username: string; password: string };
 export type SslcommerzCredentialsInput = { store_id: string; store_passwd: string };
-export interface ConnectGatewayInput { mode: IntegrationMode; credentials: BkashCredentialsInput | SslcommerzCredentialsInput }
+export interface ConnectGatewayInput { mode: IntegrationMode; credentials: BkashCredentialsInput | SslcommerzCredentialsInput | NagadCredentialsInput }
 export interface UpdateGatewayInput { revision: number; enabled?: boolean; is_default?: boolean }
 export interface GatewayTestPayment { payment_id: string; redirect_url: string }
 
@@ -5237,4 +5269,434 @@ export type SupportAuditAction =
   | 'support_ticket.created' | 'support_ticket.assigned' | 'support_ticket.status_changed' | 'support_ticket.order_viewed';
 export const SUPPORT_AUDIT_ACTIONS: readonly SupportAuditAction[] = [
   'support_ticket.created', 'support_ticket.assigned', 'support_ticket.status_changed', 'support_ticket.order_viewed',
+];
+
+// ---------- Integrations: tracking, product feeds, Nagad, AI (Phase 8.9d, PHASE-8-9D-CONTRACT §3–§13; openapi 1.27.0) ----------
+// Rule 7: pixels take IDs and tokens only; Storeplix renders the official base tags itself. Secrets are write-only.
+
+// ----- Registry (§3.1, P89D-3) -----
+export type TrackingProvider = 'meta_pixel' | 'ga4' | 'tiktok_pixel' | 'gtm_server';
+export type FeedProvider = 'meta_catalog' | 'google_merchant';
+export type AiIntegrationProvider = 'ai_writer' | 'ai_photos';
+/** One `store_integrations` row per store and provider; used as the `{provider}` path segment as-is. */
+export type IntegrationProvider = TrackingProvider | FeedProvider | AiIntegrationProvider;
+export const TRACKING_PROVIDERS: readonly TrackingProvider[] = ['meta_pixel', 'ga4', 'tiktok_pixel', 'gtm_server'];
+export const FEED_PROVIDERS: readonly FeedProvider[] = ['meta_catalog', 'google_merchant'];
+export const AI_INTEGRATION_PROVIDERS: readonly AiIntegrationProvider[] = ['ai_writer', 'ai_photos'];
+export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [...TRACKING_PROVIDERS, ...FEED_PROVIDERS, ...AI_INTEGRATION_PROVIDERS];
+export type IntegrationKind = 'tracking' | 'feed' | 'ai';
+export function integrationKind(p: IntegrationProvider): IntegrationKind {
+  return (TRACKING_PROVIDERS as readonly string[]).includes(p) ? 'tracking' : (FEED_PROVIDERS as readonly string[]).includes(p) ? 'feed' : 'ai';
+}
+/**
+ * `not_connected` = no row (presented). `setup_required` = OAuth done, account/catalog not chosen yet (feeds).
+ * `needs_attention` = working but something needs the merchant (see `attention`). `error` = not working.
+ * AI integrations use `connected` (On) / `disconnected` (Off).
+ */
+export type StoreIntegrationStatus = 'not_connected' | 'setup_required' | 'connected' | 'needs_attention' | 'error' | 'disconnected';
+export type IntegrationAttentionReason =
+  | 'token_invalid' | 'token_expiring' | 'token_expired' | 'setup_incomplete' | 'website_not_claimed'
+  | 'store_not_live' | 'items_with_issues' | 'plan_required' | 'endpoint_unreachable' | 'delivery_failing';
+export interface IntegrationAttention { reason: IntegrationAttentionReason; count: number | null; since: string }
+
+// ----- Validated IDs (§4.2, P89D-6): anything else → 422 `integration_id_invalid` / `integration_code_pasted` -----
+export const META_PIXEL_ID_PATTERN = /^\d{10,20}$/;
+export const GA4_MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]{4,12}$/;
+export const TIKTOK_PIXEL_ID_PATTERN = /^[A-Z0-9]{20}$/;
+export const GTM_CONTAINER_ID_PATTERN = /^GTM-[A-Z0-9]{4,10}$/;
+export const GOOGLE_SITE_VERIFICATION_PATTERN = /^[A-Za-z0-9_-]{10,100}$/;
+/** Pasted markup is refused with `integration_code_pasted` ("This looks like code. Paste only the …"). */
+export const PASTED_CODE_PATTERN = /<\s*\/?\s*(script|noscript|img|iframe)\b|fbq\s*\(|gtag\s*\(|ttq\.|googletagmanager\.com\/gtm\.js|function\s*\(/i;
+export function looksLikePastedCode(value: string): boolean { return PASTED_CODE_PATTERN.test(value); }
+
+// ----- Canonical events and per-provider names (§5.1) -----
+export type TrackingEventName = 'page_view' | 'view_item' | 'add_to_cart' | 'begin_checkout' | 'purchase' | 'refund';
+export const BROWSER_TRACKING_EVENTS: readonly TrackingEventName[] = ['page_view', 'view_item', 'add_to_cart', 'begin_checkout'];
+export const SERVER_ONLY_TRACKING_EVENTS: readonly TrackingEventName[] = ['purchase', 'refund'];
+/** null = not sent to that provider (no standard event). */
+export const TRACKING_EVENT_NAMES: Readonly<Record<TrackingProvider, Readonly<Record<TrackingEventName, string | null>>>> = {
+  meta_pixel: { page_view: 'PageView', view_item: 'ViewContent', add_to_cart: 'AddToCart', begin_checkout: 'InitiateCheckout', purchase: 'Purchase', refund: null },
+  ga4: { page_view: 'page_view', view_item: 'view_item', add_to_cart: 'add_to_cart', begin_checkout: 'begin_checkout', purchase: 'purchase', refund: 'refund' },
+  tiktok_pixel: { page_view: 'Pageview', view_item: 'ViewContent', add_to_cart: 'AddToCart', begin_checkout: 'InitiateCheckout', purchase: 'CompletePayment', refund: null },
+  gtm_server: { page_view: 'page_view', view_item: 'view_item', add_to_cart: 'add_to_cart', begin_checkout: 'begin_checkout', purchase: 'purchase', refund: 'refund' },
+};
+/** When the server-side purchase event is sent (P89D-11). Default `order_confirmed`. */
+export type PurchaseTrigger = 'order_placed' | 'order_confirmed' | 'order_delivered';
+export type TrackingChannel = 'browser' | 'server';
+export type TrackingEventSource = 'browser_mirror' | 'order' | 'refund' | 'test';
+export type TrackingEventStatus = 'pending' | 'retrying' | 'delivered' | 'failed' | 'skipped';
+export type TrackingSkipReason = 'no_consent' | 'no_token' | 'disabled' | 'plan_required' | 'not_sent_to_provider';
+export type TrackingErrorCode = 'auth' | 'rejected' | 'rate_limited' | 'provider_unavailable' | 'timeout' | 'endpoint_blocked';
+
+// ----- Settings per provider (§4.3; camelCase never: JSON is snake_case) -----
+interface TrackingCommonSettings {
+  purchase_trigger: PurchaseTrigger;
+  include_delivery_charge: boolean;
+  /** P89D-14: the base tag and browser events wait for the shopper's Accept on the Storeplix consent bar. */
+  wait_for_consent: boolean;
+  /** P89D-13: hashed email/phone/name/city on server events. */
+  send_customer_data: boolean;
+}
+export interface MetaPixelSettings extends TrackingCommonSettings {
+  pixel_id: string;
+  /** P89D-10: browser events also sent through the Conversions API with the same event_id (default true). */
+  mirror_browser_events: boolean;
+  /** `TEST12345`-style code from Events Manager; used only by Test & verify (§5.8). */
+  test_event_code: string | null;
+}
+export interface Ga4Settings extends TrackingCommonSettings {
+  measurement_id: string;
+  send_refunds: boolean;
+}
+export interface TiktokPixelSettings extends TrackingCommonSettings {
+  pixel_id: string;
+  mirror_browser_events: boolean;
+  test_event_code: string | null;
+}
+export interface GtmServerSettings {
+  container_id: string;
+  /** https only, port 443, public host (P89D-17); checked on save and pinned per send */
+  tagging_server_url: string;
+  /** events are forwarded as GA4 Measurement Protocol events for this stream */
+  measurement_id: string;
+  events: TrackingEventName[];
+  send_customer_data: boolean;
+  wait_for_consent: boolean;
+  purchase_trigger: PurchaseTrigger;
+  include_delivery_charge: boolean;
+}
+export type FeedInclude = 'all' | 'categories';
+interface FeedCommonSettings {
+  include: FeedInclude;
+  /** when `include = 'categories'` (1–50 ids of this store) */
+  category_ids: string[];
+  hide_sold_out: boolean;
+  use_sale_price: boolean;
+}
+export interface MetaCatalogSettings extends FeedCommonSettings {
+  /** chosen after OAuth (§7.2); read-only afterwards except by reconnecting */
+  business_id: string | null; business_name: string | null;
+  catalog_id: string | null; catalog_name: string | null;
+  /** used when a product has no brand; ≤ 70 chars; null = store name */
+  default_brand: string | null;
+}
+export type FeedCondition = 'new' | 'used' | 'refurbished';
+export interface GoogleMerchantSettings extends FeedCommonSettings {
+  merchant_id: string | null; account_name: string | null;
+  /** read-only: set by "Verify and claim website" */
+  website_claimed: boolean;
+  feed_language: 'bn' | 'en';
+  condition: FeedCondition;
+}
+export type AiTone = 'friendly' | 'professional' | 'playful' | 'premium';
+export type AiLength = 'short' | 'medium' | 'long';
+export interface AiWriterSettings { default_language: 'bn' | 'en'; default_tone: AiTone; default_length: AiLength; use_product_image: boolean }
+export type AiPhotoBackground = 'studio_white' | 'soft_grey' | 'warm_beige' | 'pastel_pink' | 'mint' | 'transparent';
+export const AI_PHOTO_BACKGROUNDS: readonly AiPhotoBackground[] = ['studio_white', 'soft_grey', 'warm_beige', 'pastel_pink', 'mint', 'transparent'];
+export interface AiPhotosSettings { default_background: AiPhotoBackground; /** fixed 30 (P89D-58); read-only */ keep_originals_days: number }
+export interface IntegrationSettingsMap {
+  meta_pixel: MetaPixelSettings; ga4: Ga4Settings; tiktok_pixel: TiktokPixelSettings; gtm_server: GtmServerSettings;
+  meta_catalog: MetaCatalogSettings; google_merchant: GoogleMerchantSettings; ai_writer: AiWriterSettings; ai_photos: AiPhotosSettings;
+}
+/** Write-only secrets per provider (§4.4). OAuth tokens (feeds) are never typed by the merchant. */
+export interface IntegrationCredentialsMap {
+  meta_pixel: { access_token: string }; ga4: { api_secret: string }; tiktok_pixel: { access_token: string };
+  gtm_server: Record<string, never>; meta_catalog: Record<string, never>; google_merchant: Record<string, never>;
+  ai_writer: Record<string, never>; ai_photos: Record<string, never>;
+}
+/** `••••` + last 4 per stored secret field; never the secret. GA4 "Show" link → "Replace" (P89D-7). */
+export type CredentialsHint = Record<string, string>;
+
+// ----- Resources (§4.1) -----
+export interface IntegrationCapabilities {
+  manage: boolean; send_test: boolean; view_events: boolean; sync_now: boolean;
+}
+export interface IntegrationSummary {
+  provider: IntegrationProvider; kind: IntegrationKind; status: StoreIntegrationStatus;
+  /** one line under the name, e.g. "Pixel 1234…7890 · CAPI on", "1,204 of 1,240 products live" */
+  summary: string | null;
+  /** feature key needed by the plan, when the current plan lacks it (card shows "Upgrade") */
+  plan_required: FeatureKey | null;
+  attention: IntegrationAttention[];
+}
+export interface StoreIntegration<P extends IntegrationProvider = IntegrationProvider> {
+  provider: P; kind: IntegrationKind; status: StoreIntegrationStatus;
+  /** null while not_connected (defaults are in `defaults`) */
+  settings: IntegrationSettingsMap[P] | null;
+  defaults: IntegrationSettingsMap[P];
+  credentials_hint: CredentialsHint;
+  /** feeds: OAuth access expiry; null otherwise */
+  token_expires_at: string | null;
+  attention: IntegrationAttention[];
+  last_verified_at: string | null; last_error_code: string | null;
+  connected_by: UserRef | null; connected_at: string | null;
+  plan_required: FeatureKey | null;
+  can: IntegrationCapabilities;
+  revision: number;
+}
+/** PUT connect / update (§4.2). `credentials` omitted or a field omitted = keep the stored one; `revision` required once a row exists. */
+export interface SaveIntegrationInput<P extends IntegrationProvider = IntegrationProvider> {
+  settings: IntegrationSettingsMap[P];
+  credentials?: Partial<IntegrationCredentialsMap[P]>;
+  revision?: number;
+}
+/** PATCH settings only (partial). */
+export interface UpdateIntegrationSettingsInput<P extends IntegrationProvider = IntegrationProvider> {
+  settings: Partial<IntegrationSettingsMap[P]>;
+  revision: number;
+}
+/** Typed confirmation (Figma `2135:55831`); anything else → 422 `confirmation_mismatch`. */
+export interface DisconnectIntegrationInput { confirm: 'DISCONNECT' }
+export type IntegrationCheckState = 'ok' | 'warn' | 'fail' | 'skipped';
+export interface IntegrationCheckRow { key: string; label: string; state: IntegrationCheckState; detail: string | null }
+/** POST …/verify (§4.5): live checks with the provider; "Found · {name}" for a pixel. */
+export interface IntegrationCheck {
+  provider: IntegrationProvider; ok: boolean; checked_at: string;
+  rows: IntegrationCheckRow[];
+  /** e.g. the pixel's or catalog's display name when the provider reports it */
+  found_name: string | null;
+}
+
+// ----- Tracking: events, log, stats, test (§5) -----
+export interface TrackingTestEventInput { event?: TrackingEventName; /** overrides the saved test code */ test_event_code?: string | null }
+export interface TrackingTestResult {
+  event_id: string; event: TrackingEventName; delivered: boolean;
+  http_status: number | null; error_code: TrackingErrorCode | null;
+  /** provider message, redacted (no tokens), ≤ 200 chars */
+  provider_message: string | null;
+  /** GA4 validation server messages (debug endpoint) */
+  validation_messages: string[];
+}
+/** Signed storefront link that turns on test mode for 30 minutes (Figma "Open shop in test mode ↗"). */
+export interface TrackingTestMode { url: string; expires_at: string }
+export interface TrackingEventLogEntry {
+  id: string; event: TrackingEventName; provider_event_name: string | null;
+  event_id: string; channel: TrackingChannel; source: TrackingEventSource; test: boolean;
+  status: TrackingEventStatus; skip_reason: TrackingSkipReason | null;
+  attempts: number; max_attempts: number; next_attempt_at: string | null;
+  http_status: number | null; error_code: TrackingErrorCode | null;
+  order: { id: string; number: string } | null;
+  page_path: string | null;
+  value_amount: number | null; currency: string | null;
+  /** true when a browser and a server copy share this event_id (Test events "Deduplicated") */
+  deduplicated: boolean;
+  created_at: string; delivered_at: string | null;
+}
+export interface TrackingEventFilters {
+  status?: TrackingEventStatus[]; event?: TrackingEventName[]; channel?: TrackingChannel; test?: boolean;
+  /** ISO time; default now − 7 days; older than the retention → 422 */
+  since?: string; cursor?: string;
+}
+export interface TrackingEventStatsRow {
+  event: TrackingEventName; provider_event_name: string | null;
+  browser: number; server_sent: number; server_failed: number; server_skipped: number;
+  last_at: string | null;
+}
+export interface TrackingEventStats {
+  provider: TrackingProvider; days: 7 | 30; from: string; to: string;
+  rows: TrackingEventStatsRow[];
+  totals: { browser: number; server_sent: number; server_failed: number; delivery_rate: number | null };
+}
+
+// ----- Tracking: storefront render data and beacon (§6) -----
+export interface StorefrontTrackingConfig {
+  meta_pixel_id: string | null;
+  ga4_measurement_id: string | null;
+  tiktok_pixel_id: string | null;
+  /** true when any enabled pixel/forwarder waits for consent → show the Storeplix consent bar */
+  wait_for_consent: boolean;
+  /** post browser events to the storefront beacon (`/api/t`) — always true when this object is non-null */
+  collect: boolean;
+  currency: string;
+  /** `google-site-verification` meta tag content written by Storeplix (§7.6); never merchant HTML */
+  site_verification: { google: string | null };
+}
+/** Script hosts the storefront CSP must allow when the matching ID is set (SECURITY T47). */
+export const TRACKING_SCRIPT_HOSTS = {
+  meta_pixel: ['https://connect.facebook.net'],
+  ga4: ['https://www.googletagmanager.com'],
+  tiktok_pixel: ['https://analytics.tiktok.com'],
+} as const;
+export type TrackingConsent = 'granted' | 'denied' | 'not_required';
+export interface TrackingBrowserContext {
+  consent: TrackingConsent;
+  /** first-party cookies set by the official tags on the store host, read server-side by the storefront */
+  fbp?: string | null; fbc?: string | null; ttp?: string | null; ttclid?: string | null;
+  ga_client_id?: string | null; ga_session_id?: string | null;
+  user_agent?: string | null;
+  /** signed test-mode token from the `sp_track_test` cookie (§5.8) */
+  test_token?: string | null;
+}
+export interface TrackingBeaconEvent {
+  /** ULID made in the browser; shared by the pixel call and the server copy (P89D-12) */
+  event_id: string;
+  name: Exclude<TrackingEventName, 'purchase' | 'refund'>;
+  occurred_at: string;
+  page_path: string;
+  /** view_item / add_to_cart: resolved and priced by the API from the catalogue — browser amounts are ignored */
+  variant_id?: string | null;
+  product_id?: string | null;
+  quantity?: number | null;
+}
+/** POST /storefront/tracking/events (server-to-server, ≤ 20 events). 202, nothing returned. */
+export interface TrackingBeaconInput { events: TrackingBeaconEvent[]; context: TrackingBrowserContext }
+/** CheckoutInput.tracking (§5.5). */
+export type TrackingCheckoutContext = TrackingBrowserContext;
+export const TRACKING_BEACON_MAX_EVENTS = 20;
+
+// ----- Feeds (§7) -----
+export interface IntegrationOauthStart { authorize_url: string; expires_at: string }
+/** Merchant app return: `/integrations/{provider}?oauth=success|error&reason={code}` */
+export type IntegrationOauthErrorReason = 'denied' | 'state_invalid' | 'exchange_failed' | 'missing_permission' | 'provider_unavailable';
+export interface FeedAccountOption { id: string; name: string; /** Meta business for a catalog option */ parent_name: string | null; item_count: number | null }
+/** PUT …/{provider}/account: choose the catalog / Merchant Center account after OAuth (`create_catalog` makes "Storeplix · {shop}"). */
+export interface ChooseFeedAccountInput { account_id?: string | null; create_catalog?: boolean; parent_id?: string | null }
+export type CatalogSyncKind = 'full' | 'delta' | 'manual';
+export type CatalogSyncTrigger = 'schedule' | 'price_change' | 'stock_change' | 'product_change' | 'manual' | 'connect';
+export type CatalogSyncStatus = 'running' | 'done' | 'partial' | 'failed';
+export interface CatalogSyncRun {
+  id: string; kind: CatalogSyncKind; trigger: CatalogSyncTrigger; status: CatalogSyncStatus;
+  items_sent: number; items_failed: number; items_deleted: number;
+  error_code: string | null; started_at: string; finished_at: string | null;
+}
+export type CatalogItemStatus = 'pending' | 'synced' | 'error' | 'excluded' | 'deleting';
+export type CatalogReviewStatus = 'approved' | 'in_review' | 'limited' | 'disapproved';
+export type CatalogExcludedReason = 'not_published' | 'no_image' | 'no_price' | 'sold_out_hidden' | 'category_filtered' | 'archived';
+export interface CatalogItemIssue {
+  code: string; severity: 'error' | 'warning';
+  /** provider text, escaped and ≤ 300 chars */
+  message: string;
+  attribute: string | null;
+  /** where to fix it in the dashboard */
+  fix: 'product_editor' | 'feed_settings' | 'store_settings' | null;
+}
+export interface CatalogItem {
+  id: string; product: { id: string; name: string; slug: string } | null;
+  variant: { id: string; title: string; sku: string | null } | null;
+  status: CatalogItemStatus; review_status: CatalogReviewStatus | null;
+  excluded_reason: CatalogExcludedReason | null;
+  issues: CatalogItemIssue[];
+  last_synced_at: string | null;
+}
+export interface CatalogItemFilters { status?: CatalogItemStatus[]; review_status?: CatalogReviewStatus[]; has_issues?: boolean; q?: string; cursor?: string }
+export interface CatalogItemListMeta extends CursorMeta {
+  counts: { total: number; approved: number; in_review: number; with_issues: number; not_sent: number };
+}
+/** Grouped issues ("Products with issues" / "Product issues from Google"). */
+export interface CatalogIssueGroup { code: string; message: string; severity: 'error' | 'warning'; impact: 'limited' | 'disapproved' | null; products: number; fix: CatalogItemIssue['fix'] }
+export interface FeedOverview {
+  provider: FeedProvider;
+  counts: CatalogItemListMeta['counts'];
+  issues: CatalogIssueGroup[];
+  last_run: CatalogSyncRun | null;
+  next_full_sync_at: string | null;
+  /** last 30 days, when the provider reports it (Google free listings clicks); null otherwise */
+  clicks_30d: number | null;
+}
+
+// ----- Nagad (§9) — types extend the Phase 5b gateway block above -----
+
+// ----- AI credits and generations (§10–§12) -----
+export type AiCreditSource = 'allowance' | 'bonus';
+export type AiCreditLedgerType = 'consume' | 'refund' | 'admin_adjust';
+/** Credits per job (config `ai.costs`; P89D-55). */
+export const AI_CREDIT_COSTS = { product_description: 1, photo_edit: 2 } as const;
+export interface AiCreditsSummary {
+  /** this calendar month (store tz); null limit = unlimited (no plan has it today) */
+  allowance: { limit: number | null; used: number; remaining: number | null; resets_at: string };
+  /** never expires; granted by Store Plix staff */
+  bonus: number;
+  /** remaining allowance + bonus */
+  available: number;
+  costs: typeof AI_CREDIT_COSTS;
+}
+export interface AiCreditLedgerEntry {
+  id: string; type: AiCreditLedgerType; source: AiCreditSource | null;
+  /** signed: − consume, + refund / grant, − deduction */
+  credits: number; bonus_after: number; period: string;
+  generation: { id: string; kind: AiGenerationKind } | null;
+  /** admin_adjust only (shown to the merchant) */
+  reason: string | null;
+  created_at: string;
+}
+export interface AiCreditLedgerFilters { type?: AiCreditLedgerType[]; cursor?: string }
+export interface AdminAiCredits { tenant_id: string; credits: AiCreditsSummary; last_adjusted_at: string | null }
+export interface AdminAiCreditAdjustInput { credits: number; reason: string }
+/** `error.details` of 402 `ai_credits_exhausted`. */
+export interface AiCreditsExhaustedDetails { needed: number; available: number; resets_at: string }
+
+export type AiGenerationKind = 'product_description' | 'photo_edit';
+export type AiGenerationStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'applied' | 'undone';
+export type AiErrorCode = 'ai_refused' | 'ai_unavailable' | 'ai_timeout' | 'ai_output_invalid' | 'image_unsupported' | 'provider_error';
+export interface ProductDescriptionInput {
+  /** existing product to read name/category/options/image from; or describe a new one with `name` */
+  product_id?: string | null;
+  name?: string | null;
+  category?: string | null;
+  /** merchant's points (materials, sizes, care); 0–10 × ≤ 200 chars */
+  key_points?: string[];
+  language?: 'bn' | 'en';
+  tone?: AiTone;
+  length?: AiLength;
+  /** 1–3, default 2; one credit per request */
+  variants?: number;
+  use_product_image?: boolean;
+}
+export interface ProductDescriptionVariant {
+  /** sanitized rich-text HTML built server-side from plain paragraphs + bullets (P89D-53) */
+  description_html: string;
+  paragraphs: string[]; highlights: string[];
+  seo_title: string | null; meta_description: string | null;
+}
+export type PhotoEditOperation = 'remove_background' | 'replace_background';
+export interface PhotoEditInput {
+  /** a product image of this store (`media` purpose product) */
+  media_id: string;
+  product_id?: string | null;
+  operation: PhotoEditOperation;
+  /** required for replace_background; presets only — no free-text prompt (P89D-57) */
+  background?: AiPhotoBackground | null;
+}
+export interface AiGeneration {
+  id: string; kind: AiGenerationKind; status: AiGenerationStatus;
+  product: { id: string; name: string } | null;
+  credits: number; charged_from: AiCreditSource | null; refunded: boolean;
+  input: ProductDescriptionInput | PhotoEditInput;
+  /** product_description */
+  variants: ProductDescriptionVariant[] | null;
+  /** photo_edit */
+  source_image: StorefrontMedia | null; result_image: StorefrontMedia | null;
+  /** photo_edit: the provider flagged rough edges ("Check edges") */
+  check_edges: boolean;
+  error_code: AiErrorCode | null;
+  requested_by: UserRef | null;
+  created_at: string; finished_at: string | null; applied_at: string | null; undone_at: string | null;
+  /** photo_edit: original kept until (undo possible) */
+  original_kept_until: string | null;
+}
+export interface AiGenerationFilters { kind?: AiGenerationKind; status?: AiGenerationStatus[]; product_id?: string; cursor?: string }
+/** POST …/photo-edits/{generation}/apply: replace `replace_image_id` (keeps its position) or append. */
+export interface ApplyPhotoEditInput { product_id: string; replace_image_id?: string | null }
+/** Poll every 1.5 s while queued/running (stop after 2 min). */
+export const AI_GENERATION_POLL_MS = 1500;
+
+// ----- Errors and audit (§13) -----
+export type IntegrationErrorCode =
+  | 'integration_id_invalid' | 'integration_code_pasted' | 'integration_credentials_invalid' | 'integration_not_connected'
+  | 'integration_setup_required' | 'integration_endpoint_blocked' | 'confirmation_mismatch' | 'store_not_live'
+  | 'feed_sync_in_progress' | 'oauth_state_invalid' | 'website_claim_failed' | 'tracking_test_failed'
+  | 'ai_credits_exhausted' | 'ai_integration_off' | 'ai_generation_not_applicable' | 'ai_credits_insufficient'
+  | 'gateway_refund_unsupported';
+/** `error.details` of 422 `integration_code_pasted` / `integration_id_invalid`. */
+export interface IntegrationFieldDetails { field: string }
+export type IntegrationAuditAction =
+  | 'integration.connected' | 'integration.updated' | 'integration.credentials_replaced' | 'integration.disconnected'
+  | 'integration.oauth_connected' | 'integration.account_chosen' | 'integration.test_event_sent' | 'integration.test_mode_started'
+  | 'integration.website_claimed' | 'integration.sync_requested' | 'integration.turned_on' | 'integration.turned_off'
+  | 'ai.description_generated' | 'ai.photo_applied' | 'ai.photo_undone' | 'ai_credits.adjusted';
+export const INTEGRATION_AUDIT_ACTIONS: readonly IntegrationAuditAction[] = [
+  'integration.connected', 'integration.updated', 'integration.credentials_replaced', 'integration.disconnected',
+  'integration.oauth_connected', 'integration.account_chosen', 'integration.test_event_sent', 'integration.test_mode_started',
+  'integration.website_claimed', 'integration.sync_requested', 'integration.turned_on', 'integration.turned_off',
+  'ai.description_generated', 'ai.photo_applied', 'ai.photo_undone', 'ai_credits.adjusted',
 ];

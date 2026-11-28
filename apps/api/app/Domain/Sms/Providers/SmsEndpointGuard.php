@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Sms\Providers;
 
-use App\Domain\Integrations\SafeHttpClient;
+use App\Domain\Integrations\PublicEndpointGuard;
 use InvalidArgumentException;
 
 /**
- * PHASE-8-9B S224: staff-entered provider endpoints. On save: SafeHttpClient's rules (https, no userinfo) plus no IP
- * literal at all and no local names. At send: every resolved address must be public (private, loopback, link-local,
- * CGNAT 100.64/10, metadata and reserved ranges refused) and the request is pinned to the checked address
- * (CURLOPT_RESOLVE), so a DNS rebind between the check and the call can't reach an internal host.
+ * PHASE-8-9B S224: staff-entered provider endpoints. Since PHASE-8-9D (P89D-17) the rules live in
+ * App\Domain\Integrations\PublicEndpointGuard; this class delegates (any port, as before 8.9d) with the SMS resolver.
  */
 final class SmsEndpointGuard
 {
@@ -20,56 +18,25 @@ final class SmsEndpointGuard
     /** @throws InvalidArgumentException */
     public static function assertAcceptable(string $url): void
     {
-        SafeHttpClient::assertSafeBaseUrl($url);
-        $host = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
-        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-            throw new InvalidArgumentException('Use a host name, not an IP address.');
-        }
-        if ($host === 'localhost' || ! str_contains($host, '.') || preg_match('/\.(local|localhost|internal|lan|home|corp|intranet)$/', $host) === 1) {
-            throw new InvalidArgumentException('Integration base URLs must not point at local hosts.');
-        }
+        PublicEndpointGuard::assertAcceptable($url, only443: false);
     }
 
     public static function isPublicIp(string $ip): bool
     {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-            return false;
-        }
-        $long = ip2long($ip);
-        if ($long !== false) {
-            foreach ([['100.64.0.0', 10], ['169.254.0.0', 16], ['0.0.0.0', 8], ['192.0.0.0', 24], ['198.18.0.0', 15]] as [$net, $bits]) {
-                $mask = -1 << (32 - $bits);
-                if (($long & $mask) === (ip2long($net) & $mask)) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
+        return PublicEndpointGuard::isPublicIp($ip);
     }
 
     /**
-     * Resolves and checks the host; returns the curl `CURLOPT_RESOLVE` pin entries for the request.
-     *
      * @return list<string>
      *
      * @throws InvalidArgumentException
      */
     public function pin(string $url): array
     {
-        self::assertAcceptable($url);
-        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
-        $port = (int) (parse_url($url, PHP_URL_PORT) ?: 443);
-        $ips = $this->resolver->resolve($host);
-        if ($ips === []) {
-            throw new InvalidArgumentException('The provider host does not resolve.');
+        try {
+            return (new PublicEndpointGuard($this->resolver))->pin($url, only443: false);
+        } catch (InvalidArgumentException $e) {
+            throw new InvalidArgumentException(str_replace('The host', 'The provider host', $e->getMessage()), 0, $e);
         }
-        foreach ($ips as $ip) {
-            if (! self::isPublicIp($ip)) {
-                throw new InvalidArgumentException('The provider host resolves to a private or reserved address.');
-            }
-        }
-
-        return ["{$host}:{$port}:{$ips[0]}"];
     }
 }

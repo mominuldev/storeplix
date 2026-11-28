@@ -100,3 +100,11 @@ Schedule::command('help:prune-media')->dailyAt('03:15')->timezone('UTC')->withou
 Schedule::command('help:prune-views')->dailyAt('03:25')->timezone('UTC')->withoutOverlapping();
 Schedule::command('support:close-resolved')->hourly()->withoutOverlapping();
 Schedule::command('support:prune')->dailyAt('03:45')->timezone('UTC')->withoutOverlapping();
+// Phase 8.9d part A (PHASE-8-9D §12): tracking retry sweep every minute and retention daily; feeds hourly full sync and
+// 5-minute deltas; integration health (token expiry, plan access) nightly. Discovery on the platform connection, work
+// per tenant.
+Schedule::command('tracking:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('tracking:prune')->dailyAt('03:15')->timezone('Asia/Dhaka')->withoutOverlapping();
+Schedule::command('feeds:sync')->hourly()->withoutOverlapping();
+Schedule::command('feeds:sync-deltas')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('integrations:health')->dailyAt('03:00')->timezone('Asia/Dhaka')->withoutOverlapping();

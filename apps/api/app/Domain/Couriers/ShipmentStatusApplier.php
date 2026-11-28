@@ -15,6 +15,7 @@ use App\Domain\Orders\Models\Shipment;
 use App\Domain\Orders\OrderStateMachine;
 use App\Domain\Orders\OrderTimeline;
 use App\Domain\Returns\ReturnService;
+use App\Domain\Tracking\TrackingHooks;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -155,5 +156,6 @@ class ShipmentStatusApplier
         $o->revision++;
         $o->save();
         OrderTimeline::record($o, 'status_changed', null, null, array_filter($meta, fn ($v) => $v !== null), $from, $to, 'system');
+        TrackingHooks::orderStatus($o, $to); // PHASE-8-9D §5.3 (`order_delivered` trigger)
     }
 }

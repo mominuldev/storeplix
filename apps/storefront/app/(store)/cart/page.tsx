@@ -5,6 +5,7 @@ import { fetchCart } from '@/lib/commerce-api';
 import { getCommerceContext } from '@/lib/commerce-context';
 import { errorMessage } from '@/lib/commerce-messages';
 import { NOINDEX_ROBOTS } from '@/lib/seo';
+import { isOfferedMethod } from '@/lib/payments';
 import { whatsappHref } from '@/lib/contact';
 import { formatMoney } from '@/lib/format';
 import { CartLineControls, CouponForm } from '@/themes/modern-commerce/commerce/cart-client';
@@ -32,7 +33,7 @@ export default async function CartPage({ searchParams }: Props) {
   const loadError = r && !r.ok && r.code !== 'cart_not_found' ? errorMessage(r) : null;
   const { config } = store;
   const wa = whatsappHref(config.contact.whatsapp);
-  const methods = config.commerce?.payment_methods ?? [];
+  const methods = (config.commerce?.payment_methods ?? []).filter(isOfferedMethod);
 
   if (!cart || cart.lines.length === 0) {
     return (

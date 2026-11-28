@@ -41,6 +41,9 @@
         <env name="DOMAINS_ASK_KEY" value="test-ask-key-0123456789abcdef0123"/>
         <!-- Phase 7: fake platform billing gateway (CI never calls bKash or SSLCommerz). -->
         <env name="BILLING_FAKE" value="true"/>
+        <!-- Phase 8.9d: fake tracking / feed drivers (CI never calls Meta, Google or TikTok; driver tests use Http::fake). -->
+        <env name="TRACKING_FAKE" value="true" force="true"/>
+        <env name="FEEDS_FAKE" value="true" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>

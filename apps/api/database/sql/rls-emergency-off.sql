@@ -1145,6 +1145,66 @@ BEGIN
   END IF;
 END
 $$;
+-- table: store_integrations
+DO $$
+BEGIN
+  IF to_regclass('public.store_integrations') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "store_integrations";
+    ALTER TABLE "store_integrations" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "store_integrations" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: tracking_events
+DO $$
+BEGIN
+  IF to_regclass('public.tracking_events') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "tracking_events";
+    ALTER TABLE "tracking_events" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "tracking_events" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: tracking_daily_stats
+DO $$
+BEGIN
+  IF to_regclass('public.tracking_daily_stats') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "tracking_daily_stats";
+    ALTER TABLE "tracking_daily_stats" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "tracking_daily_stats" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: order_tracking_contexts
+DO $$
+BEGIN
+  IF to_regclass('public.order_tracking_contexts') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "order_tracking_contexts";
+    ALTER TABLE "order_tracking_contexts" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "order_tracking_contexts" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: catalog_sync_runs
+DO $$
+BEGIN
+  IF to_regclass('public.catalog_sync_runs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "catalog_sync_runs";
+    ALTER TABLE "catalog_sync_runs" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "catalog_sync_runs" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
+-- table: catalog_items
+DO $$
+BEGIN
+  IF to_regclass('public.catalog_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS tenant_isolation ON "catalog_items";
+    ALTER TABLE "catalog_items" NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "catalog_items" DISABLE ROW LEVEL SECURITY;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

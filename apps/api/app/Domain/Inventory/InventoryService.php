@@ -5,6 +5,7 @@ namespace App\Domain\Inventory;
 use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Developer\ApiKeys\CurrentApiKey;
 use App\Domain\Developer\Webhooks\WebhookEvents;
+use App\Domain\Feeds\FeedHooks;
 use App\Domain\Inventory\Locations\Locations;
 use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Inventory\Models\InventoryMovement;
@@ -158,6 +159,7 @@ class InventoryService
                 $row->on_hand = $new;
                 $row->save();
                 WebhookEvents::stock($row, $old, $new);
+                FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
                 $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, $new - $old, $new, $reason, $note, $reference['type'] ?? null, $reference['id'] ?? null, $actorId);
             }
             $this->insertMovements($movements);
@@ -326,6 +328,7 @@ class InventoryService
         foreach ($plan as [$row, $onHand, $committed, $quantity]) {
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'committed' => $committed, 'updated_at' => now()]);
             WebhookEvents::stock($row, $row->on_hand, $onHand);
+            FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
             $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, -$quantity, $onHand, 'order_shipped', null, 'order', $orderId, $actorId);
         }
         $this->insertMovements($movements);
@@ -392,6 +395,7 @@ class InventoryService
             $onHand = $row->on_hand - $quantity;
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
             WebhookEvents::stock($row, $row->on_hand, $onHand);
+            FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
             $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, -$quantity, $onHand, 'transfer_out', $note, 'stock_transfer', $transferId, $actorId);
         }
         $this->insertMovements($movements);
@@ -427,6 +431,7 @@ class InventoryService
             $onHand = $row->on_hand + $quantity;
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
             WebhookEvents::stock($row, $row->on_hand, $onHand);
+            FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
             $movements[] = $this->movementRow($storeId, $row->variant_id, $row->location_id, $quantity, $onHand, 'transfer_in', $note, 'stock_transfer', $transferId, $actorId);
         }
         $this->insertMovements($movements);
@@ -468,6 +473,7 @@ class InventoryService
             }
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $new, 'updated_at' => now()]);
             WebhookEvents::stock($row, $old, $new);
+            FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
             $movements[] = $this->movementRow($storeId, $row->variant_id, $locationId, $new - $old, $new, 'count', $note, 'stock_count', $countId, $actorId);
             $applied[$row->variant_id] = $new - $old;
         }
@@ -522,6 +528,7 @@ class InventoryService
             $onHand = $row->on_hand - $quantity;
             Inventory::query()->whereKey($row->id)->update(['on_hand' => $onHand, 'updated_at' => now()]);
             WebhookEvents::stock($row, $row->on_hand, $onHand);
+            FeedHooks::stock($row->store_id, $row->variant_id); // PHASE-8-9D P89D-29
             $movements[] = $this->movementRow($storeId, $row->variant_id, $locationId, -$quantity, $onHand, 'pos_sale', null, 'order', $orderId, $actorId);
         }
         $this->insertMovements($movements);

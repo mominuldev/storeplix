@@ -12,6 +12,7 @@ use App\Domain\Inventory\Models\Inventory;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\Shipment;
 use App\Domain\Tenancy\TenantContext;
+use App\Domain\Tracking\TrackingHooks;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -62,6 +63,7 @@ final class WebhookEvents
     /** order.confirmed / order.cancelled for a status transition (other targets emit nothing). */
     public static function orderStatus(Order $order, string $to): void
     {
+        TrackingHooks::orderStatus($order, $to); // PHASE-8-9D §5.3: server-side purchase triggers (after commit, never throws)
         match ($to) {
             Order::CONFIRMED => self::emit(WebhookEventType::OrderConfirmed, $order),
             Order::CANCELLED => self::emit(WebhookEventType::OrderCancelled, $order),

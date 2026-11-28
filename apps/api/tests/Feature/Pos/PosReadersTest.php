@@ -55,6 +55,7 @@ class PosReadersTest extends TestCase
         'app/Domain/Shipping/ShippingService.php' => 'zones (no orders)',
         'app/Domain/Shipping/ZoneResolver.php' => 'zones (no orders)',
         'app/Domain/Support/Admin/SupportOrderCard.php' => 'support order card (walk-in sales: no address, falls back to [])',
+        'app/Domain/Tracking/TrackingPayloads.php' => 'tracking city hash: till sales are never tracked (P89D-11); {} district → omitted',
     ];
 
     protected function setUp(): void

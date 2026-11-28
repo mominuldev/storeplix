@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { GatewayProvider, IntegrationMode, PaymentGatewayAccount } from '@storeplix/types';
-import { Badge, Button, cn, Dialog, Input, ProviderLogo, SecretField, SegmentedControl, Spinner, Toggle, WizardModal } from '@storeplix/ui';
+import { Badge, Button, cn, Dialog, Input, SecretField, SegmentedControl, Spinner, Toggle, WizardModal } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, CheckCircle2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
 import { byProvider, gatewayMeta, modeLabel } from './gateways';
 import { usePaymentGateways, usePaymentInvalidate } from './queries';
+import { GatewayLogo } from './GatewayLogo';
 
 // Figma Integrations · Connect bKash 32:3770 (wizard 32:4105). 4-step rail: Before you start → Enter credentials
 // (Sandbox/Live, fields per provider, "Encrypted and used only…") → Test payment (opens `redirect_url` in a new tab
@@ -51,7 +52,7 @@ export function ConnectGatewayDialog({ provider, account: initial, onClose }: Co
       labelledBy={titleId}
       aside={
         <>
-          <ProviderLogo provider={provider} size="lg" />
+          <GatewayLogo provider={provider} size="lg" />
           <div className="flex flex-col gap-0.5">
             <p className="text-heading text-text-primary">Connect {meta.short}</p>
             <p className="text-body text-text-secondary">Payment gateway</p>

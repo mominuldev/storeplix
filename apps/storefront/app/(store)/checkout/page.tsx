@@ -4,6 +4,8 @@ import { fetchCart, getGeo } from '@/lib/commerce-api';
 import { getCommerceContext } from '@/lib/commerce-context';
 import { NOINDEX_ROBOTS } from '@/lib/seo';
 import { checkoutMethods } from '@/lib/payments';
+import { liveTracking } from '@/lib/tracking-config';
+import { TrackEvent } from '@/components/tracking/track-event';
 import { CheckoutForm } from '@/themes/modern-commerce/commerce/checkout-form';
 import { EmptyState, PageTitle } from '@/themes/modern-commerce/commerce/ui';
 import { ButtonLink } from '@/themes/modern-commerce/components/button';
@@ -37,6 +39,10 @@ export default async function CheckoutPage() {
 
   return (
     <div className="bg-sunken px-4 pt-6 pb-20 lg:px-20 lg:pt-10 lg:pb-24">
+      {liveTracking(store.mode, store.config.tracking) ? (
+        // 8.9d §6.2: begin_checkout once per checkout page view.
+        <TrackEvent name="begin_checkout" value_amount={cart.estimated_total_amount} currency={cart.currency} num_items={cart.items_count} />
+      ) : null}
       <CheckoutForm
         geo={geo}
         idempotencyKey={crypto.randomUUID()}

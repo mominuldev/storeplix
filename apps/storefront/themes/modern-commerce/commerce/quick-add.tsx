@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { quickAdd } from '@/app/actions/commerce';
+import { emitTrack } from '@/lib/tracking-events';
 import { Icon } from '../components/icon';
 import { notifyCartChanged } from './cart-badge';
 
@@ -22,6 +23,8 @@ export function QuickAddButton({ slug, name, className = '' }: { slug: string; n
         return;
       }
       if (r.ok) {
+        // 8.9d §6.2: add_to_cart after a successful add (no-op unless the shop's tracking runtime is mounted).
+        if (r.added) emitTrack({ name: 'add_to_cart', variant_id: r.added.variantId, quantity: r.added.quantity, value_amount: r.added.amount, currency: r.added.currency });
         setState({ tone: 'ok', text: 'Added to your bag' });
         notifyCartChanged(r.linesCount);
       } else setState({ tone: 'error', text: r.message });

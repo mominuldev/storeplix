@@ -19,6 +19,38 @@ import type {
   SupportTicketListMeta,
   SupportTicketMessage,
   SupportTicketSummary,
+  AiCreditLedgerEntry,
+  AiCreditLedgerFilters,
+  AiCreditsSummary,
+  AiGeneration,
+  AiGenerationFilters,
+  ApplyPhotoEditInput,
+  CatalogItem,
+  CatalogItemFilters,
+  CatalogItemListMeta,
+  CatalogSyncRun,
+  ChooseFeedAccountInput,
+  DisconnectIntegrationInput,
+  FeedAccountOption,
+  FeedOverview,
+  FeedProvider,
+  IntegrationCheck,
+  IntegrationOauthStart,
+  IntegrationProvider,
+  IntegrationSummary,
+  PhotoEditInput,
+  ProductDescriptionInput,
+  SaveIntegrationInput,
+  StoreIntegration,
+  TrackingBeaconInput,
+  TrackingEventFilters,
+  TrackingEventLogEntry,
+  TrackingEventStats,
+  TrackingProvider,
+  TrackingTestEventInput,
+  TrackingTestMode,
+  TrackingTestResult,
+  UpdateIntegrationSettingsInput,
   AssignInboxConversationInput,
   Conditional,
   InboxAssignee,
@@ -389,7 +421,7 @@ import { createAdminApi } from './admin';
 import { createImpersonationAuth } from './impersonation';
 import { ApiError, isErrorEnvelope } from './errors';
 import type { CourierAreaList, CourierAreaQuery, CourierConnectResult, CourierPickupStore, CourierTestResult, CourierWebhookSecret, MeResponse } from './models';
-import { couponListQuery, customerListQuery, filenameFromDisposition, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, inboxConversationQuery, inboxMessagesQuery, inboxSavedReplyQuery, helpSearchQuery, supportTicketQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, type ReturnListFilters } from './queries';
+import { aiCreditLedgerQuery, aiGenerationQuery, catalogItemQuery, couponListQuery, customerListQuery, filenameFromDisposition, helpSearchQuery, inboxConversationQuery, inboxMessagesQuery, inboxSavedReplyQuery, inventoryListQuery, locationListQuery, movementListQuery, orderListQuery, posCatalogQuery, posRegisterListQuery, posSaleListQuery, productListQuery, purchaseOrderListQuery, returnListQuery, shipmentListQuery, smsCreditLedgerQuery, smsLogQuery, stockCountLineListQuery, stockCountListQuery, stockTransferListQuery, supplierListQuery, supportTicketQuery, trackingEventQuery, type ReturnListFilters } from './queries';
 
 export interface ApiClientOptions {
   /**
@@ -1449,6 +1481,15 @@ export function createApiClient(options: ApiClientOptions) {
             headers: { 'Idempotency-Key': idempotencyKey },
           }),
       },
+      /**
+       * PHASE-8-9D §10 AI credits (tenant-level, shared by every AI tool). Read: `products.edit | integrations.manage |
+       * billing.view`; ledger `billing.view | integrations.manage`. No purchase in 8.9d (Q357).
+       */
+      aiCredits: {
+        get: () => request<AiCreditsSummary>('/billing/ai-credits'),
+        ledger: (filters: AiCreditLedgerFilters = {}) =>
+          listOf<AiCreditLedgerEntry, CursorMeta>('/billing/ai-credits/ledger', aiCreditLedgerQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
+      },
     },
 
     /**
@@ -2054,6 +2095,93 @@ export function createApiClient(options: ApiClientOptions) {
     },
 
     /**
+     * PHASE-8-9D integrations: tracking (Meta Pixel + CAPI, GA4, TikTok, GTM server), product feeds (Meta catalog,
+     * Google Merchant Center) and AI tools. Reads `integrations.manage | marketing.manage` (AI also `products.edit`);
+     * writes `integrations.manage`. `{provider}` is the snake_case value. Secrets are write-only (`credentials_hint`).
+     */
+    integrations: {
+      /** §4.1 every provider with its status (absent rows → `not_connected`). */
+      list: (storeId: string) => request<IntegrationSummary[]>(`${store(storeId)}/integrations`),
+      get: <P extends IntegrationProvider>(storeId: string, provider: P) =>
+        request<StoreIntegration<P>>(`${store(storeId)}/integrations/${enc(provider)}`),
+      /**
+       * §4.2 connect or replace (PUT). Omitted credential fields keep the stored value. 422 `integration_id_invalid` /
+       * `integration_code_pasted` (details.field) / `integration_credentials_invalid`; 402 `feature_not_in_plan`;
+       * 409 `revision_conflict`. Feeds connect through `oauthStart`, not PUT (422 `integration_setup_required`).
+       */
+      save: <P extends IntegrationProvider>(storeId: string, provider: P, input: SaveIntegrationInput<P>) =>
+        request<StoreIntegration<P>>(`${store(storeId)}/integrations/${enc(provider)}`, { method: 'PUT', body: input }),
+      /** §4.2 settings only (partial) with `revision`. */
+      update: <P extends IntegrationProvider>(storeId: string, provider: P, input: UpdateIntegrationSettingsInput<P>) =>
+        request<StoreIntegration<P>>(`${store(storeId)}/integrations/${enc(provider)}`, { method: 'PATCH', body: input }),
+      /** §4.6 typed `DISCONNECT` (AI tools: "Turn off" uses the same call). 422 `confirmation_mismatch`. */
+      disconnect: (storeId: string, provider: IntegrationProvider, input: DisconnectIntegrationInput = { confirm: 'DISCONNECT' }) =>
+        request<StoreIntegration>(`${store(storeId)}/integrations/${enc(provider)}/disconnect`, { method: 'POST', body: { confirm: input.confirm } }),
+      /** §4.5 live connection check (10/min). */
+      verify: (storeId: string, provider: IntegrationProvider) =>
+        request<IntegrationCheck>(`${store(storeId)}/integrations/${enc(provider)}/verify`, { method: 'POST' }),
+      tracking: {
+        /** §5.8 synchronous test event (limiter `integration-test` 10/min). */
+        sendTest: (storeId: string, provider: TrackingProvider, input: TrackingTestEventInput = {}) =>
+          request<TrackingTestResult>(`${store(storeId)}/integrations/${enc(provider)}/test-event`, { method: 'POST', body: input }),
+        /** §5.8 signed storefront link, test mode for 30 minutes (Meta, TikTok). */
+        startTestMode: (storeId: string, provider: TrackingProvider) =>
+          request<TrackingTestMode>(`${store(storeId)}/integrations/${enc(provider)}/test-mode`, { method: 'POST' }),
+        /** §5.6 event log, newest first, 50 per page. */
+        events: (storeId: string, provider: TrackingProvider, filters: TrackingEventFilters = {}) =>
+          listOf<TrackingEventLogEntry, CursorMeta>(`${store(storeId)}/integrations/${enc(provider)}/events`, trackingEventQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
+        /** §5.7 per-event counts (7 or 30 days). */
+        stats: (storeId: string, provider: TrackingProvider, days: 7 | 30 = 7) =>
+          request<TrackingEventStats>(`${store(storeId)}/integrations/${enc(provider)}/stats`, { query: { days } }),
+      },
+      feeds: {
+        /** §7.1 → redirect the browser to `authorize_url` (state valid 10 min). */
+        oauthStart: (storeId: string, provider: FeedProvider) =>
+          request<IntegrationOauthStart>(`${store(storeId)}/integrations/${enc(provider)}/oauth/start`, { method: 'POST' }),
+        /** §7.2 catalogs (Meta) or Merchant Center accounts (Google) the token can use. */
+        accounts: (storeId: string, provider: FeedProvider) =>
+          request<FeedAccountOption[]>(`${store(storeId)}/integrations/${enc(provider)}/accounts`),
+        chooseAccount: (storeId: string, provider: FeedProvider, input: ChooseFeedAccountInput) =>
+          request<StoreIntegration<FeedProvider>>(`${store(storeId)}/integrations/${enc(provider)}/account`, { method: 'PUT', body: input }),
+        overview: (storeId: string, provider: FeedProvider) =>
+          request<FeedOverview>(`${store(storeId)}/integrations/${enc(provider)}/feed`),
+        /** §7.4 "Sync now" → 202 run; 409 `feed_sync_in_progress`; limiter 1 per 10 min. */
+        syncNow: (storeId: string, provider: FeedProvider) =>
+          request<CatalogSyncRun>(`${store(storeId)}/integrations/${enc(provider)}/sync`, { method: 'POST' }),
+        runs: (storeId: string, provider: FeedProvider, cursor?: string) =>
+          listOf<CatalogSyncRun, CursorMeta>(`${store(storeId)}/integrations/${enc(provider)}/sync-runs`, { cursor: cursor || undefined }, { next_cursor: null, prev_cursor: null, per_page: 50 }),
+        items: (storeId: string, provider: FeedProvider, filters: CatalogItemFilters = {}) =>
+          listOf<CatalogItem, CatalogItemListMeta>(`${store(storeId)}/integrations/${enc(provider)}/items`, catalogItemQuery(filters), {
+            next_cursor: null, prev_cursor: null, per_page: 50, counts: { total: 0, approved: 0, in_review: 0, with_issues: 0, not_sent: 0 },
+          }),
+        /** §7.6 Google only: write the verification meta tag, verify, claim. 409 `store_not_live`, 422 `website_claim_failed`. */
+        claimWebsite: (storeId: string) =>
+          request<StoreIntegration<'google_merchant'>>(`${store(storeId)}/integrations/google_merchant/claim-website`, { method: 'POST' }),
+      },
+    },
+
+    /**
+     * PHASE-8-9D §11 AI tools (store-scoped; `products.edit`). Jobs are queued: 202 + poll `generation` every
+     * AI_GENERATION_POLL_MS. `idempotencyKey` once per click. 402 `ai_credits_exhausted`, 409 `ai_integration_off`.
+     */
+    ai: {
+      describeProduct: (storeId: string, input: ProductDescriptionInput, idempotencyKey: string) =>
+        request<AiGeneration>(`${store(storeId)}/ai/product-descriptions`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      editPhoto: (storeId: string, input: PhotoEditInput, idempotencyKey: string) =>
+        request<AiGeneration>(`${store(storeId)}/ai/photo-edits`, { method: 'POST', body: input, headers: { 'Idempotency-Key': idempotencyKey } }),
+      generation: (storeId: string, id: string, opts?: Pick<RequestOptions, 'signal'>) =>
+        request<AiGeneration>(`${store(storeId)}/ai/generations/${enc(id)}`, { signal: opts?.signal }),
+      generations: (storeId: string, filters: AiGenerationFilters = {}) =>
+        listOf<AiGeneration, CursorMeta>(`${store(storeId)}/ai/generations`, aiGenerationQuery(filters), { next_cursor: null, prev_cursor: null, per_page: 50 }),
+      /** "Save to product": succeeded photo edit → applied. 409 `ai_generation_not_applicable`. */
+      applyPhoto: (storeId: string, id: string, input: ApplyPhotoEditInput) =>
+        request<AiGeneration>(`${store(storeId)}/ai/photo-edits/${enc(id)}/apply`, { method: 'POST', body: input }),
+      /** Restore the original while it is kept (30 days). */
+      undoPhoto: (storeId: string, id: string) =>
+        request<AiGeneration>(`${store(storeId)}/ai/photo-edits/${enc(id)}/undo`, { method: 'POST' }),
+    },
+
+    /**
      * PHASE-8-8E Inbox (`/inbox`). Every call needs `inbox.manage` unless noted. GETs marked "conditional" take the last
      * `etag` and resolve `{ status: 'not_modified' }` on 304 (poll with TanStack Query `refetchInterval`, INBOX_POLL_MS).
      */
@@ -2320,6 +2448,14 @@ export function createApiClient(options: ApiClientOptions) {
        * PHASE-8-8E §9.2 website chat (server-to-server only, from the storefront route handlers). `session` is the value
        * of the httpOnly `sp_chat` cookie; never expose it to browser JS. 404 `inbox_unavailable` when the channel is off.
        */
+      /**
+       * PHASE-8-9D §6.2 browser events from the storefront beacon route (server-to-server only) → 202. ≤ 20 events;
+       * limiter `tracking-beacon`. Never block a page on it.
+       */
+      tracking: {
+        events: (host: string, key: string, input: TrackingBeaconInput, opts?: SfOpts) =>
+          request<void>('/storefront/tracking/events', { ...sfReq(host, key, opts), method: 'POST', body: input }),
+      },
       inbox: {
         session: (host: string, key: string, session: string, opts?: SfOpts) =>
           request<InboxWidgetSession>('/storefront/inbox/session', sfReq(host, key, opts, { 'X-Inbox-Session': session })),

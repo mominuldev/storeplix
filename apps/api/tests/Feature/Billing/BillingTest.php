@@ -22,9 +22,9 @@ class BillingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.*.code', ['free', 'starter', 'growth'])
             ->assertJsonPath('data.1.price_amount', 49900)
-            ->assertJsonPath('data.1.limits', ['orders_per_month' => 500, 'staff_seats' => 5, 'products' => 1000, 'courier_connections' => null, 'sms_per_month' => 2000, 'custom_domains' => 2, 'campaign_sms_per_month' => 1000, 'campaign_emails_per_month' => 5000]) // PHASE-8-5 P85-13
+            ->assertJsonPath('data.1.limits', ['orders_per_month' => 500, 'staff_seats' => 5, 'products' => 1000, 'courier_connections' => null, 'sms_per_month' => 2000, 'custom_domains' => 2, 'campaign_sms_per_month' => 1000, 'campaign_emails_per_month' => 5000, 'ai_credits_per_month' => 300]) // PHASE-8-5 P85-13; PHASE-8-9D P89D-33
             ->assertJsonPath('data.2.limits.staff_seats', 15)
-            ->assertJsonCount(11, 'data.2.features'); // PHASE-8-8B: + purchasing
+            ->assertJsonCount(13, 'data.2.features'); // PHASE-8-8B: + purchasing; PHASE-8-9D: + product_feeds, server_side_tagging
     }
 
     public function test_register_starts_a_14_day_starter_trial(): void

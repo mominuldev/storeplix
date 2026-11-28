@@ -1,11 +1,12 @@
 import { isApiError } from '@storeplix/api-client';
 import type { BillingInvoiceSummary, GatewayProvider } from '@storeplix/types';
-import { cn, Dialog, ProviderLogo } from '@storeplix/ui';
+import { cn, Dialog } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { errorMessage } from '../../catalog/states';
 import { api } from '../../lib/api';
 import { isSafeRedirect, money, newIdempotencyKey, providerLabel } from '../../plan/billing';
+import { GatewayLogo } from '../../payments/GatewayLogo';
 
 // §8.2 Pay dialog: provider from `meta.providers`, amount and invoice number → POST /billing/invoices/{id}/pay →
 // window.location.assign(redirect_url) (https only, or the local fake page in dev). 502 → retry; 422
@@ -74,7 +75,7 @@ export function PayDialog({ invoice, providers, onClose }: { invoice: BillingInv
                 )}
               >
                 <input type="radio" name="billing-provider" value={p} checked={provider === p} onChange={() => setSelected(p)} className="size-4 accent-brand-600" />
-                <ProviderLogo provider={p} size="sm" />
+                <GatewayLogo provider={p} size="sm" />
                 <span className="text-body font-medium text-text-primary">{providerLabel[p]}</span>
               </label>
             ))}

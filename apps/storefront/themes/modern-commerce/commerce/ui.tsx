@@ -138,7 +138,7 @@ export function deliveryDays(min: number | null, max: number | null): string {
   return min === max ? `${min} ${min === 1 ? 'day' : 'days'}` : `${min}–${max} days`;
 }
 
-export const PAYMENT_METHOD_LABELS = { cod: 'Cash on delivery', bkash: 'bKash', sslcommerz: 'Card' } as const;
+export const PAYMENT_METHOD_LABELS = { cod: 'Cash on delivery', bkash: 'bKash', sslcommerz: 'Card', nagad: 'Nagad' } as const;
 
 /** Empty / no-results block (States pattern, Figma 148:34032 "No results"): icon disc, title, hint, action. */
 export function EmptyState({ icon = 'search', title, children, action }: { icon?: 'search' | 'bag' | 'tag'; title: string; children?: ReactNode; action?: ReactNode }) {

@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { GatewayProvider, LaunchItemKey } from '@storeplix/types';
-import { Badge, Button, cn, ProviderLogo, Toggle } from '@storeplix/ui';
+import { Badge, Button, cn, Toggle } from '@storeplix/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronRight, ShieldCheck, ShoppingCart } from 'lucide-react';
 import { useState } from 'react';
@@ -20,6 +20,7 @@ import { storeKey } from '../stores/useTenantStore';
 import { FormAlert } from './AuthShell';
 import { blockerLinks } from './launch';
 import { OnboardingCard, OnboardingFrame, PreviewOption, previewCardClass } from './OnboardingFrame';
+import { GatewayLogo } from '../payments/GatewayLogo';
 
 // Figma Merchant Onboarding · 07 Get paid 52:564. COD card with toggle (`checkout.cod_enabled`); 5b-2: "Collect
 // delivery charge in advance" (`checkout.cod_advance`) once a gateway is connected and on at checkout; bKash and
@@ -101,7 +102,7 @@ function GetPaidForm({ initialCod, initialAdvance }: { initialCod: boolean; init
             />
           )}
           {usable.map((p) => (
-            <PreviewOption key={p} selected={false} title={gatewayMeta[p].checkoutLabel} hint={gatewayMeta[p].checkoutHint} trailing={<ProviderLogo provider={p} size="sm" />} />
+            <PreviewOption key={p} selected={false} title={gatewayMeta[p].checkoutLabel} hint={gatewayMeta[p].checkoutHint} trailing={<GatewayLogo provider={p} size="sm" />} />
           ))}
           {!cod && usable.length === 0 && <p className="text-caption text-danger">Turn on cash on delivery or connect a gateway so customers can pay.</p>}
           {usable.length === 0 && cod && <p className="text-caption text-text-muted">Connected gateways show here too.</p>}
@@ -167,7 +168,7 @@ function GetPaidForm({ initialCod, initialAdvance }: { initialCod: boolean; init
               const connected = isConnected(a);
               return (
                 <li key={p} className="flex items-center gap-3.5 rounded-lg border border-border-default bg-surface-card p-4">
-                  <ProviderLogo provider={p} size="lg" className="rounded-control" />
+                  <GatewayLogo provider={p} size="lg" className="rounded-control" />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="flex flex-wrap items-center gap-2 text-body font-semibold text-text-primary">
                       {gatewayMeta[p].name}

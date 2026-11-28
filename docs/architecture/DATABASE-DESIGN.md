@@ -1446,6 +1446,74 @@ IX(tenant_id, status, last_message_at DESC) · IX(status, waiting_since) · IX(a
 - Permission catalogue (code): `support.manage` (Owner, Admin). Platform permissions (code): `manage_help_content`
   (super_admin, support), `manage_support` (super_admin, support, billing).
 - `audit_logs` action catalogue gains `HELP_AUDIT_ACTIONS` and `SUPPORT_AUDIT_ACTIONS` (`packages/types`).
+## 5.16 Phase 8.9d integrations: tracking, product feeds, Nagad, AI (PHASE-8-9D-CONTRACT §3, ADR 0030, migrations `2026_12_15_*`)
+Nine new RLS tables (**+9** to `RlsTables::TENANT`: 112 after Phase 8.9d when it follows 8.8e alone; whichever of 8.9d
+and the Help center merges second recomputes the docblock count). Part A `000100`–`000600`, part B `000700`–`001000`.
+Section number 5.16 leaves 5.15 to the parallel Help center contract. Secrets live only in encrypted `credentials`
+columns (`IntegrationCredentials`, rotated by `integration:rotate-key`). Retention: P89D-18.
+
+### store_integrations [S] (`000100`)
+id · tenant_id · store_id · provider varchar(24) `CHECK IN ('meta_pixel','ga4','tiktok_pixel','gtm_server',
+'meta_catalog','google_merchant','ai_writer','ai_photos')` · status `CHECK IN ('setup_required','connected',
+'needs_attention','error','disconnected')` · settings jsonb (typed per provider in code) · credentials text null
+(encrypted; tokens, API secrets, OAuth access/refresh tokens) · credentials_hint jsonb default `{}` (`••••` + last 4 per
+field) · attention jsonb default `[]` · token_expires_at null · last_verified_at null · last_error_code varchar(32) null ·
+connected_by null FK users SET NULL · connected_at null · disconnected_at null · revision int default 1 · timestamps.
+**U(store_id, provider)** · IX(tenant_id, provider, status). Absent row = `not_connected`.
+### tracking_events [S] (`000200`; outbox + log)
+id · tenant_id · store_id · store_integration_id FK (tenant_id, …) CASCADE · provider · event_name varchar(16) ·
+provider_event_name varchar(40) null · event_id varchar(64) · channel `CHECK IN ('browser','server')` · source
+`CHECK IN ('browser_mirror','order','refund','test')` · test bool · order_id / payment_id char(26) null (soft refs) ·
+page_path varchar(300) null · value_amount bigint null · currency char(3) null · status `CHECK IN ('pending','retrying',
+'delivered','failed','skipped')` · skip_reason varchar(24) null · attempts smallint · next_attempt_at · last_attempt_at ·
+http_status smallint null · error_code varchar(24) null · payload jsonb null (hashed user data, IP, UA; nulled when
+final) · delivered_at null · timestamps. **U(store_integration_id, event_id, channel)** · IX(tenant_id, store_id,
+store_integration_id, created_at DESC, id DESC) · partial IX(next_attempt_at) WHERE status IN ('pending','retrying') ·
+IX(created_at). Prune: delivered/skipped 7 days, failed 30 days.
+### tracking_daily_stats [S] (`000300`)
+id · tenant_id · store_id · store_integration_id FK CASCADE · date (store tz) · event_name · browser_count ·
+server_sent · server_failed · server_skipped int default 0 · last_at · **U(store_integration_id, date, event_name)**
+(upsert with increments). 90 days.
+### order_tracking_contexts [S] (`000400`)
+id · tenant_id · store_id · order_id **U** FK (tenant_id, order_id) → orders CASCADE · consent `CHECK IN ('granted',
+'denied','not_required')` · fbp · fbc · ttp · ttclid · ga_client_id · ga_session_id (varchar, null) · client_ip
+varchar(45) null · user_agent varchar(400) null · created_at. Only for stores with a tracking integration; IP/UA nulled
+after 90 days, row deleted after 180 days.
+### catalog_sync_runs [S] (`000500`)
+id · tenant_id · store_id · store_integration_id FK CASCADE · kind `CHECK IN ('full','delta','manual')` · trigger
+`CHECK IN ('schedule','price_change','stock_change','product_change','manual','connect')` · status `CHECK IN ('running',
+'done','partial','failed')` · items_sent · items_failed · items_deleted · error_code null · started_at · finished_at null.
+IX(tenant_id, store_integration_id, started_at DESC). 90 days.
+### catalog_items [S] (`000600`)
+id · tenant_id · store_id · store_integration_id FK CASCADE · product_id · variant_id char(26) (soft refs, so deleted
+products can be removed remotely) · status `CHECK IN ('pending','synced','error','excluded','deleting')` · review_status
+null `CHECK IN ('approved','in_review','limited','disapproved')` · excluded_reason varchar(20) null · issues jsonb
+default `[]` · content_hash char(64) null · dirty_at null · last_synced_at null · timestamps.
+**U(store_integration_id, variant_id)** · IX(tenant_id, store_integration_id, status) · partial
+IX(store_integration_id, dirty_at) WHERE dirty_at IS NOT NULL. Deleted on disconnect.
+### ai_credit_accounts [T] (`000700`)
+id · tenant_id **U** · bonus_balance int default 0 `CHECK >= 0` · last_adjusted_at null · timestamps. Row lock serialises
+all AI charging of a tenant. The allowance is not stored: used = Σ allowance consumes − refunds of the period.
+### ai_credit_ledger [T] (`000700`; append-only, SELECT + INSERT policies only)
+id · tenant_id · type `CHECK IN ('consume','refund','admin_adjust')` · source null `CHECK IN ('allowance','bonus')` ·
+credits int signed (consume < 0, refund > 0, admin_adjust ≠ 0) · bonus_after int `CHECK >= 0` · period char(7) ·
+ai_generation_id char(26) null (soft ref) · reason varchar(500) null · actor_type · actor_user_id null FK users SET NULL ·
+idempotency_key varchar(100) null · request_hash char(64) null · created_at. Partial **U(ai_generation_id, type) WHERE
+ai_generation_id IS NOT NULL** · partial **U(tenant_id, idempotency_key) WHERE type = 'admin_adjust'** ·
+IX(tenant_id, period, type) · IX(tenant_id, created_at DESC, id DESC).
+### ai_generations [S] (`000800`)
+id · tenant_id · store_id · kind `CHECK IN ('product_description','photo_edit')` · status `CHECK IN ('queued','running',
+'succeeded','failed','applied','undone')` · product_id null FK SET NULL · source_media_id / result_media_id /
+original_media_id null FK media SET NULL · input jsonb · output jsonb null (sanitized variants; nulled after 90 days) ·
+credits smallint · charged_from null · refunded bool · provider varchar(24) · model varchar(64) null · usage jsonb null ·
+flags jsonb · error_code null · requested_by null FK users SET NULL · idempotency_key varchar(64) · request_hash char(64) ·
+finished_at · applied_at · undone_at · original_kept_until null · timestamps. **U(store_id, requested_by,
+idempotency_key)** · IX(tenant_id, store_id, kind, created_at DESC, id DESC).
+### Changes to existing tables (`000900`, `001000`)
+- `payment_gateway_accounts.provider`, `payments.provider`, `webhook_events.provider`: + `nagad` (where a CHECK exists).
+- `media.purpose` + `ai_photo` (private until applied; no variants; never a library purpose).
+- `plans` data: features `product_feeds` (Starter, Growth), `server_side_tagging` (Growth); limit `ai_credits_per_month`
+  Free 20, Starter 300, Growth 1,500.
 
 ## 6. Later-phase tables (Figma-only modules) — brief
 All tenant-owned, same conventions. Designed now so core tables don't need breaking changes.

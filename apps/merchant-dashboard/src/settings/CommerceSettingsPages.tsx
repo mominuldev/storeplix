@@ -1,7 +1,7 @@
 import type { CustomerSmsEvent, OrderStatus, StoreSettings, UpdateStoreSettingsInput } from '@storeplix/types';
 import { isApiError } from '@storeplix/api-client';
 import type { PaymentGatewayAccount } from '@storeplix/types';
-import { Badge, Button, buttonVariants, Chip, cn, Input, OrderStatusBadge, orderStatusMeta, ProviderLogo, Spinner, Toggle } from '@storeplix/ui';
+import { Badge, Button, buttonVariants, Chip, cn, Input, OrderStatusBadge, orderStatusMeta, Spinner, Toggle } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { CreditCard, LifeBuoy, Mail, ReceiptText, Shield, Truck } from 'lucide-react';
 import { Link } from 'react-router';
@@ -18,6 +18,7 @@ import { useSmsTemplates } from '../sms/queries';
 import { canOpenSms } from '../sms/sms';
 import { smsPreview, useSaveSettings, useStoreSettings, vatIncluded } from './commerceSettings';
 import { SettingsCard, SettingsToggleRow } from './SettingsLayout';
+import { GatewayLogo } from '../payments/GatewayLogo';
 
 // Settings → Payments & checkout 60:14865, Notifications 60:15863, Taxes & invoices 60:16858 (Phase 5a parts).
 
@@ -155,7 +156,7 @@ export function PaymentsSettingsPage() {
                   <ul className="flex flex-col gap-2">
                     {connected.map((a) => (
                       <li key={a.provider} className="flex items-center gap-3 rounded-md bg-surface-subtle px-3 py-2">
-                        <ProviderLogo provider={a.provider} size="sm" />
+                        <GatewayLogo provider={a.provider} size="sm" />
                         <span className="min-w-0 flex-1 truncate text-body text-text-primary">{gatewayMeta[a.provider].checkoutLabel}</span>
                         <Toggle
                           label={`${gatewayMeta[a.provider].short} at checkout`}
@@ -191,7 +192,7 @@ export function PaymentsSettingsPage() {
                     const st = integrationStatusMeta(a?.status ?? 'not_connected');
                     return (
                       <li key={p} className="flex items-center gap-3.5 py-3">
-                        <ProviderLogo provider={p} size="md" />
+                        <GatewayLogo provider={p} size="md" />
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="flex items-center gap-2 text-body font-semibold text-text-primary">
                             {gatewayMeta[p].name}

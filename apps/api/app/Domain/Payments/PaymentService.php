@@ -25,6 +25,7 @@ use App\Domain\Shared\Http\ApiException;
 use App\Domain\Shared\Support\Money;
 use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Support\AuditLogger;
+use App\Domain\Tracking\TrackingHooks;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -712,6 +713,7 @@ class PaymentService
             OrderTimeline::record($order, 'refund', $actor, $refund->note, ['amount' => $amount, 'method' => Payment::METHOD_GATEWAY, 'provider' => $refund->provider, 'payment_id' => $refund->id]
                 + ($return !== null ? ['return_id' => $return->id, 'return_number' => $return->number] : []));
             $this->audit->log('order.refunded', $order, ['amount' => $amount, 'method' => Payment::METHOD_GATEWAY], $actor, null, $actor === null);
+            TrackingHooks::refund($order->id, $refund->id, $amount); // PHASE-8-9D §5.4 (GA4 / GTM, after commit)
 
             return false;
         });

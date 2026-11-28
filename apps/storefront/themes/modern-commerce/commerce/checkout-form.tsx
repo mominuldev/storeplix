@@ -93,7 +93,8 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
   );
 }
 
-const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: 'wallet', bkash: 'phone', sslcommerz: 'lock' };
+// nagad: placeholder icon until part B (PHASE-8-9D §9.6) brings the theme's payment badge.
+const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: 'wallet', bkash: 'phone', sslcommerz: 'lock', nagad: 'phone' };
 
 function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value, disabled = false }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string; disabled?: boolean }) {
   return (

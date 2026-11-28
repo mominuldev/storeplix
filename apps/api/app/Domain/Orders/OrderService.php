@@ -28,6 +28,7 @@ use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\Authorization\PermissionSet;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Themes\StoreThemeService;
+use App\Domain\Tracking\TrackingHooks;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -383,6 +384,7 @@ class OrderService
             OrderTimeline::record($o, 'refund', $user, $payment->note, ['amount' => $payment->amount, 'method' => $payment->method, 'payment_id' => $payment->id] + ($return !== null ? ['return_id' => $return->id, 'return_number' => $return->number] : []));
             $this->audit->log('order.refunded', $o, ['amount' => $payment->amount, 'method' => $payment->method]
                 + ($payment->pos_session_id !== null ? ['pos_session_id' => $payment->pos_session_id] : []), $user); // P88D-23
+            TrackingHooks::refund($o->id, $payment->id, (int) $payment->amount); // PHASE-8-9D §5.4 (GA4 / GTM, after commit)
 
             return $payment;
         });

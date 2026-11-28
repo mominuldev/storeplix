@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { cookies } from 'next/headers';
 import { requireCurrentStore } from '@/lib/store';
 import { canonicalOrigin, isIndexable, NOINDEX_ROBOTS } from '@/lib/seo';
 import { sanitizeImageUrl } from '@/lib/sanitize';
@@ -11,6 +12,9 @@ import { PreviewBridge } from '@/components/preview-bridge';
 import { JsonLd } from '@/components/json-ld';
 import { manifestIcons, storeIconsMetadata } from '@/lib/store-icons';
 import { ChatWidget } from '@/components/inbox/chat-widget';
+import { Tracking } from '@/components/tracking/tracking';
+import { liveTracking } from '@/lib/tracking-config';
+import { CONSENT_COOKIE } from '@/lib/tracking-consent';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { host, config, mode } = await requireCurrentStore();
@@ -32,6 +36,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = config.seo.title || config.store.name;
   const description = config.seo.description ?? undefined;
   const shareImage = config.seo.og_image_url ?? sanitizeImageUrl(config.store.logo_url);
+  // 8.9d §6.1 / §7.6: Storeplix writes the Google site-verification meta from a pattern-validated token (never HTML).
+  const googleVerification = liveTracking(mode, config.tracking)?.site_verification.google ?? null;
   return {
     metadataBase: new URL(origin),
     title: { default: title, template: `%s · ${config.store.name}` },
@@ -49,6 +55,7 @@ export async function generateMetadata(): Promise<Metadata> {
     robots: isIndexable(mode, config.seo) ? undefined : NOINDEX_ROBOTS,
     icons,
     manifest,
+    ...(googleVerification ? { verification: { google: googleVerification } } : {}),
   };
 }
 
@@ -62,6 +69,9 @@ export default async function StoreLayout({ children }: { children: ReactNode })
   }
 
   const embedded = mode === 'preview' && (await isEmbeddedPreview());
+  const tracking = liveTracking(mode, config.tracking);
+  // Cookies are read only when the shop has tracking (P89D-2: nothing changes otherwise).
+  const consentCookie = tracking ? ((await cookies()).get(CONSENT_COOKIE)?.value ?? null) : null;
   const { Layout } = theme;
   return (
     <>
@@ -101,6 +111,8 @@ export default async function StoreLayout({ children }: { children: ReactNode })
           }}
         />
       ) : null}
+      {/* 8.9d §6.1: base tags, consent bar and beacon only on a live store with tracking on (P89D-2, S349). */}
+      {tracking ? <Tracking tracking={tracking} consentCookie={consentCookie} /> : null}
     </>
   );
 }

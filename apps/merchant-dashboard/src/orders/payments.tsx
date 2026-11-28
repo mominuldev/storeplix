@@ -1,6 +1,6 @@
 import { isApiError } from '@storeplix/api-client';
 import type { GatewayProvider, Order, Payment, PaymentLink, PaymentLinkAmountKind } from '@storeplix/types';
-import { Badge, Button, cn, copyText, Dialog, Modal, MoneyInput, PercentInput, ProviderLogo, Select, Toggle } from '@storeplix/ui';
+import { Badge, Button, cn, copyText, Dialog, Modal, MoneyInput, PercentInput, Select, Toggle } from '@storeplix/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Check, Copy, CreditCard, Link2, Truck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -29,6 +29,7 @@ import { usePaymentGateways, usePaymentInvalidate } from '../payments/queries';
 import { useStoreSettings } from '../settings/commerceSettings';
 import { refundAmountError } from './transitions';
 import { AdvanceWhy } from '../fraud/OrderGuard';
+import { GatewayLogo } from '../payments/GatewayLogo';
 
 // Order detail · Payments card 33:3676 + Ask for an advance 144:46081 (PHASE-5B §10, P5B-22, P5B-24). Online charges
 // with TrxID, links, refunds; "Refund" on a charge row → gateway refund (O A); active-link banner with Copy / Resend /
@@ -71,7 +72,7 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
         return (
           <Row
             key={p.id}
-            icon={<ProviderLogo provider={provider} size="sm" />}
+            icon={<GatewayLogo provider={provider} size="sm" />}
             title={purposeLabel[p.purpose] ?? 'Paid online'}
             sub={[gatewayMeta[provider].short, p.provider_trx_id ? `TrxID ${p.provider_trx_id}` : null, dateTime(p.created_at), p.refunded_amount > 0 ? `${formatBdt(p.refunded_amount)} refunded` : null].filter(Boolean).join(' · ')}
             amount={formatBdt(p.amount)}
@@ -132,7 +133,7 @@ export function PaymentsCardBody({ order, onRefundCharge }: { order: Order; onRe
           key={r.id}
           icon={
             r.method === 'gateway' && isGateway(r.provider) ? (
-              <ProviderLogo provider={r.provider} size="sm" />
+              <GatewayLogo provider={r.provider} size="sm" />
             ) : (
               <IconTile>
                 <CreditCard aria-hidden />

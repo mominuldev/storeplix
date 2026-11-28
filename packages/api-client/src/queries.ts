@@ -27,6 +27,10 @@ import type {
   SupportTicketFilters,
   InboxMessagesQuery,
   InboxSavedReplyFilters,
+  AiCreditLedgerFilters,
+  AiGenerationFilters,
+  CatalogItemFilters,
+  TrackingEventFilters,
 } from '@storeplix/types';
 
 type Query = Record<string, string | number | undefined>;
@@ -320,4 +324,42 @@ export function helpSearchQuery(f: HelpSearchFilters): Query {
 /** PHASE-8-9C §8.2 My tickets: tab (default all), q = subject or `T-1234` / `1234`. */
 export function supportTicketQuery(f: SupportTicketFilters = {}): Query {
   return { 'filter[tab]': f.tab && f.tab !== 'all' ? f.tab : undefined, 'filter[q]': text(f.q), page: f.page, per_page: f.per_page };
+}
+
+/** PHASE-8-9D §5.6 tracking event log: comma lists; `since` ISO time (default server-side now − 7 days). */
+export function trackingEventQuery(f: TrackingEventFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[event]': list(f.event),
+    'filter[channel]': f.channel || undefined,
+    'filter[test]': f.test === undefined ? undefined : f.test ? 1 : 0,
+    'filter[since]': f.since || undefined,
+    cursor: f.cursor || undefined,
+  };
+}
+
+/** PHASE-8-9D §7.5 feed items. */
+export function catalogItemQuery(f: CatalogItemFilters = {}): Query {
+  return {
+    'filter[status]': list(f.status),
+    'filter[review_status]': list(f.review_status),
+    'filter[has_issues]': f.has_issues === undefined ? undefined : f.has_issues ? 1 : 0,
+    q: text(f.q),
+    cursor: f.cursor || undefined,
+  };
+}
+
+/** PHASE-8-9D §11.4 AI generation history. */
+export function aiGenerationQuery(f: AiGenerationFilters = {}): Query {
+  return {
+    'filter[kind]': f.kind || undefined,
+    'filter[status]': list(f.status),
+    'filter[product_id]': f.product_id || undefined,
+    cursor: f.cursor || undefined,
+  };
+}
+
+/** PHASE-8-9D §10.3 AI credit ledger. */
+export function aiCreditLedgerQuery(f: AiCreditLedgerFilters = {}): Query {
+  return { 'filter[type]': list(f.type), cursor: f.cursor || undefined };
 }

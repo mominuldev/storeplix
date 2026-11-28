@@ -16,4 +16,6 @@ enum Feature: string
     case ProfitReports = 'profit_reports';
     case ApiWebhooks = 'api_webhooks';
     case Purchasing = 'purchasing'; // PHASE-8-8B §2.2 (Starter, Growth)
+    case ProductFeeds = 'product_feeds'; // PHASE-8-9D P89D-40 (Starter, Growth)
+    case ServerSideTagging = 'server_side_tagging'; // PHASE-8-9D P89D-40 (Growth)
 }

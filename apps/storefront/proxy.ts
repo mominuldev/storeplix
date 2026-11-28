@@ -13,6 +13,7 @@ import { isLocalDevHost } from './lib/seo';
 import { STOREFRONT_PATH_HEADER, redirectablePath } from './lib/primary-host';
 import { isHostSuspended, needsSuspensionCheck } from './lib/suspension';
 import { UNAVAILABLE_HEADERS, UNAVAILABLE_STATUS, unavailableHtml } from './lib/unavailable';
+import { TEST_MODE_COOKIE, TEST_MODE_MAX_AGE, TEST_MODE_PARAM, sanitizeTestToken } from './lib/tracking-context';
 
 /**
  * Tenant resolution edge: normalize the request host, reject malformed hosts with 400, and hand
@@ -62,6 +63,9 @@ export function routeRequest(request: NextRequest): NextResponse {
 
   if (request.nextUrl.searchParams.has(PREVIEW_PARAM) && (request.method === 'GET' || request.method === 'HEAD')) {
     return previewRedirect(request, host);
+  }
+  if (request.nextUrl.searchParams.has(TEST_MODE_PARAM) && (request.method === 'GET' || request.method === 'HEAD')) {
+    return trackingTestRedirect(request, host);
   }
 
   const requestHeaders = new Headers(request.headers);
@@ -134,6 +138,34 @@ function previewRedirect(request: NextRequest, host: string) {
     if (request.cookies.has(PREVIEW_COOKIE)) res.cookies.delete(PREVIEW_COOKIE);
     if (request.cookies.has(EMBED_COOKIE)) res.cookies.delete(EMBED_COOKIE);
     setFramingHeaders(res, false);
+  }
+  return res;
+}
+
+/**
+ * Tracking test mode (PHASE-8-9D §5.8, §6.3): `?sp_test=<signed token>` from the merchant's "Open shop in test mode"
+ * becomes the httpOnly `sp_track_test` cookie (30 min) and the visitor is redirected without the param, with no
+ * Referer. The beacon route forwards it as `context.test_token`; the API verifies the signature. Garbage or empty
+ * ends test mode.
+ */
+function trackingTestRedirect(request: NextRequest, host: string) {
+  const token = sanitizeTestToken(request.nextUrl.searchParams.get(TEST_MODE_PARAM));
+  const target = request.nextUrl.clone();
+  target.searchParams.delete(TEST_MODE_PARAM);
+  const res = NextResponse.redirect(target, 307);
+  res.headers.set('Cache-Control', 'private, no-store');
+  res.headers.set('Referrer-Policy', 'no-referrer');
+  setFramingHeaders(res, false);
+  if (token) {
+    res.cookies.set(TEST_MODE_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production' && !isLocalDevHost(host),
+      sameSite: 'lax',
+      path: '/',
+      maxAge: TEST_MODE_MAX_AGE,
+    });
+  } else if (request.cookies.has(TEST_MODE_COOKIE)) {
+    res.cookies.delete(TEST_MODE_COOKIE);
   }
   return res;
 }

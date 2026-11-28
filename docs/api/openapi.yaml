@@ -1,8 +1,37 @@
 openapi: 3.1.0
 info:
   title: Store Plix API
-  version: 1.26.0
+  version: 1.27.0
   description: |
+    1.27.0 (2026-11-28, Phase 8.9d integrations — tracking, product feeds, Nagad, AI; PHASE-8-9D-CONTRACT.md, ADR 0030;
+    Q330–Q369 defaults accepted, Q346 and Q358 open). Follows 1.26.0 (the
+    Help center contract). New tag integrations: /stores/{store}/integrations (list),
+    /{provider} (GET, PUT connect or replace, PATCH settings), /disconnect (typed DISCONNECT), /verify, /test-event,
+    /test-mode, /events (log, cursor), /stats (7 / 30 days), /oauth/start (feeds) + public /integrations/oauth/{provider}/callback,
+    /accounts, PUT /account, /feed, /sync, /sync-runs, /items, /claim-website (Google). Storefront POST
+    /storefront/tracking/events (beacon; server-priced, consent-gated). New tag ai: /stores/{store}/ai/product-descriptions,
+    /ai/photo-edits (202 jobs, Idempotency-Key, 402 ai_credits_exhausted), /ai/generations (+ /{generation}),
+    /ai/photo-edits/{generation}/apply and /undo; tenant-level /billing/ai-credits (+ /ledger); admin
+    /admin/tenants/{tenant}/ai-credits (+ /ledger, /adjust). Payments: GatewayProvider, PaymentMethod and
+    OrderPaymentMethod gain nagad; ConnectGatewayInput accepts NagadCredentialsInput; PaymentGatewayAccount gains optional
+    capabilities (GatewayCapability) and callback_url; new /payments/return/nagad/{payment} and /webhooks/nagad/{route_key}.
+    FeatureKey gains product_feeds and server_side_tagging; LimitKey gains ai_credits_per_month. StorefrontConfig gains
+    optional tracking (StorefrontTrackingConfig: pixel IDs only); CheckoutInput gains optional tracking
+    (TrackingBrowserContext). New parameters IntegrationProviderPath, AiGenerationPath. New schemas TrackingProvider,
+    FeedProvider, AiIntegrationProvider, IntegrationProvider, IntegrationKind, StoreIntegrationStatus,
+    IntegrationAttentionReason, IntegrationAttention, TrackingEventName, PurchaseTrigger, TrackingChannel,
+    TrackingEventSource, TrackingEventStatus, TrackingSkipReason, TrackingErrorCode, MetaPixelSettings, Ga4Settings,
+    TiktokPixelSettings, GtmServerSettings, MetaCatalogSettings, GoogleMerchantSettings, AiTone, AiLength,
+    AiPhotoBackground, AiWriterSettings, AiPhotosSettings, IntegrationSettings, IntegrationCredentialsInput,
+    IntegrationCapabilities, IntegrationSummary, StoreIntegration, SaveIntegrationInput, UpdateIntegrationSettingsInput,
+    DisconnectIntegrationInput, IntegrationCheckRow, IntegrationCheck, TrackingTestEventInput, TrackingTestResult,
+    TrackingTestMode, TrackingEventLogEntry, TrackingEventStatsRow, TrackingEventStats, StorefrontTrackingConfig,
+    TrackingConsent, TrackingBrowserContext, TrackingBeaconEvent, TrackingBeaconInput, IntegrationOauthStart,
+    FeedAccountOption, ChooseFeedAccountInput, CatalogSyncRun, CatalogItemStatus, CatalogReviewStatus, CatalogItemIssue,
+    CatalogItem, CatalogItemListMeta, CatalogIssueGroup, FeedOverview, GatewayCapability, NagadCredentialsInput,
+    AiCreditsSummary, AiGenerationKind, AiCreditLedgerEntry, AdminAiCredits, AdminAiCreditAdjustInput,
+    AiCreditsExhaustedDetails, ProductDescriptionInput, ProductDescriptionVariant, PhotoEditInput, AiGeneration,
+    ApplyPhotoEditInput.
     1.26.0 (2026-11-28, Phase 8.9c Help center, PHASE-8-9C-CONTRACT.md, ADR 0029; Q306–Q323 and Q327–Q329 defaults
     accepted). New tag help (any member): /help/home, /help/categories (+ /{slug}), /help/articles (search) and
     /{slug} (published only, English fallback), PUT/DELETE /{slug}/feedback. New tag support (permission support.manage):
@@ -385,6 +414,12 @@ tags:
   description: 'Phase 8.9b: the signed-in user''s own settings (SMS preferences) and the public promotional SMS opt-out (PHASE-8-9B §7.6)'
 - name: inbox
   description: 'Phase 8.8e: Inbox on own channels — website chat, order messages, email replies; conversations, notes, attachments, saved replies, channel settings (PHASE-8-8E §4–§13)'
+- name: integrations
+  description: 'Phase 8.9d: tracking (Meta Pixel + Conversions API, GA4, TikTok, GTM server container), product feeds (Facebook
+    & Instagram catalog, Google Merchant Center) — IDs and tokens only, write-only secrets (PHASE-8-9D §4–§7)'
+- name: ai
+  description: 'Phase 8.9d: AI product description writer (Anthropic Claude) and AI product photos; shared AI credits (PHASE-8-9D
+    §10–§11)'
 - name: help
   description: 'Phase 8.9c: help center guides, search and feedback (PHASE-8-9C §4–§6); any member'
 - name: support
@@ -24119,13 +24154,1610 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InboundEmailAck'
+                $ref: '#/components/schemas/WebhookAck'
         '401':
           description: '`inbound_email_signature_invalid`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations:
+    get:
+      tags:
+      - integrations
+      summary: List integrations
+      operationId: listIntegrations
+      description: PHASE-8-9D §4.1. `integrations.manage | marketing.manage` (AI rows also `products.edit`). Every provider
+        of the registry in catalogue order; providers without a row are listed `not_connected`. Payment gateways stay under
+        /payment-gateways, SMS under /sms.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IntegrationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Get an integration
+      operationId: getIntegration
+      description: PHASE-8-9D §4.1. `integrations.manage | marketing.manage`. Settings (null while not connected) + defaults,
+        `credentials_hint` (`••••` + last 4 per secret field — secrets are never returned, P89D-7), status, attention reasons,
+        capability flags.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    put:
+      tags:
+      - integrations
+      summary: Connect or replace an integration
+      operationId: saveIntegration
+      description: 'PHASE-8-9D §4.2. `integrations.manage`. Tracking and AI providers only (feeds connect through OAuth: 422
+        `integration_setup_required`). IDs are validated (422 `integration_id_invalid` / `integration_code_pasted`, details.field);
+        tokens are checked live where the provider allows it (422 `integration_credentials_invalid`, 502 `provider_unavailable`).
+        Omitted credential fields keep the stored value. `revision` required once a row exists. 402 `feature_not_in_plan` (gtm_server
+        needs server_side_tagging). Audited `integration.connected` / `integration.updated` / `integration.credentials_replaced`
+        (field names + hints only) / `integration.turned_on`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveIntegrationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `integration_id_invalid`, `integration_code_pasted`, `integration_credentials_invalid`,
+            `integration_endpoint_blocked`, `integration_setup_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    patch:
+      tags:
+      - integrations
+      summary: Update integration settings
+      operationId: updateIntegration
+      description: PHASE-8-9D §4.2. `integrations.manage`. Partial `settings` with `revision`; never credentials. 422 `integration_not_connected`.
+        Audited `integration.updated` (changed keys).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegrationSettingsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`revision_conflict`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/disconnect:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Disconnect (or turn off) an integration
+      operationId: disconnectIntegration
+      description: 'PHASE-8-9D §4.6. `integrations.manage`. Body `confirm: "DISCONNECT"` (422 `confirmation_mismatch`). Stops
+        sending/syncing, deletes stored credentials and OAuth tokens (best-effort revoke at the provider), keeps the event log
+        until retention; feed items already at Meta/Google stay there. AI tools: "Turn off". Idempotent. Audited `integration.disconnected`
+        / `integration.turned_off`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisconnectIntegrationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`confirmation_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/verify:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Run the connection check
+      operationId: verifyIntegration
+      description: PHASE-8-9D §4.5. `integrations.manage | marketing.manage`. Live checks with the provider (pixel found, token
+        valid, GA4 validation server, tagging server `/healthy`, catalog reachable, website claimed). Limiter `integration-verify`
+        10/min per store. Updates `last_verified_at` and attention reasons.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IntegrationCheck'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`integration_not_connected`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/test-event:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Send a test event
+      operationId: sendTrackingTestEvent
+      description: 'PHASE-8-9D §5.8. `integrations.manage`. Tracking providers only (others 404). Synchronous; sends a synthetic
+        event (default `purchase`, value ৳1, test flag/code) and logs it with `test: true`. Limiter `integration-test` 10/min
+        per store. Audited `integration.test_event_sent`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackingTestEventInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TrackingTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`integration_not_connected`, `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/test-mode:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Open the shop in test mode
+      operationId: startTrackingTestMode
+      description: 'PHASE-8-9D §5.8. `integrations.manage`. meta_pixel and tiktok_pixel only. Returns a signed storefront URL
+        (`?sp_test=…`, 30 min) that sets the httpOnly `sp_track_test` cookie; server copies of that browser''s events carry
+        the saved test event code and are logged with `test: true`. 422 when no test event code is saved. Audited `integration.test_mode_started`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TrackingTestMode'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`validation_failed` (no test code), `integration_not_connected`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/events:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Tracking event log
+      operationId: listTrackingEvents
+      description: 'PHASE-8-9D §5.6. `integrations.manage | marketing.manage`. Tracking providers only. Server deliveries (purchase,
+        refund, mirrored browser events, tests) and, in test mode, browser rows; newest first, 50 per page, cursor. Retention:
+        delivered/skipped 7 days, failed 30 days. Never contains hashed or raw customer data, IPs or user agents.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: comma list of TrackingEventStatus
+      - in: query
+        name: filter[event]
+        required: false
+        schema:
+          type: string
+        description: comma list of TrackingEventName
+      - in: query
+        name: filter[channel]
+        required: false
+        schema:
+          $ref: '#/components/schemas/TrackingChannel'
+      - in: query
+        name: filter[test]
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+      - in: query
+        name: filter[since]
+        required: false
+        schema:
+          type: string
+          format: date-time
+        description: default now − 7 days; before the retention window → 422
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackingEventLogEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/stats:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Tracking event counts
+      operationId: getTrackingEventStats
+      description: 'PHASE-8-9D §5.7. `integrations.manage | marketing.manage`. Per canonical event: browser count (beacon),
+        server sent / failed / skipped, for 7 or 30 days (store timezone, from `tracking_daily_stats`).'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: days
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 7
+          - 30
+          default: 7
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TrackingEventStats'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/oauth/start:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Start OAuth for a product feed
+      operationId: startIntegrationOauth
+      description: PHASE-8-9D §7.1. `integrations.manage`. meta_catalog and google_merchant only. Returns the provider authorize
+        URL with a signed, single-use `state` (10 min, bound to tenant, store, user, provider). 402 `feature_not_in_plan` (product_feeds).
+        The browser leaves the app; the provider redirects to the public callback.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IntegrationOauthStart'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /integrations/oauth/{provider}/callback:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: OAuth callback (browser)
+      operationId: integrationOauthCallback
+      description: PHASE-8-9D §7.1. Public browser redirect target (no tenant header; throttle `oauth-callback` 30/min per IP).
+        Verifies `state` (signature, expiry, single use via cache nonce), exchanges `code` server-side, stores tokens encrypted,
+        then 303 to the merchant app `/integrations/{provider}?oauth=success` or `?oauth=error&reason={IntegrationOauthErrorReason}`.
+        Never renders provider data. Audited `integration.oauth_connected`.
+      security: []
+      parameters:
+      - in: query
+        name: state
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: code
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: error
+        required: false
+        schema:
+          type: string
+      responses:
+        '303':
+          description: Redirect to the merchant app
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: Missing or malformed state (HTML page)
+  /stores/{store}/integrations/{provider}/accounts:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Feed accounts to choose from
+      operationId: listFeedAccounts
+      description: PHASE-8-9D §7.2. `integrations.manage`. Catalogs (with their business) for meta_catalog, Merchant Center
+        accounts for google_merchant, read live with the stored token. 409 `integration_setup_required` before OAuth.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeedAccountOption'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`integration_setup_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/integrations/{provider}/account:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    put:
+      tags:
+      - integrations
+      summary: Choose the feed account
+      operationId: chooseFeedAccount
+      description: 'PHASE-8-9D §7.2. `integrations.manage`. `account_id` from /accounts, or `create_catalog: true` with `parent_id`
+        (Meta business) to create "Storeplix · {shop}". setup_required → connected; queues the first full sync (trigger `connect`).
+        Audited `integration.account_chosen`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChooseFeedAccountInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`integration_setup_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /stores/{store}/integrations/{provider}/feed:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Feed overview
+      operationId: getFeedOverview
+      description: PHASE-8-9D §7.5. `integrations.manage | marketing.manage`. Item counts, grouped issues, last run, next full
+        sync, 30-day clicks when reported.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FeedOverview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/sync:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Sync now
+      operationId: syncFeedNow
+      description: PHASE-8-9D §7.4. `integrations.manage`. Queues a full sync (kind `manual`). 409 `feed_sync_in_progress`;
+        limiter `feed-sync-now` 1 per 10 min per store; 409 `store_not_live` for a draft store. Audited `integration.sync_requested`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CatalogSyncRun'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`feature_not_in_plan`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`feed_sync_in_progress`, `store_not_live`, `integration_setup_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/sync-runs:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Feed sync history
+      operationId: listFeedSyncRuns
+      description: PHASE-8-9D §7.4. `integrations.manage | marketing.manage`. Newest first, 50, cursor; 90 days.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CatalogSyncRun'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/items:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    get:
+      tags:
+      - integrations
+      summary: Feed items
+      operationId: listFeedItems
+      description: PHASE-8-9D §7.5. `integrations.manage | marketing.manage`. One item per variant; filters; issues with fix
+        targets; `meta.counts`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+        description: comma list of CatalogItemStatus
+      - in: query
+        name: filter[review_status]
+        required: false
+        schema:
+          type: string
+        description: comma list of CatalogReviewStatus
+      - in: query
+        name: filter[has_issues]
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CatalogItem'
+                  meta:
+                    $ref: '#/components/schemas/CatalogItemListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/integrations/{provider}/claim-website:
+    parameters:
+    - $ref: '#/components/parameters/IntegrationProviderPath'
+    post:
+      tags:
+      - integrations
+      summary: Verify and claim the website
+      operationId: claimFeedWebsite
+      description: PHASE-8-9D §7.6. `integrations.manage`. google_merchant only (others 404). Gets a META verification token,
+        publishes it through StorefrontConfig.tracking.site_verification.google, verifies, then claims the primary host in Merchant
+        Center. 409 `store_not_live` (draft / Coming soon); 422 `website_claim_failed` (details.step). Audited `integration.website_claimed`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StoreIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`store_not_live`, `integration_setup_required`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`website_claim_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          description: '`provider_unavailable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /storefront/tracking/events:
+    post:
+      tags:
+      - storefront
+      summary: Browser tracking events (beacon)
+      operationId: storefrontTrackingEvents
+      description: PHASE-8-9D §6.2. Server-to-server from the storefront beacon route (`/api/t`). ≤ 20 events. The API resolves
+        variants/products within the store and prices them from the catalogue (browser amounts are never accepted), increments
+        `tracking_daily_stats`, and queues server copies (same `event_id`) for providers that mirror browser events, subject
+        to consent. Unknown ids are dropped silently. Live stores only (draft → 404). Limiter `tracking-beacon` 120/min per
+        shopper IP and 6000/min per host. Always 202.
+      security:
+      - storefrontKey: []
+      parameters:
+      - $ref: '#/components/parameters/StorefrontHost'
+      - $ref: '#/components/parameters/StorefrontClientIp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackingBeaconInput'
+      responses:
+        '202':
+          description: Accepted
+        '401':
+          description: Missing/invalid X-Storefront-Key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/ai-credits:
+    get:
+      tags:
+      - billing
+      summary: AI credits
+      operationId: getAiCredits
+      description: PHASE-8-9D §10.1. Tenant-level. `products.edit | integrations.manage | billing.view`. This month's plan allowance
+        (used/remaining/reset), bonus credits, costs.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiCreditsSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /billing/ai-credits/ledger:
+    get:
+      tags:
+      - billing
+      summary: AI credit ledger
+      operationId: listAiCreditLedger
+      description: PHASE-8-9D §10.3. `billing.view | integrations.manage`. Newest first, 50, cursor, filter[type].
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - in: query
+        name: filter[type]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiCreditLedgerEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/product-descriptions:
+    post:
+      tags:
+      - ai
+      summary: Write a product description
+      operationId: createProductDescription
+      description: PHASE-8-9D §11.2. `products.edit`. Requires ai_writer on (409 `ai_integration_off`). Charges 1 credit (allowance
+        then bonus) in the same transaction that creates the generation (402 `ai_credits_exhausted`, details AiCreditsExhaustedDetails),
+        then queues the job (queue `ai`); poll GET /ai/generations/{id}. Failure or refusal → `failed` + credit refunded. Never
+        saves to the product. Idempotency-Key per click (same key → same generation). Limiter `ai-generate` 20/min per member.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDescriptionInput'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiGeneration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`ai_credits_exhausted`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`ai_integration_off`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/photo-edits:
+    post:
+      tags:
+      - ai
+      summary: Edit a product photo
+      operationId: createPhotoEdit
+      description: PHASE-8-9D §11.3. `products.edit`. Requires ai_photos on. `media_id` must be a product image of this store
+        (else 404). Charges 2 credits as above; queued; the result is a private pending media until applied. Presets only (no
+        free-text prompt).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoEditInput'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiGeneration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: '`ai_credits_exhausted`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`ai_integration_off`, `idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `image_unsupported`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/generations:
+    get:
+      tags:
+      - ai
+      summary: AI generation history
+      operationId: listAiGenerations
+      description: PHASE-8-9D §11.4. `products.edit`. Newest first, 50, cursor (Photo history tab, Recent photo edits). 90 days.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      - in: query
+        name: filter[kind]
+        required: false
+        schema:
+          $ref: '#/components/schemas/AiGenerationKind'
+      - in: query
+        name: filter[status]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: filter[product_id]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiGeneration'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/generations/{generation}:
+    parameters:
+    - $ref: '#/components/parameters/AiGenerationPath'
+    get:
+      tags:
+      - ai
+      summary: Get an AI generation
+      operationId: getAiGeneration
+      description: PHASE-8-9D §11.4. `products.edit`. Poll every 1.5 s while queued/running.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiGeneration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/photo-edits/{generation}/apply:
+    parameters:
+    - $ref: '#/components/parameters/AiGenerationPath'
+    post:
+      tags:
+      - ai
+      summary: Save an edited photo to the product
+      operationId: applyPhotoEdit
+      description: 'PHASE-8-9D §11.3. `products.edit`. succeeded → applied: the result becomes a product image (replacing `replace_image_id`
+        in place, else appended); the original media is kept 30 days for Undo. 409 `ai_generation_not_applicable`. Audited `ai.photo_applied`.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyPhotoEditInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiGeneration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`ai_generation_not_applicable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /stores/{store}/ai/photo-edits/{generation}/undo:
+    parameters:
+    - $ref: '#/components/parameters/AiGenerationPath'
+    post:
+      tags:
+      - ai
+      summary: Undo a saved photo edit
+      operationId: undoPhotoEdit
+      description: PHASE-8-9D §11.3. `products.edit`. applied → undone while the original is kept; restores it in the same position.
+        No credit refund. 409 `ai_generation_not_applicable`. Audited `ai.photo_undone`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/StorePath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiGeneration'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TenantForbiddenOrRole'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`ai_generation_not_applicable`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/ai-credits:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    get:
+      tags:
+      - admin
+      summary: Merchant AI credits
+      operationId: getAdminAiCredits
+      description: 'PHASE-8-9D §10.4. Platform permission `view_merchants`. `// cross-tenant: AI credit support`.'
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminAiCredits'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/ai-credits/ledger:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    get:
+      tags:
+      - admin
+      summary: Merchant AI credit ledger
+      operationId: listAdminAiCreditLedger
+      description: PHASE-8-9D §10.4. `view_merchants`.
+      security:
+      - sessionCookie: []
+      parameters:
+      - in: query
+        name: filter[type]
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiCreditLedgerEntry'
+                  meta:
+                    $ref: '#/components/schemas/CursorMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /admin/tenants/{tenant}/ai-credits/adjust:
+    parameters:
+    - $ref: '#/components/parameters/AdminTenantPath'
+    post:
+      tags:
+      - admin
+      summary: Grant or deduct bonus AI credits
+      operationId: adjustAdminAiCredits
+      description: PHASE-8-9D §10.4. `manage_billing`. Bonus credits only (the monthly allowance comes from the plan). ±1…100,000,
+        never 0; reason 5–500 (shown to the merchant); a deduction below 0 → 422 `ai_credits_insufficient`. Idempotency-Key
+        required. Audited `ai_credits.adjusted` (platform actor).
+      security:
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAiCreditAdjustInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminAiCredits'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`idempotency_key_mismatch`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: '`validation_failed`, `ai_credits_insufficient`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /payments/return/nagad/{payment}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentPath'
+    - $ref: '#/components/parameters/SignedExpires'
+    - $ref: '#/components/parameters/SignedSignature'
+    get:
+      tags:
+      - webhooks
+      summary: Nagad callback (browser)
+      description: 'PHASE-8-9D §9.3. Nagad browser callback (public, signed 26 h like P5B-18; throttle `payment-returns`). Query
+        `payment_ref_id`, `status`, `order_id` are triggers only: the API calls Nagad Verify Payment server-side (rule 8) and
+        applies the result idempotently, then 303 to the store. Invalid signature → 403 HTML; unknown payment → 404 HTML.'
+      security: []
+      parameters:
+      - in: query
+        name: payment_ref_id
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: HTML page (no primary host)
+          content:
+            text/html:
+              schema:
+                type: string
+        '303':
+          description: Redirect to the payment result page on the primary host
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '403':
+          description: Bad signature (HTML page)
+        '404':
+          description: Unknown payment (HTML page)
+      operationId: nagadReturn
+    post:
+      tags:
+      - webhooks
+      summary: Nagad callback (browser)
+      description: 'PHASE-8-9D §9.3. Nagad browser callback (public, signed 26 h like P5B-18; throttle `payment-returns`). Query
+        `payment_ref_id`, `status`, `order_id` are triggers only: the API calls Nagad Verify Payment server-side (rule 8) and
+        applies the result idempotently, then 303 to the store. Invalid signature → 403 HTML; unknown payment → 404 HTML.'
+      security: []
+      parameters:
+      - in: query
+        name: payment_ref_id
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: HTML page (no primary host)
+          content:
+            text/html:
+              schema:
+                type: string
+        '303':
+          description: Redirect to the payment result page on the primary host
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '403':
+          description: Bad signature (HTML page)
+        '404':
+          description: Unknown payment (HTML page)
+      operationId: nagadReturnPost
+  /webhooks/nagad/{route_key}:
+    parameters:
+    - $ref: '#/components/parameters/RouteKey'
+    post:
+      tags:
+      - webhooks
+      summary: Nagad notification
+      operationId: nagadWebhook
+      description: 'PHASE-8-9D §9.4. Public; route key resolves the account; throttle `webhooks`. The body is an untrusted trigger
+        (no documented signature): stored in webhook_events (deduplicated by payment_ref_id + status) and confirmed with Verify
+        Payment before any effect. Never 401; unknown route key → 404.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
   /help/home:
@@ -26049,6 +27681,21 @@ paths:
           $ref: '#/components/responses/NotFound'
 components:
   parameters:
+    IntegrationProviderPath:
+      in: path
+      name: provider
+      required: true
+      schema:
+        $ref: '#/components/schemas/IntegrationProvider'
+      description: meta_pixel | ga4 | tiktok_pixel | gtm_server | meta_catalog | google_merchant | ai_writer | ai_photos; anything
+        else (or a provider the route does not apply to) → 404
+    AiGenerationPath:
+      in: path
+      name: generation
+      required: true
+      schema:
+        $ref: '#/components/schemas/Ulid'
+      description: AI generation of this store; else 404
     HelpArticleSlugPath:
       in: path
       name: slug
@@ -26259,7 +27906,7 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/GatewayProvider'
-      description: bkash | sslcommerz; anything else → 404
+      description: bkash | sslcommerz | nagad; anything else → 404
     CourierProviderPath:
       in: path
       name: provider
@@ -26763,6 +28410,1745 @@ components:
           schema:
             $ref: '#/components/schemas/ApiError'
   schemas:
+    TrackingProvider:
+      type: string
+      enum:
+      - meta_pixel
+      - ga4
+      - tiktok_pixel
+      - gtm_server
+    FeedProvider:
+      type: string
+      enum:
+      - meta_catalog
+      - google_merchant
+    AiIntegrationProvider:
+      type: string
+      enum:
+      - ai_writer
+      - ai_photos
+    IntegrationProvider:
+      type: string
+      enum:
+      - meta_pixel
+      - ga4
+      - tiktok_pixel
+      - gtm_server
+      - meta_catalog
+      - google_merchant
+      - ai_writer
+      - ai_photos
+      description: 'PHASE-8-9D P89D-3: one store_integrations row per store and provider; used as the path segment as-is.'
+    IntegrationKind:
+      type: string
+      enum:
+      - tracking
+      - feed
+      - ai
+    StoreIntegrationStatus:
+      type: string
+      enum:
+      - not_connected
+      - setup_required
+      - connected
+      - needs_attention
+      - error
+      - disconnected
+      description: not_connected = no row; setup_required = OAuth done, account not chosen; AI tools use connected (On) / disconnected
+        (Off).
+    IntegrationAttentionReason:
+      type: string
+      enum:
+      - token_invalid
+      - token_expiring
+      - token_expired
+      - setup_incomplete
+      - website_not_claimed
+      - store_not_live
+      - items_with_issues
+      - plan_required
+      - endpoint_unreachable
+      - delivery_failing
+    IntegrationAttention:
+      type: object
+      required:
+      - reason
+      - count
+      - since
+      properties:
+        reason:
+          $ref: '#/components/schemas/IntegrationAttentionReason'
+        count:
+          type:
+          - integer
+          - 'null'
+        since:
+          type: string
+          format: date-time
+    TrackingEventName:
+      type: string
+      enum:
+      - page_view
+      - view_item
+      - add_to_cart
+      - begin_checkout
+      - purchase
+      - refund
+    PurchaseTrigger:
+      type: string
+      enum:
+      - order_placed
+      - order_confirmed
+      - order_delivered
+      description: Default order_confirmed (P89D-11).
+    TrackingChannel:
+      type: string
+      enum:
+      - browser
+      - server
+    TrackingEventSource:
+      type: string
+      enum:
+      - browser_mirror
+      - order
+      - refund
+      - test
+    TrackingEventStatus:
+      type: string
+      enum:
+      - pending
+      - retrying
+      - delivered
+      - failed
+      - skipped
+    TrackingSkipReason:
+      type: string
+      enum:
+      - no_consent
+      - no_token
+      - disabled
+      - plan_required
+      - not_sent_to_provider
+    TrackingErrorCode:
+      type: string
+      enum:
+      - auth
+      - rejected
+      - rate_limited
+      - provider_unavailable
+      - timeout
+      - endpoint_blocked
+    MetaPixelSettings:
+      type: object
+      required:
+      - pixel_id
+      - purchase_trigger
+      - include_delivery_charge
+      - wait_for_consent
+      - send_customer_data
+      - mirror_browser_events
+      - test_event_code
+      properties:
+        pixel_id:
+          type: string
+          pattern: ^\d{10,20}$
+        purchase_trigger:
+          $ref: '#/components/schemas/PurchaseTrigger'
+        include_delivery_charge:
+          type: boolean
+        wait_for_consent:
+          type: boolean
+        send_customer_data:
+          type: boolean
+        mirror_browser_events:
+          type: boolean
+        test_event_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+          pattern: ^[A-Za-z0-9]{4,32}$
+    Ga4Settings:
+      type: object
+      required:
+      - measurement_id
+      - purchase_trigger
+      - include_delivery_charge
+      - wait_for_consent
+      - send_customer_data
+      - send_refunds
+      properties:
+        measurement_id:
+          type: string
+          pattern: ^G-[A-Z0-9]{4,12}$
+        purchase_trigger:
+          $ref: '#/components/schemas/PurchaseTrigger'
+        include_delivery_charge:
+          type: boolean
+        wait_for_consent:
+          type: boolean
+        send_customer_data:
+          type: boolean
+        send_refunds:
+          type: boolean
+    TiktokPixelSettings:
+      type: object
+      required:
+      - pixel_id
+      - purchase_trigger
+      - include_delivery_charge
+      - wait_for_consent
+      - send_customer_data
+      - mirror_browser_events
+      - test_event_code
+      properties:
+        pixel_id:
+          type: string
+          pattern: ^[A-Z0-9]{20}$
+        purchase_trigger:
+          $ref: '#/components/schemas/PurchaseTrigger'
+        include_delivery_charge:
+          type: boolean
+        wait_for_consent:
+          type: boolean
+        send_customer_data:
+          type: boolean
+        mirror_browser_events:
+          type: boolean
+        test_event_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+          pattern: ^[A-Za-z0-9]{4,32}$
+    GtmServerSettings:
+      type: object
+      required:
+      - container_id
+      - tagging_server_url
+      - measurement_id
+      - events
+      - send_customer_data
+      - wait_for_consent
+      - purchase_trigger
+      - include_delivery_charge
+      properties:
+        container_id:
+          type: string
+          pattern: ^GTM-[A-Z0-9]{4,10}$
+        tagging_server_url:
+          type: string
+          format: uri
+          maxLength: 255
+          description: https, port 443, public host; checked on save and pinned per send (P89D-17)
+        measurement_id:
+          type: string
+          pattern: ^G-[A-Z0-9]{4,12}$
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingEventName'
+          minItems: 1
+          uniqueItems: true
+        send_customer_data:
+          type: boolean
+        wait_for_consent:
+          type: boolean
+        purchase_trigger:
+          $ref: '#/components/schemas/PurchaseTrigger'
+        include_delivery_charge:
+          type: boolean
+    MetaCatalogSettings:
+      type: object
+      required:
+      - include
+      - category_ids
+      - hide_sold_out
+      - use_sale_price
+      - business_id
+      - business_name
+      - catalog_id
+      - catalog_name
+      - default_brand
+      properties:
+        include:
+          type: string
+          enum:
+          - all
+          - categories
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 50
+        hide_sold_out:
+          type: boolean
+        use_sale_price:
+          type: boolean
+        business_id:
+          type:
+          - string
+          - 'null'
+        business_name:
+          type:
+          - string
+          - 'null'
+        catalog_id:
+          type:
+          - string
+          - 'null'
+        catalog_name:
+          type:
+          - string
+          - 'null'
+        default_brand:
+          type:
+          - string
+          - 'null'
+          maxLength: 70
+    GoogleMerchantSettings:
+      type: object
+      required:
+      - include
+      - category_ids
+      - hide_sold_out
+      - use_sale_price
+      - merchant_id
+      - account_name
+      - website_claimed
+      - feed_language
+      - condition
+      properties:
+        include:
+          type: string
+          enum:
+          - all
+          - categories
+        category_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ulid'
+          maxItems: 50
+        hide_sold_out:
+          type: boolean
+        use_sale_price:
+          type: boolean
+        merchant_id:
+          type:
+          - string
+          - 'null'
+        account_name:
+          type:
+          - string
+          - 'null'
+        website_claimed:
+          type: boolean
+          readOnly: true
+        feed_language:
+          type: string
+          enum:
+          - bn
+          - en
+        condition:
+          type: string
+          enum:
+          - new
+          - used
+          - refurbished
+    AiTone:
+      type: string
+      enum:
+      - friendly
+      - professional
+      - playful
+      - premium
+    AiLength:
+      type: string
+      enum:
+      - short
+      - medium
+      - long
+    AiPhotoBackground:
+      type: string
+      enum:
+      - studio_white
+      - soft_grey
+      - warm_beige
+      - pastel_pink
+      - mint
+      - transparent
+    AiWriterSettings:
+      type: object
+      required:
+      - default_language
+      - default_tone
+      - default_length
+      - use_product_image
+      properties:
+        default_language:
+          type: string
+          enum:
+          - bn
+          - en
+        default_tone:
+          $ref: '#/components/schemas/AiTone'
+        default_length:
+          $ref: '#/components/schemas/AiLength'
+        use_product_image:
+          type: boolean
+    AiPhotosSettings:
+      type: object
+      required:
+      - default_background
+      - keep_originals_days
+      properties:
+        default_background:
+          $ref: '#/components/schemas/AiPhotoBackground'
+        keep_originals_days:
+          type: integer
+          readOnly: true
+          enum:
+          - 30
+    IntegrationSettings:
+      oneOf:
+      - $ref: '#/components/schemas/MetaPixelSettings'
+      - $ref: '#/components/schemas/Ga4Settings'
+      - $ref: '#/components/schemas/TiktokPixelSettings'
+      - $ref: '#/components/schemas/GtmServerSettings'
+      - $ref: '#/components/schemas/MetaCatalogSettings'
+      - $ref: '#/components/schemas/GoogleMerchantSettings'
+      - $ref: '#/components/schemas/AiWriterSettings'
+      - $ref: '#/components/schemas/AiPhotosSettings'
+      description: Typed settings by provider (validated server-side per provider; unknown keys → 422).
+    IntegrationCredentialsInput:
+      type: object
+      additionalProperties: false
+      description: Write-only. meta_pixel / tiktok_pixel `access_token` (≤ 512), ga4 `api_secret` (≤ 128). Never returned.
+      properties:
+        access_token:
+          type: string
+          minLength: 10
+          maxLength: 512
+          writeOnly: true
+        api_secret:
+          type: string
+          minLength: 8
+          maxLength: 128
+          writeOnly: true
+    IntegrationCapabilities:
+      type: object
+      required:
+      - manage
+      - send_test
+      - view_events
+      - sync_now
+      properties:
+        manage:
+          type: boolean
+        send_test:
+          type: boolean
+        view_events:
+          type: boolean
+        sync_now:
+          type: boolean
+    IntegrationSummary:
+      type: object
+      required:
+      - provider
+      - kind
+      - status
+      - summary
+      - plan_required
+      - attention
+      properties:
+        provider:
+          $ref: '#/components/schemas/IntegrationProvider'
+        kind:
+          $ref: '#/components/schemas/IntegrationKind'
+        status:
+          $ref: '#/components/schemas/StoreIntegrationStatus'
+        summary:
+          type:
+          - string
+          - 'null'
+        plan_required:
+          oneOf:
+          - $ref: '#/components/schemas/FeatureKey'
+          - type: 'null'
+        attention:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationAttention'
+    StoreIntegration:
+      type: object
+      required:
+      - provider
+      - kind
+      - status
+      - settings
+      - defaults
+      - credentials_hint
+      - token_expires_at
+      - attention
+      - last_verified_at
+      - last_error_code
+      - connected_by
+      - connected_at
+      - plan_required
+      - can
+      - revision
+      properties:
+        provider:
+          $ref: '#/components/schemas/IntegrationProvider'
+        kind:
+          $ref: '#/components/schemas/IntegrationKind'
+        status:
+          $ref: '#/components/schemas/StoreIntegrationStatus'
+        settings:
+          oneOf:
+          - $ref: '#/components/schemas/MetaPixelSettings'
+          - $ref: '#/components/schemas/Ga4Settings'
+          - $ref: '#/components/schemas/TiktokPixelSettings'
+          - $ref: '#/components/schemas/GtmServerSettings'
+          - $ref: '#/components/schemas/MetaCatalogSettings'
+          - $ref: '#/components/schemas/GoogleMerchantSettings'
+          - $ref: '#/components/schemas/AiWriterSettings'
+          - $ref: '#/components/schemas/AiPhotosSettings'
+          - type: 'null'
+        defaults:
+          $ref: '#/components/schemas/IntegrationSettings'
+        credentials_hint:
+          type: object
+          additionalProperties:
+            type: string
+          description: '`••••` + last 4 per stored secret field (P89D-7).'
+        token_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        attention:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationAttention'
+        last_verified_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_error_code:
+          type:
+          - string
+          - 'null'
+        connected_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        connected_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        plan_required:
+          oneOf:
+          - $ref: '#/components/schemas/FeatureKey'
+          - type: 'null'
+        can:
+          $ref: '#/components/schemas/IntegrationCapabilities'
+        revision:
+          type: integer
+          minimum: 0
+      description: PHASE-8-9D §4.1.
+    SaveIntegrationInput:
+      type: object
+      required:
+      - settings
+      properties:
+        settings:
+          $ref: '#/components/schemas/IntegrationSettings'
+        credentials:
+          $ref: '#/components/schemas/IntegrationCredentialsInput'
+        revision:
+          type: integer
+          minimum: 1
+    UpdateIntegrationSettingsInput:
+      type: object
+      required:
+      - settings
+      - revision
+      properties:
+        settings:
+          type: object
+          additionalProperties: true
+          description: Partial IntegrationSettings of this provider
+        revision:
+          type: integer
+          minimum: 1
+    DisconnectIntegrationInput:
+      type: object
+      required:
+      - confirm
+      properties:
+        confirm:
+          type: string
+          enum:
+          - DISCONNECT
+    IntegrationCheckRow:
+      type: object
+      required:
+      - key
+      - label
+      - state
+      - detail
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        state:
+          type: string
+          enum:
+          - ok
+          - warn
+          - fail
+          - skipped
+        detail:
+          type:
+          - string
+          - 'null'
+    IntegrationCheck:
+      type: object
+      required:
+      - provider
+      - ok
+      - checked_at
+      - rows
+      - found_name
+      properties:
+        provider:
+          $ref: '#/components/schemas/IntegrationProvider'
+        ok:
+          type: boolean
+        checked_at:
+          type: string
+          format: date-time
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationCheckRow'
+        found_name:
+          type:
+          - string
+          - 'null'
+    TrackingTestEventInput:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/TrackingEventName'
+        test_event_code:
+          type:
+          - string
+          - 'null'
+          maxLength: 32
+    TrackingTestResult:
+      type: object
+      required:
+      - event_id
+      - event
+      - delivered
+      - http_status
+      - error_code
+      - provider_message
+      - validation_messages
+      properties:
+        event_id:
+          type: string
+        event:
+          $ref: '#/components/schemas/TrackingEventName'
+        delivered:
+          type: boolean
+        http_status:
+          type:
+          - integer
+          - 'null'
+        error_code:
+          oneOf:
+          - $ref: '#/components/schemas/TrackingErrorCode'
+          - type: 'null'
+        provider_message:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        validation_messages:
+          type: array
+          items:
+            type: string
+    TrackingTestMode:
+      type: object
+      required:
+      - url
+      - expires_at
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    TrackingEventLogEntry:
+      type: object
+      required:
+      - id
+      - event
+      - provider_event_name
+      - event_id
+      - channel
+      - source
+      - test
+      - status
+      - skip_reason
+      - attempts
+      - max_attempts
+      - next_attempt_at
+      - http_status
+      - error_code
+      - order
+      - page_path
+      - value_amount
+      - currency
+      - deduplicated
+      - created_at
+      - delivered_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        event:
+          $ref: '#/components/schemas/TrackingEventName'
+        provider_event_name:
+          type:
+          - string
+          - 'null'
+        event_id:
+          type: string
+        channel:
+          $ref: '#/components/schemas/TrackingChannel'
+        source:
+          $ref: '#/components/schemas/TrackingEventSource'
+        test:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/TrackingEventStatus'
+        skip_reason:
+          oneOf:
+          - $ref: '#/components/schemas/TrackingSkipReason'
+          - type: 'null'
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        next_attempt_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        http_status:
+          type:
+          - integer
+          - 'null'
+        error_code:
+          oneOf:
+          - $ref: '#/components/schemas/TrackingErrorCode'
+          - type: 'null'
+        order:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - number
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            number:
+              type: string
+        page_path:
+          type:
+          - string
+          - 'null'
+        value_amount:
+          type:
+          - integer
+          - 'null'
+        currency:
+          type:
+          - string
+          - 'null'
+        deduplicated:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    TrackingEventStatsRow:
+      type: object
+      required:
+      - event
+      - provider_event_name
+      - browser
+      - server_sent
+      - server_failed
+      - server_skipped
+      - last_at
+      properties:
+        event:
+          $ref: '#/components/schemas/TrackingEventName'
+        provider_event_name:
+          type:
+          - string
+          - 'null'
+        browser:
+          type: integer
+        server_sent:
+          type: integer
+        server_failed:
+          type: integer
+        server_skipped:
+          type: integer
+        last_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    TrackingEventStats:
+      type: object
+      required:
+      - provider
+      - days
+      - from
+      - to
+      - rows
+      - totals
+      properties:
+        provider:
+          $ref: '#/components/schemas/TrackingProvider'
+        days:
+          type: integer
+          enum:
+          - 7
+          - 30
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingEventStatsRow'
+        totals:
+          type: object
+          required:
+          - browser
+          - server_sent
+          - server_failed
+          - delivery_rate
+          properties:
+            browser:
+              type: integer
+            server_sent:
+              type: integer
+            server_failed:
+              type: integer
+            delivery_rate:
+              type:
+              - number
+              - 'null'
+    StorefrontTrackingConfig:
+      type: object
+      required:
+      - meta_pixel_id
+      - ga4_measurement_id
+      - tiktok_pixel_id
+      - wait_for_consent
+      - collect
+      - currency
+      - site_verification
+      properties:
+        meta_pixel_id:
+          type:
+          - string
+          - 'null'
+        ga4_measurement_id:
+          type:
+          - string
+          - 'null'
+        tiktok_pixel_id:
+          type:
+          - string
+          - 'null'
+        wait_for_consent:
+          type: boolean
+        collect:
+          type: boolean
+        currency:
+          type: string
+        site_verification:
+          type: object
+          required:
+          - google
+          properties:
+            google:
+              type:
+              - string
+              - 'null'
+      description: 'PHASE-8-9D §6.1: public IDs only, never a token or secret; null for draft / preview renders.'
+    TrackingConsent:
+      type: string
+      enum:
+      - granted
+      - denied
+      - not_required
+    TrackingBrowserContext:
+      type: object
+      required:
+      - consent
+      properties:
+        consent:
+          $ref: '#/components/schemas/TrackingConsent'
+        fbp:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        fbc:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        ttp:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        ttclid:
+          type:
+          - string
+          - 'null'
+          maxLength: 500
+        ga_client_id:
+          type:
+          - string
+          - 'null'
+          maxLength: 100
+        ga_session_id:
+          type:
+          - string
+          - 'null'
+          maxLength: 100
+        user_agent:
+          type:
+          - string
+          - 'null'
+          maxLength: 400
+        test_token:
+          type:
+          - string
+          - 'null'
+          maxLength: 300
+      description: First-party cookie values read server-side by the storefront; never merchant code.
+    TrackingBeaconEvent:
+      type: object
+      required:
+      - event_id
+      - name
+      - occurred_at
+      - page_path
+      properties:
+        event_id:
+          $ref: '#/components/schemas/Ulid'
+        name:
+          type: string
+          enum:
+          - page_view
+          - view_item
+          - add_to_cart
+          - begin_checkout
+        occurred_at:
+          type: string
+          format: date-time
+        page_path:
+          type: string
+          maxLength: 300
+        variant_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        product_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        quantity:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 999
+    TrackingBeaconInput:
+      type: object
+      required:
+      - events
+      - context
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingBeaconEvent'
+          minItems: 1
+          maxItems: 20
+        context:
+          $ref: '#/components/schemas/TrackingBrowserContext'
+    IntegrationOauthStart:
+      type: object
+      required:
+      - authorize_url
+      - expires_at
+      properties:
+        authorize_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    FeedAccountOption:
+      type: object
+      required:
+      - id
+      - name
+      - parent_name
+      - item_count
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parent_name:
+          type:
+          - string
+          - 'null'
+        item_count:
+          type:
+          - integer
+          - 'null'
+    ChooseFeedAccountInput:
+      type: object
+      properties:
+        account_id:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        create_catalog:
+          type: boolean
+        parent_id:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+    CatalogSyncRun:
+      type: object
+      required:
+      - id
+      - kind
+      - trigger
+      - status
+      - items_sent
+      - items_failed
+      - items_deleted
+      - error_code
+      - started_at
+      - finished_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          type: string
+          enum:
+          - full
+          - delta
+          - manual
+        trigger:
+          type: string
+          enum:
+          - schedule
+          - price_change
+          - stock_change
+          - product_change
+          - manual
+          - connect
+        status:
+          type: string
+          enum:
+          - running
+          - done
+          - partial
+          - failed
+        items_sent:
+          type: integer
+        items_failed:
+          type: integer
+        items_deleted:
+          type: integer
+        error_code:
+          type:
+          - string
+          - 'null'
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    CatalogItemStatus:
+      type: string
+      enum:
+      - pending
+      - synced
+      - error
+      - excluded
+      - deleting
+    CatalogReviewStatus:
+      type: string
+      enum:
+      - approved
+      - in_review
+      - limited
+      - disapproved
+    CatalogItemIssue:
+      type: object
+      required:
+      - code
+      - severity
+      - message
+      - attribute
+      - fix
+      properties:
+        code:
+          type: string
+        severity:
+          type: string
+          enum:
+          - error
+          - warning
+        message:
+          type: string
+          maxLength: 300
+        attribute:
+          type:
+          - string
+          - 'null'
+        fix:
+          type:
+          - string
+          - 'null'
+          enum:
+          - product_editor
+          - feed_settings
+          - store_settings
+    CatalogItem:
+      type: object
+      required:
+      - id
+      - product
+      - variant
+      - status
+      - review_status
+      - excluded_reason
+      - issues
+      - last_synced_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        product:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          - slug
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+            slug:
+              type: string
+        variant:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - title
+          - sku
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            title:
+              type: string
+            sku:
+              type:
+              - string
+              - 'null'
+        status:
+          $ref: '#/components/schemas/CatalogItemStatus'
+        review_status:
+          oneOf:
+          - $ref: '#/components/schemas/CatalogReviewStatus'
+          - type: 'null'
+        excluded_reason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - not_published
+          - no_image
+          - no_price
+          - sold_out_hidden
+          - category_filtered
+          - archived
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogItemIssue'
+        last_synced_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    CatalogItemListMeta:
+      allOf:
+      - $ref: '#/components/schemas/CursorMeta'
+      - type: object
+        required:
+        - counts
+        properties:
+          counts:
+            type: object
+            required:
+            - total
+            - approved
+            - in_review
+            - with_issues
+            - not_sent
+            properties:
+              total:
+                type: integer
+              approved:
+                type: integer
+              in_review:
+                type: integer
+              with_issues:
+                type: integer
+              not_sent:
+                type: integer
+    CatalogIssueGroup:
+      type: object
+      required:
+      - code
+      - message
+      - severity
+      - impact
+      - products
+      - fix
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum:
+          - error
+          - warning
+        impact:
+          type:
+          - string
+          - 'null'
+          enum:
+          - limited
+          - disapproved
+        products:
+          type: integer
+        fix:
+          type:
+          - string
+          - 'null'
+          enum:
+          - product_editor
+          - feed_settings
+          - store_settings
+    FeedOverview:
+      type: object
+      required:
+      - provider
+      - counts
+      - issues
+      - last_run
+      - next_full_sync_at
+      - clicks_30d
+      properties:
+        provider:
+          $ref: '#/components/schemas/FeedProvider'
+        counts:
+          type: object
+          required:
+          - total
+          - approved
+          - in_review
+          - with_issues
+          - not_sent
+          properties:
+            total:
+              type: integer
+            approved:
+              type: integer
+            in_review:
+              type: integer
+            with_issues:
+              type: integer
+            not_sent:
+              type: integer
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogIssueGroup'
+        last_run:
+          oneOf:
+          - $ref: '#/components/schemas/CatalogSyncRun'
+          - type: 'null'
+        next_full_sync_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        clicks_30d:
+          type:
+          - integer
+          - 'null'
+    GatewayCapability:
+      type: string
+      enum:
+      - refund
+      - refund_partial
+      - query
+      - webhook
+      - preauth
+      - agreement
+    NagadCredentialsInput:
+      type: object
+      required:
+      - merchant_id
+      - merchant_number
+      - merchant_private_key
+      - pg_public_key
+      properties:
+        merchant_id:
+          type: string
+          pattern: ^[0-9]{6,20}$
+        merchant_number:
+          type: string
+          maxLength: 20
+        merchant_private_key:
+          type: string
+          maxLength: 4096
+          writeOnly: true
+          description: PEM RSA ≥ 2048 bits
+        pg_public_key:
+          type: string
+          maxLength: 4096
+          writeOnly: true
+          description: Nagad payment-gateway public key (PEM)
+    AiCreditsSummary:
+      type: object
+      required:
+      - allowance
+      - bonus
+      - available
+      - costs
+      properties:
+        allowance:
+          type: object
+          required:
+          - limit
+          - used
+          - remaining
+          - resets_at
+          properties:
+            limit:
+              type:
+              - integer
+              - 'null'
+            used:
+              type: integer
+            remaining:
+              type:
+              - integer
+              - 'null'
+            resets_at:
+              type: string
+              format: date-time
+        bonus:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+        costs:
+          type: object
+          required:
+          - product_description
+          - photo_edit
+          properties:
+            product_description:
+              type: integer
+              enum:
+              - 1
+            photo_edit:
+              type: integer
+              enum:
+              - 2
+    AiGenerationKind:
+      type: string
+      enum:
+      - product_description
+      - photo_edit
+    AiCreditLedgerEntry:
+      type: object
+      required:
+      - id
+      - type
+      - source
+      - credits
+      - bonus_after
+      - period
+      - generation
+      - reason
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        type:
+          type: string
+          enum:
+          - consume
+          - refund
+          - admin_adjust
+        source:
+          type:
+          - string
+          - 'null'
+          enum:
+          - allowance
+          - bonus
+        credits:
+          type: integer
+        bonus_after:
+          type: integer
+        period:
+          type: string
+          pattern: ^\d{4}-\d{2}$
+        generation:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - kind
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            kind:
+              $ref: '#/components/schemas/AiGenerationKind'
+        reason:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+    AdminAiCredits:
+      type: object
+      required:
+      - tenant_id
+      - credits
+      - last_adjusted_at
+      properties:
+        tenant_id:
+          $ref: '#/components/schemas/Ulid'
+        credits:
+          $ref: '#/components/schemas/AiCreditsSummary'
+        last_adjusted_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdminAiCreditAdjustInput:
+      type: object
+      required:
+      - credits
+      - reason
+      properties:
+        credits:
+          type: integer
+          minimum: -100000
+          maximum: 100000
+          not:
+            const: 0
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+    AiCreditsExhaustedDetails:
+      type: object
+      required:
+      - needed
+      - available
+      - resets_at
+      properties:
+        needed:
+          type: integer
+        available:
+          type: integer
+        resets_at:
+          type: string
+          format: date-time
+    ProductDescriptionInput:
+      type: object
+      properties:
+        product_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        name:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        category:
+          type:
+          - string
+          - 'null'
+          maxLength: 120
+        key_points:
+          type: array
+          items:
+            type: string
+            maxLength: 200
+          maxItems: 10
+        language:
+          type: string
+          enum:
+          - bn
+          - en
+        tone:
+          $ref: '#/components/schemas/AiTone'
+        length:
+          $ref: '#/components/schemas/AiLength'
+        variants:
+          type: integer
+          minimum: 1
+          maximum: 3
+          default: 2
+        use_product_image:
+          type: boolean
+      description: product_id or name is required (422).
+    ProductDescriptionVariant:
+      type: object
+      required:
+      - description_html
+      - paragraphs
+      - highlights
+      - seo_title
+      - meta_description
+      properties:
+        description_html:
+          type: string
+          description: Sanitized rich text built server-side
+        paragraphs:
+          type: array
+          items:
+            type: string
+        highlights:
+          type: array
+          items:
+            type: string
+        seo_title:
+          type:
+          - string
+          - 'null'
+          maxLength: 70
+        meta_description:
+          type:
+          - string
+          - 'null'
+          maxLength: 160
+    PhotoEditInput:
+      type: object
+      required:
+      - media_id
+      - operation
+      properties:
+        media_id:
+          $ref: '#/components/schemas/Ulid'
+        product_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
+        operation:
+          type: string
+          enum:
+          - remove_background
+          - replace_background
+        background:
+          oneOf:
+          - $ref: '#/components/schemas/AiPhotoBackground'
+          - type: 'null'
+    AiGeneration:
+      type: object
+      required:
+      - id
+      - kind
+      - status
+      - product
+      - credits
+      - charged_from
+      - refunded
+      - input
+      - variants
+      - source_image
+      - result_image
+      - check_edges
+      - error_code
+      - requested_by
+      - created_at
+      - finished_at
+      - applied_at
+      - undone_at
+      - original_kept_until
+      properties:
+        id:
+          $ref: '#/components/schemas/Ulid'
+        kind:
+          $ref: '#/components/schemas/AiGenerationKind'
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          - applied
+          - undone
+        product:
+          type:
+          - object
+          - 'null'
+          required:
+          - id
+          - name
+          properties:
+            id:
+              $ref: '#/components/schemas/Ulid'
+            name:
+              type: string
+        credits:
+          type: integer
+        charged_from:
+          type:
+          - string
+          - 'null'
+          enum:
+          - allowance
+          - bonus
+        refunded:
+          type: boolean
+        input:
+          oneOf:
+          - $ref: '#/components/schemas/ProductDescriptionInput'
+          - $ref: '#/components/schemas/PhotoEditInput'
+        variants:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/ProductDescriptionVariant'
+        source_image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        result_image:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontMedia'
+          - type: 'null'
+        check_edges:
+          type: boolean
+        error_code:
+          type:
+          - string
+          - 'null'
+          enum:
+          - ai_refused
+          - ai_unavailable
+          - ai_timeout
+          - ai_output_invalid
+          - image_unsupported
+          - provider_error
+        requested_by:
+          oneOf:
+          - $ref: '#/components/schemas/UserRef'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        applied_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        undone_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        original_kept_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ApplyPhotoEditInput:
+      type: object
+      required:
+      - product_id
+      properties:
+        product_id:
+          $ref: '#/components/schemas/Ulid'
+        replace_image_id:
+          oneOf:
+          - $ref: '#/components/schemas/Ulid'
+          - type: 'null'
     HelpLanguage:
       type: string
       enum:
@@ -29236,6 +32622,11 @@ components:
       - contact
       - social
       properties:
+        tracking:
+          oneOf:
+          - $ref: '#/components/schemas/StorefrontTrackingConfig'
+          - type: 'null'
+          description: Phase 8.9d (PHASE-8-9D §6.1). Pixel IDs only; null/absent = no tag and no beacon.
         inbox:
           description: Phase 8.8e (PHASE-8-8E §9.1); null/absent = no widget and no order Messages card
           oneOf:
@@ -30493,6 +33884,8 @@ components:
       - profit_reports
       - api_webhooks
       - purchasing
+      - product_feeds
+      - server_side_tagging
     LimitKey:
       type: string
       enum:
@@ -30504,6 +33897,7 @@ components:
       - custom_domains
       - campaign_sms_per_month
       - campaign_emails_per_month
+      - ai_credits_per_month
     Plan:
       type: object
       required:
@@ -36297,13 +39691,15 @@ components:
       - cod
       - bkash
       - sslcommerz
-      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12).'
+      - nagad
+      description: 'Phase 5a: ''cod'' only. Phase 5b: ''bkash'' and ''sslcommerz'' when the store has them connected and enabled (PHASE-5B P5B-12). Phase 8.9d: ''nagad'' likewise.'
     OrderPaymentMethod:
       type: string
       enum:
       - cod
       - bkash
       - sslcommerz
+      - nagad
       - pos
       description: Phase 8.8d. An order's payment_method — PaymentMethod plus 'pos' on till sales (the payments list says how
         it was paid). Checkout never accepts 'pos'.
@@ -36571,6 +39967,11 @@ components:
       - payment_method
       - expected_total_amount
       properties:
+        tracking:
+          oneOf:
+          - $ref: '#/components/schemas/TrackingBrowserContext'
+          - type: 'null'
+          description: Phase 8.9d (PHASE-8-9D §5.5). Consent and first-party click ids saved for the order's server-side events.
         otp_code:
           type:
           - string
@@ -38088,6 +41489,8 @@ components:
       enum:
       - bkash
       - sslcommerz
+      - nagad
+      description: 'Phase 8.9d (PHASE-8-9D §9): nagad is the third gateway behind the Phase 5b interface.'
     CourierProvider:
       type: string
       enum:
@@ -38173,6 +41576,17 @@ components:
         revision:
           type: integer
           minimum: 0
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/GatewayCapability'
+          description: Phase 8.9d (P89D-45). Optional for rolling deploys; absent = Phase 5b behaviour.
+        callback_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          description: Phase 8.9d. Callback URL to give the provider during onboarding (nagad); null otherwise.
       description: PHASE-5B P5B-10/11. Absent providers are listed with status not_connected.
     BkashCredentialsInput:
       type: object
@@ -38218,6 +41632,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/BkashCredentialsInput'
           - $ref: '#/components/schemas/SslcommerzCredentialsInput'
+          - $ref: '#/components/schemas/NagadCredentialsInput'
     UpdateGatewayInput:
       type: object
       required:
@@ -39860,22 +43275,6 @@ components:
       properties:
         received:
           type: boolean
-    InboundEmailAck:
-      description: 'PHASE-8-8E §11: inbound email webhook ack; `accepted` is false when the mail was dropped (unknown address, loop, auto-reply, duplicate).'
-      type: object
-      required:
-      - data
-      properties:
-        data:
-          type: object
-          required:
-          - received
-          - accepted
-          properties:
-            received:
-              type: boolean
-            accepted:
-              type: boolean
     BillingInterval:
       type: string
       enum:

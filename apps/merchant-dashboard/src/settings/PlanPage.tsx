@@ -44,6 +44,8 @@ const featureLabel: Record<string, string> = {
   pos: 'POS',
   profit_reports: 'Profit reports',
   api_webhooks: 'API & webhooks',
+  product_feeds: 'Facebook & Google product feeds',
+  server_side_tagging: 'Server-side tagging (GTM)',
 };
 
 // Figma Plan cards 65:17495 taglines.

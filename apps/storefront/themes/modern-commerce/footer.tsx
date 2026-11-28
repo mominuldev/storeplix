@@ -5,6 +5,7 @@ import type { ModernCommerceSettings } from './schema';
 import { ContactList, SocialLinksRow, contactItems, socialItems } from './components/contact';
 import { Icon } from './components/icon';
 import { NavLink } from './components/nav-link';
+import { isOfferedMethod } from '@/lib/payments';
 import { StoreLogo } from './components/store-logo';
 
 interface FooterProps extends ThemeContact {
@@ -17,7 +18,7 @@ interface FooterProps extends ThemeContact {
 }
 
 /** Checkout method → footer badge. */
-export const CHECKOUT_METHOD_BADGES: Record<PaymentMethod, PaymentMethodBadge[]> = { cod: ['cod'], bkash: ['bkash'], sslcommerz: ['visa', 'mastercard'] };
+export const CHECKOUT_METHOD_BADGES: Record<PaymentMethod, PaymentMethodBadge[]> = { cod: ['cod'], bkash: ['bkash'], sslcommerz: ['visa', 'mastercard'], nagad: ['nagad'] };
 
 export const PAYMENT_LABELS: Record<PaymentMethodBadge, string> = {
   cod: 'Cash on delivery',
@@ -78,7 +79,7 @@ function PaymentBadges({ payments }: { payments: PaymentMethodBadge[] }) {
 export function Footer({ store, settings, description, contact, social, menus, paymentMethods = null }: FooterProps) {
   const tagline = settings.footer.tagline ?? description;
   // "Pay with" shows what checkout really accepts once the API sends it (PHASE-5-CONTRACT §5).
-  const accepted = paymentMethods ? paymentMethods.flatMap((m) => CHECKOUT_METHOD_BADGES[m] ?? []) : settings.footer.paymentMethods;
+  const accepted = paymentMethods ? paymentMethods.filter(isOfferedMethod).flatMap((m) => CHECKOUT_METHOD_BADGES[m] ?? []) : settings.footer.paymentMethods;
   const payments = settings.footer.showPaymentMethods ? accepted : [];
   const columns = menus.filter((m) => m.items.length > 0);
   const year = new Date().getFullYear();

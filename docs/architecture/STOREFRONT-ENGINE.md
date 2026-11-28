@@ -180,6 +180,17 @@ don't invalidate HTML.
 - Images via `next/image` with CDN loader; width-based srcset; LCP image `priority`.
 - Performance budget: LCP < 2.5 s on 4G mid-tier Android (primary BD device), JS < 120 KB gz on home.
 
+### 6.1 Tracking tags and site verification (Phase 8.9d, PHASE-8-9D §6, ADR 0030)
+Rule 7 still holds: merchants never supply markup or script. `StorefrontConfig.tracking` carries only validated public
+IDs (Meta pixel, GA4 measurement ID, TikTok pixel), a consent flag, the currency and the Google site-verification token.
+`components/tracking/**` contains Storeplix's own loaders for the official tags (`fbevents.js`, `gtag.js`, TikTok
+`events.js`); the only variable is the ID, re-validated with the `@storeplix/types` patterns and inserted with
+`JSON.stringify`. There is no Google Tag Manager web container (server container only, forwarded by the API). When any
+integration waits for consent, the Storeplix consent bar gates the loaders (`sp_consent`). Browser events also go to the
+same-origin beacon `/api/t`, which adds first-party cookie ids and forwards server-to-server; prices are never taken from
+the browser. Nothing is rendered for Coming soon, preview or stores without integrations. The CSP allows
+`TRACKING_SCRIPT_HOSTS` only for stores with the matching ID.
+
 ## 7. Directory layout
 ```
 apps/storefront/src/

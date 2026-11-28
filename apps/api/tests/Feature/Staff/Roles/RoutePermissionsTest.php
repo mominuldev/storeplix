@@ -223,6 +223,30 @@ class RoutePermissionsTest extends TestCase
             'stores.payment-gateways.disconnect',
             'stores.payment-gateways.test-payment',
             'stores.payment-gateways.update',
+            // PHASE-8-9D §13.1 (P89D-41): writes, OAuth, accounts, test, sync-now, claim, disconnect.
+            'stores.integrations.account',
+            'stores.integrations.accounts',
+            'stores.integrations.claim-website',
+            'stores.integrations.disconnect',
+            'stores.integrations.oauth.start',
+            'stores.integrations.patch',
+            'stores.integrations.sync',
+            'stores.integrations.test-event',
+            'stores.integrations.test-mode',
+            'stores.integrations.update',
+        ],
+        // PHASE-8-9D §13.1 (P89D-41): integration reads; the list also for products.edit (AI rows only).
+        'integrations.manage|marketing.manage' => [
+            'stores.integrations.events',
+            'stores.integrations.feed',
+            'stores.integrations.items',
+            'stores.integrations.show',
+            'stores.integrations.stats',
+            'stores.integrations.sync-runs',
+            'stores.integrations.verify',
+        ],
+        'integrations.manage|marketing.manage|products.edit' => [
+            'stores.integrations.index',
         ],
         'customers.view' => [
             'stores.customers.index',

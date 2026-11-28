@@ -11,6 +11,8 @@ import { productJsonLd, richTextPlain, toPdpVariants } from '@/lib/pdp';
 import { toCardView } from '@/lib/products';
 import { policyLinks } from '@/lib/policy-pages';
 import { JsonLd } from '@/components/json-ld';
+import { TrackEvent } from '@/components/tracking/track-event';
+import { liveTracking } from '@/lib/tracking-config';
 import { RichText } from '@/components/rich-text';
 import { ProductView, type PdpImage } from '@/themes/modern-commerce/commerce/product-view';
 import { DeliveryBox } from '@/themes/modern-commerce/commerce/delivery-box';
@@ -160,6 +162,16 @@ export default async function ProductPage({ params }: Props) {
           data-name={product.name}
           data-price={formatMoney(product.price_min_amount, product.currency)}
           data-image={images[0]?.url ?? ''}
+        />
+      ) : null}
+      {liveTracking(mode, config.tracking) ? (
+        // 8.9d §6.2: view_item (the API prices the server copy from the catalogue).
+        <TrackEvent
+          name="view_item"
+          product_id={product.id}
+          variant_id={product.variants.length === 1 ? product.variants[0]!.id : null}
+          value_amount={product.price_min_amount}
+          currency={product.currency}
         />
       ) : null}
       {mode === 'live' && !product.is_preview_only ? <JsonLd data={productJsonLd(product, origin, inStock, richTextPlain(product.description, 500))} /> : null}

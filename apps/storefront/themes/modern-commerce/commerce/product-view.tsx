@@ -8,6 +8,7 @@ import type { ProductOption } from '@storeplix/types';
 import { addToCart, buyNow } from '@/app/actions/commerce';
 import { formatMoney } from '@/lib/format';
 import { findVariant, initialSelection, optionState, type PdpVariant } from '@/lib/pdp';
+import { emitTrack } from '@/lib/tracking-events';
 import { Icon } from '../components/icon';
 import { notifyCartChanged } from './cart-badge';
 import { QtyStepper } from './ui';
@@ -98,6 +99,8 @@ export function ProductView({ slug, name, currency, options, variants, images, h
       if (!variant) return;
       setMessage(null);
       const r = mode === 'buy' ? await buyNow({ variantId: variant.id, quantity: qty }) : await addToCart({ variantId: variant.id, quantity: qty });
+      // 8.9d §6.2: add_to_cart after a successful add (no-op unless the shop's tracking runtime is mounted).
+      if (r.ok) emitTrack({ name: 'add_to_cart', variant_id: variant.id, quantity: qty, value_amount: variant.price_amount * qty, currency });
       if (r.ok && r.redirect) {
         notifyCartChanged(r.linesCount);
         router.push(r.redirect);

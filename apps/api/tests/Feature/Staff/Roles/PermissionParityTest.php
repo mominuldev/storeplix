@@ -293,6 +293,26 @@ class PermissionParityTest extends TestCase
         'PUT api/v1/help/tickets/{ticket}/rating' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
         'POST api/v1/help/attachments' => ['owner' => 201, 'admin' => 201, 'staff' => 403],
         'GET api/v1/help/attachments/{attachment}/link' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        // Phase 8.9d part A (PHASE-8-9D §2, §13.1, P89D-41): reads integrations.manage|marketing.manage (the list also
+        // products.edit → staff sees the AI rows); writes integrations.manage. Staff has neither → 403 except the list.
+        'GET api/v1/stores/{store}/integrations' => ['owner' => 200, 'admin' => 200, 'staff' => 200],
+        'GET api/v1/stores/{store}/integrations/{provider}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PUT api/v1/stores/{store}/integrations/{provider}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PATCH api/v1/stores/{store}/integrations/{provider}' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/disconnect' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/verify' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/test-event' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/test-mode' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/events' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/stats' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/oauth/start' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/accounts' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'PUT api/v1/stores/{store}/integrations/{provider}/account' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/feed' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/sync' => ['owner' => 202, 'admin' => 202, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/sync-runs' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'GET api/v1/stores/{store}/integrations/{provider}/items' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
+        'POST api/v1/stores/{store}/integrations/{provider}/claim-website' => ['owner' => 200, 'admin' => 200, 'staff' => 403],
     ];
 
     /** @var array<string, mixed> */
@@ -598,6 +618,14 @@ class PermissionParityTest extends TestCase
         $solved = $this->req($h, 'POST', '/api/v1/help/tickets', ['category' => 'bug', 'subject' => 'Parity solved', 'description' => 'Parity solved description text.',
             'client_id' => (string) Str::uuid()])->assertCreated()->json('data.id');
         $this->req($h, 'POST', "/api/v1/help/tickets/{$solved}/resolve")->assertOk();
+        // Phase 8.9d part A: a Meta pixel (test code saved) and both feeds connected through the fake OAuth + account choice.
+        $this->req($h, 'PUT', "{$base}/integrations/meta_pixel", ['settings' => ['pixel_id' => '1234567890123456', 'test_event_code' => 'TEST1234'],
+            'credentials' => ['access_token' => 'EAABparityTokenValue0001']])->assertOk();
+        foreach (['meta_catalog', 'google_merchant'] as $feed) {
+            $authorize = $this->req($h, 'POST', "{$base}/integrations/{$feed}/oauth/start")->assertOk()->json('data.authorize_url');
+            $this->flushHeaders()->get("/api/v1/integrations/oauth/{$feed}/callback?".parse_url($authorize, PHP_URL_QUERY))->assertStatus(303);
+            $this->req($h, 'PUT', "{$base}/integrations/{$feed}/account", ['account_id' => '100200300'])->assertOk();
+        }
         $payment = $this->inTenant($tenant, fn () => BillingPayment::query()->value('id'));
         $invoice ??= $this->inTenant($tenant, fn () => BillingInvoice::query()->value('id'));
 
@@ -885,6 +913,25 @@ class PermissionParityTest extends TestCase
                 'file' => UploadedFile::fake()->createWithContent('p.pdf', "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
             ], ['Accept' => 'application/json']),
             'GET api/v1/help/attachments/{attachment}/link' => $r('GET', "/api/v1/help/attachments/{$s['ticket_file']}/link"),
+            'GET api/v1/stores/{store}/integrations' => $r('GET', "{$b}/integrations"),
+            'GET api/v1/stores/{store}/integrations/{provider}' => $r('GET', "{$b}/integrations/meta_pixel"),
+            'PUT api/v1/stores/{store}/integrations/{provider}' => $r('PUT', "{$b}/integrations/tiktok_pixel", ['settings' => ['pixel_id' => 'C0ABCDEFGHIJ12345678'],
+                'credentials' => ['access_token' => 'tiktokParityToken000001']]),
+            'PATCH api/v1/stores/{store}/integrations/{provider}' => $r('PATCH', "{$b}/integrations/meta_pixel", ['settings' => ['wait_for_consent' => true], 'revision' => 1]),
+            'POST api/v1/stores/{store}/integrations/{provider}/disconnect' => $r('POST', "{$b}/integrations/meta_pixel/disconnect", ['confirm' => 'DISCONNECT']),
+            'POST api/v1/stores/{store}/integrations/{provider}/verify' => $r('POST', "{$b}/integrations/meta_pixel/verify"),
+            'POST api/v1/stores/{store}/integrations/{provider}/test-event' => $r('POST', "{$b}/integrations/meta_pixel/test-event"),
+            'POST api/v1/stores/{store}/integrations/{provider}/test-mode' => $r('POST', "{$b}/integrations/meta_pixel/test-mode"),
+            'GET api/v1/stores/{store}/integrations/{provider}/events' => $r('GET', "{$b}/integrations/meta_pixel/events"),
+            'GET api/v1/stores/{store}/integrations/{provider}/stats' => $r('GET', "{$b}/integrations/meta_pixel/stats"),
+            'POST api/v1/stores/{store}/integrations/{provider}/oauth/start' => $r('POST', "{$b}/integrations/meta_catalog/oauth/start"),
+            'GET api/v1/stores/{store}/integrations/{provider}/accounts' => $r('GET', "{$b}/integrations/meta_catalog/accounts"),
+            'PUT api/v1/stores/{store}/integrations/{provider}/account' => $r('PUT', "{$b}/integrations/meta_catalog/account", ['account_id' => '100200301']),
+            'GET api/v1/stores/{store}/integrations/{provider}/feed' => $r('GET', "{$b}/integrations/meta_catalog/feed"),
+            'POST api/v1/stores/{store}/integrations/{provider}/sync' => $r('POST', "{$b}/integrations/meta_catalog/sync"),
+            'GET api/v1/stores/{store}/integrations/{provider}/sync-runs' => $r('GET', "{$b}/integrations/meta_catalog/sync-runs"),
+            'GET api/v1/stores/{store}/integrations/{provider}/items' => $r('GET', "{$b}/integrations/meta_catalog/items"),
+            'POST api/v1/stores/{store}/integrations/{provider}/claim-website' => $r('POST', "{$b}/integrations/google_merchant/claim-website"),
             'GET api/v1/billing/sms-credits' => $r('GET', '/api/v1/billing/sms-credits'),
             'PATCH api/v1/billing/sms-credits' => $r('PATCH', '/api/v1/billing/sms-credits', ['low_credit_threshold' => 500]),
             'GET api/v1/billing/sms-credits/ledger' => $r('GET', '/api/v1/billing/sms-credits/ledger'),

@@ -9,6 +9,7 @@ use App\Domain\Expenses\ExpensesServiceProvider;
 use App\Domain\FraudGuard\FraudGuardServiceProvider;
 use App\Domain\Help\HelpServiceProvider;
 use App\Domain\Inbox\InboxServiceProvider;
+use App\Domain\Integrations\IntegrationsServiceProvider;
 use App\Domain\Inventory\InventoryServiceProvider;
 use App\Domain\Pos\PosServiceProvider;
 use App\Domain\Purchasing\PurchasingServiceProvider;
@@ -41,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->register(InboxServiceProvider::class); // Phase 8.8e Inbox limiters, inbox:prune, unassign hooks
         $this->app->register(HelpServiceProvider::class); // Phase 8.9c help center limiters + commands
         $this->app->register(SupportServiceProvider::class); // Phase 8.9c support limiters, commands, staff unassign hook
+        $this->app->register(IntegrationsServiceProvider::class); // Phase 8.9d integrations: commands, limiters, fake boot check
     }
 
     public function boot(): void

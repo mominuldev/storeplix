@@ -36,6 +36,8 @@ use App\Domain\Stores\Models\StoreSetting;
 use App\Domain\Tenancy\Authorization\Permission;
 use App\Domain\Tenancy\Support\AuditLogger;
 use App\Domain\Tenancy\TenantContext;
+use App\Domain\Tracking\TrackingContexts;
+use App\Domain\Tracking\TrackingHooks;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -603,6 +605,10 @@ class OrderPlacementService
         OrderTimeline::record($order, 'placed', $storefront ? null : $user, null, $meta, null, $order->status, $storefront ? 'customer' : null);
         WebhookEvents::emit(WebhookEventType::OrderCreated, $order);
         Attribution::orderPlaced($order); // PHASE-8-5 §5.5: campaign attribution, queued after commit
+        if ($storefront) {
+            TrackingContexts::record($order, $input['tracking'] ?? null, $input['ip'] ?? null); // PHASE-8-9D §5.5 (never fails checkout)
+        }
+        TrackingHooks::orderStatus($order, $order->status); // PHASE-8-9D §5.3: `order_placed` purchase trigger (after commit)
 
         if ($hold) {
             $payments = app(PaymentService::class);

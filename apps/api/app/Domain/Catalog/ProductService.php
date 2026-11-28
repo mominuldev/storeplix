@@ -12,6 +12,7 @@ use App\Domain\Catalog\Models\ProductVariant;
 use App\Domain\Catalog\Support\Slug;
 use App\Domain\Developer\Webhooks\WebhookEvents;
 use App\Domain\Developer\Webhooks\WebhookEventType;
+use App\Domain\Feeds\FeedHooks;
 use App\Domain\Identity\Models\User;
 use App\Domain\Inventory\InventoryService;
 use App\Domain\Inventory\Models\Inventory;
@@ -91,6 +92,7 @@ class ProductService
                 $this->audit->log('product.created', $product, ['name' => $product->name, 'sku_count' => count(array_filter(array_column($variants, 'sku')))]);
             }
             WebhookEvents::emit(WebhookEventType::ProductUpdated, $product);
+            FeedHooks::product($product->store_id, $product->id); // PHASE-8-9D P89D-29
 
             return $product;
         }));
@@ -153,6 +155,7 @@ class ProductService
                 $this->audit->log('product.status_changed', $locked, ['from' => $before, 'to' => $locked->status]);
             }
             WebhookEvents::emit(WebhookEventType::ProductUpdated, $locked);
+            FeedHooks::product($locked->store_id, $locked->id); // PHASE-8-9D P89D-29
 
             return $locked;
         }));
@@ -206,6 +209,7 @@ class ProductService
             $locked->updated_by = $user?->getKey();
             $locked->save();
             WebhookEvents::emit(WebhookEventType::ProductUpdated, $locked);
+            FeedHooks::product($locked->store_id, $locked->id); // PHASE-8-9D P89D-29
 
             return $locked;
         });
@@ -266,6 +270,7 @@ class ProductService
 
             $this->audit->log('product.created', $copy, ['name' => $copy->name, 'sku_count' => 0]);
             WebhookEvents::emit(WebhookEventType::ProductUpdated, $copy);
+            FeedHooks::product($copy->store_id, $copy->id); // PHASE-8-9D P89D-29
 
             return $copy;
         });
@@ -280,6 +285,7 @@ class ProductService
             if ($audit) {
                 $this->audit->log('product.deleted', $product, ['name' => $product->name, 'sku_count' => $skuCount]);
             }
+            FeedHooks::product($product->store_id, $product->id); // PHASE-8-9D P89D-29: removed from connected feeds
         });
     }
 
@@ -327,6 +333,7 @@ class ProductService
                 $product->updated_by = $user?->getKey();
                 $product->save();
                 WebhookEvents::emit(WebhookEventType::ProductUpdated, $product);
+                FeedHooks::product($product->store_id, $product->id); // PHASE-8-9D P89D-29
             }
 
             $this->audit->log('product.bulk_updated', null, ['action' => $action, 'count' => $products->count()]);

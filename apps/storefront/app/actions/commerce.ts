@@ -1,6 +1,6 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -33,6 +33,8 @@ import { GUARD_COPY, OTP_CODE_RE, attemptsLeft, type GuardErrorCode } from '@/li
 import { catalogApiQuery, parseCatalogState } from '@/lib/catalog-query';
 import { toCardView, type ProductCardView } from '@/lib/products';
 import { isLocalDevHost } from '@/lib/seo';
+import { liveTracking } from '@/lib/tracking-config';
+import { buildTrackingContext } from '@/lib/tracking-context';
 
 /**
  * Storefront mutations (PHASE-5-CONTRACT §5, P5-29): Server Actions only, so Next's origin check
@@ -49,7 +51,10 @@ const Quantity = z.number().int().min(1).max(99);
  * rendered the target as the platform "Store not found" page in local testing (the tenant host
  * was not resolved for the redirected render), so actions return the target instead.
  */
-export type CartActionResult = { ok: true; linesCount: number; notices: string[]; redirect?: string } | { ok: false; message: string; redirect?: string };
+export type CartActionResult =
+  | { ok: true; linesCount: number; notices: string[]; redirect?: string; /** quick add: what was added (8.9d add_to_cart) */ added?: AddedItem }
+  | { ok: false; message: string; redirect?: string };
+export interface AddedItem { variantId: string; quantity: number; amount: number; currency: string }
 
 const fail = (r: Extract<ApiResult<unknown>, { ok: false }>): CartActionResult => ({ ok: false, message: errorMessage(r) });
 
@@ -105,7 +110,8 @@ export async function quickAdd(slug: string): Promise<CartActionResult> {
   if (!product) return { ok: false, message: 'This item isn’t available.' };
   if (product.variants.length > 1) return { ok: false, message: '', redirect: `/products/${product.slug}` };
   const [cheapest] = [...product.variants].sort((a, b) => a.price_amount - b.price_amount);
-  return afterCartWrite(ctx.call, await addCartItem(ctx.call, cheapest!.id, 1));
+  const r = await afterCartWrite(ctx.call, await addCartItem(ctx.call, cheapest!.id, 1));
+  return r.ok ? { ...r, added: { variantId: cheapest!.id, quantity: 1, amount: cheapest!.price_amount, currency: product.currency } } : r;
 }
 
 export async function updateLine(input: { itemId: string; quantity: number }): Promise<CartActionResult> {
@@ -237,6 +243,17 @@ export async function placeOrder(prev: CheckoutState, formData: FormData): Promi
   // P88-13: the phone code only matters for COD; anything but 6 digits is not sent (the API answers otp_required).
   const otpCode = String(formData.get('otp_code') ?? '').trim();
   if (method === 'cod' && OTP_CODE_RE.test(otpCode)) input.otp_code = otpCode;
+  // 8.9d §5.5: first-party click/browser ids + consent for the server purchase event (dedupe, match). Only for a shop
+  // with tracking on; never fails checkout.
+  const tracking = liveTracking(ctx.store.mode, ctx.store.config.tracking);
+  if (tracking) {
+    try {
+      const jar = await cookies();
+      input.tracking = buildTrackingContext(tracking, (n) => jar.get(n)?.value, (await headers()).get('user-agent'));
+    } catch {
+      // checkout must not fail on tracking
+    }
+  }
 
   const r = await postCheckout(ctx.call, key, input);
   if (r.ok) {

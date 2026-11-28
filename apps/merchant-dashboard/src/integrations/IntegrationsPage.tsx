@@ -1,4 +1,4 @@
-import type { CourierAccount, CourierProvider, GatewayProvider, PaymentGatewayAccount } from '@storeplix/types';
+import type { CourierAccount, CourierProvider, GatewayProvider, IntegrationSummary, PaymentGatewayAccount } from '@storeplix/types';
 import { Badge, Button, buttonVariants, cn, formatCount, ProviderLogo, Skeleton } from '@storeplix/ui';
 import { Search } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -18,6 +18,10 @@ import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, 
 import { usePaymentGateways } from '../payments/queries';
 import { useSmsCredits } from '../sms/queries';
 import { canOpenSms } from '../sms/sms';
+import { GatewayLogo } from '../payments/GatewayLogo';
+import { ProviderTile } from './components';
+import { attentionText, canViewIntegrations, FEED_ORDER, featurePlan, integrationPath, isLive, PROVIDER_META, statusMeta, TRACKING_ORDER, type PartAProvider } from './integrations';
+import { useIntegrationList } from './queries';
 
 // Figma Integrations 14:980 (PHASE-5B §10). Filter chips All / Connected / Couriers / Payments with counts. Payments
 // (bKash, SSLCommerz) live since 5b-2; couriers (Steadfast, Pathao, RedX) since 5b-3: status badge, capability line,
@@ -28,9 +32,12 @@ import { canOpenSms } from '../sms/sms';
 // chip. The SMS card is not counted in the All/Connected chip numbers (those count connectable accounts).
 // Phase 8.4 §7: the Developer banner 14:1441 links to /integrations/developer (only with `developers.manage`). Filter pills follow the Figma frames (selected = text-primary fill, white text; counts on All and
 // Connected only); the search box filters the cards by name. Staff see the page read-only.
+// PHASE-8-9D P89D-50 (Figma 2143:59642, mobile 2136:1866): groups "Marketing & tracking" (Meta Pixel, TikTok, GA4, GTM
+// server; "IDs and tokens only") and "Sales channels" (Facebook & Instagram catalog, Google Merchant Center) from
+// `GET …/integrations`, with chips, shown to `integrations.manage | marketing.manage`; plan-gated cards show "Upgrade".
 
-type Filter = 'all' | 'connected' | 'couriers' | 'payments' | 'messaging';
-const FILTERS: readonly Filter[] = ['all', 'connected', 'couriers', 'payments', 'messaging'];
+type Filter = 'all' | 'connected' | 'couriers' | 'payments' | 'messaging' | 'tracking' | 'channels';
+const FILTERS: readonly Filter[] = ['all', 'connected', 'couriers', 'payments', 'messaging', 'tracking', 'channels'];
 
 export function IntegrationsPage() {
   const scope = useStoreScope();
@@ -48,18 +55,27 @@ export function IntegrationsPage() {
   const [courier, setCourier] = useState<CourierProvider | null>(null);
   const accounts = byProvider(gateways.data);
   const courierAccounts = couriersByProvider(couriers.data);
-  const connectedCount = GATEWAYS.filter((p) => isConnected(accounts[p])).length + COURIERS.filter((p) => courierConnected(courierAccounts[p])).length;
+  const trackingVisible = canViewIntegrations(activeTenant);
+  const integrations = useIntegrationList();
+  const summaries = new Map<string, IntegrationSummary>((integrations.data ?? []).map((i) => [i.provider, i]));
+  const partA: PartAProvider[] = trackingVisible ? [...TRACKING_ORDER, ...FEED_ORDER] : [];
+  const integrationConnected = (p: PartAProvider) => isLive(summaries.get(p)?.status ?? 'not_connected');
+  const connectedCount = GATEWAYS.filter((p) => isConnected(accounts[p])).length + COURIERS.filter((p) => courierConnected(courierAccounts[p])).length + partA.filter(integrationConnected).length;
   const chips: { value: Filter; label: string }[] = [
-    { value: 'all', label: `All · ${GATEWAYS.length + COURIERS.length}` },
+    { value: 'all', label: `All · ${GATEWAYS.length + COURIERS.length + partA.length}` },
     { value: 'connected', label: `Connected · ${connectedCount}` },
     { value: 'couriers', label: 'Couriers' },
     { value: 'payments', label: 'Payments' },
+    ...(trackingVisible ? [{ value: 'tracking' as const, label: 'Marketing & tracking' }] : []),
     ...(smsVisible ? [{ value: 'messaging' as const, label: 'Messaging' }] : []),
+    ...(trackingVisible ? [{ value: 'channels' as const, label: 'Sales channels' }] : []),
   ];
-  const showPayments = filter !== 'couriers' && filter !== 'messaging';
+  const showPayments = filter === 'all' || filter === 'connected' || filter === 'payments';
+  const groupVisible = (group: 'tracking' | 'channels') => trackingVisible && (filter === 'all' || filter === 'connected' || filter === group);
+  const visibleIntegrations = (order: PartAProvider[]) => order.filter((p) => (filter !== 'connected' || integrationConnected(p)) && matches(PROVIDER_META[p].name));
   const showMessaging = smsVisible && (filter === 'all' || filter === 'connected' || filter === 'messaging') && matches('Storeplix SMS');
   const visibleGateways = GATEWAYS.filter((p) => (filter !== 'connected' || isConnected(accounts[p])) && matches(gatewayMeta[p].name));
-  const showCouriers = filter !== 'payments' && filter !== 'messaging';
+  const showCouriers = filter === 'all' || filter === 'connected' || filter === 'couriers';
   const visibleCouriers = COURIERS.filter((p) => (filter !== 'connected' || courierConnected(courierAccounts[p])) && matches(courierMeta[p].name));
 
   return (
@@ -141,10 +157,34 @@ export function IntegrationsPage() {
         </Section>
       )}
 
+      {groupVisible('tracking') && (
+        <IntegrationGroup
+          title="Marketing & tracking"
+          subtitle="IDs and tokens only — send purchases to ad platforms so your ads find buyers."
+          providers={visibleIntegrations(TRACKING_ORDER)}
+          query={integrations}
+          summaries={summaries}
+          canManage={scope.canManageIntegrations}
+          empty={q ? 'No tracking integration matches your search.' : 'No tracking connected yet.'}
+        />
+      )}
+
       {showMessaging && (
         <Section title="Messaging" subtitle="Order updates and codes by SMS, sent through Store Plix.">
           <SmsCard />
         </Section>
+      )}
+
+      {groupVisible('channels') && (
+        <IntegrationGroup
+          title="Sales channels"
+          subtitle="Show your products on Facebook, Instagram and Google. Orders still come to your shop."
+          providers={visibleIntegrations(FEED_ORDER)}
+          query={integrations}
+          summaries={summaries}
+          canManage={scope.canManageIntegrations}
+          empty={q ? 'No sales channel matches your search.' : 'No sales channel connected yet.'}
+        />
       )}
 
       {filter === 'all' && !q && can.manageDevelopers(activeTenant) && <DeveloperBanner />}
@@ -213,6 +253,78 @@ export function IntegrationCard({ logo, name, status, capability, footer, action
   );
 }
 
+function IntegrationGroup({
+  title,
+  subtitle,
+  providers,
+  query,
+  summaries,
+  canManage,
+  empty,
+}: {
+  title: string;
+  subtitle: string;
+  providers: PartAProvider[];
+  query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
+  summaries: Map<string, IntegrationSummary>;
+  canManage: boolean;
+  empty: string;
+}) {
+  return (
+    <Section title={title} subtitle={subtitle}>
+      {query.isPending ? (
+        <>
+          <Skeleton className="h-[185px] rounded-card" />
+          <Skeleton className="h-[185px] rounded-card" />
+        </>
+      ) : query.isError ? (
+        <div className="sm:col-span-2 xl:col-span-3">
+          <ErrorBlock title={`We couldn’t load ${title.toLowerCase()}`} error={query.error} onRetry={() => void query.refetch()} />
+        </div>
+      ) : providers.length === 0 ? (
+        <p className="text-body text-text-muted sm:col-span-2 xl:col-span-3">{empty}</p>
+      ) : (
+        providers.map((p) => <PartACard key={p} provider={p} summary={summaries.get(p)} canManage={canManage} />)
+      )}
+    </Section>
+  );
+}
+
+/** PHASE-8-9D card: status pill (or "Upgrade · plan"), one-line summary, attention/footer and Connect / Manage. */
+function PartACard({ provider, summary, canManage }: { provider: PartAProvider; summary: IntegrationSummary | undefined; canManage: boolean }) {
+  const meta = PROVIDER_META[provider];
+  const status = summary?.status ?? 'not_connected';
+  const live = isLive(status) || status === 'setup_required';
+  const gate = summary?.plan_required === 'product_feeds' || summary?.plan_required === 'server_side_tagging' ? summary.plan_required : null;
+  const s = statusMeta(status);
+  const attention = summary?.attention.find((a) => a.reason !== 'plan_required');
+  const footer = attention ? attentionText(attention, provider) : gate && !live ? `${featurePlan[gate]} plan` : live ? meta.typePill : 'Uses your own account';
+  const label = live ? 'Manage' : gate ? 'View' : canManage ? 'Connect' : 'View';
+  return (
+    <IntegrationCard
+      logo={<ProviderTile provider={provider} size="md" />}
+      name={meta.name}
+      status={
+        gate && !live ? (
+          <Badge tone="brand">Upgrade · {featurePlan[gate]}</Badge>
+        ) : (
+          <Badge tone={s.tone} dot={status === 'connected'}>
+            {s.label}
+          </Badge>
+        )
+      }
+      capability={summary?.summary ?? meta.capability}
+      footer={footer}
+      highlighted={status === 'connected'}
+      action={
+        <Link to={integrationPath(provider)} aria-label={`${label} ${meta.name}`} className={buttonVariants({ variant: label === 'Connect' ? 'primary' : 'secondary', size: 'sm' })}>
+          {label}
+        </Link>
+      }
+    />
+  );
+}
+
 /** PHASE-8-9A §12.6 SMS card: logo tile "SMS", Active, capability + credit balance, Manage → /integrations/sms. */
 function SmsCard() {
   const credits = useSmsCredits();
@@ -249,7 +361,7 @@ function GatewayCard({ provider, account, canManage, onOpen }: { provider: Gatew
   const footer = connected && account?.mode ? `${modeLabel[account.mode]} · ${account.enabled ? 'On at checkout' : 'Off at checkout'}${account.is_default ? ' · Default' : ''}` : 'Uses your own account';
   return (
     <IntegrationCard
-      logo={<ProviderLogo provider={provider} />}
+      logo={<GatewayLogo provider={provider} />}
       name={meta.name}
       status={
         <Badge tone={status.tone} dot={connected}>

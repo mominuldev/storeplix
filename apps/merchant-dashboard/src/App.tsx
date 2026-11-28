@@ -60,6 +60,8 @@ const ShipmentsPage = lazy(() => import('./shipments/ShipmentsPage'));
 const ShipmentDetailPage = lazy(() => import('./shipments/ShipmentDetailPage'));
 const PrintPage = lazy(() => import('./documents/PrintPage'));
 const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
+const IntegrationDetailPage = lazy(() => import('./integrations/IntegrationDetailPage'));
+const ProviderValueRedirect = lazy(() => import('./integrations/IntegrationDetailPage').then((m) => ({ default: m.ProviderValueRedirect })));
 const DeveloperPage = lazy(() => import('./developer/DeveloperPage'));
 // PHASE-8-9A SMS integration (Integrations › Messaging › SMS)
 const SmsPage = lazy(() => import('./sms/SmsPage'));
@@ -279,6 +281,11 @@ export function AppRoutes() {
               <Route path="/integrations" element={lazyEl(<IntegrationsPage />)} />
               <Route path="/integrations/developer" element={gated(can.manageDevelopers, <DeveloperPage />)} />
               <Route path="/integrations/sms" element={lazyEl(<SmsPage />)} />
+              {/* PHASE-8-9D §8 part A: tracking pixels, GTM server and product feeds. */}
+              {['meta-pixel', 'ga4', 'tiktok', 'gtm', 'meta-catalog', 'google-merchant'].map((slug) => (
+                <Route key={slug} path={`/integrations/${slug}`} element={lazyEl(<IntegrationDetailPage slug={slug} />)} />
+              ))}
+              <Route path="/integrations/:provider" element={lazyEl(<ProviderValueRedirect />)} />
               <Route path="/marketing" element={<MarketingIndex />} />
               <Route path="/marketing/campaigns" element={gated(can.manageMarketing, <CampaignsPage />)} />
               <Route path="/marketing/campaigns/new" element={gated(can.manageMarketing, <CampaignComposerPage />)} />

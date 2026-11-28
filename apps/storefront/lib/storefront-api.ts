@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { SocialLinks, StoreContact, StorefrontCommerce, StorefrontConfig, StorefrontInboxConfig, StorefrontMedia } from '@storeplix/types';
 import { parseCommerce } from './commerce-schemas';
 import { parseInboxConfig } from './inbox-schemas';
+import { parseTrackingConfig } from './tracking-config';
 import { serverEnv } from './env';
 import { buildConfigRequest, buildPageIndexRequest, buildPageRequest, type StorefrontRequestInit } from './config-request';
 import { buildCommerceRequest } from './commerce-request';
@@ -81,6 +82,8 @@ const StorefrontConfigSchema = z.object({
   commerce: z.unknown().optional().transform(parseCommerce),
   // Phase 8.8e (PHASE-8-8E §9.1); optional on the wire → null (no widget, no order Messages card).
   inbox: z.unknown().optional().transform(parseInboxConfig),
+  // Phase 8.9d (PHASE-8-9D §6.1, S333): pixel IDs re-validated; optional on the wire → null (no tag, no beacon).
+  tracking: z.unknown().optional().transform(parseTrackingConfig),
 });
 
 /**
@@ -171,6 +174,8 @@ function finalizeConfig(
     preview,
     // 8.8e §9.1: never a widget or order Messages on a draft store, whatever the API sent.
     inbox: config.store.status === 'active' ? config.inbox : null,
+    // 8.9d §6.1: never tracking on a draft store or a preview render, whatever the API sent.
+    tracking: config.store.status === 'active' && !preview ? config.tracking : null,
   };
 }
 
