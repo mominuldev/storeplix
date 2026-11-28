@@ -14,11 +14,13 @@ import { PageHeader } from '../layout/PageHeader';
 import { can } from '../lib/permissions';
 import { DEVELOPER_DOCS_URL } from '../lib/links';
 import { ConnectGatewayDialog } from '../payments/ConnectGatewayDialog';
-import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, modeLabel } from '../payments/gateways';
+import { ALL_GATEWAYS, byProvider, gatewayMeta, integrationStatusMeta, isConnected, modeLabel, NAGAD_PATH } from '../payments/gateways';
 import { usePaymentGateways } from '../payments/queries';
 import { useSmsCredits } from '../sms/queries';
 import { canOpenSms } from '../sms/sms';
 import { GatewayLogo } from '../payments/GatewayLogo';
+import { AI_META, AI_ORDER, aiPath } from './ai';
+import { AiTile } from './aiComponents';
 import { ProviderTile } from './components';
 import { attentionText, canViewIntegrations, FEED_ORDER, featurePlan, integrationPath, isLive, PROVIDER_META, statusMeta, TRACKING_ORDER, type PartAProvider } from './integrations';
 import { useIntegrationList } from './queries';
@@ -35,9 +37,12 @@ import { useIntegrationList } from './queries';
 // PHASE-8-9D P89D-50 (Figma 2143:59642, mobile 2136:1866): groups "Marketing & tracking" (Meta Pixel, TikTok, GA4, GTM
 // server; "IDs and tokens only") and "Sales channels" (Facebook & Instagram catalog, Google Merchant Center) from
 // `GET …/integrations`, with chips, shown to `integrations.manage | marketing.manage`; plan-gated cards show "Upgrade".
+// Part B: Payments gains Nagad (→ /integrations/payments/nagad) and the "AI for growth" group (Claude product
+// descriptions, AI product photos; On/Off) with an "AI" chip. AI photos is "Coming soon" when the API leaves it out of
+// the list (no image provider in production yet, P89D-39).
 
-type Filter = 'all' | 'connected' | 'couriers' | 'payments' | 'messaging' | 'tracking' | 'channels';
-const FILTERS: readonly Filter[] = ['all', 'connected', 'couriers', 'payments', 'messaging', 'tracking', 'channels'];
+type Filter = 'all' | 'connected' | 'couriers' | 'payments' | 'messaging' | 'tracking' | 'channels' | 'ai';
+const FILTERS: readonly Filter[] = ['all', 'connected', 'couriers', 'payments', 'messaging', 'tracking', 'channels', 'ai'];
 
 export function IntegrationsPage() {
   const scope = useStoreScope();
@@ -60,21 +65,26 @@ export function IntegrationsPage() {
   const summaries = new Map<string, IntegrationSummary>((integrations.data ?? []).map((i) => [i.provider, i]));
   const partA: PartAProvider[] = trackingVisible ? [...TRACKING_ORDER, ...FEED_ORDER] : [];
   const integrationConnected = (p: PartAProvider) => isLive(summaries.get(p)?.status ?? 'not_connected');
-  const connectedCount = GATEWAYS.filter((p) => isConnected(accounts[p])).length + COURIERS.filter((p) => courierConnected(courierAccounts[p])).length + partA.filter(integrationConnected).length;
+  const aiProviders = trackingVisible ? AI_ORDER : [];
+  const aiOn = (p: (typeof AI_ORDER)[number]) => summaries.get(p)?.status === 'connected';
+  const connectedCount =
+    ALL_GATEWAYS.filter((p) => isConnected(accounts[p])).length + COURIERS.filter((p) => courierConnected(courierAccounts[p])).length + partA.filter(integrationConnected).length + aiProviders.filter(aiOn).length;
   const chips: { value: Filter; label: string }[] = [
-    { value: 'all', label: `All · ${GATEWAYS.length + COURIERS.length + partA.length}` },
+    { value: 'all', label: `All · ${ALL_GATEWAYS.length + COURIERS.length + partA.length + aiProviders.length}` },
     { value: 'connected', label: `Connected · ${connectedCount}` },
     { value: 'couriers', label: 'Couriers' },
     { value: 'payments', label: 'Payments' },
     ...(trackingVisible ? [{ value: 'tracking' as const, label: 'Marketing & tracking' }] : []),
     ...(smsVisible ? [{ value: 'messaging' as const, label: 'Messaging' }] : []),
     ...(trackingVisible ? [{ value: 'channels' as const, label: 'Sales channels' }] : []),
+    ...(trackingVisible ? [{ value: 'ai' as const, label: 'AI' }] : []),
   ];
   const showPayments = filter === 'all' || filter === 'connected' || filter === 'payments';
-  const groupVisible = (group: 'tracking' | 'channels') => trackingVisible && (filter === 'all' || filter === 'connected' || filter === group);
+  const groupVisible = (group: 'tracking' | 'channels' | 'ai') => trackingVisible && (filter === 'all' || filter === 'connected' || filter === group);
   const visibleIntegrations = (order: PartAProvider[]) => order.filter((p) => (filter !== 'connected' || integrationConnected(p)) && matches(PROVIDER_META[p].name));
   const showMessaging = smsVisible && (filter === 'all' || filter === 'connected' || filter === 'messaging') && matches('Storeplix SMS');
-  const visibleGateways = GATEWAYS.filter((p) => (filter !== 'connected' || isConnected(accounts[p])) && matches(gatewayMeta[p].name));
+  const visibleAi = aiProviders.filter((p) => (filter !== 'connected' || aiOn(p)) && matches(AI_META[p].name));
+  const visibleGateways = ALL_GATEWAYS.filter((p) => (filter !== 'connected' || isConnected(accounts[p])) && matches(gatewayMeta[p].name));
   const showCouriers = filter === 'all' || filter === 'connected' || filter === 'couriers';
   const visibleCouriers = COURIERS.filter((p) => (filter !== 'connected' || courierConnected(courierAccounts[p])) && matches(courierMeta[p].name));
 
@@ -144,6 +154,7 @@ export function IntegrationsPage() {
             <>
               <Skeleton className="h-[185px] rounded-card" />
               <Skeleton className="h-[185px] rounded-card" />
+              <Skeleton className="h-[185px] rounded-card" />
             </>
           ) : gateways.isError ? (
             <div className="sm:col-span-2 xl:col-span-3">
@@ -152,7 +163,7 @@ export function IntegrationsPage() {
           ) : visibleGateways.length === 0 ? (
             <p className="text-body text-text-muted sm:col-span-2 xl:col-span-3">{q ? 'No payment gateway matches your search.' : 'No payment gateway connected yet.'}</p>
           ) : (
-            visibleGateways.map((p) => <GatewayCard key={p} provider={p} account={accounts[p]} canManage={scope.canManageIntegrations} onOpen={() => setConnecting(p)} />)
+            visibleGateways.map((p) => <GatewayCard key={p} provider={p} account={accounts[p]} canManage={scope.canManageIntegrations} onOpen={p === 'nagad' ? undefined : () => setConnecting(p)} />)
           )}
         </Section>
       )}
@@ -185,6 +196,25 @@ export function IntegrationsPage() {
           canManage={scope.canManageIntegrations}
           empty={q ? 'No sales channel matches your search.' : 'No sales channel connected yet.'}
         />
+      )}
+
+      {groupVisible('ai') && (
+        <Section title="AI for growth" subtitle="Write product copy and clean photos with AI. Uses your shop’s AI credits.">
+          {integrations.isPending ? (
+            <>
+              <Skeleton className="h-[185px] rounded-card" />
+              <Skeleton className="h-[185px] rounded-card" />
+            </>
+          ) : integrations.isError ? (
+            <div className="sm:col-span-2 xl:col-span-3">
+              <ErrorBlock title="We couldn’t load AI tools" error={integrations.error} onRetry={() => void integrations.refetch()} />
+            </div>
+          ) : visibleAi.length === 0 ? (
+            <p className="text-body text-text-muted sm:col-span-2 xl:col-span-3">{q ? 'No AI tool matches your search.' : 'No AI tool turned on yet.'}</p>
+          ) : (
+            visibleAi.map((p) => <AiCard key={p} provider={p} summary={summaries.get(p)} comingSoon={p === 'ai_photos' && !!integrations.data && !summaries.has(p)} canManage={scope.canManageIntegrations} />)
+          )}
+        </Section>
       )}
 
       {filter === 'all' && !q && can.manageDevelopers(activeTenant) && <DeveloperBanner />}
@@ -354,7 +384,7 @@ function SmsCard() {
   );
 }
 
-function GatewayCard({ provider, account, canManage, onOpen }: { provider: GatewayProvider; account: PaymentGatewayAccount | undefined; canManage: boolean; onOpen: () => void }) {
+function GatewayCard({ provider, account, canManage, onOpen }: { provider: GatewayProvider; account: PaymentGatewayAccount | undefined; canManage: boolean; onOpen?: () => void }) {
   const meta = gatewayMeta[provider];
   const connected = isConnected(account);
   const status = integrationStatusMeta(account?.status ?? 'not_connected');
@@ -372,11 +402,48 @@ function GatewayCard({ provider, account, canManage, onOpen }: { provider: Gatew
       footer={footer}
       highlighted={connected}
       action={
-        canManage ? (
+        !onOpen ? (
+          // Nagad (PHASE-8-9D §9) has its own page; members who can't manage still open it read-only.
+          <Link to={NAGAD_PATH} aria-label={`${connected ? 'Manage' : canManage ? 'Connect' : 'View'} ${meta.name}`} className={buttonVariants({ variant: connected || account?.status === 'error' || !canManage ? 'secondary' : 'primary', size: 'sm' })}>
+            {connected ? 'Manage' : canManage ? 'Connect' : 'View'}
+          </Link>
+        ) : canManage ? (
           <Button size="sm" variant={connected || account?.status === 'error' ? 'secondary' : 'primary'} onClick={onOpen} aria-label={`${connected ? 'Manage' : 'Connect'} ${meta.name}`}>
             {connected ? 'Manage' : 'Connect'}
           </Button>
         ) : undefined
+      }
+    />
+  );
+}
+
+/** PHASE-8-9D P89D-50 / P89D-54: AI tool card — On / Off (default Off), "Coming soon" without an image provider. */
+function AiCard({ provider, summary, comingSoon, canManage }: { provider: (typeof AI_ORDER)[number]; summary: IntegrationSummary | undefined; comingSoon: boolean; canManage: boolean }) {
+  const meta = AI_META[provider];
+  const on = summary?.status === 'connected';
+  const label = on ? 'Manage' : canManage ? 'Turn on' : 'View';
+  return (
+    <IntegrationCard
+      logo={<AiTile provider={provider} size="md" />}
+      name={meta.name}
+      status={
+        comingSoon ? (
+          <Badge tone="info">Coming soon</Badge>
+        ) : (
+          <Badge tone={on ? 'success' : 'neutral'} dot={on}>
+            {on ? 'On' : 'Off'}
+          </Badge>
+        )
+      }
+      capability={summary?.summary ?? meta.capability}
+      footer={comingSoon ? 'Image partner being chosen' : 'Uses Storeplix AI credits'}
+      highlighted={on}
+      action={
+        comingSoon ? undefined : (
+          <Link to={aiPath(provider)} aria-label={`${label} ${meta.name}`} className={buttonVariants({ variant: label === 'Turn on' ? 'primary' : 'secondary', size: 'sm' })}>
+            {label}
+          </Link>
+        )
       }
     />
   );

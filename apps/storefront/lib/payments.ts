@@ -6,15 +6,16 @@ import { formatMoney } from './format';
  * no server-only imports. Used by the checkout form, the payment-result and pay pages.
  */
 
-export const GATEWAYS: readonly GatewayProvider[] = ['bkash', 'sslcommerz'];
-const METHOD_ORDER: readonly PaymentMethod[] = ['cod', 'bkash', 'sslcommerz'];
+export const GATEWAYS: readonly GatewayProvider[] = ['bkash', 'nagad', 'sslcommerz'];
+/** PHASE-8-9D §9.6: Nagad sits next to bKash; offered only when the API lists it (connected and enabled). */
+const METHOD_ORDER: readonly PaymentMethod[] = ['cod', 'bkash', 'nagad', 'sslcommerz'];
 
 /** Shopper-facing names (P5B-12): SSLCommerz is shown as "Card or mobile banking". */
 export const METHOD_LABEL: Record<PaymentMethod, string> = {
   cod: 'Cash on delivery',
   bkash: 'bKash',
   sslcommerz: 'Card or mobile banking',
-  // Phase 8.9d part B (PHASE-8-9D §9.6): labelled now, offered at checkout only once part B ships (METHOD_ORDER).
+  // PHASE-8-9D §9.6: offered when `config.commerce.payment_methods` includes it.
   nagad: 'Nagad',
 };
 
@@ -27,13 +28,30 @@ export const METHOD_HINT: Record<PaymentMethod, string> = {
 
 /** "with bKash" / "by card or mobile banking" for result lines. */
 export function paidWith(provider: GatewayProvider): string {
-  return provider === 'bkash' ? 'with bKash' : 'by card or mobile banking';
+  return provider === 'sslcommerz' ? 'by card or mobile banking' : `with ${METHOD_LABEL[provider]}`;
 }
 
-export const isGateway = (m: unknown): m is GatewayProvider => m === 'bkash' || m === 'sslcommerz';
+/** "bKash" / "Nagad" / "card or mobile banking" inside sentences ("Pay ৳ 1,200 with …", "Try again with …"). */
+export function gatewayPhrase(provider: GatewayProvider): string {
+  return provider === 'sslcommerz' ? 'card or mobile banking' : METHOD_LABEL[provider];
+}
+
+/** "Taking you to bKash…" / "…to Nagad…" / "…to the payment page…". */
+export function redirectTarget(provider: GatewayProvider): string {
+  return provider === 'sslcommerz' ? 'the payment page' : METHOD_LABEL[provider];
+}
+
+/** What happens after the shopper places an online order with this gateway (checkout note). */
+export function gatewayNote(provider: GatewayProvider): string {
+  if (provider === 'bkash') return "You'll approve the payment in bKash, then come back here.";
+  if (provider === 'nagad') return "You'll approve the payment on Nagad's secure page, then come back here.";
+  return "You'll pay on the secure SSLCommerz page, then come back here.";
+}
+
+export const isGateway = (m: unknown): m is GatewayProvider => m === 'bkash' || m === 'sslcommerz' || m === 'nagad';
 export const isPaymentMethod = (m: unknown): m is PaymentMethod => m === 'cod' || isGateway(m);
 
-/** Methods the storefront offers or advertises (cart "Pay with", footer badges); `nagad` waits for part B. */
+/** Methods the storefront offers or advertises (cart "Pay with", footer badges). */
 export const isOfferedMethod = (m: PaymentMethod): boolean => (METHOD_ORDER as readonly string[]).includes(m);
 
 /** Methods to offer at checkout, in a fixed order; an old/empty config falls back to COD only. */

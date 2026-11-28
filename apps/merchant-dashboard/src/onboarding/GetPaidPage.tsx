@@ -12,7 +12,7 @@ import { useCommerceInvalidate } from '../commerce/queries';
 import { api } from '../lib/api';
 import { LoadingState } from '../online-store/components/Shell';
 import { ConnectGatewayDialog } from '../payments/ConnectGatewayDialog';
-import { byProvider, GATEWAYS, gatewayMeta, isConnected, isUsable } from '../payments/gateways';
+import { ALL_GATEWAYS, byProvider, GATEWAYS, gatewayMeta, isConnected, isUsable } from '../payments/gateways';
 import { usePaymentGateways } from '../payments/queries';
 import { useStoreSettings } from '../settings/commerceSettings';
 import { settingsKey } from '../settings/schema';
@@ -46,7 +46,7 @@ function GetPaidForm({ initialCod, initialAdvance }: { initialCod: boolean; init
   const [connecting, setConnecting] = useState<GatewayProvider | null>(null);
   const gateways = usePaymentGateways();
   const accounts = byProvider(gateways.data);
-  const usable = GATEWAYS.filter((p) => isUsable(accounts[p]));
+  const usable = ALL_GATEWAYS.filter((p) => isUsable(accounts[p]));
   const canConnect = scope.canManageIntegrations;
   const [blockers, setBlockers] = useState<{ key: LaunchItemKey; message: string }[]>([]);
   const [error, setError] = useState<string | null>(null);

@@ -109,7 +109,7 @@ describe('Zod schemas for the 5b payment payloads', () => {
     expect(schemas.safeGatewayUrl('http://localhost:8010/api/v1/dev/fake-gateway/x', false)).toBeNull();
     expect(schemas.safeGatewayUrl('http://localhost:8010/api/v1/dev/fake-gateway/x', true)).toBe('http://localhost:8010/api/v1/dev/fake-gateway/x');
     expect(schemas.parsePaymentInitiation(initiation({ payment_id: '../x' }))).toBeNull();
-    expect(schemas.parsePaymentInitiation(initiation({ provider: 'nagad' }))).toBeNull();
+    expect(schemas.parsePaymentInitiation(initiation({ provider: 'paypal' }))).toBeNull();
   });
 
   it('CheckoutResult: payment null for COD; a broken initiation fails the payload', () => {
@@ -198,7 +198,7 @@ describe('placeOrder with online payments', () => {
   });
 
   it('rejects an unknown payment method or advance gateway without calling the API', async () => {
-    expect(await placeOrder(idle, form({ payment_method: 'nagad' }))).toMatchObject({ status: 'error' });
+    expect(await placeOrder(idle, form({ payment_method: 'paypal' }))).toMatchObject({ status: 'error' });
     expect(await placeOrder(idle, form({ payment_method: 'cod', advance_gateway: 'paypal' }))).toMatchObject({ status: 'error' });
     expect(fetchMock).not.toHaveBeenCalled();
   });

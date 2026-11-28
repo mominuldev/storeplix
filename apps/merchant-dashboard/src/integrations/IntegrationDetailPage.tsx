@@ -5,6 +5,7 @@ import { FeedPage } from './FeedPage';
 import { GtmPage } from './GtmPage';
 import { canViewIntegrations, integrationPath, isFeed, isPixel, PROVIDER_BY_SLUG, PROVIDER_META, SLUG_BY_PROVIDER, type PartAProvider } from './integrations';
 import { PixelPage } from './PixelPage';
+import { aiPath } from './ai';
 
 // PHASE-8-9D §8: `/integrations/{meta-pixel|ga4|tiktok|gtm|meta-catalog|google-merchant}`. Readable with
 // `integrations.manage | marketing.manage` (P89D-41); staff get the no-access state. The OAuth callback returns to
@@ -26,6 +27,8 @@ export function ProviderValueRedirect() {
   const { search } = useLocation();
   const p = provider as PartAProvider | undefined;
   if (p && p in SLUG_BY_PROVIDER) return <Navigate to={`${integrationPath(p)}${search}`} replace />;
+  if (provider === 'ai_writer' || provider === 'ai_photos') return <Navigate to={`${aiPath(provider)}${search}`} replace />;
+  if (provider === 'nagad') return <Navigate to={`/integrations/payments/nagad${search}`} replace />;
   return <Navigate to="/integrations" replace />;
 }
 

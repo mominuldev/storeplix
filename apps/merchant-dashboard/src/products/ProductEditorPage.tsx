@@ -2,9 +2,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@storeplix/api-client';
 import type { Category, Product, ProductOption } from '@storeplix/types';
 import { CATALOG_LIMITS } from '@storeplix/types';
-import { Button, Checkbox, cn, DraftBar, DraftBarGhostButton, Input, Label, MoneyInput, SortableList, TagInput, Toggle, gripProps } from '@storeplix/ui';
+import { Button, Checkbox, cn, DraftBar, DraftBarGhostButton, Input, Label, Modal, MoneyInput, SortableList, TagInput, Toggle, gripProps } from '@storeplix/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Copy, GripVertical, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, GripVertical, Sparkles, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, type FieldPath } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -18,6 +18,9 @@ import { api } from '../lib/api';
 import { ConflictDialog, LoadingState } from '../online-store/components/Shell';
 import { toast } from '../online-store/components/Toast';
 import { handlePlanLimit } from '../plan/Banners';
+import { appendVariant, variantToDoc } from '../integrations/ai';
+import { AiPhotoEditor, WriteWithAiPanel } from '../integrations/aiComponents';
+import { useAiToolOn } from '../integrations/aiQueries';
 import { storeDomain } from '../stores/useTenantStore';
 import { productFormSchema } from './schema';
 import { OtherLocationsStock } from './OtherLocationsStock';
@@ -26,9 +29,12 @@ import { blankVariant, emptyProductForm, formToPayload, productToForm, serverPat
 
 const RichTextEditor = lazy(() => import('../online-store/richtext/RichTextEditor'));
 
-// Figma Product editor 60:9381 (Main 60:9383), Variant row 61:13220. Built per contract §4: hidden — Write with AI,
-// Add from URL, Collections, Where it's sold, Order form, Last 30 days, package & delivery charge, "After COD fee".
+// Figma Product editor 60:9381 (Main 60:9383), Variant row 61:13220. Built per contract §4: hidden — Add from URL, Collections, Where it's sold, Order form, Last 30 days, package & delivery charge, "After COD fee".
 // "Preview on shop" is disabled until product pages ship (Phase 5).
+// PHASE-8-9D §11 (Figma 2141:59985 / panel 2141:60490): "Write with AI" in the description header opens the inline
+// panel when Claude is On and the member has `products.edit`; a draft fills the description (and an empty SEO title /
+// description) — unsaved, like any edit (P89D-52). "Edit with AI" on Photos opens the AI photo editor for the saved
+// photos; Save to product / Undo change the photo on the server, and the editor takes the new photos and revision.
 
 export function ProductEditorPage() {
   const { productId } = useParams();
@@ -75,6 +81,10 @@ function ProductEditor({ product }: { product: Product | null }) {
   const [duplicating, setDuplicating] = useState(false);
   const [weightText, setWeightText] = useState(() => kgText(product?.variants[0]?.weight_grams ?? null));
   const isNew = !current;
+  const writer = useAiToolOn('ai_writer', scope.canEditProducts);
+  const photoTool = useAiToolOn('ai_photos', scope.canEditProducts && !!product);
+  const [writing, setWriting] = useState(false);
+  const [editingPhotos, setEditingPhotos] = useState(false);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
@@ -189,6 +199,31 @@ function ProductEditor({ product }: { product: Product | null }) {
     }
   };
 
+  /** P89D-52: a draft only fills the form; the merchant saves the product as usual. */
+  const applyDraft = (doc: ProductFormValues['description'], v: { seo_title: string | null; meta_description: string | null }) => {
+    setValue('description', doc, dirty);
+    if (v.seo_title && !form.getValues('seo_title').trim()) setValue('seo_title', v.seo_title.slice(0, 70), dirty);
+    if (v.meta_description && !form.getValues('seo_description').trim()) setValue('seo_description', v.meta_description.slice(0, 160), dirty);
+    toast('Draft added. Check it, then save the product.');
+  };
+
+  /**
+   * Save to product / Undo changed the product's photos on the server: take the new revision and photos, keep every
+   * other unsaved edit in the form (the next save sends them with the new revision).
+   */
+  const reloadAfterPhoto = async () => {
+    if (!current) return;
+    try {
+      const fresh = await api.products.get(scope.storeId!, current.id);
+      setCurrent(fresh);
+      queryClient.setQueryData(keys.product(scope, fresh.id), fresh);
+      form.resetField('images', { defaultValue: productToForm(fresh).images });
+      await invalidate.afterProductSave(fresh.id);
+    } catch (e) {
+      toast(errorMessage(e, 'Reload the page to see the new photo.'), 'error');
+    }
+  };
+
   const discard = () => {
     if (!current) return navigate('/products');
     reset(productToForm(current));
@@ -285,11 +320,32 @@ function ProductEditor({ product }: { product: Product | null }) {
           <Panel>
             <Input label="Product name" placeholder="e.g. Jamdani Three-Piece — Handwoven Dhakai" maxLength={200} error={nameError} {...register('name')} />
             <div className="flex flex-col gap-1.5">
-              <Label>Description</Label>
+              <div className="flex items-center gap-2">
+                <Label>Description</Label>
+                <span className="flex-1" />
+                {writer.on && scope.canEditProducts && !writing && (
+                  <Button size="sm" variant="ghost" leftIcon={<Sparkles aria-hidden className="size-4" />} onClick={() => setWriting(true)}>
+                    Write with AI
+                  </Button>
+                )}
+              </div>
               <Suspense fallback={<div className="min-h-36 rounded-md border border-border-strong" />}>
                 <Controller control={control} name="description" render={({ field }) => <RichTextEditor label="Description" value={field.value} onChange={field.onChange} />} />
               </Suspense>
             </div>
+            {writing && writer.row && (
+              <WriteWithAiPanel
+                productId={current?.id ?? null}
+                productName={values.name}
+                defaults={(() => {
+                  const st = writer.row.settings ?? writer.row.defaults;
+                  return { tone: st.default_tone, length: st.default_length, language: st.default_language, useImage: st.use_product_image };
+                })()}
+                onInsert={(v) => applyDraft(appendVariant(form.getValues('description'), v), v)}
+                onReplace={(v) => applyDraft(variantToDoc(v), v)}
+                onClose={() => setWriting(false)}
+              />
+            )}
           </Panel>
 
           <PhotosPanel
@@ -298,7 +354,25 @@ function ProductEditor({ product }: { product: Product | null }) {
             error={photos.error ?? (errors.images as { message?: string } | undefined)?.message ?? null}
             onFiles={(files) => void photos.upload(files, CATALOG_LIMITS.images - values.images.length)}
             onChange={(imgs) => setValue('images', imgs, dirty)}
+            aiAction={
+              photoTool.on && current && current.images.length > 0 ? (
+                <Button size="sm" variant="ghost" leftIcon={<Sparkles aria-hidden className="size-4" />} onClick={() => setEditingPhotos(true)}>
+                  Edit with AI
+                </Button>
+              ) : undefined
+            }
           />
+          {editingPhotos && current && photoTool.row && (
+            <Modal open size="xl" title="Edit photo with AI" description="Remove or replace the background. Save to product replaces the photo; undo for 30 days." onClose={() => setEditingPhotos(false)}>
+              <AiPhotoEditor
+                productId={current.id}
+                images={current.images.map((i) => ({ media_id: i.media_id, url: i.media.url }))}
+                defaultBackground={(photoTool.row.settings ?? photoTool.row.defaults).default_background}
+                canEdit
+                onApplied={() => void reloadAfterPhoto()}
+              />
+            </Modal>
+          )}
 
           <Panel title="Pricing" description={scope.canViewCosts ? 'Cost is private — only you see it. We use it to show your profit.' : isVariable ? 'Applies to every variant. Fine-tune each one below.' : undefined}>
             <div className={cn('grid gap-4', scope.canViewCosts ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
@@ -562,18 +636,20 @@ function PhotosPanel({
   error,
   onFiles,
   onChange,
+  aiAction,
 }: {
   images: { media_id: string; url: string; alt: string }[];
   progress: number | null;
   error: string | null;
   onFiles: (files: File[]) => void;
   onChange: (imgs: { media_id: string; url: string; alt: string }[]) => void;
+  aiAction?: React.ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const full = images.length >= CATALOG_LIMITS.images;
   const items = images.map((i) => ({ ...i, id: i.media_id }));
   return (
-    <Panel title="Photos" description="First photo is the cover on your shop and Facebook. Drag to reorder.">
+    <Panel title="Photos" description="First photo is the cover on your shop and Facebook. Drag to reorder." actions={aiAction}>
       {/* Media 61:13065: 232px cover (2×2) + 110px tiles, 12px gaps; the drop tile (232×110) sits in the grid. */}
       <div className="grid grid-cols-3 gap-3 sm:auto-rows-[110px] sm:grid-cols-[repeat(auto-fill,110px)] [&>ul>li:first-child]:col-span-2 [&>ul>li:first-child]:row-span-2">
         <SortableList

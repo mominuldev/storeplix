@@ -62,6 +62,9 @@ const PrintPage = lazy(() => import('./documents/PrintPage'));
 const IntegrationsPage = lazy(() => import('./integrations/IntegrationsPage'));
 const IntegrationDetailPage = lazy(() => import('./integrations/IntegrationDetailPage'));
 const ProviderValueRedirect = lazy(() => import('./integrations/IntegrationDetailPage').then((m) => ({ default: m.ProviderValueRedirect })));
+// PHASE-8-9D part B: Nagad gateway page and the AI tools (Claude product descriptions, AI product photos).
+const NagadPage = lazy(() => import('./payments/NagadPage'));
+const AiToolPage = lazy(() => import('./integrations/AiToolPage'));
 const DeveloperPage = lazy(() => import('./developer/DeveloperPage'));
 // PHASE-8-9A SMS integration (Integrations › Messaging › SMS)
 const SmsPage = lazy(() => import('./sms/SmsPage'));
@@ -284,6 +287,11 @@ export function AppRoutes() {
               {/* PHASE-8-9D §8 part A: tracking pixels, GTM server and product feeds. */}
               {['meta-pixel', 'ga4', 'tiktok', 'gtm', 'meta-catalog', 'google-merchant'].map((slug) => (
                 <Route key={slug} path={`/integrations/${slug}`} element={lazyEl(<IntegrationDetailPage slug={slug} />)} />
+              ))}
+              {/* PHASE-8-9D §8 part B: Nagad (payments) and the AI tools. */}
+              <Route path="/integrations/payments/nagad" element={lazyEl(<NagadPage />)} />
+              {['claude', 'ai-photos'].map((slug) => (
+                <Route key={slug} path={`/integrations/${slug}`} element={lazyEl(<AiToolPage slug={slug} />)} />
               ))}
               <Route path="/integrations/:provider" element={lazyEl(<ProviderValueRedirect />)} />
               <Route path="/marketing" element={<MarketingIndex />} />

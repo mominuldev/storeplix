@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import { CHECKOUT_CONTACT_NOTICE, type BdGeo, type GatewayProvider, type PaymentMethod, type ShippingQuote } from '@storeplix/types';
 import { placeOrder, requestCheckoutOtp, saveCheckoutContact, type CheckoutState } from '@/app/actions/commerce';
-import { advanceRequired, GATEWAYS, METHOD_HINT, METHOD_LABEL } from '@/lib/payments';
+import { advanceRequired, GATEWAYS, gatewayNote, gatewayPhrase, isGateway, METHOD_HINT, METHOD_LABEL, redirectTarget } from '@/lib/payments';
 import { districtsOf, formatBdPhone, normalizeBdPhone, thanasOf, validateCheckoutForm, type CheckoutField, type FieldErrors } from '@/lib/checkout-form';
 import { GUARD_COPY, OTP_CODE_RE, OTP_LENGTH, cleanOtpInput } from '@/lib/checkout-guard';
 import { formatMoney } from '@/lib/format';
@@ -93,7 +93,7 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
   );
 }
 
-// nagad: placeholder icon until part B (PHASE-8-9D §9.6) brings the theme's payment badge.
+// Mobile wallets (bKash, Nagad, PHASE-8-9D §9.6) share the theme's phone icon; the name is the theme's badge label.
 const METHOD_ICON: Record<PaymentMethod, 'wallet' | 'phone' | 'lock'> = { cod: 'wallet', bkash: 'phone', sslcommerz: 'lock', nagad: 'phone' };
 
 function RadioCard({ checked, onSelect, icon, title, hint, aside, name, value, disabled = false }: { checked: boolean; onSelect: () => void; icon: 'wallet' | 'phone' | 'lock'; title: string; hint: string; aside?: string; name: string; value: string; disabled?: boolean }) {
@@ -653,7 +653,7 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           {online ? (
             <p className="type-body-s flex items-start gap-2.5 rounded-sf-sm bg-sky-tint p-3.5 text-ink-secondary">
               <Icon name="lock" className="mt-px text-brand" />
-              {method === 'bkash' ? "You'll approve the payment in bKash, then come back here." : "You'll pay on the secure SSLCommerz page, then come back here."} Your order is held for 30 minutes.
+              {isGateway(method) ? gatewayNote(method) : null} Your order is held for 30 minutes.
             </p>
           ) : (
             <p className="type-body-s flex items-start gap-2.5 rounded-sf-sm bg-sky-tint p-3.5 text-ink-secondary">
@@ -742,13 +742,13 @@ export function CheckoutForm({ geo, summary, idempotencyKey, notLiveMessage, pay
           className="type-label-m flex h-[52px] items-center justify-center gap-2 rounded-control bg-brand px-5 text-on-brand hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {leaving && goingTo
-            ? `Taking you to ${goingTo === 'bkash' ? 'bKash' : 'the payment page'}…`
+            ? `Taking you to ${redirectTarget(goingTo)}…`
             : pending || leaving || state.status === 'redirect'
               ? 'Placing your order…'
               : total === null
                 ? 'Place order'
                 : online
-                  ? `Pay ${formatMoney(total, c)} with ${method === 'bkash' ? 'bKash' : 'card or mobile banking'}`
+                  ? `Pay ${formatMoney(total, c)} with ${isGateway(method) ? gatewayPhrase(method) : METHOD_LABEL[method]}`
                   : advance && payNow
                     ? `Place order — pay ${formatMoney(payNow, c)} now`
                     : `Place order — ${formatMoney(total, c)}`}

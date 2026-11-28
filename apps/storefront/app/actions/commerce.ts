@@ -374,14 +374,14 @@ export type PayActionResult =
   | { ok: false; message: string; idempotencyKey: string; invalid?: boolean };
 
 const PayOrderInput = z.object({
-  method: z.enum(['cod', 'bkash', 'sslcommerz']),
+  method: z.enum(['cod', 'bkash', 'sslcommerz', 'nagad']),
   idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_RE),
 });
 
 /** Codes after which the same Idempotency-Key must not be sent again. */
 const PAY_KEEP_KEY = new Set(['network_error', 'idempotency_key_in_use', 'rate_limited', 'http_429']);
 const payKey = (code: string, key: string) => (PAY_KEEP_KEY.has(code) ? key : crypto.randomUUID());
-const initiationFailed = (provider: string) => `${provider === 'bkash' ? 'bKash' : 'The payment service'} isn't responding right now. Try again in a minute.`;
+const initiationFailed = (provider: string) => `${provider === 'bkash' ? 'bKash' : provider === 'nagad' ? 'Nagad' : 'The payment service'} isn't responding right now. Try again in a minute.`;
 
 /**
  * "Try again" / "Pay on delivery instead" for the shopper's own order (`sp_order`). An online

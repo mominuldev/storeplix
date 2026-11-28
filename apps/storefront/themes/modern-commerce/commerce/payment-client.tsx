@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { payLink, payOrder, type PayActionResult } from '@/app/actions/commerce';
-import { METHOD_LABEL, startPaymentPoller, type PolledStatus } from '@/lib/payments';
+import { gatewayPhrase, METHOD_LABEL, redirectTarget, startPaymentPoller, type PolledStatus } from '@/lib/payments';
 import type { GatewayProvider } from '@storeplix/types';
 import { Icon } from '../components/icon';
 import { Notice } from './ui';
@@ -75,7 +75,7 @@ export function RetryPayment({ retry, cod, idempotencyKey, tone = 'light' }: { r
             onClick={() => run((k) => payOrder({ method: retry, idempotencyKey: k }))}
             className={`${btn} ${tone === 'brand' ? 'tone-dark bg-surface hover:bg-sunken' : 'bg-brand text-on-brand hover:brightness-110'}`}
           >
-            {busy ? 'One moment…' : `Try again with ${retry === 'bkash' ? 'bKash' : 'card or mobile banking'}`}
+            {busy ? 'One moment…' : `Try again with ${gatewayPhrase(retry)}`}
             <Icon name="arrow-right-sm" />
           </button>
         ) : null}
@@ -106,7 +106,7 @@ export function PayLinkButton({ token, provider, amountText, idempotencyKey }: {
     <div className="flex w-full flex-col gap-3">
       {message ? <Notice tone="error">{message}</Notice> : null}
       <button type="button" disabled={busy} onClick={() => run((k) => payLink({ token, idempotencyKey: k }))} className={`${btn} w-full bg-brand text-on-brand hover:brightness-110`} data-sp-pay-link>
-        {busy ? `Taking you to ${provider === 'bkash' ? 'bKash' : 'the payment page'}…` : `Pay ${amountText} with ${METHOD_LABEL[provider]}`}
+        {busy ? `Taking you to ${redirectTarget(provider)}…` : `Pay ${amountText} with ${METHOD_LABEL[provider]}`}
         <Icon name="lock" />
       </button>
     </div>

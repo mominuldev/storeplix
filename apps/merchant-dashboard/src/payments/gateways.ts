@@ -12,7 +12,11 @@ export interface CredentialField {
   hint?: string;
 }
 
+/** Gateways connected through the 5b wizard (ConnectGatewayDialog). */
 export const GATEWAYS: GatewayProvider[] = ['bkash', 'sslcommerz'];
+/** Every gateway shown in lists (PHASE-8-9D P89D-50): Nagad has its own page (`/integrations/payments/nagad`). */
+export const ALL_GATEWAYS: GatewayProvider[] = ['bkash', 'sslcommerz', 'nagad'];
+export const NAGAD_PATH = '/integrations/payments/nagad';
 
 export const gatewayMeta: Record<
   GatewayProvider,
@@ -64,21 +68,22 @@ export const gatewayMeta: Record<
       { key: 'store_passwd', label: 'Store password', max: 128, secret: true },
     ],
   },
-  // Phase 8.9d part B (PHASE-8-9D §9): the Nagad page and connect flow ship in part B; this copy keeps every
-  // `Record<GatewayProvider, …>` complete. Not listed in GATEWAYS until part B adds its card.
+  // PHASE-8-9D §9 (Figma 2134:67228): Nagad connects on its own page (PEM keys), not through the 5b wizard.
   nagad: {
     name: 'Nagad',
     short: 'Nagad',
-    capability: 'Nagad wallet payments',
+    capability: 'Nagad wallet payments, verified by Nagad’s callback',
     onboardingHint: 'Customers pay from their Nagad app · settles to your Nagad merchant account',
     checkoutLabel: 'Nagad',
     checkoutHint: 'Pay now from your Nagad app',
-    portalHint: 'Find these in the Nagad merchant portal.',
+    portalHint: 'From the Nagad merchant portal → Integration → API keys. Encrypted at rest.',
     applyNote: 'Apply at Nagad with your trade licence. We’ll guide you.',
     moneyTo: 'your Nagad merchant account',
     fields: [
       { key: 'merchant_id', label: 'Merchant ID', max: 64, secret: false },
       { key: 'merchant_number', label: 'Merchant number', max: 20, secret: false },
+      { key: 'merchant_private_key', label: 'Merchant private key', max: 8192, secret: true },
+      { key: 'pg_public_key', label: 'Nagad public key', max: 8192, secret: true },
     ],
   },
 };

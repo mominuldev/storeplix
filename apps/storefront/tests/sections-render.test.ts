@@ -128,4 +128,11 @@ describe('chrome: header, drawer and footer', () => {
     );
     expect(off).not.toContain('Pay with');
   });
+
+  it('footer: enabled checkout methods drive the badges; Nagad only when offered (PHASE-8-9D §9.6)', () => {
+    const render = (paymentMethods: ('cod' | 'bkash' | 'nagad')[]) =>
+      renderToStaticMarkup(createElement(Footer, { store, settings, description: null, contact, social: { facebook: null, instagram: null, youtube: null }, menus: [], paymentMethods }));
+    expect(render(['cod', 'nagad'])).toContain('>Nagad</li>');
+    expect(render(['cod', 'bkash'])).not.toContain('>Nagad</li>');
+  });
 });

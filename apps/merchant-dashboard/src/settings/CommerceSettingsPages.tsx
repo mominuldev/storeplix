@@ -11,7 +11,7 @@ import { useStoreScope } from '../catalog/scope';
 import { ErrorBlock, errorMessage } from '../catalog/states';
 import { api } from '../lib/api';
 import { toast } from '../online-store/components/Toast';
-import { byProvider, GATEWAYS, gatewayMeta, integrationStatusMeta, isConnected, isUsable, modeLabel } from '../payments/gateways';
+import { ALL_GATEWAYS, byProvider, gatewayMeta, integrationStatusMeta, isConnected, isUsable, modeLabel } from '../payments/gateways';
 import { usePaymentGateways, usePaymentInvalidate } from '../payments/queries';
 import { FormAlert } from '../onboarding/AuthShell';
 import { useSmsTemplates } from '../sms/queries';
@@ -187,7 +187,7 @@ export function PaymentsSettingsPage() {
                 <Spinner label="Loading gateways" />
               ) : (
                 <ul className="flex flex-col">
-                  {GATEWAYS.map((p) => {
+                  {ALL_GATEWAYS.map((p) => {
                     const a = byProvider(gateways.data)[p];
                     const st = integrationStatusMeta(a?.status ?? 'not_connected');
                     return (

@@ -69,8 +69,8 @@ function lenientArray<T>(item: z.ZodType<T, unknown>, max: number) {
 
 const ORDER_STATUSES = ['pending_payment', 'pending', 'confirmed', 'ready_to_ship', 'shipped', 'delivered', 'returned', 'cancelled'] as const;
 const orderStatus = z.enum(ORDER_STATUSES);
-const paymentMethod = z.enum(['cod', 'bkash', 'sslcommerz']);
-const gatewayProvider = z.enum(['bkash', 'sslcommerz']);
+const paymentMethod = z.enum(['cod', 'bkash', 'sslcommerz', 'nagad']);
+const gatewayProvider = z.enum(['bkash', 'sslcommerz', 'nagad']);
 const paymentStatus = z.enum(['pending', 'succeeded', 'failed', 'cancelled']);
 const paymentPurpose = z.enum(['order', 'advance', 'link', 'exchange', 'test']);
 /** Payment ids are ULIDs (26 chars, any case on the wire). */

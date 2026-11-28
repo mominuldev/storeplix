@@ -303,14 +303,15 @@ describe('loaders (official base tags from fixed code)', () => {
   });
 });
 
-describe('Nagad (part B placeholder, PHASE-8-9D §9.6)', async () => {
+describe('Nagad (PHASE-8-9D §9.6)', async () => {
   const { METHOD_LABEL, checkoutMethods, isOfferedMethod, isPaymentMethod } = await import('@/lib/payments');
   const { CHECKOUT_METHOD_BADGES } = await import('@/themes/modern-commerce/footer');
-  it('has a label and badge but is not offered at checkout until part B', () => {
+  it('is labelled, badged and offered only when the store config lists it', () => {
     expect(METHOD_LABEL.nagad).toBe('Nagad');
     expect(CHECKOUT_METHOD_BADGES.nagad).toEqual(['nagad']);
-    expect(isOfferedMethod('nagad')).toBe(false);
-    expect(isPaymentMethod('nagad')).toBe(false);
-    expect(checkoutMethods(['cod', 'nagad', 'bkash'])).toEqual(['cod', 'bkash']);
+    expect(isOfferedMethod('nagad')).toBe(true);
+    expect(isPaymentMethod('nagad')).toBe(true);
+    expect(checkoutMethods(['cod', 'nagad', 'bkash'])).toEqual(['cod', 'bkash', 'nagad']);
+    expect(checkoutMethods(['cod', 'bkash'])).toEqual(['cod', 'bkash']);
   });
 });
