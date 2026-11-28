@@ -43,7 +43,9 @@ trait SpaBrowser
         $this->freshSession();
         $response = $this->flushHeaders()->withCredentials()->withUnencryptedCookies($this->jar)->withHeaders($headers)->json($method, $uri, $data);
         foreach ($response->headers->getCookies() as $cookie) {
-            if ($cookie->isCleared()) {
+            // Judge expiry on the app clock, not Symfony's isCleared() (real time()): tests that travelTo() a fixed past
+            // date get cookies that "expired" in real time once that date is a few hours behind the wall clock.
+            if ($cookie->getExpiresTime() !== 0 && $cookie->getExpiresTime() < now()->getTimestamp()) {
                 unset($this->jar[$cookie->getName()]);
             } else {
                 $this->jar[$cookie->getName()] = $cookie->getValue();
